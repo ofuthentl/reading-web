@@ -2,7 +2,7 @@ name: Deploy Vite to GitHub Pages
 
 on:
   push:
-    branches: [ main ] # Đổi thành 'master' nếu branch chính của bạn là master
+    branches: [ main ] 
 
 jobs:
   build-and-deploy:
