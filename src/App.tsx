@@ -212,7 +212,7 @@ function LibraryBookCard({
     <button
       onClick={onOpen}
       onContextMenu={onContextMenu}
-      className="group w-44 shrink-0 text-left sm:w-48"
+      className="group w-36 shrink-0 text-left sm:w-44"
     >
       {coverUrl ? (
         <img
@@ -1481,7 +1481,7 @@ export default function App() {
     const libraryTitle = selectedShelf ? selectedShelf.name : 'Kho sách';
     return (
       <div className="min-h-screen bg-stone-50 text-stone-800">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-stone-200 bg-white/95 px-6 backdrop-blur">
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-stone-200 bg-white/95 px-4 backdrop-blur sm:px-6">
           <div className="flex items-center gap-2 text-lg font-semibold">
             <BookOpen className="h-5 w-5 text-stone-600" />
             Đọc sách
@@ -1498,9 +1498,9 @@ export default function App() {
             </button>
           </div>
         </header>
-        <main className="w-full px-5 py-8 sm:px-8 lg:px-12">
-          <div className="relative mb-8 flex items-end justify-between border-b border-stone-200 pb-4">
-            <div>
+        <main className="w-full px-4 py-6 sm:px-8 sm:py-8 lg:px-12">
+          <div className="relative mb-8 flex flex-col gap-4 border-b border-stone-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
                 {selectedShelf && (
                   <button
@@ -1511,12 +1511,12 @@ export default function App() {
                     <ChevronLeft className="h-5 w-5" />
                   </button>
                 )}
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
                     {selectedShelf ? 'Thư mục' : 'Thư viện'}
                   </p>
                   <div className="mt-2 flex items-center gap-2">
-                    <h1 className="text-3xl font-bold tracking-tight">{libraryTitle}</h1>
+                    <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{libraryTitle}</h1>
                     {selectedShelf && (
                       <button
                         onClick={() => renameShelf(selectedShelfKey!, selectedShelf.name)}
@@ -1531,8 +1531,8 @@ export default function App() {
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="relative w-[min(24rem,calc(100vw-2rem))]">
+            <div className="flex w-full items-center gap-2 sm:w-auto">
+              <div className="relative w-full flex-1 sm:w-[min(24rem,calc(100vw-2rem))]">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
                 <input
                   value={searchQuery}
@@ -1598,10 +1598,12 @@ export default function App() {
               </div>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-stone-700"
+                className="shrink-0 whitespace-nowrap rounded-lg bg-stone-900 px-3 py-2.5 text-sm font-medium text-white hover:bg-stone-700 sm:px-4"
               >
-                <Upload className="h-4 w-4" />
-                Thêm sách
+                <span className="flex items-center gap-2">
+                  <Upload className="h-4 w-4" />
+                  Thêm sách
+                </span>
               </button>
             </div>
             <input
@@ -1706,10 +1708,10 @@ export default function App() {
           )}
           {submittedSearchQuery ? (
             <section>
-              <div className="mb-6 flex items-end justify-between border-b border-stone-200 pb-3">
+              <div className="mb-6 flex flex-col gap-2 border-b border-stone-200 pb-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Tìm kiếm</p>
-                  <h2 className="mt-1 text-2xl font-bold">Kết quả cho “{submittedSearchQuery}”</h2>
+                  <h2 className="mt-1 text-xl font-bold sm:text-2xl">Kết quả cho “{submittedSearchQuery}”</h2>
                 </div>
                 <button
                   onClick={() => {
@@ -2239,4 +2241,12 @@ export default function App() {
       )}
     </div>
   );
+}
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (let registration of registrations) {
+      registration.update();
+    }
+  });
 }
