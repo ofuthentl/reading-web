@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { supabase, type Book, type Chapter } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
 import {
@@ -20,8 +20,19 @@ import {
   Folder,
   ChevronDown,
   Pencil,
+  ZoomIn,
+  ZoomOut,
+  Download,
+  RotateCw,
+  Search,
 } from 'lucide-react';
 import JSZip from 'jszip';
+import * as pdfjsLib from 'pdfjs-dist';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).toString();
 
 type Theme = 'light' | 'dark';
 type FontSize = 'small' | 'medium' | 'large';
@@ -31,7 +42,66 @@ type ReadingPosition = {
 };
 
 function readerPositionKey(userId: string, bookId: string) {
-  return `reader-position:${userId}:${bookId}`;
+  return `reader-last-chapter:v3:${userId}:${bookId}`;
+}
+
+function readerChapterPositionKey(userId: string, bookId: string, chapterId: string) {
+  return `reader-position-v2:${userId}:${bookId}:chapter:${chapterId}`;
+}
+
+function readChapterPosition(userId: string, chapter: Chapter): ReadingPosition | null {
+  try {
+    const saved = localStorage.getItem(readerChapterPositionKey(userId, chapter.book_id, chapter.id));
+    const parsed = saved ? JSON.parse(saved) as { scrollTop?: unknown } : null;
+    return typeof parsed?.scrollTop === 'number'
+      ? { chapterId: chapter.id, scrollTop: parsed.scrollTop }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function readLastChapter(userId: string, bookId: string) {
+  try {
+    const saved = localStorage.getItem(readerPositionKey(userId, bookId));
+    const parsed = saved ? JSON.parse(saved) as { chapterId?: unknown } : null;
+    return typeof parsed?.chapterId === 'string' ? parsed.chapterId : null;
+  } catch {
+    return null;
+  }
+}
+
+function coverOverrideKey(userId: string) {
+  return `book-cover-overrides:${userId}`;
+}
+
+function shelfCoverOverrideKey(userId: string) {
+  return `shelf-cover-overrides:${userId}`;
+}
+
+async function prepareCoverImage(file: File) {
+  const image = await createImageBitmap(file);
+  const targetWidth = 1200;
+  const targetHeight = 1800;
+  const canvas = document.createElement('canvas');
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Không thể xử lý ảnh bìa.');
+
+  const sourceRatio = image.width / image.height;
+  const targetRatio = targetWidth / targetHeight;
+  const sourceWidth = sourceRatio > targetRatio ? image.height * targetRatio : image.width;
+  const sourceHeight = sourceRatio > targetRatio ? image.height : image.width / targetRatio;
+  const sourceX = (image.width - sourceWidth) / 2;
+  const sourceY = (image.height - sourceHeight) / 2;
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight);
+  image.close();
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+  if (!blob) throw new Error('Không thể tạo ảnh bìa.');
+  return new File([blob], 'cover.jpg', { type: 'image/jpeg' });
 }
 
 const fontSizes: Record<FontSize, string> = {
@@ -41,7 +111,10 @@ const fontSizes: Record<FontSize, string> = {
 };
 
 function normalizeBookMetadata(book: Book): Book {
-  if (book.author !== 'Unknown author' || !book.title.includes(' - ')) return book;
+  const hasUnknownAuthor = book.author === 'Unknown author' || book.author === 'Không rõ tác giả';
+  if (!hasUnknownAuthor || !book.title.includes(' - ')) {
+    return hasUnknownAuthor ? { ...book, author: 'Không rõ tác giả' } : book;
+  }
   const [titlePart, ...authorParts] = book.title.split(/\s+-\s+/);
   const author = authorParts.join(' - ').trim();
   if (!titlePart.trim() || !author) return book;
@@ -55,7 +128,7 @@ function sortBooksByTitle(bookList: Book[]) {
 }
 
 function getShelfName(book: Book) {
-  if (book.author.trim() && book.author !== 'Unknown author') return book.author.trim();
+  if (book.author.trim() && book.author !== 'Không rõ tác giả') return book.author.trim();
   const seriesName = book.title
     .replace(/\s*[-_:|]\s*(?:vol(?:ume)?|tập|tap|quyển|quyen)?\s*\d+.*$/i, '')
     .replace(/\s+(?:vol(?:ume)?|tập|tap|quyển|quyen)\s*\d+.*$/i, '')
@@ -79,7 +152,7 @@ function AuthScreen() {
       : await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (result.error) setMessage(result.error.message);
-    else if (isSignUp && !result.data.session) setMessage('Check your email to confirm your account.');
+    else if (isSignUp && !result.data.session) setMessage('Hãy kiểm tra email để xác nhận tài khoản.');
   };
 
   return (
@@ -124,9 +197,23 @@ function AuthScreen() {
   );
 }
 
-function LibraryBookCard({ book, coverUrl, onOpen }: { book: Book; coverUrl?: string; onOpen: () => void }) {
+function LibraryBookCard({
+  book,
+  coverUrl,
+  onOpen,
+  onContextMenu,
+}: {
+  book: Book;
+  coverUrl?: string;
+  onOpen: () => void;
+  onContextMenu: (event: React.MouseEvent<HTMLButtonElement>) => void;
+}) {
   return (
-    <button onClick={onOpen} className="group w-44 shrink-0 text-left sm:w-48">
+    <button
+      onClick={onOpen}
+      onContextMenu={onContextMenu}
+      className="group w-44 shrink-0 text-left sm:w-48"
+    >
       {coverUrl ? (
         <img
           src={coverUrl}
@@ -149,6 +236,203 @@ function LibraryBookCard({ book, coverUrl, onOpen }: { book: Book; coverUrl?: st
   );
 }
 
+function RenameDialog({
+  value,
+  label,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  value: string;
+  label: string;
+  onChange: (value: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4" onClick={onCancel}>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+        onClick={(event) => event.stopPropagation()}
+        className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl"
+      >
+        <h2 className="text-lg font-semibold text-stone-900">{label}</h2>
+        <input
+          autoFocus
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="mt-4 w-full rounded-lg border border-stone-300 px-3 py-2.5 text-sm outline-none focus:border-stone-600"
+        />
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={onCancel} className="rounded-lg px-4 py-2 text-sm text-stone-600 hover:bg-stone-100">
+            Hủy
+          </button>
+          <button type="submit" className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700">
+            Lưu
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+async function renderPdfCanvas(page: pdfjsLib.PDFPageProxy, canvas: HTMLCanvasElement, scale: number) {
+  const viewport = page.getViewport({ scale });
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  await page.render({ canvas, canvasContext: canvas.getContext('2d')!, viewport }).promise;
+}
+
+function PdfReader({
+  url,
+  fileName,
+  positionKey,
+  pageNumber,
+  pageCount,
+  onPageChange,
+  isDark,
+}: {
+  url: string;
+  fileName: string;
+  positionKey: string;
+  pageNumber: number;
+  pageCount: number;
+  onPageChange: (page: number) => void;
+  isDark: boolean;
+}) {
+  const pageCanvasRef = useRef<HTMLCanvasElement>(null);
+  const pageStageRef = useRef<HTMLDivElement>(null);
+  const thumbnailRefs = useRef<Record<number, HTMLCanvasElement | null>>({});
+  const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  const [scale, setScale] = useState(1.5);
+  const [renderError, setRenderError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadingTask = pdfjsLib.getDocument({ url });
+    void loadingTask.promise.then((document) => {
+      if (!cancelled) setPdf(document);
+    }).catch(() => {
+      if (!cancelled) setRenderError(true);
+    });
+    return () => {
+      cancelled = true;
+      void loadingTask.destroy();
+    };
+  }, [url]);
+
+  useEffect(() => {
+    if (!pdf || !pageCanvasRef.current) return;
+    let cancelled = false;
+    void pdf.getPage(pageNumber).then((page) => {
+      if (!cancelled && pageCanvasRef.current) {
+        return renderPdfCanvas(page, pageCanvasRef.current, scale).then(() => {
+          const savedScrollTop = Number(
+            localStorage.getItem(`${positionKey}:pdf-page:${pageNumber}`) || 0,
+          );
+          if (!cancelled && pageStageRef.current) {
+            pageStageRef.current.scrollTop = Number.isFinite(savedScrollTop) ? savedScrollTop : 0;
+          }
+        });
+      }
+      return undefined;
+    }).catch(() => {
+      if (!cancelled) setRenderError(true);
+    });
+    return () => { cancelled = true; };
+  }, [pageNumber, pdf, positionKey, scale]);
+
+  useEffect(() => {
+    const stage = pageStageRef.current;
+    if (!stage) return;
+    const storageKey = `${positionKey}:pdf-page:${pageNumber}`;
+    const savedScrollTop = Number(localStorage.getItem(storageKey) || 0);
+    stage.scrollTop = Number.isFinite(savedScrollTop) ? savedScrollTop : 0;
+    const saveScrollPosition = () => {
+      localStorage.setItem(storageKey, String(stage.scrollTop));
+    };
+    stage.addEventListener('scroll', saveScrollPosition, { passive: true });
+    return () => {
+      saveScrollPosition();
+      stage.removeEventListener('scroll', saveScrollPosition);
+    };
+  }, [pageNumber, positionKey]);
+
+  useEffect(() => {
+    if (!pdf) return;
+    let cancelled = false;
+    const renderThumbnails = async () => {
+      for (let index = 1; index <= Math.min(pdf.numPages, 30); index += 1) {
+        const canvas = thumbnailRefs.current[index];
+        if (!canvas) continue;
+        const page = await pdf.getPage(index);
+        if (cancelled) return;
+        await renderPdfCanvas(page, canvas, 0.16);
+      }
+    };
+    void renderThumbnails();
+    return () => { cancelled = true; };
+  }, [pdf]);
+
+  if (renderError) return <p className="p-8">Không thể hiển thị PDF này.</p>;
+  return (
+    <div className={`pdf-reader ${isDark ? 'pdf-reader-dark' : ''}`}>
+      <div className="pdf-toolbar">
+        <span className="pdf-file-name" title={fileName}>{fileName}</span>
+        <div className="pdf-toolbar-group">
+          <button onClick={() => onPageChange(Math.max(1, pageNumber - 1))} disabled={pageNumber <= 1} aria-label="Trang trước" title="Trang trước">
+            <ChevronLeft />
+          </button>
+          <span className="pdf-page-counter">{pageNumber} / {pageCount}</span>
+          <button onClick={() => onPageChange(Math.min(pageCount, pageNumber + 1))} disabled={pageNumber >= pageCount} aria-label="Trang sau" title="Trang sau">
+            <ChevronRight />
+          </button>
+        </div>
+        <div className="pdf-toolbar-group">
+          <button onClick={() => setScale((value) => Math.max(0.5, value - 0.1))} aria-label="Thu nhỏ" title="Thu nhỏ"><ZoomOut /></button>
+          <span className="pdf-zoom-label">{Math.round(scale * 100)}%</span>
+          <button onClick={() => setScale((value) => Math.min(2, value + 0.1))} aria-label="Phóng to" title="Phóng to"><ZoomIn /></button>
+          <button onClick={() => setScale(1.5)} aria-label="Vừa chiều rộng trang" title="Vừa chiều rộng trang"><RotateCw /></button>
+          <a href={url} download aria-label="Tải PDF xuống" title="Tải PDF xuống"><Download /></a>
+        </div>
+      </div>
+      <div className="pdf-reader-body">
+        <aside className="pdf-thumbnails scrollbar-thin">
+          {Array.from({ length: Math.min(pageCount, 30) }, (_, index) => index + 1).map((index) => (
+            <button
+              key={index}
+              onClick={() => onPageChange(index)}
+              className={index === pageNumber ? 'pdf-thumbnail-active' : ''}
+              aria-label={`Mở trang ${index}`}
+            >
+              <canvas ref={(canvas) => { thumbnailRefs.current[index] = canvas; }} />
+              <span>{index}</span>
+            </button>
+          ))}
+          {pageCount > 30 && <p>... còn {pageCount - 30} trang</p>}
+        </aside>
+        <div
+          ref={pageStageRef}
+          className="pdf-page-stage scrollbar-thin"
+          onClick={(event) => {
+            if (event.target !== event.currentTarget && event.target !== pageCanvasRef.current) return;
+            const bounds = event.currentTarget.getBoundingClientRect();
+            const isLeftSide = event.clientX < bounds.left + bounds.width * 0.35;
+            const isRightSide = event.clientX > bounds.left + bounds.width * 0.65;
+            if (isLeftSide) onPageChange(Math.max(1, pageNumber - 1));
+            if (isRightSide) onPageChange(Math.min(pageCount, pageNumber + 1));
+          }}
+        >
+          <canvas ref={pageCanvasRef} aria-label={`Trang ${pageNumber}`} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function resolveZipPath(basePath: string, relativePath: string) {
   const parts = `${basePath}/${relativePath}`.split('/');
   const resolved: string[] = [];
@@ -162,18 +446,18 @@ function resolveZipPath(basePath: string, relativePath: string) {
 
 async function extractEpubChapters(url: string, bookId: string): Promise<Chapter[]> {
   const response = await fetch(url);
-  if (!response.ok) throw new Error('Could not download the EPUB file.');
+  if (!response.ok) throw new Error('Không thể tải tệp EPUB.');
 
   const zip = await JSZip.loadAsync(await response.arrayBuffer());
   const containerXml = await zip.file('META-INF/container.xml')?.async('string');
-  if (!containerXml) throw new Error('This EPUB has no container file.');
+  if (!containerXml) throw new Error('EPUB không có tệp container.');
 
   const container = new DOMParser().parseFromString(containerXml, 'application/xml');
   const rootFile = container.querySelector('rootfile')?.getAttribute('full-path');
-  if (!rootFile) throw new Error('This EPUB has no package file.');
+  if (!rootFile) throw new Error('EPUB không có tệp package.');
 
   const packageXml = await zip.file(rootFile)?.async('string');
-  if (!packageXml) throw new Error('This EPUB package file is missing.');
+  if (!packageXml) throw new Error('EPUB bị thiếu tệp package.');
 
   const packageDocument = new DOMParser().parseFromString(packageXml, 'application/xml');
   const manifest = new Map<string, { href: string; mediaType: string; properties: string }>();
@@ -373,7 +657,74 @@ async function extractEpubChapters(url: string, bookId: string): Promise<Chapter
     }
   }
 
-  if (chapters.length === 0) throw new Error('No readable text chapters were found in this EPUB.');
+  if (chapters.length === 0) throw new Error('EPUB không có chương văn bản để đọc.');
+  return chapters;
+}
+
+function escapeHtml(text: string) {
+  return text.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character] || character);
+}
+
+async function extractPdfChapters(url: string, bookId: string): Promise<Chapter[]> {
+  const loadingTask = pdfjsLib.getDocument({ url });
+  const pdf = await loadingTask.promise;
+  const chapters: Chapter[] = [];
+
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const textContent = await page.getTextContent();
+    const lines: string[] = [];
+    let currentLine = '';
+
+    for (const item of textContent.items) {
+      if (!('str' in item) || !item.str) continue;
+      currentLine += item.str;
+      if ('hasEOL' in item && item.hasEOL) {
+        lines.push(currentLine.trim());
+        currentLine = '';
+      }
+    }
+    if (currentLine.trim()) lines.push(currentLine.trim());
+
+    const content = lines.filter(Boolean).join('\n\n').trim();
+    const hasReadableText = content.replace(/\s/g, '').length >= 80;
+    if (!content && !textContent.items.length) {
+      chapters.push({
+        id: `${bookId}-pdf-${pageNumber}`,
+        book_id: bookId,
+        title: `Trang ${pageNumber}`,
+        content: '',
+        pdf_url: url,
+        pdf_page_number: pageNumber,
+        chapter_number: pageNumber,
+        created_at: new Date().toISOString(),
+      });
+      continue;
+    }
+    const contentHtml = lines
+      .filter(Boolean)
+      .map((line) => `<p>${escapeHtml(line)}</p>`)
+      .join('');
+    chapters.push({
+      id: `${bookId}-pdf-${pageNumber}`,
+      book_id: bookId,
+      title: `Trang ${pageNumber}`,
+      content: hasReadableText ? content : '',
+      content_html: hasReadableText ? contentHtml : undefined,
+      pdf_url: url,
+      pdf_page_number: pageNumber,
+      chapter_number: pageNumber,
+      created_at: new Date().toISOString(),
+    });
+  }
+
+  if (chapters.length === 0) throw new Error('PDF này không có trang để hiển thị.');
   return chapters;
 }
 
@@ -417,6 +768,16 @@ async function extractEpubCoverUrl(url: string) {
   return null;
 }
 
+async function extractPdfCoverUrl(url: string) {
+  const loadingTask = pdfjsLib.getDocument({ url });
+  const pdf = await loadingTask.promise;
+  const page = await pdf.getPage(1);
+  const canvas = document.createElement('canvas');
+  await renderPdfCanvas(page, canvas, 1.5);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.86));
+  return blob ? URL.createObjectURL(blob) : null;
+}
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -436,10 +797,33 @@ export default function App() {
   const [fontSize, setFontSize] = useState<FontSize>('medium');
   const [openShelves, setOpenShelves] = useState<Record<string, boolean>>({});
   const [shelfRenames, setShelfRenames] = useState<Record<string, string>>({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [submittedSearchQuery, setSubmittedSearchQuery] = useState('');
+  const [searchSuggestionsOpen, setSearchSuggestionsOpen] = useState(false);
+  const [renameDialog, setRenameDialog] = useState<{
+    type: 'book' | 'shelf';
+    value: string;
+    book?: Book;
+    shelfKey?: string;
+  } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    type: 'book' | 'shelf';
+    book?: Book;
+    shelfKey?: string;
+    shelfName?: string;
+    shelfBooks?: Book[];
+    x: number;
+    y: number;
+  } | null>(null);
+  const [coverTarget, setCoverTarget] = useState<{ type: 'book' | 'shelf'; id: string } | null>(null);
+  const [shelfCoverOverrides, setShelfCoverOverrides] = useState<Record<string, string>>({});
   const [scrollProgress, setScrollProgress] = useState(0);
   const contentRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
   const initialPositionRef = useRef<ReadingPosition | null>(null);
+  const selectionRequestRef = useRef(0);
+  const suppressScrollSaveRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -467,10 +851,13 @@ export default function App() {
     try {
       const savedShelves = localStorage.getItem('reader-shelf-names');
       if (savedShelves) setShelfRenames(JSON.parse(savedShelves) as Record<string, string>);
+      const savedShelfCovers = localStorage.getItem(shelfCoverOverrideKey(user?.id || ''));
+      if (savedShelfCovers) setShelfCoverOverrides(JSON.parse(savedShelfCovers) as Record<string, string>);
     } catch {
       setShelfRenames({});
+      setShelfCoverOverrides({});
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     localStorage.setItem('reader-theme', theme);
@@ -485,16 +872,29 @@ export default function App() {
   }, [shelfRenames]);
 
   useEffect(() => {
+    if (user?.id) localStorage.setItem(shelfCoverOverrideKey(user.id), JSON.stringify(shelfCoverOverrides));
+  }, [shelfCoverOverrides, user?.id]);
+
+  useEffect(() => {
     let active = true;
     const objectUrls: string[] = [];
+    const localCoverOverrides: Record<string, string> = user
+      ? JSON.parse(localStorage.getItem(coverOverrideKey(user.id)) || '{}') as Record<string, string>
+      : {};
     void Promise.all(
       books
-        .filter((libraryBook) => libraryBook.file_type === 'epub' && libraryBook.file_path)
+        .filter((libraryBook) => libraryBook.cover_path || (libraryBook.file_path && (libraryBook.file_type === 'epub' || libraryBook.file_type === 'pdf')))
         .map(async (libraryBook) => {
           try {
-            const url = await extractEpubCoverUrl(
-              supabase.storage.from('books').getPublicUrl(libraryBook.file_path!).data.publicUrl,
-            );
+            const url = libraryBook.cover_path
+              ? supabase.storage.from('books').getPublicUrl(libraryBook.cover_path).data.publicUrl
+              : libraryBook.file_type === 'pdf'
+              ? await extractPdfCoverUrl(
+                supabase.storage.from('books').getPublicUrl(libraryBook.file_path!).data.publicUrl,
+              )
+              : await extractEpubCoverUrl(
+                supabase.storage.from('books').getPublicUrl(libraryBook.file_path!).data.publicUrl,
+              );
             if (url) objectUrls.push(url);
             return [libraryBook.id, url] as const;
           } catch {
@@ -502,16 +902,23 @@ export default function App() {
           }
         }),
     ).then((entries) => {
-      if (active) setCoverUrls(Object.fromEntries(entries.filter((entry): entry is [string, string] => Boolean(entry[1]))));
+      if (active) {
+        setCoverUrls({
+          ...Object.fromEntries(entries.filter((entry): entry is [string, string] => Boolean(entry[1]))),
+          ...localCoverOverrides,
+        });
+      }
     });
     return () => {
       active = false;
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [books]);
+  }, [books, user]);
 
   useEffect(() => {
-    if (!user) {
+    const userId = user?.id;
+    if (!userId) {
+      selectionRequestRef.current += 1;
       initialPositionRef.current = null;
       setIsAdmin(false);
       setReaderOpen(false);
@@ -522,16 +929,17 @@ export default function App() {
       setLoading(false);
       return;
     }
-    const currentUser = user;
+    const currentUserId = userId;
 
     void supabase
       .from('user_roles')
       .select('role')
-      .eq('user_id', currentUser.id)
+      .eq('user_id', currentUserId)
       .maybeSingle()
       .then(({ data }) => setIsAdmin(data?.role === 'admin'));
 
     async function loadData() {
+      const requestId = ++selectionRequestRef.current;
       try {
         const { data: bookData, error: bookError } = await supabase
           .from('books')
@@ -539,6 +947,7 @@ export default function App() {
           .order('created_at', { ascending: false });
 
         if (bookError) throw bookError;
+        if (requestId !== selectionRequestRef.current) return;
         if (!bookData || bookData.length === 0) {
           setBooks([]);
           setBook(null);
@@ -551,15 +960,10 @@ export default function App() {
         setBook(normalizedBooks[0]);
 
         try {
-          const savedPosition = localStorage.getItem(
-            readerPositionKey(currentUser.id, normalizedBooks[0].id),
-          );
-          if (savedPosition) {
-            const parsed = JSON.parse(savedPosition) as ReadingPosition;
-            if (typeof parsed.chapterId === 'string' && typeof parsed.scrollTop === 'number') {
-              initialPositionRef.current = parsed;
-            }
-          }
+          const lastChapterId = readLastChapter(currentUserId, normalizedBooks[0].id);
+          initialPositionRef.current = lastChapterId
+            ? { chapterId: lastChapterId, scrollTop: 0 }
+            : null;
         } catch {
           initialPositionRef.current = null;
         }
@@ -570,22 +974,45 @@ export default function App() {
                 supabase.storage.from('books').getPublicUrl(normalizedBooks[0].file_path).data.publicUrl,
                 normalizedBooks[0].id,
               )
+            : normalizedBooks[0].file_type === 'pdf' && normalizedBooks[0].file_path
+              ? await extractPdfChapters(
+                  supabase.storage.from('books').getPublicUrl(normalizedBooks[0].file_path).data.publicUrl,
+                  normalizedBooks[0].id,
+                )
             : await loadStoredChapters(normalizedBooks[0].id);
+            if (requestId !== selectionRequestRef.current) return;
         setChapters(loadedChapters);
         const savedChapterIndex = loadedChapters.findIndex(
           (chapter) => chapter.id === initialPositionRef.current?.chapterId,
         );
-        if (savedChapterIndex >= 0) setCurrentChapterIndex(savedChapterIndex);
+        if (savedChapterIndex >= 0) {
+          const chapterPosition = readChapterPosition(currentUserId, loadedChapters[savedChapterIndex]);
+          if (chapterPosition) initialPositionRef.current = chapterPosition;
+          setCurrentChapterIndex(savedChapterIndex);
+        }
         setLoading(false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load book.');
+        if (requestId !== selectionRequestRef.current) return;
+        setError(err instanceof Error ? err.message : 'Không thể tải sách.');
         setLoading(false);
       }
     }
     loadData();
-  }, [user]);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const closeMenu = () => setContextMenu(null);
+    window.addEventListener('click', closeMenu);
+    window.addEventListener('scroll', closeMenu, true);
+    return () => {
+      window.removeEventListener('click', closeMenu);
+      window.removeEventListener('scroll', closeMenu, true);
+    };
+  }, [contextMenu]);
 
   const selectBook = useCallback(async (selectedBook: Book) => {
+    const requestId = ++selectionRequestRef.current;
     setError(null);
     setBook(selectedBook);
     setChapters([]);
@@ -594,15 +1021,8 @@ export default function App() {
 
     let savedPosition: ReadingPosition | null = null;
     try {
-      const saved = user
-        ? localStorage.getItem(readerPositionKey(user.id, selectedBook.id))
-        : null;
-      if (saved) {
-        const parsed = JSON.parse(saved) as ReadingPosition;
-        if (typeof parsed.chapterId === 'string' && typeof parsed.scrollTop === 'number') {
-          savedPosition = parsed;
-        }
-      }
+      const lastChapterId = user ? readLastChapter(user.id, selectedBook.id) : null;
+      savedPosition = lastChapterId ? { chapterId: lastChapterId, scrollTop: 0 } : null;
     } catch {
       savedPosition = null;
     }
@@ -616,19 +1036,32 @@ export default function App() {
               supabase.storage.from('books').getPublicUrl(selectedBook.file_path).data.publicUrl,
               selectedBook.id,
             )
+          : selectedBook.file_type === 'pdf' && selectedBook.file_path
+            ? await extractPdfChapters(
+                supabase.storage.from('books').getPublicUrl(selectedBook.file_path).data.publicUrl,
+                selectedBook.id,
+              )
           : selectedBook.file_path
             ? []
             : await loadStoredChapters(selectedBook.id);
+          if (requestId !== selectionRequestRef.current) return;
       setChapters(loadedChapters);
       const savedChapterIndex = loadedChapters.findIndex(
         (chapter) => chapter.id === savedPosition?.chapterId,
       );
+      if (savedChapterIndex >= 0 && user) {
+        const chapterPosition = readChapterPosition(user.id, loadedChapters[savedChapterIndex]);
+        initialPositionRef.current = chapterPosition || { chapterId: loadedChapters[savedChapterIndex].id, scrollTop: 0 };
+      } else {
+        initialPositionRef.current = null;
+      }
       setCurrentChapterIndex(savedChapterIndex >= 0 ? savedChapterIndex : 0);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not read the book.');
+      if (requestId !== selectionRequestRef.current) return;
+      setError(err instanceof Error ? err.message : 'Không thể đọc sách.');
       setCurrentChapterIndex(0);
     } finally {
-      setLoading(false);
+      if (requestId === selectionRequestRef.current) setLoading(false);
     }
   }, [user]);
 
@@ -642,7 +1075,7 @@ export default function App() {
       return (extension !== 'pdf' && extension !== 'epub') || file.size > 100 * 1024 * 1024;
     });
     if (invalidFile) {
-      setError(`${invalidFile.name}: only PDF/EPUB files under 100 MB are supported.`);
+      setError(`${invalidFile.name}: chỉ hỗ trợ PDF/EPUB dưới 100 MB.`);
       return;
     }
 
@@ -651,7 +1084,7 @@ export default function App() {
     try {
       const uploadedBooks = await Promise.all(files.map(async (file) => {
         const extension = file.name.split('.').pop()?.toLowerCase() as 'pdf' | 'epub';
-        if (!user) throw new Error('Please sign in before uploading books.');
+        if (!user) throw new Error('Vui lòng đăng nhập trước khi tải sách lên.');
         const filePath = `${user.id}/${crypto.randomUUID()}.${extension}`;
         const { error: uploadError } = await supabase.storage.from('books').upload(filePath, file, {
           contentType: file.type || (extension === 'pdf' ? 'application/pdf' : 'application/epub+zip'),
@@ -659,10 +1092,10 @@ export default function App() {
         });
         if (uploadError) throw uploadError;
 
-        const fileLabel = file.name.replace(/\.(pdf|epub)$/i, '').trim() || 'Untitled book';
+        const fileLabel = file.name.replace(/\.(pdf|epub)$/i, '').trim() || 'Sách chưa đặt tên';
         const [titlePart, ...authorParts] = fileLabel.split(/\s+-\s+/);
         const title = titlePart.trim() || fileLabel;
-        const author = authorParts.join(' - ').trim() || 'Unknown author';
+        const author = authorParts.join(' - ').trim() || 'Không rõ tác giả';
         const { data: newBook, error: insertError } = await supabase
           .from('books')
             .insert({
@@ -683,33 +1116,30 @@ export default function App() {
       setBooks((currentBooks) => sortBooksByTitle([...normalizedNewBooks, ...currentBooks]));
       await selectBook(normalizedNewBooks[0]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not upload the book.');
+      setError(err instanceof Error ? err.message : 'Không thể tải sách lên.');
     } finally {
       setLoading(false);
     }
   }, [isAdmin, selectBook, user]);
 
-  const getBookUrl = useCallback((selectedBook: Book) => {
-    if (!selectedBook.file_path) return null;
-    return supabase.storage.from('books').getPublicUrl(selectedBook.file_path).data.publicUrl;
-  }, []);
-
   const renameShelf = useCallback((shelfKey: string, currentName: string) => {
-    const nextName = window.prompt('Tên danh mục mới:', currentName);
-    if (nextName === null) return;
-    const trimmedName = nextName.trim();
-    setShelfRenames((current) => {
-      const updated = { ...current };
-      if (trimmedName) updated[shelfKey] = trimmedName;
-      else delete updated[shelfKey];
-      return updated;
-    });
+    setRenameDialog({ type: 'shelf', shelfKey, value: currentName });
   }, []);
 
   const shelves = books.reduce<Map<string, { name: string; books: Book[] }>>((groups, libraryBook) => {
     const baseShelfName = getShelfName(libraryBook);
-    const shelfKey = baseShelfName.toLocaleLowerCase('vi');
-    const shelfName = shelfRenames[shelfKey] || baseShelfName;
+    const matchingShelf = Array.from(groups.entries()).find(([, shelf]) => {
+      const firstBook = shelf.books[0];
+      if (!firstBook || firstBook.author !== libraryBook.author) return false;
+      const existingName = getShelfName(firstBook);
+      const currentName = baseShelfName.toLocaleLowerCase('vi');
+      const previousName = existingName.toLocaleLowerCase('vi');
+      return currentName === previousName
+        || currentName.startsWith(`${previousName} `)
+        || previousName.startsWith(`${currentName} `);
+    });
+    const shelfKey = matchingShelf?.[0] || baseShelfName.toLocaleLowerCase('vi');
+    const shelfName = shelfRenames[shelfKey] || matchingShelf?.[1].name || baseShelfName;
     const shelf = groups.get(shelfKey) || { name: shelfName, books: [] };
     shelf.books.push(libraryBook);
     groups.set(shelfKey, shelf);
@@ -719,13 +1149,28 @@ export default function App() {
     left[1].name.localeCompare(right[1].name, 'vi', { sensitivity: 'base' }),
   );
   const continueBooks = books.filter((libraryBook) =>
-    Boolean(localStorage.getItem(readerPositionKey(user?.id || '', libraryBook.id))),
+    Boolean(user && readLastChapter(user.id, libraryBook.id)),
   );
   const featuredBook = books.find((libraryBook) =>
     /bạch\s*dạ\s*hành|bach\s*da\s*hanh/i.test(libraryBook.title),
   );
   const continueReadingBooks = continueBooks.length > 0 ? continueBooks : featuredBook ? [featuredBook] : [];
   const selectedShelf = sortedShelves.find(([shelfKey]) => shelfKey === selectedShelfKey)?.[1];
+  const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase('vi');
+  const searchResults = normalizedSearchQuery
+    ? books.filter((libraryBook) => [
+      libraryBook.title,
+      libraryBook.author,
+      getShelfName(libraryBook),
+    ].some((value) => value.toLocaleLowerCase('vi').includes(normalizedSearchQuery)))
+    : [];
+  const submittedSearchResults = submittedSearchQuery
+    ? books.filter((libraryBook) => [
+      libraryBook.title,
+      libraryBook.author,
+      getShelfName(libraryBook),
+    ].some((value) => value.toLocaleLowerCase('vi').includes(submittedSearchQuery)))
+    : [];
 
   const openBook = useCallback(async (selectedBook: Book) => {
     await selectBook(selectedBook);
@@ -733,7 +1178,7 @@ export default function App() {
   }, [selectBook]);
 
   const handleDelete = useCallback(async (bookToDelete: Book) => {
-    if (!window.confirm(`Delete "${bookToDelete.title}"?`)) return;
+    if (!window.confirm(`Xóa "${bookToDelete.title}"?`)) return;
 
     setLoading(true);
     setError(null);
@@ -762,31 +1207,177 @@ export default function App() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete the book.');
+      setError(err instanceof Error ? err.message : 'Không thể xóa sách.');
     } finally {
       setLoading(false);
     }
   }, [book, books, selectBook]);
 
+  const handleRename = useCallback((bookToRename: Book) => {
+    setRenameDialog({ type: 'book', book: bookToRename, value: bookToRename.title });
+  }, []);
+
+  const submitRename = useCallback(async () => {
+    if (!renameDialog) return;
+    const nextName = renameDialog.value.trim();
+    if (!nextName) {
+      setRenameDialog(null);
+      return;
+    }
+    if (renameDialog.type === 'shelf') {
+      setShelfRenames((current) => ({ ...current, [renameDialog.shelfKey!]: nextName }));
+      setRenameDialog(null);
+      return;
+    }
+    const bookToRename = renameDialog.book!;
+    if (nextName === bookToRename.title) {
+      setRenameDialog(null);
+      return;
+    }
+    const { data, error: updateError } = await supabase
+      .from('books')
+      .update({ title: nextName })
+      .eq('id', bookToRename.id)
+      .select('*')
+      .single();
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    const updatedBook = normalizeBookMetadata(data);
+    setBooks((currentBooks) => currentBooks.map((item) => item.id === updatedBook.id ? updatedBook : item));
+    if (book?.id === updatedBook.id) setBook(updatedBook);
+    setRenameDialog(null);
+  }, [book, renameDialog]);
+
+  const handleDeleteShelf = useCallback(async (shelfName: string, shelfBooks: Book[]) => {
+    if (!window.confirm(`Xóa thư mục "${shelfName}" và ${shelfBooks.length} sách bên trong?`)) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const paths = shelfBooks.map((item) => item.file_path).filter((path): path is string => Boolean(path));
+      if (paths.length > 0) {
+        const { error: storageError } = await supabase.storage.from('books').remove(paths);
+        if (storageError) throw storageError;
+      }
+      const { error: deleteError } = await supabase
+        .from('books')
+        .delete()
+        .in('id', shelfBooks.map((item) => item.id));
+      if (deleteError) throw deleteError;
+      const deletedIds = new Set(shelfBooks.map((item) => item.id));
+      setBooks((currentBooks) => currentBooks.filter((item) => !deletedIds.has(item.id)));
+      if (book && deletedIds.has(book.id)) {
+        setBook(null);
+        setChapters([]);
+        setReaderOpen(false);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Không thể xóa thư mục.');
+    } finally {
+      setLoading(false);
+    }
+  }, [book]);
+
+  const handleCoverUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    const targetBook = coverTarget?.type === 'book'
+      ? books.find((item) => item.id === coverTarget.id)
+      : null;
+    if (!file || !coverTarget || (coverTarget.type === 'book' && !targetBook) || !user) return;
+    if (!file.type.startsWith('image/')) {
+      setError('Ảnh bìa phải là tệp hình ảnh.');
+      return;
+    }
+    let coverFile = file;
+    try {
+      coverFile = await prepareCoverImage(file);
+      if (coverTarget.type === 'shelf') {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result !== 'string' || !user) return;
+          const currentOverrides = JSON.parse(
+            localStorage.getItem(shelfCoverOverrideKey(user.id)) || '{}',
+          ) as Record<string, string>;
+          const nextOverrides = { ...currentOverrides, [coverTarget.id]: reader.result };
+          localStorage.setItem(shelfCoverOverrideKey(user.id), JSON.stringify(nextOverrides));
+          setShelfCoverOverrides(nextOverrides);
+        };
+        reader.readAsDataURL(coverFile);
+        return;
+      }
+      const coverPath = `${user.id}/covers/${targetBook!.id}-${crypto.randomUUID()}`;
+      const { error: uploadError } = await supabase.storage.from('books').upload(coverPath, coverFile, {
+        contentType: coverFile.type,
+        upsert: false,
+      });
+      if (uploadError) throw uploadError;
+      const { data, error: updateError } = await supabase
+        .from('books')
+        .update({ cover_path: coverPath })
+        .eq('id', targetBook!.id)
+        .select('*')
+        .single();
+      if (updateError) throw updateError;
+      const updatedBook = normalizeBookMetadata(data);
+      setBooks((currentBooks) => currentBooks.map((item) => item.id === updatedBook.id ? updatedBook : item));
+      setCoverUrls((current) => ({
+        ...current,
+        [updatedBook.id]: supabase.storage.from('books').getPublicUrl(coverPath).data.publicUrl,
+      }));
+    } catch {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const localCoverUrl = typeof reader.result === 'string' ? reader.result : null;
+        if (!localCoverUrl || !user) return;
+        const currentOverrides = JSON.parse(
+          localStorage.getItem(coverOverrideKey(user.id)) || '{}',
+        ) as Record<string, string>;
+        localStorage.setItem(
+          coverOverrideKey(user.id),
+          JSON.stringify({ ...currentOverrides, [targetBook!.id]: localCoverUrl }),
+        );
+        setCoverUrls((current) => ({ ...current, [targetBook!.id]: localCoverUrl }));
+      };
+      reader.readAsDataURL(coverFile);
+    } finally {
+      setCoverTarget(null);
+    }
+  }, [books, coverTarget, user]);
+
   const currentChapter = chapters[currentChapterIndex];
 
   const goToChapter = useCallback((index: number) => {
+    const targetChapter = chapters[index];
+    if (!targetChapter) return;
+    suppressScrollSaveRef.current = true;
+    if (contentRef.current) contentRef.current.scrollTop = 0;
+    if (targetChapter && user) {
+      try {
+        const saved = localStorage.getItem(
+          readerChapterPositionKey(user.id, targetChapter.book_id, targetChapter.id),
+        );
+        const parsed = saved ? JSON.parse(saved) as { scrollTop?: unknown } : null;
+        initialPositionRef.current = {
+          chapterId: targetChapter.id,
+          scrollTop: typeof parsed?.scrollTop === 'number' ? parsed.scrollTop : 0,
+        };
+      } catch {
+        initialPositionRef.current = { chapterId: targetChapter.id, scrollTop: 0 };
+      }
+    }
     setCurrentChapterIndex(index);
     setSidebarOpen(false);
-    if (contentRef.current) {
-      contentRef.current.scrollTop = 0;
-    }
-  }, []);
+  }, [chapters, user]);
 
   const goPrev = useCallback(() => {
-    setCurrentChapterIndex((i) => Math.max(0, i - 1));
-    if (contentRef.current) contentRef.current.scrollTop = 0;
-  }, []);
+    goToChapter(Math.max(0, currentChapterIndex - 1));
+  }, [currentChapterIndex, goToChapter]);
 
   const goNext = useCallback(() => {
-    setCurrentChapterIndex((i) => Math.min(chapters.length - 1, i + 1));
-    if (contentRef.current) contentRef.current.scrollTop = 0;
-  }, [chapters.length]);
+    goToChapter(Math.min(chapters.length - 1, currentChapterIndex + 1));
+  }, [chapters.length, currentChapterIndex, goToChapter]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -801,10 +1392,14 @@ export default function App() {
     const el = contentRef.current;
     if (!el) return;
 
-    if (currentChapter && user) {
+    if (currentChapter && user && !suppressScrollSaveRef.current) {
       localStorage.setItem(
         readerPositionKey(user.id, currentChapter.book_id),
-        JSON.stringify({ chapterId: currentChapter.id, scrollTop: el.scrollTop }),
+        JSON.stringify({ chapterId: currentChapter.id }),
+      );
+      localStorage.setItem(
+        readerChapterPositionKey(user.id, currentChapter.book_id, currentChapter.id),
+        JSON.stringify({ scrollTop: el.scrollTop }),
       );
     }
 
@@ -816,17 +1411,30 @@ export default function App() {
     }
   }, [currentChapter, user]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!currentChapter || !contentRef.current) return;
 
-    const frame = requestAnimationFrame(() => {
-      const savedPosition = initialPositionRef.current;
-      contentRef.current!.scrollTop =
-        savedPosition?.chapterId === currentChapter.id ? savedPosition.scrollTop : 0;
+    suppressScrollSaveRef.current = true;
+    let frame = 0;
+    let attempts = 0;
+    const savedPosition = initialPositionRef.current;
+    const targetScrollTop = savedPosition?.chapterId === currentChapter.id
+      ? savedPosition.scrollTop
+      : 0;
+    const restore = () => {
+      if (!contentRef.current) return;
+      contentRef.current.scrollTop = targetScrollTop;
+      attempts += 1;
+      if (attempts < 8) {
+        frame = requestAnimationFrame(restore);
+        return;
+      }
       initialPositionRef.current = null;
+      suppressScrollSaveRef.current = false;
       handleScroll();
-    });
+    };
 
+    frame = requestAnimationFrame(restore);
     return () => cancelAnimationFrame(frame);
   }, [currentChapter, handleScroll]);
 
@@ -855,7 +1463,7 @@ export default function App() {
       <div className={`min-h-screen ${bg} flex items-center justify-center`}>
         <div className="flex flex-col items-center gap-4">
           <BookOpen className={`w-10 h-10 ${textSecondary} animate-pulse`} />
-          <p className={textSecondary}>Loading book...</p>
+          <p className={textSecondary}>Đang tải sách...</p>
         </div>
       </div>
     );
@@ -890,8 +1498,8 @@ export default function App() {
             </button>
           </div>
         </header>
-        <main className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
-          <div className="mb-8 flex items-end justify-between border-b border-stone-200 pb-4">
+        <main className="w-full px-5 py-8 sm:px-8 lg:px-12">
+          <div className="relative mb-8 flex items-end justify-between border-b border-stone-200 pb-4">
             <div>
               <div className="flex items-center gap-2">
                 {selectedShelf && (
@@ -923,13 +1531,79 @@ export default function App() {
                 </div>
               </div>
             </div>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-stone-700"
-            >
-              <Upload className="h-4 w-4" />
-              Thêm sách
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="relative w-[min(24rem,calc(100vw-2rem))]">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+                <input
+                  value={searchQuery}
+                  onChange={(event) => {
+                    setSearchQuery(event.target.value);
+                    setSearchSuggestionsOpen(true);
+                  }}
+                  onFocus={() => setSearchSuggestionsOpen(true)}
+                  onBlur={(event) => {
+                    const searchBox = event.currentTarget.parentElement;
+                    const nextTarget = event.relatedTarget;
+                    if (!searchBox || !(nextTarget instanceof Node) || !searchBox.contains(nextTarget)) {
+                      setSearchSuggestionsOpen(false);
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      setSubmittedSearchQuery(normalizedSearchQuery);
+                      setSearchSuggestionsOpen(false);
+                    }
+                  }}
+                  placeholder="Tìm sách..."
+                  aria-label="Tìm sách"
+                  className="w-full rounded-lg border border-stone-300 bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-stone-500"
+                />
+                {normalizedSearchQuery && searchSuggestionsOpen && (
+                  <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 max-h-[28rem] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-stone-200 bg-white shadow-xl">
+                    {searchResults.length > 0 ? searchResults.map((libraryBook) => (
+                      <button
+                        key={libraryBook.id}
+                        onClick={() => {
+                          setSearchQuery('');
+                          setSearchSuggestionsOpen(false);
+                          void openBook(libraryBook);
+                        }}
+                        className="flex w-full items-center gap-3 border-b border-stone-100 px-3 py-3 text-left last:border-b-0 hover:bg-stone-100"
+                      >
+                        {coverUrls[libraryBook.id] ? (
+                          <img
+                            src={coverUrls[libraryBook.id]}
+                            alt=""
+                            className="h-16 w-12 shrink-0 rounded object-cover"
+                          />
+                        ) : (
+                          <div
+                            className="flex h-16 w-12 shrink-0 items-center justify-center rounded"
+                            style={{ backgroundColor: libraryBook.cover_color }}
+                          >
+                            <BookOpen className="h-5 w-5 text-white/90" />
+                          </div>
+                        )}
+                        <span className="min-w-0 leading-tight">
+                          <span className="block truncate text-sm font-semibold text-stone-800">{libraryBook.title}</span>
+                          <span className="mt-1 block truncate text-xs text-stone-500">{libraryBook.author}</span>
+                        </span>
+                      </button>
+                    )) : (
+                      <p className="px-3 py-3 text-sm text-stone-500">Không tìm thấy sách phù hợp.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-stone-700"
+              >
+                <Upload className="h-4 w-4" />
+                Thêm sách
+              </button>
+            </div>
             <input
               ref={fileInputRef}
               type="file"
@@ -938,8 +1612,135 @@ export default function App() {
               onChange={handleUpload}
               className="hidden"
             />
+            <input
+              ref={coverInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleCoverUpload}
+              className="hidden"
+            />
           </div>
-          {!selectedShelf && continueReadingBooks.length > 0 && (
+          {contextMenu && (
+            <div
+              className="fixed z-50 w-52 overflow-hidden rounded-lg border border-stone-200 bg-white py-1 shadow-xl"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {contextMenu.type === 'book' && contextMenu.book ? (
+                <>
+                  <button
+                    className="w-full px-4 py-2.5 text-left text-sm text-stone-700 hover:bg-stone-100"
+                    onClick={() => {
+                      const selectedBook = contextMenu.book!;
+                      setContextMenu(null);
+                      void handleRename(selectedBook);
+                    }}
+                  >
+                    Đổi tên sách
+                  </button>
+                  <button
+                    className="w-full px-4 py-2.5 text-left text-sm text-stone-700 hover:bg-stone-100"
+                    onClick={() => {
+                      setCoverTarget({ type: 'book', id: contextMenu.book!.id });
+                      setContextMenu(null);
+                      requestAnimationFrame(() => coverInputRef.current?.click());
+                    }}
+                  >
+                    Đổi ảnh bìa
+                  </button>
+                  <button
+                    className="w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
+                    onClick={() => {
+                      const selectedBook = contextMenu.book!;
+                      setContextMenu(null);
+                      void handleDelete(selectedBook);
+                    }}
+                  >
+                    Xóa sách
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="w-full px-4 py-2.5 text-left text-sm text-stone-700 hover:bg-stone-100"
+                    onClick={() => {
+                      renameShelf(contextMenu.shelfKey!, contextMenu.shelfName!);
+                      setContextMenu(null);
+                    }}
+                  >
+                    Đổi tên thư mục
+                  </button>
+                  <button
+                    className="w-full px-4 py-2.5 text-left text-sm text-stone-700 hover:bg-stone-100"
+                    onClick={() => {
+                      setCoverTarget({ type: 'shelf', id: contextMenu.shelfKey! });
+                      setContextMenu(null);
+                      requestAnimationFrame(() => coverInputRef.current?.click());
+                    }}
+                  >
+                    Đổi ảnh thư mục
+                  </button>
+                  <button
+                    className="w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
+                    onClick={() => {
+                      const shelfName = contextMenu.shelfName!;
+                      const shelfBooks = contextMenu.shelfBooks!;
+                      setContextMenu(null);
+                      void handleDeleteShelf(shelfName, shelfBooks);
+                    }}
+                  >
+                    Xóa thư mục và sách
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          {renameDialog && (
+            <RenameDialog
+              label={renameDialog.type === 'book' ? 'Đổi tên sách' : 'Đổi tên thư mục'}
+              value={renameDialog.value}
+              onChange={(value) => setRenameDialog((current) => current ? { ...current, value } : current)}
+              onCancel={() => setRenameDialog(null)}
+              onSubmit={() => void submitRename()}
+            />
+          )}
+          {submittedSearchQuery ? (
+            <section>
+              <div className="mb-6 flex items-end justify-between border-b border-stone-200 pb-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Tìm kiếm</p>
+                  <h2 className="mt-1 text-2xl font-bold">Kết quả cho “{submittedSearchQuery}”</h2>
+                </div>
+                <button
+                  onClick={() => {
+                    setSubmittedSearchQuery('');
+                    setSearchQuery('');
+                  }}
+                  className="rounded-lg px-3 py-2 text-sm text-stone-600 hover:bg-stone-100"
+                >
+                  Về kho sách
+                </button>
+              </div>
+              {submittedSearchResults.length > 0 ? (
+                <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5">
+                  {submittedSearchResults.map((libraryBook) => (
+                    <LibraryBookCard
+                      key={libraryBook.id}
+                      book={libraryBook}
+                      coverUrl={coverUrls[libraryBook.id]}
+                      onOpen={() => void openBook(libraryBook)}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        setContextMenu({ type: 'book', book: libraryBook, x: event.clientX, y: event.clientY });
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="py-12 text-center text-stone-500">Không tìm thấy sách phù hợp.</p>
+              )}
+            </section>
+          ) : !selectedShelf && continueReadingBooks.length > 0 && (
             <section className="mb-10">
               <div className="mb-4 border-b border-stone-200 pb-3">
                 <h2 className="text-xl font-bold">Tiếp tục đọc</h2>
@@ -951,12 +1752,16 @@ export default function App() {
                     book={libraryBook}
                     coverUrl={coverUrls[libraryBook.id]}
                     onOpen={() => void openBook(libraryBook)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      setContextMenu({ type: 'book', book: libraryBook, x: event.clientX, y: event.clientY });
+                    }}
                   />
                 ))}
               </div>
             </section>
           )}
-          <div>
+          {!submittedSearchQuery && <div>
             {selectedShelf ? (
               <section>
                 <div className="mb-6 flex items-center gap-2 text-sm text-stone-500">
@@ -970,6 +1775,10 @@ export default function App() {
                       book={libraryBook}
                       coverUrl={coverUrls[libraryBook.id]}
                       onOpen={() => void openBook(libraryBook)}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        setContextMenu({ type: 'book', book: libraryBook, x: event.clientX, y: event.clientY });
+                      }}
                     />
                   ))}
                 </div>
@@ -980,22 +1789,36 @@ export default function App() {
                   <h2 className="text-2xl font-bold">Kho sách</h2>
                 </div>
                 <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5">
-                  {sortedShelves.map(([shelfKey, shelf]) => (
+                  {sortedShelves.map(([shelfKey, shelf]) => {
+                    const coverBook = shelf.books.find((shelfBook) => coverUrls[shelfBook.id]) || shelf.books[0];
+                    const shelfCoverUrl = shelfCoverOverrides[shelfKey] || coverUrls[coverBook.id];
+                    return (
                     <button
                       key={shelfKey}
                       onClick={() => setSelectedShelfKey(shelfKey)}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        setContextMenu({
+                          type: 'shelf',
+                          shelfKey,
+                          shelfName: shelf.name,
+                          shelfBooks: shelf.books,
+                          x: event.clientX,
+                          y: event.clientY,
+                        });
+                      }}
                       className="group text-left"
                     >
-                      {coverUrls[shelf.books[0].id] ? (
+                      {shelfCoverUrl ? (
                         <img
-                          src={coverUrls[shelf.books[0].id]}
+                          src={shelfCoverUrl}
                           alt={`Ảnh bìa đại diện cho ${shelf.name}`}
                           className="aspect-[3/4] w-full rounded-xl object-cover shadow-sm transition-transform group-hover:-translate-y-1"
                         />
                       ) : (
                         <div
                           className="flex aspect-[3/4] items-end rounded-xl p-4 shadow-sm transition-transform group-hover:-translate-y-1"
-                          style={{ backgroundColor: shelf.books[0].cover_color }}
+                          style={{ backgroundColor: coverBook.cover_color }}
                         >
                           <Folder className="h-8 w-8 text-white/90" />
                         </div>
@@ -1003,11 +1826,12 @@ export default function App() {
                       <h3 className="mt-3 truncate text-base font-semibold">{shelf.name}</h3>
                       <p className="mt-1 text-sm text-stone-500">{shelf.books.length} sách</p>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             )}
-            </div>
+            </div>}
         </main>
       </div>
     );
@@ -1019,15 +1843,15 @@ export default function App() {
         <div className="flex max-w-sm flex-col items-center gap-4 text-center">
           <Library className={`h-10 w-10 ${textSecondary}`} />
           <div>
-            <h1 className={`text-xl font-semibold ${textPrimary}`}>Your library is empty</h1>
-            <p className={`mt-2 text-sm ${textSecondary}`}>Add a PDF or EPUB to start reading.</p>
+            <h1 className={`text-xl font-semibold ${textPrimary}`}>Thư viện đang trống</h1>
+            <p className={`mt-2 text-sm ${textSecondary}`}>Thêm PDF hoặc EPUB để bắt đầu đọc.</p>
           </div>
           <button
             onClick={() => fileInputRef.current?.click()}
             className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium ${activeChapter} transition-colors`}
           >
             <Upload className="h-4 w-4" />
-            Add PDF / EPUB
+            Thêm PDF / EPUB
           </button>
           <input
             ref={fileInputRef}
@@ -1045,13 +1869,22 @@ export default function App() {
   if (!book.file_path && chapters.length === 0) {
     return (
       <div className={`min-h-screen ${bg} flex items-center justify-center`}>
-        <p className={`text-lg ${textPrimary}`}>No chapters available.</p>
+        <p className={`text-lg ${textPrimary}`}>Chưa có chương để đọc.</p>
       </div>
     );
   }
 
   return (
     <div className={`min-h-screen ${bg} flex flex-col transition-colors duration-300`}>
+      {renameDialog && (
+        <RenameDialog
+          label={renameDialog.type === 'book' ? 'Đổi tên sách' : 'Đổi tên thư mục'}
+          value={renameDialog.value}
+          onChange={(value) => setRenameDialog((current) => current ? { ...current, value } : current)}
+          onCancel={() => setRenameDialog(null)}
+          onSubmit={() => void submitRename()}
+        />
+      )}
       {/* Header */}
       <header
         className={`fixed top-0 left-0 right-0 z-30 ${headerBg} backdrop-blur-md border-b ${border} transition-colors duration-300`}
@@ -1061,7 +1894,7 @@ export default function App() {
             <button
               onClick={() => setSidebarOpen(true)}
               className={`p-2 rounded-lg ${hover} transition-colors`}
-              aria-label="Open chapter list"
+              aria-label="Mở danh sách chương"
             >
               <List className={`w-5 h-5 ${textPrimary}`} />
             </button>
@@ -1071,7 +1904,7 @@ export default function App() {
                 setReaderOpen(false);
               }}
               className={`p-2 rounded-lg ${hover} transition-colors`}
-              aria-label="Back to library"
+              aria-label="Quay lại thư viện"
               title="Thư viện"
             >
               <Library className={`w-5 h-5 ${textPrimary}`} />
@@ -1088,14 +1921,14 @@ export default function App() {
             <button
               onClick={() => setSettingsOpen(!settingsOpen)}
               className={`p-2 rounded-lg ${hover} transition-colors`}
-              aria-label="Reading settings"
+              aria-label="Cài đặt đọc sách"
             >
               <Type className={`w-5 h-5 ${textPrimary}`} />
             </button>
             <button
               onClick={() => setTheme(isDark ? 'light' : 'dark')}
               className={`p-2 rounded-lg ${hover} transition-colors`}
-              aria-label="Toggle dark mode"
+              aria-label="Đổi chế độ sáng tối"
             >
               {isDark ? (
                 <Sun className="w-5 h-5 text-amber-400" />
@@ -1106,8 +1939,8 @@ export default function App() {
             <button
               onClick={() => void supabase.auth.signOut()}
               className={`p-2 rounded-lg ${hover} transition-colors`}
-              aria-label="Sign out"
-              title={user.email || 'Sign out'}
+              aria-label="Đăng xuất"
+              title={user.email || 'Đăng xuất'}
             >
               <LogOut className={`w-5 h-5 ${textPrimary}`} />
             </button>
@@ -1120,7 +1953,7 @@ export default function App() {
             className={`absolute right-2 top-12 ${sidebarBg} border ${border} rounded-xl shadow-lg p-4 w-64 fade-in`}
           >
             <p className={`text-xs font-semibold uppercase tracking-wide ${textSecondary} mb-3`}>
-              Font Size
+              Cỡ chữ
             </p>
             <div className="flex items-center gap-2 mb-4">
               <button
@@ -1155,7 +1988,7 @@ export default function App() {
               </button>
             </div>
             <p className={`text-xs font-semibold uppercase tracking-wide ${textSecondary} mb-2`}>
-              Theme
+              Giao diện
             </p>
             <div className="flex items-center gap-2">
               <button
@@ -1164,7 +1997,7 @@ export default function App() {
                   !isDark ? activeChapter : `${hover} ${textPrimary}`
                 }`}
               >
-                <Sun className="w-4 h-4" /> Light
+                <Sun className="w-4 h-4" /> Sáng
               </button>
               <button
                 onClick={() => setTheme('dark')}
@@ -1172,7 +2005,7 @@ export default function App() {
                   isDark ? activeChapter : `${hover} ${textPrimary}`
                 }`}
               >
-                <Moon className="w-4 h-4" /> Dark
+                <Moon className="w-4 h-4" /> Tối
               </button>
             </div>
           </div>
@@ -1194,7 +2027,7 @@ export default function App() {
         }`}
       >
         <div className={`flex items-center justify-between px-5 h-14 border-b ${border}`}>
-          <h2 className={`text-sm font-semibold ${textPrimary}`}>Library</h2>
+          <h2 className={`text-sm font-semibold ${textPrimary}`}>Thư viện</h2>
           <button
             onClick={() => setSidebarOpen(false)}
             className={`p-1.5 rounded-lg ${hover} transition-colors`}
@@ -1210,7 +2043,7 @@ export default function App() {
               className={`w-full mb-4 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium ${activeChapter} transition-colors`}
             >
               <Upload className="w-4 h-4" />
-              Add PDF / EPUB files
+              Thêm tệp PDF / EPUB
             </button>
             <input
               ref={fileInputRef}
@@ -1223,7 +2056,7 @@ export default function App() {
 
             <div className={`mb-4 pb-4 border-b ${border}`}>
               <p className={`text-xs font-semibold uppercase tracking-wide ${textSecondary} mb-2`}>
-                Books
+                Sách
               </p>
               <div className="space-y-2">
                 {sortedShelves.map(([shelfKey, shelf]) => {
@@ -1265,7 +2098,7 @@ export default function App() {
                               <button
                                 onClick={() => void handleDelete(libraryBook)}
                                 className={`shrink-0 rounded-lg p-2 ${hover} transition-colors`}
-                                aria-label={`Delete ${libraryBook.title}`}
+                                aria-label={`Xóa ${libraryBook.title}`}
                               >
                                 <Trash2 className={`h-4 w-4 ${textSecondary}`} />
                               </button>
@@ -1288,7 +2121,7 @@ export default function App() {
                 </p>
               )}
             </div>
-            {book.file_type !== 'pdf' && (
+            {chapters.length > 0 && (
               <ul className="space-y-1">
                 {chapters.map((ch, i) => (
                   <li key={ch.id}>
@@ -1315,14 +2148,26 @@ export default function App() {
       <main
         ref={contentRef}
         onScroll={handleScroll}
-        className={`flex-1 overflow-y-auto scrollbar-thin pt-12 pb-16 transition-colors duration-300`}
+        onClick={(event) => {
+          if (book.file_type === 'pdf') return;
+          const target = event.target;
+          if (target instanceof Element && target.closest('button, a, input, select, textarea')) return;
+          const bounds = event.currentTarget.getBoundingClientRect();
+          if (event.clientX < bounds.left + bounds.width * 0.35) goPrev();
+          if (event.clientX > bounds.left + bounds.width * 0.65) goNext();
+        }}
+        className={`flex-1 overflow-y-auto scrollbar-thin pt-12 transition-colors duration-300 ${book.file_type === 'pdf' ? 'pb-0' : 'pb-16'}`}
       >
-        <div className="max-w-4xl mx-auto px-6 sm:px-10 py-8 sm:py-10">
-          {book.file_type === 'pdf' && book.file_path && getBookUrl(book) ? (
-            <iframe
-              title={book.title}
-              src={getBookUrl(book) ?? undefined}
-              className="h-[calc(100vh-7rem)] min-h-[32rem] w-full border-0"
+        <div className="w-full max-w-none px-5 py-8 sm:px-10 sm:py-10 lg:px-16">
+          {book.file_type === 'pdf' && currentChapter?.pdf_url ? (
+            <PdfReader
+              url={currentChapter.pdf_url}
+              fileName={book.title}
+              positionKey={readerPositionKey(user.id, book.id)}
+              pageNumber={currentChapter.pdf_page_number || currentChapterIndex + 1}
+              pageCount={chapters.length}
+              onPageChange={(page) => goToChapter(page - 1)}
+              isDark={isDark}
             />
           ) : currentChapter ? (
             <article key={currentChapter.id} className="fade-in">
@@ -1336,7 +2181,7 @@ export default function App() {
               </header>
 
               <div
-                className={`reading-content ${textPrimary}`}
+                className={`reading-content reading-content-full ${textPrimary}`}
                 style={{ fontSize: fontSizes[fontSize] }}
               >
                 {currentChapter.content_html ? (
@@ -1358,7 +2203,7 @@ export default function App() {
                   }`}
                 >
                   <ChevronLeft className="w-5 h-5" />
-                  <span className="hidden sm:inline">Previous</span>
+                  <span className="hidden sm:inline">Trang trước</span>
                 </button>
 
                 <span className={`text-xs ${textSecondary}`}>
@@ -1374,7 +2219,7 @@ export default function App() {
                       : `${hover} ${textPrimary}`
                   }`}
                 >
-                  <span className="hidden sm:inline">Next</span>
+                  <span className="hidden sm:inline">Trang sau</span>
                   <ChevronRight className="w-5 h-5" />
                 </button>
               </nav>
@@ -1384,15 +2229,14 @@ export default function App() {
       </main>
 
       {/* Reading progress bar */}
-      <div className="fixed bottom-0 left-0 right-0 h-0.5 z-20">
-        <div
-          className="h-full transition-all duration-150"
-          style={{
-            width: `${scrollProgress}%`,
-            backgroundColor: book.cover_color,
-          }}
-        />
-      </div>
+      {book.file_type !== 'pdf' && (
+        <div className="fixed bottom-0 left-0 right-0 z-20 h-0.5">
+          <div
+            className="h-full bg-stone-400 transition-all duration-150 dark:bg-stone-500"
+            style={{ width: `${scrollProgress}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 }

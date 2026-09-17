@@ -11,6 +11,7 @@ export type Book = {
   author: string;
   description: string | null;
   cover_color: string;
+  cover_path: string | null;
   file_path: string | null;
   file_type: 'pdf' | 'epub' | null;
   owner_id: string | null;
@@ -26,4 +27,6 @@ export type Chapter = {
   chapter_number: number;
   created_at: string;
   content_html?: string;
+  pdf_url?: string;
+  pdf_page_number?: number;
 };
