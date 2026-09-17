@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #f8f9fa;
+  }
+}
+
+@layer utilities {
+  .reading-content {
+    line-height: 1.9;
+    font-size: 1.125rem;
+    max-width: 52rem;
+    margin: 0 auto;
+  }
+
+  .reading-content p {
+    margin-bottom: 1.45rem;
+    text-indent: 0;
+  }
+
+  .reading-content p:first-child {
+    text-indent: 0;
+  }
+
+  .reading-content p:first-child::first-letter {
+    font-size: inherit;
+    line-height: inherit;
+    float: none;
+    margin: 0;
+    font-weight: inherit;
+  }
+
+  .reading-content .epub-file {
+    display: block;
+  }
+
+  .reading-content img {
+    display: block;
+    width: auto !important;
+    max-width: 100%;
+    height: auto;
+    margin: 1.5rem auto;
+  }
+
+  .reading-content svg,
+  .reading-content video {
+    display: block;
+    width: auto !important;
+    max-width: 100%;
+    height: auto !important;
+    max-height: 80vh;
+    margin: 1.5rem auto;
+  }
+
+  .reading-content h1,
+  .reading-content h2,
+  .reading-content h3,
+  .reading-content h4 {
+    margin: 1.5rem 0 1rem;
+    font-weight: 700;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(120, 120, 120, 0.3) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgba(120, 120, 120, 0.3);
+    border-radius: 3px;
+  }
+
+  .fade-in {
+    animation: fadeIn 0.4s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .slide-in {
+    animation: slideIn 0.3s ease-out;
+  }
+
+  @keyframes slideIn {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+}
