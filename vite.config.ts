@@ -5,7 +5,7 @@ import { fileURLToPath, URL } from 'node:url';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: process.env.GITHUB_ACTIONS ? '/reading-web/' : '/',
+  base: process.env.VITE_BASE_PATH || (process.env.GITHUB_ACTIONS ? '/reading-web/' : '/'),
   cacheDir: 'node_modules/.vite-reader',
   plugins: [react()],
   resolve: {
