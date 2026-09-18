@@ -34,12 +34,27 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url,
 ).toString();
+const pdfWasmUrl = `${import.meta.env.BASE_URL}pdfjs-wasm/`;
 
 type Theme = 'light' | 'dark';
 type FontSize = 'small' | 'medium' | 'large';
 type ReadingPosition = {
   chapterId: string;
   scrollTop: number;
+};
+
+type CloudReadingProgress = ReadingPosition & {
+  updatedAt: number;
+  completed: boolean;
+};
+
+type ReadingProgressPayload = {
+  user_id: string;
+  book_id: string;
+  chapter_id: string;
+  scroll_top: number;
+  completed: boolean;
+  updated_at: string;
 };
 
 function readerPositionKey(userId: string, bookId: string) {
@@ -121,6 +136,12 @@ async function prepareCoverImage(file: File) {
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.95));
   if (!blob) throw new Error('Không thể tạo ảnh bìa.');
   return new File([blob], 'cover.jpg', { type: 'image/jpeg' });
+}
+
+async function getBookFileUrl(path: string) {
+  const { data, error } = await supabase.storage.from('books').createSignedUrl(path, 3600);
+  if (error || !data?.signedUrl) throw error || new Error('Không thể tạo URL đọc tệp.');
+  return data.signedUrl;
 }
 
 const fontSizes: Record<FontSize, string> = {
@@ -438,7 +459,7 @@ function PdfReader({
 
   useEffect(() => {
     let cancelled = false;
-    const loadingTask = pdfjsLib.getDocument({ url });
+    const loadingTask = pdfjsLib.getDocument({ url, wasmUrl: pdfWasmUrl });
     void loadingTask.promise.then((document) => {
       if (!cancelled) setPdf(document);
     }).catch(() => {
@@ -798,7 +819,7 @@ function escapeHtml(text: string) {
 }
 
 async function extractPdfChapters(url: string, bookId: string): Promise<Chapter[]> {
-  const loadingTask = pdfjsLib.getDocument({ url });
+  const loadingTask = pdfjsLib.getDocument({ url, wasmUrl: pdfWasmUrl });
   const pdf = await loadingTask.promise;
   const chapters: Chapter[] = [];
 
@@ -895,13 +916,17 @@ async function extractEpubCoverUrl(url: string) {
 }
 
 async function extractPdfCoverUrl(url: string) {
-  const loadingTask = pdfjsLib.getDocument({ url });
+  const loadingTask = pdfjsLib.getDocument({ url, wasmUrl: pdfWasmUrl });
   const pdf = await loadingTask.promise;
-  const page = await pdf.getPage(1);
-  const canvas = document.createElement('canvas');
-  await renderPdfCanvas(page, canvas, 1.5);
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.86));
-  return blob ? URL.createObjectURL(blob) : null;
+  try {
+    const page = await pdf.getPage(1);
+    const canvas = document.createElement('canvas');
+    await renderPdfCanvas(page, canvas, 0.8);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.86));
+    return blob ? URL.createObjectURL(blob) : null;
+  } finally {
+    void loadingTask.destroy();
+  }
 }
 
 export default function App() {
@@ -911,6 +936,7 @@ export default function App() {
   const [selectedShelfKey, setSelectedShelfKey] = useState<string | null>(null);
   const [coverUrls, setCoverUrls] = useState<Record<string, string>>({});
   const [books, setBooks] = useState<Book[]>([]);
+  const [cloudProgress, setCloudProgress] = useState<Record<string, CloudReadingProgress>>({});
   const [book, setBook] = useState<Book | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
@@ -966,6 +992,8 @@ export default function App() {
   const initialPositionRef = useRef<ReadingPosition | null>(null);
   const selectionRequestRef = useRef(0);
   const suppressScrollSaveRef = useRef(false);
+  const progressSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingProgressRef = useRef<ReadingProgressPayload | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -1023,34 +1051,46 @@ export default function App() {
     const localCoverOverrides: Record<string, string> = user
       ? JSON.parse(localStorage.getItem(coverOverrideKey(user.id)) || '{}') as Record<string, string>
       : {};
-    void Promise.all(
-      books
-        .filter((libraryBook) => libraryBook.cover_path || (libraryBook.file_path && (libraryBook.file_type === 'epub' || libraryBook.file_type === 'pdf')))
-        .map(async (libraryBook) => {
+    void (async () => {
+      const entries: [string, string | null][] = [];
+      const coverBooks = books.filter((libraryBook) =>
+        libraryBook.cover_path || (libraryBook.file_path && (libraryBook.file_type === 'epub' || libraryBook.file_type === 'pdf')),
+      );
+      let nextIndex = 0;
+      const loadNextCover = async () => {
+        while (active) {
+          const index = nextIndex;
+          nextIndex += 1;
+          const libraryBook = coverBooks[index];
+          if (!libraryBook) return;
           try {
             const url = libraryBook.cover_path
-              ? supabase.storage.from('books').getPublicUrl(libraryBook.cover_path).data.publicUrl
+              ? await getBookFileUrl(libraryBook.cover_path)
               : libraryBook.file_type === 'pdf'
               ? await extractPdfCoverUrl(
-                supabase.storage.from('books').getPublicUrl(libraryBook.file_path!).data.publicUrl,
+                await getBookFileUrl(libraryBook.file_path!),
               )
               : await extractEpubCoverUrl(
-                supabase.storage.from('books').getPublicUrl(libraryBook.file_path!).data.publicUrl,
+                await getBookFileUrl(libraryBook.file_path!),
               );
             if (url) objectUrls.push(url);
-            return [libraryBook.id, url] as const;
+            entries.push([libraryBook.id, url]);
+            if (active && url) {
+              setCoverUrls((current) => ({ ...current, [libraryBook.id]: url }));
+            }
           } catch {
-            return [libraryBook.id, null] as const;
+            entries.push([libraryBook.id, null]);
           }
-        }),
-    ).then((entries) => {
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(3, coverBooks.length) }, () => loadNextCover()));
       if (active) {
         setCoverUrls({
           ...Object.fromEntries(entries.filter((entry): entry is [string, string] => Boolean(entry[1]))),
           ...localCoverOverrides,
         });
       }
-    });
+    })();
     return () => {
       active = false;
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
@@ -1065,12 +1105,30 @@ export default function App() {
       setReaderOpen(false);
       setSelectedShelfKey(null);
       setBooks([]);
+      setCloudProgress({});
       setBook(null);
       setChapters([]);
       setLoading(false);
       return;
     }
     const currentUserId = userId;
+
+    void supabase
+      .from('reading_progress')
+      .select('book_id, chapter_id, scroll_top, completed, updated_at')
+      .eq('user_id', currentUserId)
+      .then(({ data }) => {
+        const nextProgress: Record<string, CloudReadingProgress> = {};
+        (data || []).forEach((item) => {
+          nextProgress[item.book_id] = {
+            chapterId: item.chapter_id,
+            scrollTop: item.scroll_top,
+            updatedAt: new Date(item.updated_at).getTime(),
+            completed: item.completed,
+          };
+        });
+        setCloudProgress(nextProgress);
+      });
 
     async function loadData() {
       const requestId = ++selectionRequestRef.current;
@@ -1105,12 +1163,12 @@ export default function App() {
         const loadedChapters =
           normalizedBooks[0].file_type === 'epub' && normalizedBooks[0].file_path
             ? await extractEpubChapters(
-                supabase.storage.from('books').getPublicUrl(normalizedBooks[0].file_path).data.publicUrl,
+                await getBookFileUrl(normalizedBooks[0].file_path),
                 normalizedBooks[0].id,
               )
             : normalizedBooks[0].file_type === 'pdf' && normalizedBooks[0].file_path
               ? await extractPdfChapters(
-                  supabase.storage.from('books').getPublicUrl(normalizedBooks[0].file_path).data.publicUrl,
+                  await getBookFileUrl(normalizedBooks[0].file_path),
                   normalizedBooks[0].id,
                 )
             : await loadStoredChapters(normalizedBooks[0].id);
@@ -1155,8 +1213,11 @@ export default function App() {
 
     let savedPosition: ReadingPosition | null = null;
     try {
-      const lastChapterId = user ? readLastChapter(user.id, selectedBook.id) : null;
-      savedPosition = lastChapterId ? { chapterId: lastChapterId, scrollTop: 0 } : null;
+      const cloudPosition = user ? cloudProgress[selectedBook.id] : undefined;
+      const lastChapterId = cloudPosition?.chapterId || (user ? readLastChapter(user.id, selectedBook.id) : null);
+      savedPosition = lastChapterId
+        ? { chapterId: lastChapterId, scrollTop: cloudPosition?.scrollTop || 0 }
+        : null;
     } catch {
       savedPosition = null;
     }
@@ -1167,12 +1228,12 @@ export default function App() {
       const loadedChapters =
         selectedBook.file_type === 'epub' && selectedBook.file_path
           ? await extractEpubChapters(
-              supabase.storage.from('books').getPublicUrl(selectedBook.file_path).data.publicUrl,
+              await getBookFileUrl(selectedBook.file_path),
               selectedBook.id,
             )
           : selectedBook.file_type === 'pdf' && selectedBook.file_path
             ? await extractPdfChapters(
-                supabase.storage.from('books').getPublicUrl(selectedBook.file_path).data.publicUrl,
+                await getBookFileUrl(selectedBook.file_path),
                 selectedBook.id,
               )
           : selectedBook.file_path
@@ -1197,7 +1258,7 @@ export default function App() {
     } finally {
       if (requestId === selectionRequestRef.current) setLoading(false);
     }
-  }, [user]);
+  }, [cloudProgress, user]);
 
   const handleUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
@@ -1347,11 +1408,13 @@ export default function App() {
   const continueBooks = books
     .filter((libraryBook) => Boolean(
       user
-      && readLastChapter(user.id, libraryBook.id)
+      && (cloudProgress[libraryBook.id]?.chapterId || readLastChapter(user.id, libraryBook.id))
+      && !cloudProgress[libraryBook.id]?.completed
       && !hasCompletedBook(user.id, libraryBook.id),
     ))
     .sort((left, right) => user
-      ? readLastReadAt(user.id, right.id) - readLastReadAt(user.id, left.id)
+      ? (cloudProgress[right.id]?.updatedAt || readLastReadAt(user.id, right.id))
+        - (cloudProgress[left.id]?.updatedAt || readLastReadAt(user.id, left.id))
       : 0);
   const featuredBook = books.find((libraryBook) =>
     /bạch\s*dạ\s*hành|bach\s*da\s*hanh/i.test(libraryBook.title),
@@ -1387,6 +1450,16 @@ export default function App() {
       const key = localStorage.key(index);
       if (key?.startsWith(chapterPrefix)) localStorage.removeItem(key);
     }
+    void supabase
+      .from('reading_progress')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('book_id', bookToRemove.id);
+    setCloudProgress((current) => {
+      const next = { ...current };
+      delete next[bookToRemove.id];
+      return next;
+    });
     setContinueReadingRevision((revision) => revision + 1);
     setContextMenu(null);
   }, [user]);
@@ -1396,14 +1469,6 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const paths = booksToDelete.map((item) => item.file_path).filter((path): path is string => Boolean(path));
-      if (paths.length > 0) {
-        const { error: storageError } = await supabase.storage
-          .from('books')
-          .remove(paths);
-        if (storageError) throw storageError;
-      }
-
       const { error: deleteError } = await supabase
         .from('books')
         .delete()
@@ -1478,11 +1543,6 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const paths = shelfBooks.map((item) => item.file_path).filter((path): path is string => Boolean(path));
-      if (paths.length > 0) {
-        const { error: storageError } = await supabase.storage.from('books').remove(paths);
-        if (storageError) throw storageError;
-      }
       const { error: deleteError } = await supabase
         .from('books')
         .delete()
@@ -1545,10 +1605,8 @@ export default function App() {
       if (updateError) throw updateError;
       const updatedBook = normalizeBookMetadata(data);
       setBooks((currentBooks) => currentBooks.map((item) => item.id === updatedBook.id ? updatedBook : item));
-      setCoverUrls((current) => ({
-        ...current,
-        [updatedBook.id]: supabase.storage.from('books').getPublicUrl(coverPath).data.publicUrl,
-      }));
+      const coverUrl = await getBookFileUrl(coverPath);
+      setCoverUrls((current) => ({ ...current, [updatedBook.id]: coverUrl }));
     } catch {
       const reader = new FileReader();
       reader.onload = () => {
@@ -1616,14 +1674,30 @@ export default function App() {
     if (!el) return;
 
     if (currentChapter && user && !suppressScrollSaveRef.current) {
+      const updatedAt = Date.now();
       localStorage.setItem(
         readerPositionKey(user.id, currentChapter.book_id),
-        JSON.stringify({ chapterId: currentChapter.id, updatedAt: Date.now() }),
+        JSON.stringify({ chapterId: currentChapter.id, updatedAt }),
       );
       localStorage.setItem(
         readerChapterPositionKey(user.id, currentChapter.book_id, currentChapter.id),
         JSON.stringify({ scrollTop: el.scrollTop }),
       );
+      pendingProgressRef.current = {
+        user_id: user.id,
+        book_id: currentChapter.book_id,
+        chapter_id: currentChapter.id,
+        scroll_top: el.scrollTop,
+        completed: false,
+        updated_at: new Date(updatedAt).toISOString(),
+      };
+      if (progressSaveTimerRef.current) clearTimeout(progressSaveTimerRef.current);
+      progressSaveTimerRef.current = setTimeout(() => {
+        const pendingProgress = pendingProgressRef.current;
+        if (pendingProgress) void supabase.from('reading_progress').upsert(pendingProgress);
+        pendingProgressRef.current = null;
+        progressSaveTimerRef.current = null;
+      }, 700);
     }
 
     const max = el.scrollHeight - el.clientHeight;
@@ -1641,9 +1715,39 @@ export default function App() {
       && !hasCompletedBook(user.id, currentChapter.book_id)
     ) {
       localStorage.setItem(readerCompletedKey(user.id, currentChapter.book_id), 'true');
+      pendingProgressRef.current = {
+        user_id: user.id,
+        book_id: currentChapter.book_id,
+        chapter_id: currentChapter.id,
+        scroll_top: el.scrollTop,
+        completed: true,
+        updated_at: new Date().toISOString(),
+      };
+      if (progressSaveTimerRef.current) clearTimeout(progressSaveTimerRef.current);
+      progressSaveTimerRef.current = setTimeout(() => {
+        const pendingProgress = pendingProgressRef.current;
+        if (pendingProgress) void supabase.from('reading_progress').upsert(pendingProgress);
+        pendingProgressRef.current = null;
+        progressSaveTimerRef.current = null;
+      }, 100);
+      setCloudProgress((current) => ({
+        ...current,
+        [currentChapter.book_id]: {
+          chapterId: currentChapter.id,
+          scrollTop: el.scrollTop,
+          updatedAt: Date.now(),
+          completed: true,
+        },
+      }));
       setContinueReadingRevision((revision) => revision + 1);
     }
   }, [chapters.length, currentChapter, currentChapterIndex, user]);
+
+  useEffect(() => () => {
+    if (progressSaveTimerRef.current) clearTimeout(progressSaveTimerRef.current);
+    const pendingProgress = pendingProgressRef.current;
+    if (pendingProgress) void supabase.from('reading_progress').upsert(pendingProgress);
+  }, []);
 
   useLayoutEffect(() => {
     if (!currentChapter || !contentRef.current) return;
