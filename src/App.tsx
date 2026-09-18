@@ -81,6 +81,16 @@ function readChapterPosition(userId: string, chapter: Chapter): ReadingPosition 
   }
 }
 
+function readChapterScrollTop(userId: string, bookId: string, chapterId: string) {
+  try {
+    const saved = localStorage.getItem(readerChapterPositionKey(userId, bookId, chapterId));
+    const parsed = saved ? JSON.parse(saved) as { scrollTop?: unknown } : null;
+    return typeof parsed?.scrollTop === 'number' ? parsed.scrollTop : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function readLastChapter(userId: string, bookId: string) {
   try {
     const saved = localStorage.getItem(readerPositionKey(userId, bookId));
@@ -1117,7 +1127,11 @@ export default function App() {
       .from('reading_progress')
       .select('book_id, chapter_id, scroll_top, completed, updated_at')
       .eq('user_id', currentUserId)
-      .then(({ data }) => {
+      .then(({ data, error: progressError }) => {
+        if (progressError) {
+          setError(`Không thể tải tiến độ đọc: ${progressError.message}`);
+          return;
+        }
         const nextProgress: Record<string, CloudReadingProgress> = {};
         (data || []).forEach((item) => {
           nextProgress[item.book_id] = {
@@ -1216,7 +1230,12 @@ export default function App() {
       const cloudPosition = user ? cloudProgress[selectedBook.id] : undefined;
       const lastChapterId = cloudPosition?.chapterId || (user ? readLastChapter(user.id, selectedBook.id) : null);
       savedPosition = lastChapterId
-        ? { chapterId: lastChapterId, scrollTop: cloudPosition?.scrollTop || 0 }
+        ? {
+          chapterId: lastChapterId,
+          scrollTop: cloudPosition
+            ? cloudPosition.scrollTop
+            : readChapterScrollTop(user!.id, selectedBook.id, lastChapterId),
+        }
         : null;
     } catch {
       savedPosition = null;
@@ -1694,7 +1713,11 @@ export default function App() {
       if (progressSaveTimerRef.current) clearTimeout(progressSaveTimerRef.current);
       progressSaveTimerRef.current = setTimeout(() => {
         const pendingProgress = pendingProgressRef.current;
-        if (pendingProgress) void supabase.from('reading_progress').upsert(pendingProgress);
+        if (pendingProgress) {
+          void supabase.from('reading_progress').upsert(pendingProgress).then(({ error: progressError }) => {
+            if (progressError) setError(`Không thể lưu tiến độ đọc: ${progressError.message}`);
+          });
+        }
         pendingProgressRef.current = null;
         progressSaveTimerRef.current = null;
       }, 700);
@@ -1726,7 +1749,11 @@ export default function App() {
       if (progressSaveTimerRef.current) clearTimeout(progressSaveTimerRef.current);
       progressSaveTimerRef.current = setTimeout(() => {
         const pendingProgress = pendingProgressRef.current;
-        if (pendingProgress) void supabase.from('reading_progress').upsert(pendingProgress);
+        if (pendingProgress) {
+          void supabase.from('reading_progress').upsert(pendingProgress).then(({ error: progressError }) => {
+            if (progressError) setError(`Không thể lưu tiến độ đọc: ${progressError.message}`);
+          });
+        }
         pendingProgressRef.current = null;
         progressSaveTimerRef.current = null;
       }, 100);
@@ -1746,7 +1773,11 @@ export default function App() {
   useEffect(() => () => {
     if (progressSaveTimerRef.current) clearTimeout(progressSaveTimerRef.current);
     const pendingProgress = pendingProgressRef.current;
-    if (pendingProgress) void supabase.from('reading_progress').upsert(pendingProgress);
+    if (pendingProgress) {
+      void supabase.from('reading_progress').upsert(pendingProgress).then(({ error: progressError }) => {
+        if (progressError) setError(`Không thể lưu tiến độ đọc: ${progressError.message}`);
+      });
+    }
   }, []);
 
   useLayoutEffect(() => {
