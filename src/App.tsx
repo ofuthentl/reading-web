@@ -25,6 +25,7 @@ import {
   Download,
   RotateCw,
   Search,
+  Send,
 } from 'lucide-react';
 import JSZip from 'jszip';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -49,6 +50,10 @@ function readerChapterPositionKey(userId: string, bookId: string, chapterId: str
   return `reader-position-v2:${userId}:${bookId}:chapter:${chapterId}`;
 }
 
+function readerCompletedKey(userId: string, bookId: string) {
+  return `reader-completed:v1:${userId}:${bookId}`;
+}
+
 function readChapterPosition(userId: string, chapter: Chapter): ReadingPosition | null {
   try {
     const saved = localStorage.getItem(readerChapterPositionKey(userId, chapter.book_id, chapter.id));
@@ -69,6 +74,20 @@ function readLastChapter(userId: string, bookId: string) {
   } catch {
     return null;
   }
+}
+
+function readLastReadAt(userId: string, bookId: string) {
+  try {
+    const saved = localStorage.getItem(readerPositionKey(userId, bookId));
+    const parsed = saved ? JSON.parse(saved) as { updatedAt?: unknown } : null;
+    return typeof parsed?.updatedAt === 'number' ? parsed.updatedAt : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function hasCompletedBook(userId: string, bookId: string) {
+  return localStorage.getItem(readerCompletedKey(userId, bookId)) === 'true';
 }
 
 function coverOverrideKey(userId: string) {
@@ -134,6 +153,10 @@ function getShelfName(book: Book) {
     .replace(/\s+(?:vol(?:ume)?|tập|tap|quyển|quyen)\s*\d+.*$/i, '')
     .trim();
   return seriesName || 'Kho chưa phân loại';
+}
+
+function bookDuplicateKey(title: string, author: string) {
+  return `${title.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi')}::${author.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi')}`;
 }
 
 function AuthScreen() {
@@ -202,24 +225,30 @@ function LibraryBookCard({
   coverUrl,
   onOpen,
   onContextMenu,
+  fullWidth = false,
+  isDark = false,
 }: {
   book: Book;
   coverUrl?: string;
   onOpen: () => void;
   onContextMenu: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  fullWidth?: boolean;
+  isDark?: boolean;
 }) {
   return (
     <button
       onClick={onOpen}
       onContextMenu={onContextMenu}
-      className="group w-36 shrink-0 text-left sm:w-44"
+      className={`group text-left ${fullWidth ? 'w-full' : 'w-36 shrink-0 sm:w-44'}`}
     >
       {coverUrl ? (
-        <img
-          src={coverUrl}
-          alt={`Cover ${book.title}`}
-          className="mb-3 aspect-[3/4] w-full rounded-xl object-cover shadow-sm transition-transform group-hover:-translate-y-1"
-        />
+        <div className="mb-3 aspect-[3/4] w-full overflow-hidden rounded-xl shadow-sm transition-transform group-hover:-translate-y-1">
+          <img
+            src={coverUrl}
+            alt={`Cover ${book.title}`}
+            className="h-full w-full object-cover"
+          />
+        </div>
       ) : (
         <div
           className="mb-3 flex aspect-[3/4] items-end rounded-xl p-3 shadow-sm transition-transform group-hover:-translate-y-1"
@@ -228,10 +257,10 @@ function LibraryBookCard({
           <BookOpen className="h-8 w-8 text-white/90" />
         </div>
       )}
-      <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-stone-800 group-hover:text-stone-600">
+      <h3 className={`min-h-10 line-clamp-2 text-sm font-semibold leading-5 ${isDark ? 'text-stone-100 group-hover:text-stone-300' : 'text-stone-800 group-hover:text-stone-600'}`}>
         {book.title}
       </h3>
-      <p className="mt-1 truncate text-xs text-stone-500">{book.author}</p>
+      <p className={`mt-1 min-h-4 truncate text-xs ${isDark ? 'text-stone-400' : 'text-stone-500'}`}>{book.author}</p>
     </button>
   );
 }
@@ -275,6 +304,103 @@ function RenameDialog({
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function ShareDialog({
+  email,
+  onEmailChange,
+  itemLabel,
+  busy,
+  result,
+  onCancel,
+  onSubmit,
+}: {
+  email: string;
+  onEmailChange: (value: string) => void;
+  itemLabel: string;
+  busy: boolean;
+  result: { sentCount: number; duplicateTitles: string[] } | null;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4" onClick={onCancel}>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+        onClick={(event) => event.stopPropagation()}
+        className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl"
+      >
+        <h2 className="text-lg font-semibold text-stone-900">Gửi {itemLabel}</h2>
+        <p className="mt-1 text-sm text-stone-500">Nhập email tài khoản nhận sách.</p>
+        {!result ? (
+          <>
+            <input
+              autoFocus
+              type="email"
+              required
+              value={email}
+              onChange={(event) => onEmailChange(event.target.value)}
+              placeholder="email@example.com"
+              className="mt-4 w-full rounded-lg border border-stone-300 px-3 py-2.5 text-sm outline-none focus:border-stone-600"
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={onCancel} className="rounded-lg px-4 py-2 text-sm text-stone-600 hover:bg-stone-100">Hủy</button>
+              <button type="submit" disabled={busy} className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50">
+                {busy ? 'Đang gửi...' : 'Gửi sách'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="mt-4 rounded-lg bg-stone-50 p-3 text-sm text-stone-700">
+              <p>Đã gửi {result.sentCount} sách.</p>
+              {result.duplicateTitles.length > 0 && <p className="mt-2 text-amber-700">Tài khoản nhận đã có: {result.duplicateTitles.join(', ')}.</p>}
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button type="button" onClick={onCancel} className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700">Đóng</button>
+            </div>
+          </>
+        )}
+      </form>
+    </div>
+  );
+}
+
+function DeleteDialog({
+  title,
+  description,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  description: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4" onClick={onCancel}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2 className="text-lg font-semibold text-stone-900">{title}</h2>
+        <p className="mt-2 text-sm text-stone-600">{description}</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={onCancel} className="rounded-lg px-4 py-2 text-sm text-stone-600 hover:bg-stone-100">
+            Hủy
+          </button>
+          <button type="button" onClick={onConfirm} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
+            Xóa
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -781,7 +907,6 @@ async function extractPdfCoverUrl(url: string) {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [readerOpen, setReaderOpen] = useState(false);
   const [selectedShelfKey, setSelectedShelfKey] = useState<string | null>(null);
   const [coverUrls, setCoverUrls] = useState<Record<string, string>>({});
@@ -791,6 +916,7 @@ export default function App() {
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>('light');
@@ -809,12 +935,28 @@ export default function App() {
   const [contextMenu, setContextMenu] = useState<{
     type: 'book' | 'shelf';
     book?: Book;
+    fromContinueReading?: boolean;
     shelfKey?: string;
     shelfName?: string;
     shelfBooks?: Book[];
     x: number;
     y: number;
   } | null>(null);
+  const [shareDialog, setShareDialog] = useState<{
+    books: Book[];
+    email: string;
+    busy: boolean;
+    result: { sentCount: number; duplicateTitles: string[] } | null;
+  } | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState<
+    | { type: 'book'; book: Book }
+    | { type: 'books'; books: Book[] }
+    | { type: 'shelf'; shelfName: string; shelfBooks: Book[] }
+    | null
+  >(null);
+  const [selectedBookIds, setSelectedBookIds] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [, setContinueReadingRevision] = useState(0);
   const [coverTarget, setCoverTarget] = useState<{ type: 'book' | 'shelf'; id: string } | null>(null);
   const [shelfCoverOverrides, setShelfCoverOverrides] = useState<Record<string, string>>({});
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -920,7 +1062,6 @@ export default function App() {
     if (!userId) {
       selectionRequestRef.current += 1;
       initialPositionRef.current = null;
-      setIsAdmin(false);
       setReaderOpen(false);
       setSelectedShelfKey(null);
       setBooks([]);
@@ -930,13 +1071,6 @@ export default function App() {
       return;
     }
     const currentUserId = userId;
-
-    void supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', currentUserId)
-      .maybeSingle()
-      .then(({ data }) => setIsAdmin(data?.role === 'admin'));
 
     async function loadData() {
       const requestId = ++selectionRequestRef.current;
@@ -1081,10 +1215,39 @@ export default function App() {
 
     setLoading(true);
     setError(null);
+    setUploadNotice(null);
     try {
-      const uploadedBooks = await Promise.all(files.map(async (file) => {
+      if (!user) throw new Error('Vui lòng đăng nhập trước khi tải sách lên.');
+      const { data: existingBooks, error: existingBooksError } = await supabase
+        .from('books')
+        .select('title, author')
+        .eq('owner_id', user.id);
+      if (existingBooksError) throw existingBooksError;
+
+      const existingKeys = new Set(
+        (existingBooks || []).map((existingBook) => bookDuplicateKey(existingBook.title, existingBook.author)),
+      );
+      const duplicateTitles: string[] = [];
+      const uploadCandidates = files.filter((file) => {
+        const fileLabel = file.name.replace(/\.(pdf|epub)$/i, '').trim() || 'Sách chưa đặt tên';
+        const [titlePart, ...authorParts] = fileLabel.split(/\s+-\s+/);
+        const title = titlePart.trim() || fileLabel;
+        const author = authorParts.join(' - ').trim() || 'Không rõ tác giả';
+        const key = bookDuplicateKey(title, author);
+        if (existingKeys.has(key)) {
+          duplicateTitles.push(title);
+          return false;
+        }
+        existingKeys.add(key);
+        return true;
+      });
+
+      if (uploadCandidates.length === 0) {
+        setUploadNotice(`Sách đã có trong thư viện: ${duplicateTitles.join(', ')}.`);
+        return;
+      }
+      const uploadedBooks = await Promise.all(uploadCandidates.map(async (file) => {
         const extension = file.name.split('.').pop()?.toLowerCase() as 'pdf' | 'epub';
-        if (!user) throw new Error('Vui lòng đăng nhập trước khi tải sách lên.');
         const filePath = `${user.id}/${crypto.randomUUID()}.${extension}`;
         const { error: uploadError } = await supabase.storage.from('books').upload(filePath, file, {
           contentType: file.type || (extension === 'pdf' ? 'application/pdf' : 'application/epub+zip'),
@@ -1104,7 +1267,7 @@ export default function App() {
               file_path: filePath,
               file_type: extension,
               owner_id: user.id,
-              is_public: isAdmin,
+              is_public: false,
             })
           .select('*')
           .single();
@@ -1114,13 +1277,46 @@ export default function App() {
 
       const normalizedNewBooks = uploadedBooks.map(normalizeBookMetadata);
       setBooks((currentBooks) => sortBooksByTitle([...normalizedNewBooks, ...currentBooks]));
+      const uploadedShelfKeys = new Set(
+        normalizedNewBooks.map((newBook) => getShelfName(newBook).toLocaleLowerCase('vi')),
+      );
+      if (selectedShelfKey && (!uploadedShelfKeys.has(selectedShelfKey) || uploadedShelfKeys.size > 1)) {
+        setSelectedShelfKey(null);
+      }
       await selectBook(normalizedNewBooks[0]);
+      if (duplicateTitles.length > 0) {
+        setUploadNotice(`Đã bỏ qua sách đã có: ${duplicateTitles.join(', ')}.`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không thể tải sách lên.');
     } finally {
       setLoading(false);
     }
-  }, [isAdmin, selectBook, user]);
+  }, [selectBook, selectedShelfKey, user]);
+
+  const handleShare = useCallback(async () => {
+    if (!shareDialog || !shareDialog.email.trim() || shareDialog.books.length === 0) return;
+    setShareDialog((current) => current ? { ...current, busy: true } : current);
+    setError(null);
+    const { data, error: shareError } = await supabase.rpc('send_books_to_email', {
+      target_email: shareDialog.email.trim(),
+      source_book_ids: shareDialog.books.map((item) => item.id),
+    });
+    if (shareError) {
+      setError(shareError.message);
+      setShareDialog((current) => current ? { ...current, busy: false } : current);
+      return;
+    }
+    const shareResult = data as { sent_count?: number; duplicate_titles?: string[] };
+    setShareDialog((current) => current ? {
+      ...current,
+      busy: false,
+      result: {
+        sentCount: shareResult.sent_count || 0,
+        duplicateTitles: shareResult.duplicate_titles || [],
+      },
+    } : current);
+  }, [shareDialog]);
 
   const renameShelf = useCallback((shelfKey: string, currentName: string) => {
     setRenameDialog({ type: 'shelf', shelfKey, value: currentName });
@@ -1148,9 +1344,15 @@ export default function App() {
   const sortedShelves = Array.from(shelves.entries()).sort((left, right) =>
     left[1].name.localeCompare(right[1].name, 'vi', { sensitivity: 'base' }),
   );
-  const continueBooks = books.filter((libraryBook) =>
-    Boolean(user && readLastChapter(user.id, libraryBook.id)),
-  );
+  const continueBooks = books
+    .filter((libraryBook) => Boolean(
+      user
+      && readLastChapter(user.id, libraryBook.id)
+      && !hasCompletedBook(user.id, libraryBook.id),
+    ))
+    .sort((left, right) => user
+      ? readLastReadAt(user.id, right.id) - readLastReadAt(user.id, left.id)
+      : 0);
   const featuredBook = books.find((libraryBook) =>
     /bạch\s*dạ\s*hành|bach\s*da\s*hanh/i.test(libraryBook.title),
   );
@@ -1177,28 +1379,46 @@ export default function App() {
     setReaderOpen(true);
   }, [selectBook]);
 
-  const handleDelete = useCallback(async (bookToDelete: Book) => {
-    if (!window.confirm(`Xóa "${bookToDelete.title}"?`)) return;
+  const removeFromContinueReading = useCallback((bookToRemove: Book) => {
+    if (!user) return;
+    localStorage.removeItem(readerPositionKey(user.id, bookToRemove.id));
+    const chapterPrefix = readerChapterPositionKey(user.id, bookToRemove.id, '');
+    for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+      const key = localStorage.key(index);
+      if (key?.startsWith(chapterPrefix)) localStorage.removeItem(key);
+    }
+    setContinueReadingRevision((revision) => revision + 1);
+    setContextMenu(null);
+  }, [user]);
 
+  const handleDeleteBooks = useCallback(async (booksToDelete: Book[]) => {
+    if (booksToDelete.length === 0) return;
     setLoading(true);
     setError(null);
     try {
-      if (bookToDelete.file_path) {
+      const paths = booksToDelete.map((item) => item.file_path).filter((path): path is string => Boolean(path));
+      if (paths.length > 0) {
         const { error: storageError } = await supabase.storage
           .from('books')
-          .remove([bookToDelete.file_path]);
+          .remove(paths);
         if (storageError) throw storageError;
       }
 
       const { error: deleteError } = await supabase
         .from('books')
         .delete()
-        .eq('id', bookToDelete.id);
+        .in('id', booksToDelete.map((item) => item.id));
       if (deleteError) throw deleteError;
 
-      const remainingBooks = books.filter((libraryBook) => libraryBook.id !== bookToDelete.id);
+      const deletedIds = new Set(booksToDelete.map((item) => item.id));
+      const remainingBooks = books.filter((libraryBook) => !deletedIds.has(libraryBook.id));
       setBooks(remainingBooks);
-      if (book?.id === bookToDelete.id) {
+      setSelectedBookIds((current) => {
+        const next = new Set(current);
+        deletedIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      if (book && deletedIds.has(book.id)) {
         if (remainingBooks[0]) {
           await selectBook(remainingBooks[0]);
         } else {
@@ -1212,6 +1432,10 @@ export default function App() {
       setLoading(false);
     }
   }, [book, books, selectBook]);
+
+  const handleDelete = useCallback(async (bookToDelete: Book) => {
+    await handleDeleteBooks([bookToDelete]);
+  }, [handleDeleteBooks]);
 
   const handleRename = useCallback((bookToRename: Book) => {
     setRenameDialog({ type: 'book', book: bookToRename, value: bookToRename.title });
@@ -1251,7 +1475,6 @@ export default function App() {
   }, [book, renameDialog]);
 
   const handleDeleteShelf = useCallback(async (shelfName: string, shelfBooks: Book[]) => {
-    if (!window.confirm(`Xóa thư mục "${shelfName}" và ${shelfBooks.length} sách bên trong?`)) return;
     setLoading(true);
     setError(null);
     try {
@@ -1395,7 +1618,7 @@ export default function App() {
     if (currentChapter && user && !suppressScrollSaveRef.current) {
       localStorage.setItem(
         readerPositionKey(user.id, currentChapter.book_id),
-        JSON.stringify({ chapterId: currentChapter.id }),
+        JSON.stringify({ chapterId: currentChapter.id, updatedAt: Date.now() }),
       );
       localStorage.setItem(
         readerChapterPositionKey(user.id, currentChapter.book_id, currentChapter.id),
@@ -1409,7 +1632,18 @@ export default function App() {
     } else {
       setScrollProgress(100);
     }
-  }, [currentChapter, user]);
+
+    if (
+      user
+      && currentChapter
+      && currentChapterIndex === chapters.length - 1
+      && el.scrollTop + el.clientHeight >= el.scrollHeight - 8
+      && !hasCompletedBook(user.id, currentChapter.book_id)
+    ) {
+      localStorage.setItem(readerCompletedKey(user.id, currentChapter.book_id), 'true');
+      setContinueReadingRevision((revision) => revision + 1);
+    }
+  }, [chapters.length, currentChapter, currentChapterIndex, user]);
 
   useLayoutEffect(() => {
     if (!currentChapter || !contentRef.current) return;
@@ -1480,17 +1714,25 @@ export default function App() {
   if (!readerOpen && books.length > 0) {
     const libraryTitle = selectedShelf ? selectedShelf.name : 'Kho sách';
     return (
-      <div className="min-h-screen bg-stone-50 text-stone-800">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-stone-200 bg-white/95 px-4 backdrop-blur sm:px-6">
+      <div className={`min-h-screen ${bg} ${textPrimary}`}>
+        <header className={`sticky top-0 z-20 flex h-16 items-center justify-between border-b ${border} ${isDark ? 'bg-stone-900/95' : 'bg-white/95'} px-4 backdrop-blur sm:px-6`}>
           <div className="flex items-center gap-2 text-lg font-semibold">
-            <BookOpen className="h-5 w-5 text-stone-600" />
+            <BookOpen className={`h-5 w-5 ${textSecondary}`} />
             Đọc sách
           </div>
           <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-stone-500 sm:inline">{user.email}</span>
+            <span className={`hidden text-sm ${textSecondary} sm:inline`}>{user.email}</span>
+            <button
+              onClick={() => setTheme(isDark ? 'light' : 'dark')}
+              className={`rounded-lg p-2 ${textSecondary} ${hover}`}
+              aria-label={isDark ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+              title={isDark ? 'Giao diện sáng' : 'Giao diện tối'}
+            >
+              {isDark ? <Sun className="h-5 w-5 text-amber-400" /> : <Moon className="h-5 w-5" />}
+            </button>
             <button
               onClick={() => void supabase.auth.signOut()}
-              className="rounded-lg p-2 text-stone-500 hover:bg-stone-100 hover:text-stone-800"
+              className={`rounded-lg p-2 ${textSecondary} ${hover}`}
               aria-label="Đăng xuất"
               title="Đăng xuất"
             >
@@ -1499,20 +1741,34 @@ export default function App() {
           </div>
         </header>
         <main className="w-full px-4 py-6 sm:px-8 sm:py-8 lg:px-12">
-          <div className="relative mb-8 flex flex-col gap-4 border-b border-stone-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
+          {uploadNotice && (
+            <div className="mb-5 flex items-start justify-between gap-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p>{uploadNotice}</p>
+              <button
+                type="button"
+                onClick={() => setUploadNotice(null)}
+                className="shrink-0 rounded p-1 text-amber-700 hover:bg-amber-100"
+                aria-label="Đóng thông báo"
+                title="Đóng thông báo"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+          <div className={`relative mb-8 flex flex-col gap-4 border-b ${border} pb-4 sm:flex-row sm:items-end sm:justify-between`}>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 {selectedShelf && (
                   <button
                     onClick={() => setSelectedShelfKey(null)}
-                    className="rounded-lg p-2 text-stone-600 hover:bg-stone-100"
+                    className={`rounded-lg p-2 ${textSecondary} ${hover}`}
                     aria-label="Quay lại kho sách"
                   >
                     <ChevronLeft className="h-5 w-5" />
                   </button>
                 )}
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                  <p className={`text-xs font-semibold uppercase tracking-[0.18em] ${textSecondary}`}>
                     {selectedShelf ? 'Thư mục' : 'Thư viện'}
                   </p>
                   <div className="mt-2 flex items-center gap-2">
@@ -1520,7 +1776,7 @@ export default function App() {
                     {selectedShelf && (
                       <button
                         onClick={() => renameShelf(selectedShelfKey!, selectedShelf.name)}
-                        className="rounded-lg p-2 text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+                        className={`rounded-lg p-2 ${textSecondary} ${hover}`}
                         aria-label="Đổi tên thư mục"
                         title="Đổi tên thư mục"
                       >
@@ -1533,7 +1789,7 @@ export default function App() {
             </div>
             <div className="flex w-full items-center gap-2 sm:w-auto">
               <div className="relative w-full flex-1 sm:w-[min(24rem,calc(100vw-2rem))]">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+                <Search className={`pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 ${textSecondary}`} />
                 <input
                   value={searchQuery}
                   onChange={(event) => {
@@ -1557,10 +1813,10 @@ export default function App() {
                   }}
                   placeholder="Tìm sách..."
                   aria-label="Tìm sách"
-                  className="w-full rounded-lg border border-stone-300 bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-stone-500"
+                  className={`w-full rounded-lg border ${border} ${sidebarBg} ${textPrimary} ${isDark ? 'placeholder:text-stone-100' : 'placeholder:text-stone-500'} py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-stone-500`}
                 />
                 {normalizedSearchQuery && searchSuggestionsOpen && (
-                  <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 max-h-[28rem] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-stone-200 bg-white shadow-xl">
+                  <div className={`absolute right-0 top-[calc(100%+0.5rem)] z-30 max-h-[28rem] w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border ${border} ${sidebarBg} shadow-xl`}>
                     {searchResults.length > 0 ? searchResults.map((libraryBook) => (
                       <button
                         key={libraryBook.id}
@@ -1569,7 +1825,7 @@ export default function App() {
                           setSearchSuggestionsOpen(false);
                           void openBook(libraryBook);
                         }}
-                        className="flex w-full items-center gap-3 border-b border-stone-100 px-3 py-3 text-left last:border-b-0 hover:bg-stone-100"
+                        className={`flex w-full items-center gap-3 border-b ${border} px-3 py-3 text-left last:border-b-0 ${hover}`}
                       >
                         {coverUrls[libraryBook.id] ? (
                           <img
@@ -1586,12 +1842,12 @@ export default function App() {
                           </div>
                         )}
                         <span className="min-w-0 leading-tight">
-                          <span className="block truncate text-sm font-semibold text-stone-800">{libraryBook.title}</span>
-                          <span className="mt-1 block truncate text-xs text-stone-500">{libraryBook.author}</span>
+                          <span className={`block truncate text-sm font-semibold ${textPrimary}`}>{libraryBook.title}</span>
+                          <span className={`mt-1 block truncate text-xs ${textSecondary}`}>{libraryBook.author}</span>
                         </span>
                       </button>
                     )) : (
-                      <p className="px-3 py-3 text-sm text-stone-500">Không tìm thấy sách phù hợp.</p>
+                      <p className={`px-3 py-3 text-sm ${textSecondary}`}>Không tìm thấy sách phù hợp.</p>
                     )}
                   </div>
                 )}
@@ -1624,14 +1880,24 @@ export default function App() {
           </div>
           {contextMenu && (
             <div
-              className="fixed z-50 w-52 overflow-hidden rounded-lg border border-stone-200 bg-white py-1 shadow-xl"
+              className={`fixed z-50 w-52 overflow-hidden rounded-lg border ${border} ${sidebarBg} py-1 shadow-xl`}
               style={{ left: contextMenu.x, top: contextMenu.y }}
               onClick={(event) => event.stopPropagation()}
             >
               {contextMenu.type === 'book' && contextMenu.book ? (
                 <>
                   <button
-                    className="w-full px-4 py-2.5 text-left text-sm text-stone-700 hover:bg-stone-100"
+                    className={`flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm ${textPrimary} ${hover}`}
+                    onClick={() => {
+                      setShareDialog({ books: [contextMenu.book!], email: '', busy: false, result: null });
+                      setContextMenu(null);
+                    }}
+                  >
+                    <Send className="h-4 w-4" />
+                    Gửi cho tài khoản khác
+                  </button>
+                  <button
+                    className={`w-full px-4 py-2.5 text-left text-sm ${textPrimary} ${hover}`}
                     onClick={() => {
                       const selectedBook = contextMenu.book!;
                       setContextMenu(null);
@@ -1641,7 +1907,7 @@ export default function App() {
                     Đổi tên sách
                   </button>
                   <button
-                    className="w-full px-4 py-2.5 text-left text-sm text-stone-700 hover:bg-stone-100"
+                    className={`w-full px-4 py-2.5 text-left text-sm ${textPrimary} ${hover}`}
                     onClick={() => {
                       setCoverTarget({ type: 'book', id: contextMenu.book!.id });
                       setContextMenu(null);
@@ -1650,12 +1916,20 @@ export default function App() {
                   >
                     Đổi ảnh bìa
                   </button>
+                  {contextMenu.fromContinueReading && (
+                    <button
+                      className={`w-full px-4 py-2.5 text-left text-sm ${textPrimary} ${hover}`}
+                      onClick={() => removeFromContinueReading(contextMenu.book!)}
+                    >
+                      Xóa khỏi tiếp tục đọc
+                    </button>
+                  )}
                   <button
                     className="w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
                     onClick={() => {
                       const selectedBook = contextMenu.book!;
                       setContextMenu(null);
-                      void handleDelete(selectedBook);
+                      setDeleteDialog({ type: 'book', book: selectedBook });
                     }}
                   >
                     Xóa sách
@@ -1664,7 +1938,17 @@ export default function App() {
               ) : (
                 <>
                   <button
-                    className="w-full px-4 py-2.5 text-left text-sm text-stone-700 hover:bg-stone-100"
+                    className={`flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm ${textPrimary} ${hover}`}
+                    onClick={() => {
+                      setShareDialog({ books: contextMenu.shelfBooks || [], email: '', busy: false, result: null });
+                      setContextMenu(null);
+                    }}
+                  >
+                    <Send className="h-4 w-4" />
+                    Gửi thư mục
+                  </button>
+                  <button
+                    className={`w-full px-4 py-2.5 text-left text-sm ${textPrimary} ${hover}`}
                     onClick={() => {
                       renameShelf(contextMenu.shelfKey!, contextMenu.shelfName!);
                       setContextMenu(null);
@@ -1673,7 +1957,7 @@ export default function App() {
                     Đổi tên thư mục
                   </button>
                   <button
-                    className="w-full px-4 py-2.5 text-left text-sm text-stone-700 hover:bg-stone-100"
+                    className={`w-full px-4 py-2.5 text-left text-sm ${textPrimary} ${hover}`}
                     onClick={() => {
                       setCoverTarget({ type: 'shelf', id: contextMenu.shelfKey! });
                       setContextMenu(null);
@@ -1688,7 +1972,7 @@ export default function App() {
                       const shelfName = contextMenu.shelfName!;
                       const shelfBooks = contextMenu.shelfBooks!;
                       setContextMenu(null);
-                      void handleDeleteShelf(shelfName, shelfBooks);
+                      setDeleteDialog({ type: 'shelf', shelfName, shelfBooks });
                     }}
                   >
                     Xóa thư mục và sách
@@ -1706,11 +1990,42 @@ export default function App() {
               onSubmit={() => void submitRename()}
             />
           )}
+          {shareDialog && (
+            <ShareDialog
+              email={shareDialog.email}
+              onEmailChange={(email) => setShareDialog((current) => current ? { ...current, email } : current)}
+              itemLabel={shareDialog.books.length === 1 ? 'sách' : 'thư mục'}
+              busy={shareDialog.busy}
+              result={shareDialog.result}
+              onCancel={() => setShareDialog(null)}
+              onSubmit={() => void handleShare()}
+            />
+          )}
+          {deleteDialog && (
+            <DeleteDialog
+              title={deleteDialog.type === 'shelf'
+                ? 'Xóa thư mục?'
+                : deleteDialog.type === 'books' ? `Xóa ${deleteDialog.books.length} sách?` : 'Xóa sách?'}
+              description={deleteDialog.type === 'shelf'
+                ? `Bạn có chắc muốn xóa thư mục "${deleteDialog.shelfName}" và ${deleteDialog.shelfBooks.length} sách bên trong không?`
+                : deleteDialog.type === 'books'
+                  ? `Bạn có chắc muốn xóa ${deleteDialog.books.length} sách đã chọn không?`
+                  : `Bạn có chắc muốn xóa "${deleteDialog.book.title}" không?`}
+              onCancel={() => setDeleteDialog(null)}
+              onConfirm={() => {
+                const target = deleteDialog;
+                setDeleteDialog(null);
+                if (target.type === 'book') void handleDelete(target.book);
+                else if (target.type === 'books') void handleDeleteBooks(target.books);
+                else void handleDeleteShelf(target.shelfName, target.shelfBooks);
+              }}
+            />
+          )}
           {submittedSearchQuery ? (
             <section>
-              <div className="mb-6 flex flex-col gap-2 border-b border-stone-200 pb-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className={`mb-6 flex flex-col gap-2 border-b ${border} pb-3 sm:flex-row sm:items-end sm:justify-between`}>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Tìm kiếm</p>
+                  <p className={`text-xs font-semibold uppercase tracking-[0.18em] ${textSecondary}`}>Tìm kiếm</p>
                   <h2 className="mt-1 text-xl font-bold sm:text-2xl">Kết quả cho “{submittedSearchQuery}”</h2>
                 </div>
                 <button
@@ -1718,7 +2033,7 @@ export default function App() {
                     setSubmittedSearchQuery('');
                     setSearchQuery('');
                   }}
-                  className="rounded-lg px-3 py-2 text-sm text-stone-600 hover:bg-stone-100"
+                  className={`rounded-lg px-3 py-2 text-sm ${textSecondary} ${hover}`}
                 >
                   Về kho sách
                 </button>
@@ -1730,6 +2045,7 @@ export default function App() {
                       key={libraryBook.id}
                       book={libraryBook}
                       coverUrl={coverUrls[libraryBook.id]}
+                      isDark={isDark}
                       onOpen={() => void openBook(libraryBook)}
                       onContextMenu={(event) => {
                         event.preventDefault();
@@ -1739,24 +2055,25 @@ export default function App() {
                   ))}
                 </div>
               ) : (
-                <p className="py-12 text-center text-stone-500">Không tìm thấy sách phù hợp.</p>
+                <p className={`py-12 text-center ${textSecondary}`}>Không tìm thấy sách phù hợp.</p>
               )}
             </section>
           ) : !selectedShelf && continueReadingBooks.length > 0 && (
             <section className="mb-10">
-              <div className="mb-4 border-b border-stone-200 pb-3">
+              <div className={`mb-4 border-b ${border} pb-3`}>
                 <h2 className="text-xl font-bold">Tiếp tục đọc</h2>
               </div>
-              <div className="flex gap-6 overflow-x-auto pb-3">
+              <div className={`scrollbar-hover ${isDark ? 'scrollbar-hover-dark' : ''} flex items-start gap-6 overflow-x-auto pb-3`}>
                 {continueReadingBooks.map((libraryBook) => (
                   <LibraryBookCard
                     key={`continue-${libraryBook.id}`}
                     book={libraryBook}
                     coverUrl={coverUrls[libraryBook.id]}
+                    isDark={isDark}
                     onOpen={() => void openBook(libraryBook)}
                     onContextMenu={(event) => {
                       event.preventDefault();
-                      setContextMenu({ type: 'book', book: libraryBook, x: event.clientX, y: event.clientY });
+                      setContextMenu({ type: 'book', book: libraryBook, fromContinueReading: true, x: event.clientX, y: event.clientY });
                     }}
                   />
                 ))}
@@ -1766,28 +2083,109 @@ export default function App() {
           {!submittedSearchQuery && <div>
             {selectedShelf ? (
               <section>
-                <div className="mb-6 flex items-center gap-2 text-sm text-stone-500">
-                  <Folder className="h-5 w-5" />
-                  <span>{selectedShelf.books.length} sách trong thư mục này</span>
+                <div className={`mb-6 flex flex-wrap items-center justify-between gap-3 text-sm ${textSecondary}`}>
+                  <div className="flex items-center gap-2">
+                    <Folder className="h-5 w-5" />
+                    <span className="sm:hidden">{selectedShelf.books.length} sách</span>
+                    <span className="hidden sm:inline">{selectedShelf.books.length} sách trong thư mục này</span>
+                  </div>
+                  <div className="flex max-w-full flex-nowrap items-center gap-2 overflow-x-auto">
+                    {!selectionMode && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectionMode(true);
+                          setSelectedBookIds(new Set());
+                        }}
+                        className={`shrink-0 rounded-lg px-3 py-2 text-xs font-medium ${textSecondary} ${hover}`}
+                      >
+                        Chọn
+                      </button>
+                    )}
+                    {selectionMode && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedBookIds.size === selectedShelf.books.length) {
+                            setSelectedBookIds(new Set());
+                            setSelectionMode(false);
+                          } else {
+                            setSelectedBookIds(new Set(selectedShelf.books.map((item) => item.id)));
+                          }
+                        }}
+                      className={`rounded-lg px-3 py-2 text-xs font-medium ${textSecondary} ${hover}`}
+                      >
+                        {selectedBookIds.size === selectedShelf.books.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                      </button>
+                    )}
+                    {selectedBookIds.size > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setShareDialog({
+                            books: selectedShelf.books.filter((item) => selectedBookIds.has(item.id)),
+                            email: '',
+                            busy: false,
+                            result: null,
+                          })}
+                          className="flex items-center gap-1 rounded-lg bg-stone-900 px-3 py-2 text-xs font-medium text-white hover:bg-stone-700"
+                        >
+                          <Send className="h-3.5 w-3.5" />
+                          Gửi {selectedBookIds.size} sách
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteDialog({
+                            type: 'books',
+                            books: selectedShelf.books.filter((item) => selectedBookIds.has(item.id)),
+                          })}
+                          className="flex items-center gap-1 rounded-lg bg-red-600 px-3 py-2 text-xs font-medium text-white hover:bg-red-700"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Xóa {selectedBookIds.size} sách
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-x-6 gap-y-8">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-5">
                   {selectedShelf.books.map((libraryBook) => (
-                    <LibraryBookCard
-                      key={libraryBook.id}
-                      book={libraryBook}
-                      coverUrl={coverUrls[libraryBook.id]}
-                      onOpen={() => void openBook(libraryBook)}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        setContextMenu({ type: 'book', book: libraryBook, x: event.clientX, y: event.clientY });
-                      }}
-                    />
+                    <div key={libraryBook.id} className="relative">
+                      {selectionMode && (
+                        <label className="absolute right-2 top-2 z-10 flex cursor-pointer items-center rounded-md bg-white/90 p-1.5 shadow-sm">
+                          <input
+                            type="checkbox"
+                            checked={selectedBookIds.has(libraryBook.id)}
+                            onChange={() => setSelectedBookIds((current) => {
+                              const next = new Set(current);
+                              if (next.has(libraryBook.id)) next.delete(libraryBook.id);
+                              else next.add(libraryBook.id);
+                              return next;
+                            })}
+                            onClick={(event) => event.stopPropagation()}
+                            aria-label={`Chọn ${libraryBook.title}`}
+                            className="h-4 w-4 accent-stone-800"
+                          />
+                        </label>
+                      )}
+                      <LibraryBookCard
+                        book={libraryBook}
+                        coverUrl={coverUrls[libraryBook.id]}
+                        isDark={isDark}
+                        fullWidth
+                        onOpen={() => void openBook(libraryBook)}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          setContextMenu({ type: 'book', book: libraryBook, x: event.clientX, y: event.clientY });
+                        }}
+                      />
+                    </div>
                   ))}
                 </div>
               </section>
             ) : (
               <section>
-                <div className="mb-6 border-b border-stone-200 pb-3">
+                <div className={`mb-6 border-b ${border} pb-3`}>
                   <h2 className="text-2xl font-bold">Kho sách</h2>
                 </div>
                 <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5">
@@ -1797,7 +2195,11 @@ export default function App() {
                     return (
                     <button
                       key={shelfKey}
-                      onClick={() => setSelectedShelfKey(shelfKey)}
+                      onClick={() => {
+                        setSelectedShelfKey(shelfKey);
+                        setSelectedBookIds(new Set());
+                        setSelectionMode(false);
+                      }}
                       onContextMenu={(event) => {
                         event.preventDefault();
                         setContextMenu({
@@ -1826,7 +2228,7 @@ export default function App() {
                         </div>
                       )}
                       <h3 className="mt-3 truncate text-base font-semibold">{shelf.name}</h3>
-                      <p className="mt-1 text-sm text-stone-500">{shelf.books.length} sách</p>
+                      <p className={`mt-1 text-sm ${textSecondary}`}>{shelf.books.length} sách</p>
                     </button>
                     );
                   })}
@@ -1885,6 +2287,26 @@ export default function App() {
           onChange={(value) => setRenameDialog((current) => current ? { ...current, value } : current)}
           onCancel={() => setRenameDialog(null)}
           onSubmit={() => void submitRename()}
+        />
+      )}
+      {deleteDialog && (
+        <DeleteDialog
+          title={deleteDialog.type === 'shelf'
+            ? 'Xóa thư mục?'
+            : deleteDialog.type === 'books' ? `Xóa ${deleteDialog.books.length} sách?` : 'Xóa sách?'}
+          description={deleteDialog.type === 'shelf'
+            ? `Bạn có chắc muốn xóa thư mục "${deleteDialog.shelfName}" và ${deleteDialog.shelfBooks.length} sách bên trong không?`
+            : deleteDialog.type === 'books'
+              ? `Bạn có chắc muốn xóa ${deleteDialog.books.length} sách đã chọn không?`
+              : `Bạn có chắc muốn xóa "${deleteDialog.book.title}" không?`}
+          onCancel={() => setDeleteDialog(null)}
+          onConfirm={() => {
+            const target = deleteDialog;
+            setDeleteDialog(null);
+            if (target.type === 'book') void handleDelete(target.book);
+            else if (target.type === 'books') void handleDeleteBooks(target.books);
+            else void handleDeleteShelf(target.shelfName, target.shelfBooks);
+          }}
         />
       )}
       {/* Header */}
@@ -2038,7 +2460,7 @@ export default function App() {
             <X className={`w-5 h-5 ${textPrimary}`} />
           </button>
         </div>
-        <div className="overflow-y-auto scrollbar-thin h-[calc(100vh-3.5rem)]">
+        <div className={`overflow-y-auto scrollbar-thin ${isDark ? 'scrollbar-thin-dark' : ''} h-[calc(100vh-3.5rem)]`}>
           <div className="p-4">
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -2062,7 +2484,7 @@ export default function App() {
               </p>
               <div className="space-y-2">
                 {sortedShelves.map(([shelfKey, shelf]) => {
-                  const isOpen = openShelves[shelfKey] !== false;
+                  const isOpen = openShelves[shelfKey] === true;
                   return (
                     <div key={shelfKey}>
                       <div className={`flex items-center gap-1 rounded-lg ${hover}`}>
@@ -2098,7 +2520,7 @@ export default function App() {
                                 <span className="truncate">{libraryBook.title}</span>
                               </button>
                               <button
-                                onClick={() => void handleDelete(libraryBook)}
+                                onClick={() => setDeleteDialog({ type: 'book', book: libraryBook })}
                                 className={`shrink-0 rounded-lg p-2 ${hover} transition-colors`}
                                 aria-label={`Xóa ${libraryBook.title}`}
                               >
@@ -2158,9 +2580,9 @@ export default function App() {
           if (event.clientX < bounds.left + bounds.width * 0.35) goPrev();
           if (event.clientX > bounds.left + bounds.width * 0.65) goNext();
         }}
-        className={`flex-1 overflow-y-auto scrollbar-thin pt-12 transition-colors duration-300 ${book.file_type === 'pdf' ? 'pb-0' : 'pb-16'}`}
+        className={`flex-1 overflow-y-auto scrollbar-thin ${isDark ? 'scrollbar-thin-dark' : ''} pt-12 transition-colors duration-300 ${book.file_type === 'pdf' ? 'pb-0' : 'pb-16'}`}
       >
-        <div className="w-full max-w-none px-5 py-8 sm:px-10 sm:py-10 lg:px-16">
+        <div className={book.file_type === 'pdf' ? 'w-full max-w-none' : 'w-full max-w-none px-5 py-8 sm:px-10 sm:py-10 lg:px-16'}>
           {book.file_type === 'pdf' && currentChapter?.pdf_url ? (
             <PdfReader
               url={currentChapter.pdf_url}
@@ -2241,12 +2663,4 @@ export default function App() {
       )}
     </div>
   );
-}
-
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    for (let registration of registrations) {
-      registration.update();
-    }
-  });
 }

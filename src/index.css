@@ -194,6 +194,11 @@
     overflow: auto;
     padding: 2rem;
     text-align: center;
+    background: #eef2ff;
+  }
+
+  .pdf-reader-dark .pdf-page-stage {
+    background: #202124;
   }
 
   .pdf-page-click-zone {
@@ -225,6 +230,7 @@
 
   .pdf-page-stage canvas {
     display: inline-block;
+    width: auto;
     max-width: min(100%, 64rem);
     height: auto;
     background: white;
@@ -281,6 +287,57 @@
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background-color: rgba(120, 120, 120, 0.3);
     border-radius: 3px;
+  }
+
+  .scrollbar-thin-dark {
+    scrollbar-color: rgba(160, 160, 160, 0.45) #202020;
+  }
+
+  .scrollbar-thin-dark::-webkit-scrollbar-track {
+    background: #202020;
+  }
+
+  .scrollbar-hover {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  .scrollbar-hover::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .scrollbar-hover:hover {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(120, 120, 120, 0.3) transparent;
+  }
+
+  .scrollbar-hover::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-hover::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 3px;
+  }
+
+  .scrollbar-hover:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(120, 120, 120, 0.3);
+  }
+
+  .scrollbar-hover-dark {
+    scrollbar-color: transparent #202020;
+  }
+
+  .scrollbar-hover-dark:hover {
+    scrollbar-color: #a3a3a3 #202020;
+  }
+
+  .scrollbar-hover-dark::-webkit-scrollbar-track {
+    background: #202020;
+  }
+
+  .scrollbar-hover-dark:hover::-webkit-scrollbar-thumb {
+    background-color: #a3a3a3;
   }
 
   .fade-in {
