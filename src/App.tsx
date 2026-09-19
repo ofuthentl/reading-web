@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import JSZip from 'jszip';
 import * as pdfjsLib from 'pdfjs-dist';
+import { initMobiFile } from '@lingo-reader/mobi-parser';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -38,6 +39,7 @@ const pdfWasmUrl = `${import.meta.env.BASE_URL}pdfjs-wasm/`;
 
 type Theme = 'light' | 'dark';
 type FontSize = 'small' | 'medium' | 'large';
+type BookFileType = 'pdf' | 'epub' | 'mobi' | 'cbz';
 type ReadingPosition = {
   chapterId: string;
   scrollTop: number;
@@ -66,7 +68,7 @@ function readerChapterPositionKey(userId: string, bookId: string, chapterId: str
 }
 
 function readerCompletedKey(userId: string, bookId: string) {
-  return `reader-completed:v1:${userId}:${bookId}`;
+  return `reader-completed:v2:${userId}:${bookId}`;
 }
 
 function readChapterPosition(userId: string, chapter: Chapter): ReadingPosition | null {
@@ -123,6 +125,8 @@ function shelfCoverOverrideKey(userId: string) {
   return `shelf-cover-overrides:${userId}`;
 }
 
+const chapterSideNavigationKey = 'reader-chapter-side-navigation';
+
 async function prepareCoverImage(file: File) {
   const image = await createImageBitmap(file);
   const targetWidth = 1200;
@@ -153,6 +157,39 @@ async function getBookFileUrl(path: string) {
   if (error || !data?.signedUrl) throw error || new Error('Không thể tạo URL đọc tệp.');
   return data.signedUrl;
 }
+
+async function downloadBookFile(path: string) {
+  const { data, error } = await supabase.storage.from('books').download(path);
+  if (error || !data) throw error || new Error('Không thể tải tệp sách.');
+  return data;
+}
+
+const MAX_STORAGE_OBJECT_BYTES = 45 * 1024 * 1024;
+const bookDataCache = new Map<string, Promise<Blob>>();
+
+async function downloadBookData(book: Book) {
+  if (!book.file_parts?.length) {
+    if (!book.file_path) throw new Error('Sách không có tệp lưu trữ.');
+    return downloadBookFile(book.file_path);
+  }
+  const cacheKey = book.file_parts.join('|');
+  const cached = bookDataCache.get(cacheKey);
+  if (cached) return cached;
+  const downloadPromise = Promise.all(book.file_parts.map((path) => downloadBookFile(path)))
+    .then((parts) => new Blob(parts, { type: 'application/octet-stream' }));
+  bookDataCache.set(cacheKey, downloadPromise);
+  return downloadPromise;
+}
+
+async function getBookSourceUrl(book: Book) {
+  if (!book.file_parts?.length) {
+    if (!book.file_path) throw new Error('Sách không có tệp lưu trữ.');
+    return getBookFileUrl(book.file_path);
+  }
+  return URL.createObjectURL(await downloadBookData(book));
+}
+
+const coverUrlCache = new Map<string, { url: string | null; expiresAt: number }>();
 
 const fontSizes: Record<FontSize, string> = {
   small: '1rem',
@@ -266,18 +303,25 @@ function LibraryBookCard({
   fullWidth?: boolean;
   isDark?: boolean;
 }) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [coverUrl]);
+
   return (
     <button
       onClick={onOpen}
       onContextMenu={onContextMenu}
       className={`group text-left ${fullWidth ? 'w-full' : 'w-36 shrink-0 sm:w-44'}`}
     >
-      {coverUrl ? (
+      {coverUrl && !imageFailed ? (
         <div className="mb-3 aspect-[3/4] w-full overflow-hidden rounded-xl shadow-sm transition-transform group-hover:-translate-y-1">
           <img
             src={coverUrl}
             alt={`Cover ${book.title}`}
             className="h-full w-full object-cover"
+            onError={() => setImageFailed(true)}
           />
         </div>
       ) : (
@@ -601,7 +645,7 @@ function resolveZipPath(basePath: string, relativePath: string) {
   return resolved.join('/');
 }
 
-async function extractEpubChapters(url: string, bookId: string): Promise<Chapter[]> {
+async function extractEpubChapters(url: string, bookId: string, partCount = 1, bookTitle = 'Manga'): Promise<Chapter[]> {
   const response = await fetch(url);
   if (!response.ok) throw new Error('Không thể tải tệp EPUB.');
 
@@ -655,25 +699,9 @@ async function extractEpubChapters(url: string, bookId: string): Promise<Chapter
   };
 
   const htmlItems = spineItems.filter(({ item }) => item.mediaType.includes('html') || item.mediaType.includes('xml'));
-  const namedChapterCount = htmlItems.filter(({ path }) => getFilenameChapterTitle(path)).length;
-  const chapterGroups: { title: string; items: typeof htmlItems }[] = [];
-  if (namedChapterCount > 0) {
-    for (const item of htmlItems) {
-      const title = getFilenameChapterTitle(item.path);
-      if (title) {
-        chapterGroups.push({ title, items: [item] });
-      } else if (chapterGroups.length === 0) {
-        chapterGroups.push({ title: 'Hình minh họa', items: [item] });
-      } else {
-        chapterGroups[chapterGroups.length - 1].items.push(item);
-      }
-    }
-  } else {
-    htmlItems.forEach((item) => chapterGroups.push({ title: '', items: [item] }));
-  }
-
   const manifestByPath = new Map<string, { mediaType: string }>();
   manifest.forEach((item) => manifestByPath.set(getZipPath(rootFile, item.href), item));
+  const usedImagePaths = new Set<string>();
 
   async function readXhtml(path: string) {
     const source = await zip.file(path)?.async('string');
@@ -709,6 +737,11 @@ async function extractEpubChapters(url: string, bookId: string): Promise<Chapter
         image.remove();
         continue;
       }
+      if (usedImagePaths.has(imagePath)) {
+        image.remove();
+        continue;
+      }
+      usedImagePaths.add(imagePath);
       const imageFile = zip.file(imagePath);
       if (!imageFile) {
         image.remove();
@@ -733,6 +766,11 @@ async function extractEpubChapters(url: string, bookId: string): Promise<Chapter
         image.remove();
         continue;
       }
+      if (usedImagePaths.has(imagePath)) {
+        image.remove();
+        continue;
+      }
+      usedImagePaths.add(imagePath);
       const imageFile = zip.file(imagePath);
       if (!imageFile) {
         image.remove();
@@ -769,16 +807,49 @@ async function extractEpubChapters(url: string, bookId: string): Promise<Chapter
     return { html: bodyHtml, text, hasImage, segments };
   }
 
+  const parsedItems = (await Promise.all(htmlItems.map(async (item) => ({
+    item,
+    part: await readXhtml(item.path),
+  })))).filter(
+    (entry): entry is {
+      item: (typeof htmlItems)[number];
+      part: NonNullable<Awaited<ReturnType<typeof readXhtml>>>;
+    } => Boolean(entry.part),
+  );
+  const partByPath = new Map(parsedItems.map(({ item, part }) => [item.path, part]));
+  const isImageOnlyEpub = parsedItems.length > 0
+    && parsedItems.every(({ part }) => part.hasImage && !part.text);
+  const namedChapterCount = htmlItems.filter(({ path }) => getFilenameChapterTitle(path)).length;
+  const chapterGroups: { title: string; items: typeof htmlItems }[] = [];
+  if (namedChapterCount > 0) {
+    for (const item of htmlItems) {
+      const title = getFilenameChapterTitle(item.path);
+      if (title) {
+        chapterGroups.push({ title, items: [item] });
+      } else if (chapterGroups.length === 0) {
+        chapterGroups.push({ title: 'Hình minh họa', items: [item] });
+      } else {
+        chapterGroups[chapterGroups.length - 1].items.push(item);
+      }
+    }
+  } else if (isImageOnlyEpub) {
+    const actualPartCount = Math.min(Math.max(partCount, 1), htmlItems.length);
+    const itemsPerPart = Math.ceil(htmlItems.length / actualPartCount);
+    for (let index = 0; index < actualPartCount; index += 1) {
+      chapterGroups.push({
+        title: `${bookTitle} - Phần ${index + 1}`,
+        items: htmlItems.slice(index * itemsPerPart, (index + 1) * itemsPerPart),
+      });
+    }
+  } else {
+    htmlItems.forEach((item) => chapterGroups.push({ title: '', items: [item] }));
+  }
+
   const chapters: Chapter[] = [];
   for (const group of chapterGroups) {
-    const parts = (await Promise.all(group.items.map((item) => readXhtml(item.path)))).filter(
-      (part): part is {
-        html: string;
-        text: string;
-        hasImage: boolean;
-        segments: { html: string; text: string; hasImage: boolean; title: string | null }[];
-      } => Boolean(part),
-    );
+    const parts = group.items
+      .map((item) => partByPath.get(item.path))
+      .filter((part): part is NonNullable<Awaited<ReturnType<typeof readXhtml>>> => Boolean(part));
     if (group.title === 'Hình minh họa' && !parts.some((part) => part.hasImage)) continue;
     const contentSegments: { title: string; html: string[]; text: string[]; hasImage: boolean }[] = [];
     for (const part of parts) {
@@ -885,6 +956,64 @@ async function extractPdfChapters(url: string, bookId: string): Promise<Chapter[
   return chapters;
 }
 
+async function extractCbzChapters(file: Blob, bookId: string, partCount = 1, bookTitle = 'Manga'): Promise<Chapter[]> {
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const imageFiles = Object.values(zip.files)
+    .filter((file) => !file.dir && /\.(?:avif|gif|jpe?g|png|webp)$/i.test(file.name))
+    .sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }));
+  const imageHtml: string[] = [];
+  for (const [index, imageFile] of imageFiles.entries()) {
+    const imageBlob = await imageFile.async('blob');
+    const imageUrl = URL.createObjectURL(imageBlob);
+    imageHtml.push(`<img src="${imageUrl}" alt="Trang ${index + 1}" />`);
+  }
+  if (imageHtml.length === 0) throw new Error('CBZ không có ảnh để hiển thị.');
+  const actualPartCount = Math.min(Math.max(partCount, 1), imageHtml.length);
+  const imagesPerPart = Math.ceil(imageHtml.length / actualPartCount);
+  return Array.from({ length: actualPartCount }, (_, index) => ({
+    id: `${bookId}-cbz-${index}`,
+    book_id: bookId,
+    title: `${bookTitle} - Phần ${index + 1}`,
+    content: '',
+    content_html: imageHtml.slice(index * imagesPerPart, (index + 1) * imagesPerPart).join(''),
+    chapter_number: index + 1,
+    created_at: new Date().toISOString(),
+  }));
+}
+
+async function extractMobiChapters(file: Blob, bookId: string): Promise<Chapter[]> {
+  const mobi = await initMobiFile(new Uint8Array(await file.arrayBuffer()));
+  try {
+    const tableOfContents = mobi.getToc();
+    const titlesByHref = new Map(tableOfContents.map((item) => [item.href, item.label]));
+    const chapters: Chapter[] = [];
+    for (const [index, spineItem] of mobi.getSpine().entries()) {
+      const loadedChapter = mobi.loadChapter(spineItem.id);
+      if (!loadedChapter?.html.trim()) continue;
+      const cleanedHtml = loadedChapter.html
+        .replace(/^\s*(?:<\?xml\s*)?version\s*=\s*["'][^"']+["']\s+encoding\s*=\s*["'][^"']+["']\s*\?>/i, '')
+        .replace(/^\s*<\?xml[^>]*\?>/i, '')
+        .replace(/^\s*<!doctype[^>]*>/i, '');
+      const document = new DOMParser().parseFromString(cleanedHtml, 'text/html');
+      document.querySelectorAll('script, iframe, object, embed').forEach((element) => element.remove());
+      const contentHtml = document.body.innerHTML;
+      chapters.push({
+        id: `${bookId}-mobi-${index}`,
+        book_id: bookId,
+        title: titlesByHref.get(spineItem.id) || `Chương ${chapters.length + 1}`,
+        content: document.body.textContent?.replace(/\s+/g, ' ').trim() || '',
+        content_html: contentHtml,
+        chapter_number: chapters.length + 1,
+        created_at: new Date().toISOString(),
+      });
+    }
+    if (chapters.length === 0) throw new Error('MOBI không có nội dung để hiển thị.');
+    return chapters;
+  } finally {
+    mobi.destroy();
+  }
+}
+
 async function loadStoredChapters(bookId: string): Promise<Chapter[]> {
   const { data, error } = await supabase
     .from('chapters')
@@ -939,6 +1068,23 @@ async function extractPdfCoverUrl(url: string) {
   }
 }
 
+async function extractCbzCoverUrl(file: Blob) {
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const imageFile = Object.values(zip.files)
+    .filter((file) => !file.dir && /\.(?:avif|gif|jpe?g|png|webp)$/i.test(file.name))
+    .sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }))[0];
+  return imageFile ? URL.createObjectURL(await imageFile.async('blob')) : null;
+}
+
+async function extractMobiCoverUrl(file: Blob) {
+  const mobi = await initMobiFile(new Uint8Array(await file.arrayBuffer()));
+  try {
+    return mobi.getCoverImage() || null;
+  } finally {
+    mobi.destroy();
+  }
+}
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -957,6 +1103,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>('light');
   const [fontSize, setFontSize] = useState<FontSize>('medium');
+  const [chapterSideNavigationEnabled, setChapterSideNavigationEnabled] = useState(true);
   const [openShelves, setOpenShelves] = useState<Record<string, boolean>>({});
   const [shelfRenames, setShelfRenames] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState('');
@@ -1028,6 +1175,10 @@ export default function App() {
     if (saved) setTheme(saved);
     const savedFont = localStorage.getItem('reader-font-size') as FontSize | null;
     if (savedFont) setFontSize(savedFont);
+    const savedChapterSideNavigation = localStorage.getItem(chapterSideNavigationKey);
+    if (savedChapterSideNavigation !== null) {
+      setChapterSideNavigationEnabled(savedChapterSideNavigation === 'true');
+    }
     try {
       const savedShelves = localStorage.getItem('reader-shelf-names');
       if (savedShelves) setShelfRenames(JSON.parse(savedShelves) as Record<string, string>);
@@ -1048,6 +1199,10 @@ export default function App() {
   }, [fontSize]);
 
   useEffect(() => {
+    localStorage.setItem(chapterSideNavigationKey, String(chapterSideNavigationEnabled));
+  }, [chapterSideNavigationEnabled]);
+
+  useEffect(() => {
     localStorage.setItem('reader-shelf-names', JSON.stringify(shelfRenames));
   }, [shelfRenames]);
 
@@ -1057,14 +1212,13 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    const objectUrls: string[] = [];
     const localCoverOverrides: Record<string, string> = user
       ? JSON.parse(localStorage.getItem(coverOverrideKey(user.id)) || '{}') as Record<string, string>
       : {};
     void (async () => {
       const entries: [string, string | null][] = [];
       const coverBooks = books.filter((libraryBook) =>
-        libraryBook.cover_path || (libraryBook.file_path && (libraryBook.file_type === 'epub' || libraryBook.file_type === 'pdf')),
+        libraryBook.cover_path || ((libraryBook.file_path || libraryBook.file_parts?.length) && ['epub', 'pdf', 'mobi', 'cbz'].includes(libraryBook.file_type || '')),
       );
       let nextIndex = 0;
       const loadNextCover = async () => {
@@ -1073,22 +1227,27 @@ export default function App() {
           nextIndex += 1;
           const libraryBook = coverBooks[index];
           if (!libraryBook) return;
+          const coverCacheKey = libraryBook.cover_path || libraryBook.file_path || libraryBook.file_parts!.join('|');
           try {
-            const url = libraryBook.cover_path
+            const cachedCover = coverUrlCache.get(coverCacheKey);
+            const url = cachedCover && cachedCover.expiresAt > Date.now()
+              ? cachedCover.url
+              : libraryBook.cover_path
               ? await getBookFileUrl(libraryBook.cover_path)
               : libraryBook.file_type === 'pdf'
-              ? await extractPdfCoverUrl(
-                await getBookFileUrl(libraryBook.file_path!),
-              )
-              : await extractEpubCoverUrl(
-                await getBookFileUrl(libraryBook.file_path!),
-              );
-            if (url) objectUrls.push(url);
+              ? await extractPdfCoverUrl(await getBookSourceUrl(libraryBook))
+              : libraryBook.file_type === 'mobi'
+                ? await extractMobiCoverUrl(await downloadBookData(libraryBook))
+                : libraryBook.file_type === 'cbz'
+                  ? await extractCbzCoverUrl(await downloadBookData(libraryBook))
+                  : await extractEpubCoverUrl(await getBookSourceUrl(libraryBook));
+            coverUrlCache.set(coverCacheKey, { url, expiresAt: Date.now() + 50 * 60 * 1000 });
             entries.push([libraryBook.id, url]);
             if (active && url) {
               setCoverUrls((current) => ({ ...current, [libraryBook.id]: url }));
             }
           } catch {
+            coverUrlCache.set(coverCacheKey, { url: null, expiresAt: Date.now() + 5 * 60 * 1000 });
             entries.push([libraryBook.id, null]);
           }
         }
@@ -1103,7 +1262,6 @@ export default function App() {
     })();
     return () => {
       active = false;
-      objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, [books, user]);
 
@@ -1164,38 +1322,6 @@ export default function App() {
         const normalizedBooks = sortBooksByTitle(bookData.map(normalizeBookMetadata));
         setBooks(normalizedBooks);
         setBook(normalizedBooks[0]);
-
-        try {
-          const lastChapterId = readLastChapter(currentUserId, normalizedBooks[0].id);
-          initialPositionRef.current = lastChapterId
-            ? { chapterId: lastChapterId, scrollTop: 0 }
-            : null;
-        } catch {
-          initialPositionRef.current = null;
-        }
-
-        const loadedChapters =
-          normalizedBooks[0].file_type === 'epub' && normalizedBooks[0].file_path
-            ? await extractEpubChapters(
-                await getBookFileUrl(normalizedBooks[0].file_path),
-                normalizedBooks[0].id,
-              )
-            : normalizedBooks[0].file_type === 'pdf' && normalizedBooks[0].file_path
-              ? await extractPdfChapters(
-                  await getBookFileUrl(normalizedBooks[0].file_path),
-                  normalizedBooks[0].id,
-                )
-            : await loadStoredChapters(normalizedBooks[0].id);
-            if (requestId !== selectionRequestRef.current) return;
-        setChapters(loadedChapters);
-        const savedChapterIndex = loadedChapters.findIndex(
-          (chapter) => chapter.id === initialPositionRef.current?.chapterId,
-        );
-        if (savedChapterIndex >= 0) {
-          const chapterPosition = readChapterPosition(currentUserId, loadedChapters[savedChapterIndex]);
-          if (chapterPosition) initialPositionRef.current = chapterPosition;
-          setCurrentChapterIndex(savedChapterIndex);
-        }
         setLoading(false);
       } catch (err) {
         if (requestId !== selectionRequestRef.current) return;
@@ -1245,16 +1371,30 @@ export default function App() {
     try {
       setLoading(true);
       const loadedChapters =
-        selectedBook.file_type === 'epub' && selectedBook.file_path
+        selectedBook.file_type === 'epub' && (selectedBook.file_path || selectedBook.file_parts?.length)
           ? await extractEpubChapters(
-              await getBookFileUrl(selectedBook.file_path),
+              await getBookSourceUrl(selectedBook),
               selectedBook.id,
+              selectedBook.file_parts?.length || 1,
+              selectedBook.title,
             )
-          : selectedBook.file_type === 'pdf' && selectedBook.file_path
+          : selectedBook.file_type === 'pdf' && (selectedBook.file_path || selectedBook.file_parts?.length)
             ? await extractPdfChapters(
-                await getBookFileUrl(selectedBook.file_path),
+                await getBookSourceUrl(selectedBook),
                 selectedBook.id,
               )
+            : selectedBook.file_type === 'mobi' && (selectedBook.file_path || selectedBook.file_parts?.length)
+              ? await extractMobiChapters(
+                  await downloadBookData(selectedBook),
+                  selectedBook.id,
+                )
+              : selectedBook.file_type === 'cbz' && (selectedBook.file_path || selectedBook.file_parts?.length)
+                ? await extractCbzChapters(
+                    await downloadBookData(selectedBook),
+                    selectedBook.id,
+                    selectedBook.file_parts?.length || 1,
+                    selectedBook.title,
+                  )
           : selectedBook.file_path
             ? []
             : await loadStoredChapters(selectedBook.id);
@@ -1286,10 +1426,10 @@ export default function App() {
 
     const invalidFile = files.find((file) => {
       const extension = file.name.split('.').pop()?.toLowerCase();
-      return (extension !== 'pdf' && extension !== 'epub') || file.size > 100 * 1024 * 1024;
+      return !['pdf', 'epub', 'mobi', 'cbz'].includes(extension || '') || file.size > 400 * 1024 * 1024;
     });
     if (invalidFile) {
-      setError(`${invalidFile.name}: chỉ hỗ trợ PDF/EPUB dưới 100 MB.`);
+      setError(`${invalidFile.name}: chỉ hỗ trợ PDF/EPUB/MOBI/CBZ dưới 400 MB.`);
       return;
     }
 
@@ -1309,7 +1449,7 @@ export default function App() {
       );
       const duplicateTitles: string[] = [];
       const uploadCandidates = files.filter((file) => {
-        const fileLabel = file.name.replace(/\.(pdf|epub)$/i, '').trim() || 'Sách chưa đặt tên';
+        const fileLabel = file.name.replace(/\.(pdf|epub|mobi|cbz)$/i, '').trim() || 'Sách chưa đặt tên';
         const [titlePart, ...authorParts] = fileLabel.split(/\s+-\s+/);
         const title = titlePart.trim() || fileLabel;
         const author = authorParts.join(' - ').trim() || 'Không rõ tác giả';
@@ -1327,15 +1467,54 @@ export default function App() {
         return;
       }
       const uploadedBooks = await Promise.all(uploadCandidates.map(async (file) => {
-        const extension = file.name.split('.').pop()?.toLowerCase() as 'pdf' | 'epub';
-        const filePath = `${user.id}/${crypto.randomUUID()}.${extension}`;
-        const { error: uploadError } = await supabase.storage.from('books').upload(filePath, file, {
-          contentType: file.type || (extension === 'pdf' ? 'application/pdf' : 'application/epub+zip'),
-          upsert: false,
-        });
-        if (uploadError) throw uploadError;
+        const extension = file.name.split('.').pop()?.toLowerCase() as BookFileType;
+        const fileId = crypto.randomUUID();
+        const filePath = `${user.id}/${fileId}.${extension}`;
+        const contentTypes: Record<BookFileType, string> = {
+          pdf: 'application/pdf',
+          epub: 'application/epub+zip',
+          mobi: 'application/x-mobipocket-ebook',
+          cbz: 'application/vnd.comicbook+zip',
+        };
+        const contentType = contentTypes[extension] || file.type || 'application/octet-stream';
+        const fileParts: string[] = [];
+        if (file.size > MAX_STORAGE_OBJECT_BYTES) {
+          const partCount = Math.ceil(file.size / MAX_STORAGE_OBJECT_BYTES);
+          const uploadPart = async (index: number) => {
+            const partPath = `${user.id}/${fileId}.part-${String(index).padStart(4, '0')}`;
+            const start = index * MAX_STORAGE_OBJECT_BYTES;
+            const part = file.slice(start, Math.min(start + MAX_STORAGE_OBJECT_BYTES, file.size), contentType);
+            const { error: partError } = await supabase.storage.from('books').upload(partPath, part, {
+              contentType,
+              upsert: false,
+            });
+            if (partError) throw partError;
+            return { index, partPath };
+          };
+          const nextPart = { value: 0 };
+          const uploadWorker = async () => {
+            const uploaded: { index: number; partPath: string }[] = [];
+            while (nextPart.value < partCount) {
+              const index = nextPart.value;
+              nextPart.value += 1;
+              uploaded.push(await uploadPart(index));
+            }
+            return uploaded;
+          };
+          const workerCount = Math.min(3, partCount);
+          const uploadedParts = (await Promise.all(
+            Array.from({ length: workerCount }, () => uploadWorker()),
+          )).flat().sort((left, right) => left.index - right.index);
+          fileParts.push(...uploadedParts.map(({ partPath }) => partPath));
+        } else {
+          const { error: uploadError } = await supabase.storage.from('books').upload(filePath, file, {
+            contentType,
+            upsert: false,
+          });
+          if (uploadError) throw uploadError;
+        }
 
-        const fileLabel = file.name.replace(/\.(pdf|epub)$/i, '').trim() || 'Sách chưa đặt tên';
+        const fileLabel = file.name.replace(/\.(pdf|epub|mobi|cbz)$/i, '').trim() || 'Sách chưa đặt tên';
         const [titlePart, ...authorParts] = fileLabel.split(/\s+-\s+/);
         const title = titlePart.trim() || fileLabel;
         const author = authorParts.join(' - ').trim() || 'Không rõ tác giả';
@@ -1344,7 +1523,8 @@ export default function App() {
             .insert({
               title,
               author,
-              file_path: filePath,
+              file_path: fileParts.length > 0 ? null : filePath,
+              file_parts: fileParts.length > 0 ? fileParts : null,
               file_type: extension,
               owner_id: user.id,
               is_public: false,
@@ -1425,12 +1605,18 @@ export default function App() {
     left[1].name.localeCompare(right[1].name, 'vi', { sensitivity: 'base' }),
   );
   const continueBooks = books
-    .filter((libraryBook) => Boolean(
-      user
-      && (cloudProgress[libraryBook.id]?.chapterId || readLastChapter(user.id, libraryBook.id))
-      && !cloudProgress[libraryBook.id]?.completed
-      && !hasCompletedBook(user.id, libraryBook.id),
-    ))
+    .filter((libraryBook) => {
+      const hasProgress = Boolean(
+        user
+        && (cloudProgress[libraryBook.id]?.chapterId || readLastChapter(user.id, libraryBook.id)),
+      );
+      const isSingleStoredComic = (libraryBook.file_type === 'cbz' || libraryBook.file_type === 'mobi')
+        && (libraryBook.file_parts?.length || 1) === 1;
+      return hasProgress && (isSingleStoredComic || (
+        !cloudProgress[libraryBook.id]?.completed
+        && !hasCompletedBook(user!.id, libraryBook.id)
+      ));
+    })
     .sort((left, right) => user
       ? (cloudProgress[right.id]?.updatedAt || readLastReadAt(user.id, right.id))
         - (cloudProgress[left.id]?.updatedAt || readLastReadAt(user.id, left.id))
@@ -1681,12 +1867,13 @@ export default function App() {
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
+      if (!chapterSideNavigationEnabled) return;
       if (e.key === 'ArrowLeft') goPrev();
       if (e.key === 'ArrowRight') goNext();
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [goPrev, goNext]);
+  }, [chapterSideNavigationEnabled, goPrev, goNext]);
 
   const handleScroll = useCallback(() => {
     const el = contentRef.current;
@@ -1733,6 +1920,7 @@ export default function App() {
     if (
       user
       && currentChapter
+      && chapters.length > 1
       && currentChapterIndex === chapters.length - 1
       && el.scrollTop + el.clientHeight >= el.scrollHeight - 8
       && !hasCompletedBook(user.id, currentChapter.book_id)
@@ -2000,7 +2188,7 @@ export default function App() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="application/pdf,.pdf,application/epub+zip,.epub"
+              accept="application/pdf,.pdf,application/epub+zip,.epub,application/x-mobipocket-ebook,.mobi,application/vnd.comicbook+zip,.cbz"
               multiple
               onChange={handleUpload}
               className="hidden"
@@ -2383,19 +2571,19 @@ export default function App() {
           <Library className={`h-10 w-10 ${textSecondary}`} />
           <div>
             <h1 className={`text-xl font-semibold ${textPrimary}`}>Thư viện đang trống</h1>
-            <p className={`mt-2 text-sm ${textSecondary}`}>Thêm PDF hoặc EPUB để bắt đầu đọc.</p>
+            <p className={`mt-2 text-sm ${textSecondary}`}>Thêm PDF, EPUB, MOBI hoặc CBZ để bắt đầu đọc.</p>
           </div>
           <button
             onClick={() => fileInputRef.current?.click()}
             className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium ${activeChapter} transition-colors`}
           >
             <Upload className="h-4 w-4" />
-            Thêm PDF / EPUB
+            Thêm sách
           </button>
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/pdf,.pdf,application/epub+zip,.epub"
+            accept="application/pdf,.pdf,application/epub+zip,.epub,application/x-mobipocket-ebook,.mobi,application/vnd.comicbook+zip,.cbz"
             multiple
             onChange={handleUpload}
             className="hidden"
@@ -2405,7 +2593,7 @@ export default function App() {
     );
   }
 
-  if (!book.file_path && chapters.length === 0) {
+  if (!book.file_path && !book.file_parts?.length && chapters.length === 0) {
     return (
       <div className={`min-h-screen ${bg} flex items-center justify-center`}>
         <p className={`text-lg ${textPrimary}`}>Chưa có chương để đọc.</p>
@@ -2567,6 +2755,21 @@ export default function App() {
                 <Moon className="w-4 h-4" /> Tối
               </button>
             </div>
+            <div className={`mt-4 flex items-center justify-between gap-3 border-t ${border} pt-4`}>
+              <span className={`text-sm ${textPrimary}`}>Bấm trái/phải chuyển chương</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={chapterSideNavigationEnabled}
+                onClick={() => setChapterSideNavigationEnabled((enabled) => !enabled)}
+                className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors ${chapterSideNavigationEnabled ? 'bg-stone-800' : 'bg-stone-300'}`}
+                aria-label={chapterSideNavigationEnabled ? 'Tắt chuyển chương bằng trái phải' : 'Bật chuyển chương bằng trái phải'}
+              >
+                <span
+                  className={`absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${chapterSideNavigationEnabled ? 'translate-x-5' : ''}`}
+                />
+              </button>
+            </div>
           </div>
         )}
       </header>
@@ -2602,12 +2805,12 @@ export default function App() {
               className={`w-full mb-4 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium ${activeChapter} transition-colors`}
             >
               <Upload className="w-4 h-4" />
-              Thêm tệp PDF / EPUB
+              Thêm sách
             </button>
             <input
               ref={fileInputRef}
               type="file"
-              accept="application/pdf,.pdf,application/epub+zip,.epub"
+              accept="application/pdf,.pdf,application/epub+zip,.epub,application/x-mobipocket-ebook,.mobi,application/vnd.comicbook+zip,.cbz"
               multiple
               onChange={handleUpload}
               className="hidden"
@@ -2708,7 +2911,7 @@ export default function App() {
         ref={contentRef}
         onScroll={handleScroll}
         onClick={(event) => {
-          if (book.file_type === 'pdf') return;
+          if (book.file_type === 'pdf' || !chapterSideNavigationEnabled) return;
           const target = event.target;
           if (target instanceof Element && target.closest('button, a, input, select, textarea')) return;
           const bounds = event.currentTarget.getBoundingClientRect();

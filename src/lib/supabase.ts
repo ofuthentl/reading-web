@@ -13,7 +13,8 @@ export type Book = {
   cover_color: string;
   cover_path: string | null;
   file_path: string | null;
-  file_type: 'pdf' | 'epub' | null;
+  file_parts: string[] | null;
+  file_type: 'pdf' | 'epub' | 'mobi' | 'cbz' | null;
   owner_id: string | null;
   is_public: boolean;
   created_at: string;
