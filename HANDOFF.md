@@ -1,19 +1,21 @@
 # HANDOFF
-Cập nhật: 2026-11-21 02:10 | Nhánh: feat/docx-drop-mobi-cbz | Build: 🟢 frontend · 🟢 Worker (live) · 🟢 ESLint 100%
+Cập nhật: 2026-11-21 02:16 | Nhánh: feat/docx-drop-mobi-cbz | Build: 🟢 frontend · 🟢 Worker (live) · 🟢 ESLint 100%
 Nhiệm vụ hiện tại: Triển khai `feat/docx-drop-mobi-cbz` (xoá MOBI/CBZ, thêm DOCX, vá lỗi review — D-009)
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/docx-drop-mobi-cbz.md
 
 ## Đang làm dở
-- **Phase 1 xong & đã deploy live:** Migration `0001_docx_drop_mobi_cbz.sql` đã chạy trên D1 remote `library-db` (giữ nguyên 49 sách EPUB + 4 tiến độ đọc); Worker live bản `b5f00281-9310-469b-a64a-120ab227535b`.
-- Đang chuyển sang **Phase 2**: gỡ `@lingo-reader/mobi-parser`, vá `npm audit fix`, viết `src/lib/docxParser.ts` và cập nhật `src/lib/parsers.ts`.
+- **Phase 1 xong & live:** D1 remote đã migrate (`epub`/`pdf`/`docx`), Worker live `b5f00281-9310-469b-a64a-120ab227535b`.
+- **Phase 2 xong:** Gỡ `@lingo-reader/mobi-parser`, vá `npm audit --omit=dev` còn 0 lỗ hổng, tạo `src/lib/docxXml.ts` + `src/lib/docxParser.ts`, cập nhật `parsers.ts`, `types.ts`, `bookMetadata.ts`, `ReaderView.tsx`, `index.css`.
+- Đang chuyển sang **Phase 3**: cập nhật `api.ts`, `App.tsx`, `UploadDropzone.tsx`, `Library2DView.tsx` (thông báo DOCX + vá các lỗi client) và kiểm thử thực tế.
 
 ## Bước tiếp theo
-1. Phase 2: gỡ `@lingo-reader/mobi-parser`, chạy `npm audit fix`, tạo `src/lib/docxParser.ts` và cập nhật `src/lib/parsers.ts`.
-2. Phase 3: cập nhật `types.ts`, `bookMetadata.ts`, `api.ts`, `App.tsx`, `UploadDropzone.tsx`, `Library2DView.tsx`, `ReaderView.tsx` và `docs/ARCHITECTURE.md`.
-3. Chạy đầy đủ kiểm thử (typecheck, lint, build, test đọc file `.docx` thật + kiểm tra từ chối `.mobi`/`.cbz`) → push nhánh mở PR vào `main`.
+1. Phase 3: cập nhật `src/lib/api.ts`, `src/App.tsx`, `src/components/UploadDropzone.tsx`, `src/components/Library2DView.tsx`, `docs/ARCHITECTURE.md`.
+2. Kiểm thử tự động (typecheck, lint, build) và kiểm thử thực tế tải/đọc file `.docx` + từ chối `.mobi`/`.cbz` trên trình duyệt.
+3. Push nhánh `feat/docx-drop-mobi-cbz` để mở PR vào `main` (sau khi merge sẽ rebase `feat/library-3d` lên `main`).
 
 ## Lỗi / chặn
-- Không có lỗi/chặn nào. Nhánh `feat/library-3d` (có bản kế hoạch Phase 4 3D) giữ nguyên vẹn để rebase sau khi PR này merge.
+- Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **Phase 1 (`feat/docx-drop-mobi-cbz`):** chốt `D-009`, sao lưu & migrate D1 remote (`epub`, `pdf`, `docx`), thêm `renameShelfCaseInsensitive`, vá chống ghi đè R2 trùng ID (`409`), thứ tự xoá ảnh bìa cũ sau D1, kiểm tra kiểu `PATCH`, và hỗ trợ HTTP Range suffix `bytes=-N`; deploy Worker live.
+- **Phase 2 (`feat/docx-drop-mobi-cbz`):** gỡ `@lingo-reader/mobi-parser` & `cbz`, thêm parser DOCX OOXML (`docxXml.ts` + `docxParser.ts`) dùng chung `jszip` + `DOMPurify` với thu hồi `ObjectURL` đầy đủ; `npm audit --omit=dev` đạt 0 lỗ hổng.
+- **Phase 1 (`feat/docx-drop-mobi-cbz`):** migrate D1 remote, vá các lỗi Worker và deploy Worker live.

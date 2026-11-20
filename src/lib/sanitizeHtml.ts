@@ -19,7 +19,7 @@ const FORBIDDEN_BOOK_TAGS = [
 ];
 
 /**
- * Sanitizes parsed EPUB/MOBI HTML before rendering via dangerouslySetInnerHTML.
+ * Sanitizes parsed EPUB/DOCX HTML before rendering via dangerouslySetInnerHTML.
  * Must run BEFORE replacing image sources with blob: URLs because DOMPurify
  * strips blob: URIs by default. Avoids IN_PLACE because root is <body>.
  */

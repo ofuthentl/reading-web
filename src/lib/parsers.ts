@@ -2,6 +2,7 @@ import type JSZip from 'jszip';
 import type { Book, BookFileType, Chapter, ParsedBook } from '@/types';
 import { isChunkLoadError, recoverFromChunkError } from '@/lib/chunkReload';
 import { compressCoverBlob } from '@/lib/coverImage';
+import { extractDocxCover, parseDocxZip } from '@/lib/docxParser';
 import { buildEpubChapters, type RawEpubSection } from '@/lib/epubChapters';
 import { loadPdfJs, pdfWasmUrl } from '@/lib/pdfjsLoader';
 import { sanitizeBookDocument } from '@/lib/sanitizeHtml';
@@ -9,7 +10,6 @@ import { sanitizeBookDocument } from '@/lib/sanitizeHtml';
 type JSZipStatic = typeof JSZip;
 
 let jszipPromise: Promise<JSZipStatic> | null = null;
-let mobiParserPromise: Promise<typeof import('@lingo-reader/mobi-parser')> | null = null;
 
 function loadJSZip(): Promise<JSZipStatic> {
   if (!jszipPromise) {
@@ -24,17 +24,6 @@ function loadJSZip(): Promise<JSZipStatic> {
     return pending;
   }
   return jszipPromise;
-}
-
-function loadMobiParser(): Promise<typeof import('@lingo-reader/mobi-parser')> {
-  if (!mobiParserPromise) {
-    mobiParserPromise = import('@lingo-reader/mobi-parser').catch((err: unknown) => {
-      mobiParserPromise = null;
-      recoverFromChunkError(err);
-      throw err;
-    });
-  }
-  return mobiParserPromise;
 }
 
 export async function preloadCoreReaders(): Promise<void> {
@@ -107,27 +96,10 @@ export async function extractCoverAtUpload(file: File, fileType: BookFileType): 
       return null;
     }
 
-    if (fileType === 'cbz') {
+    if (fileType === 'docx') {
       const JSZip = await loadJSZip();
       const zip = await JSZip.loadAsync(await file.arrayBuffer());
-      const firstImage = Object.values(zip.files)
-        .filter((entry) => !entry.dir && /\.(?:avif|gif|jpe?g|png|webp)$/i.test(entry.name))
-        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))[0];
-      if (!firstImage) return null;
-      return await compressCoverBlob(await firstImage.async('blob'));
-    }
-
-    if (fileType === 'mobi') {
-      const { initMobiFile } = await loadMobiParser();
-      const mobi = await initMobiFile(new Uint8Array(await file.arrayBuffer()));
-      try {
-        const coverDataUrl = mobi.getCoverImage();
-        if (!coverDataUrl) return null;
-        const response = await fetch(coverDataUrl);
-        return await compressCoverBlob(await response.blob());
-      } finally {
-        mobi.destroy();
-      }
+      return await extractDocxCover(zip);
     }
 
     if (fileType === 'pdf') {
@@ -385,132 +357,10 @@ async function parsePdfBlob(blob: Blob, book: Book): Promise<ParsedBook> {
   }
 }
 
-async function parseCbzBlob(blob: Blob, book: Book): Promise<ParsedBook> {
-  const createdUrls: string[] = [];
-  const dispose = () => {
-    for (const url of createdUrls) URL.revokeObjectURL(url);
-    createdUrls.length = 0;
-  };
-
-  try {
-    const JSZip = await loadJSZip();
-    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
-    const imageFiles = Object.values(zip.files)
-      .filter((file) => !file.dir && /\.(?:avif|gif|jpe?g|png|webp)$/i.test(file.name))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-
-    if (imageFiles.length === 0) throw new Error('CBZ không có ảnh để hiển thị.');
-
-    const PAGES_PER_PART = 25;
-    const partCount = Math.ceil(imageFiles.length / PAGES_PER_PART);
-    const chapters: Chapter[] = [];
-
-    for (let part = 0; part < partCount; part += 1) {
-      const slice = imageFiles.slice(part * PAGES_PER_PART, (part + 1) * PAGES_PER_PART);
-      const htmlParts: string[] = [];
-      for (let i = 0; i < slice.length; i += 1) {
-        const imgBlob = await slice[i].async('blob');
-        const url = URL.createObjectURL(imgBlob);
-        createdUrls.push(url);
-        const pageNum = part * PAGES_PER_PART + i + 1;
-        htmlParts.push(`<img src="${url}" alt="Trang ${pageNum}" loading="lazy" />`);
-      }
-      const startPage = part * PAGES_PER_PART + 1;
-      const endPage = part * PAGES_PER_PART + slice.length;
-      chapters.push({
-        id: `${book.id}-cbz-${part}`,
-        book_id: book.id,
-        title: partCount === 1 ? book.title : `Trang ${startPage} – ${endPage}`,
-        content: '',
-        content_html: htmlParts.join(''),
-        chapter_number: part + 1,
-      });
-    }
-
-    return { chapters, dispose };
-  } catch (err) {
-    dispose();
-    throw err;
-  }
-}
-
-function protectSameOriginBlobImages(doc: Document): Map<string, string> {
-  const blobPrefix = `blob:${window.location.origin}/`;
-  const placeholders = new Map<string, string>();
-  let seq = 0;
-
-  for (const img of Array.from(doc.querySelectorAll<HTMLImageElement>('img[src]'))) {
-    const src = img.getAttribute('src') || '';
-    if (!src.startsWith(blobPrefix)) continue;
-    const token = `__mobi-blob__/${seq++}`;
-    placeholders.set(token, src);
-    img.setAttribute('src', token);
-  }
-  for (const svgImg of Array.from(doc.querySelectorAll<SVGImageElement>('svg image'))) {
-    const attrName = svgImg.hasAttribute('href') ? 'href' : 'xlink:href';
-    const src = svgImg.getAttribute(attrName) || '';
-    if (!src.startsWith(blobPrefix)) continue;
-    const token = `__mobi-blob__/${seq++}`;
-    placeholders.set(token, src);
-    svgImg.setAttribute(attrName, token);
-  }
-  return placeholders;
-}
-
-function restoreSameOriginBlobImages(doc: Document, placeholders: Map<string, string>): void {
-  if (placeholders.size === 0) return;
-  for (const img of Array.from(doc.querySelectorAll<HTMLImageElement>('img[src]'))) {
-    const src = img.getAttribute('src') || '';
-    const original = placeholders.get(src);
-    if (original) img.setAttribute('src', original);
-  }
-  for (const svgImg of Array.from(doc.querySelectorAll<SVGImageElement>('svg image'))) {
-    const attrName = svgImg.hasAttribute('href') ? 'href' : 'xlink:href';
-    const src = svgImg.getAttribute(attrName) || '';
-    const original = placeholders.get(src);
-    if (original) svgImg.setAttribute(attrName, original);
-  }
-}
-
-async function parseMobiBlob(blob: Blob, book: Book): Promise<ParsedBook> {
-  const { initMobiFile } = await loadMobiParser();
-  const mobi = await initMobiFile(new Uint8Array(await blob.arrayBuffer()));
-  try {
-    const toc = mobi.getToc();
-    const titlesByHref = new Map(toc.map((item) => [item.href, item.label]));
-    const chapters: Chapter[] = [];
-
-    for (const [index, spineItem] of mobi.getSpine().entries()) {
-      const loaded = mobi.loadChapter(spineItem.id);
-      if (!loaded?.html.trim()) continue;
-      const cleanedHtml = loaded.html
-        .replace(/^\s*(?:<\?xml\s*)?version\s*=\s*["'][^"']+["']\s+encoding\s*=\s*["'][^"']+["']\s*\?>/i, '')
-        .replace(/^\s*<\?xml[^>]*\?>/i, '')
-        .replace(/^\s*<!doctype[^>]*>/i, '');
-      const doc = new DOMParser().parseFromString(cleanedHtml, 'text/html');
-      const blobPlaceholders = protectSameOriginBlobImages(doc);
-      sanitizeBookDocument(doc);
-      restoreSameOriginBlobImages(doc, blobPlaceholders);
-
-      const contentHtml = doc.body.innerHTML.trim();
-      const plainText = doc.body.textContent?.replace(/\s+/g, ' ').trim() || '';
-      if (!plainText && !doc.querySelector('img, svg image')) continue;
-
-      chapters.push({
-        id: `${book.id}-mobi-${index}`,
-        book_id: book.id,
-        title: titlesByHref.get(spineItem.id) || `Chương ${chapters.length + 1}`,
-        content: plainText,
-        content_html: contentHtml,
-        chapter_number: chapters.length + 1,
-      });
-    }
-
-    if (chapters.length === 0) throw new Error('MOBI không có nội dung để hiển thị.');
-    return { chapters, dispose: () => {} };
-  } finally {
-    mobi.destroy();
-  }
+async function parseDocxBlob(blob: Blob, book: Book): Promise<ParsedBook> {
+  const JSZip = await loadJSZip();
+  const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+  return parseDocxZip(zip, book);
 }
 
 export async function parseBookBlob(blob: Blob, book: Book): Promise<ParsedBook> {
@@ -519,10 +369,8 @@ export async function parseBookBlob(blob: Blob, book: Book): Promise<ParsedBook>
       return parseEpubBlob(blob, book);
     case 'pdf':
       return parsePdfBlob(blob, book);
-    case 'cbz':
-      return parseCbzBlob(blob, book);
-    case 'mobi':
-      return parseMobiBlob(blob, book);
+    case 'docx':
+      return parseDocxBlob(blob, book);
     default:
       throw new Error('Định dạng sách chưa được hỗ trợ.');
   }
