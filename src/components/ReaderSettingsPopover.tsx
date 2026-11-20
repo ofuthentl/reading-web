@@ -31,7 +31,7 @@ export function ReaderSettingsPopover({
     <div
       role="dialog"
       aria-label="Tùy chỉnh giao diện đọc"
-      className={`fade-in absolute right-3 top-[3.5rem] z-40 w-80 max-w-[calc(100vw-1.5rem)] rounded-2xl border p-4 shadow-2xl ${palette.panelBg} ${palette.border}`}
+      className={`fade-in absolute right-3 top-[3.5rem] z-40 w-[21.5rem] max-w-[calc(100vw-1.5rem)] rounded-2xl border p-4 shadow-2xl ${palette.panelBg} ${palette.border}`}
     >
       <div className="mb-3 flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wider opacity-70">
@@ -56,7 +56,7 @@ export function ReaderSettingsPopover({
               key={themeKey}
               type="button"
               onClick={() => onUpdateSettings({ theme: themeKey })}
-              className={`flex flex-col items-center gap-1 rounded-xl border p-2 text-[11px] font-medium transition ${
+              className={`flex flex-col items-center gap-1 whitespace-nowrap rounded-xl border px-1 py-2 text-[11px] font-medium transition ${
                 settings.theme === themeKey
                   ? palette.accentRing
                   : `${palette.border} ${palette.hover}`

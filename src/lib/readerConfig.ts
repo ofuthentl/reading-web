@@ -44,7 +44,7 @@ export const READER_THEME_STYLES: Record<ReaderTheme, ReaderThemePalette> = {
     isDark: false,
   },
   sepia: {
-    label: 'Giấy cổ',
+    label: 'Ban ngày',
     swatch: 'bg-[#f4ecd8] border-[#c8b28a]',
     pageBg: 'bg-[#f4ecd8]',
     headerBg: 'bg-[#f4ecd8]/92',
@@ -59,7 +59,7 @@ export const READER_THEME_STYLES: Record<ReaderTheme, ReaderThemePalette> = {
     isDark: false,
   },
   dark: {
-    label: 'Tối dịu',
+    label: 'Chiều tối',
     swatch: 'bg-[#0d1117] border-[#3b475a]',
     pageBg: 'bg-[#0d1117]',
     headerBg: 'bg-[#0d1117]/92',
@@ -74,7 +74,7 @@ export const READER_THEME_STYLES: Record<ReaderTheme, ReaderThemePalette> = {
     isDark: true,
   },
   midnight: {
-    label: 'Đêm sâu',
+    label: 'Đêm khuya',
     swatch: 'bg-[#060608] border-[#34343c]',
     pageBg: 'bg-[#060608]',
     headerBg: 'bg-[#060608]/92',
