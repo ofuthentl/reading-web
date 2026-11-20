@@ -4,6 +4,7 @@ import {
   BookOpen,
   Clock,
   FolderEdit,
+  FolderInput,
   Library,
   Search,
   Trash2,
@@ -38,7 +39,9 @@ interface Library2DViewProps {
   onUploadClick: () => void;
   onEditBook?: (book: Book) => void;
   onRenameShelf?: (shelfName: string) => void;
+  onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
+  selectionResetKey?: number;
 }
 
 export function Library2DView({
@@ -54,13 +57,22 @@ export function Library2DView({
   onUploadClick,
   onEditBook,
   onRenameShelf,
+  onMoveSelectedToShelf,
   onDeleteSelected,
+  selectionResetKey,
 }: Library2DViewProps) {
   const isDark = theme !== 'light';
   const [searchQuery, setSearchQuery] = useState('');
   const [activeShelfKey, setActiveShelfKey] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    if (selectionResetKey) {
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+    }
+  }, [selectionResetKey]);
 
   useEffect(() => {
     if (books.length === 0) {
@@ -264,6 +276,17 @@ export function Library2DView({
                   ? 'Bỏ chọn tất cả'
                   : 'Chọn tất cả'}
               </button>
+              {onMoveSelectedToShelf && (
+                <button
+                  type="button"
+                  disabled={selectedBooks.length === 0}
+                  onClick={() => onMoveSelectedToShelf(selectedBooks)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-45"
+                >
+                  <FolderInput className="h-3.5 w-3.5" />
+                  Chuyển kệ ({selectedBooks.length})
+                </button>
+              )}
               {onDeleteSelected && (
                 <button
                   type="button"

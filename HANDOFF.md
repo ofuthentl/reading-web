@@ -1,21 +1,20 @@
 # HANDOFF
-Cập nhật: 2026-11-21 00:58 | Nhánh: refactor/code-splitting | Build: 🟢 frontend · 🟢 Worker · 🟢 ESLint 100%
-Nhiệm vụ hiện tại: Refactor code-splitting — đã hoàn tất kiểm thử tự động & thủ công Mục 5C, đã push nhánh sẵn sàng mở PR vào `main`
+Cập nhật: 2026-11-21 01:38 | Nhánh: feat/bulk-shelf-grouping | Build: 🟢 frontend · 🟢 Worker (đã deploy live) · 🟢 ESLint 100%
+Nhiệm vụ hiện tại: Đã hoàn tất kiểm thử tự động & thủ công `feat/bulk-shelf-grouping`, đã push nhánh sẵn sàng mở PR vào `main`
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/
 
 ## Đang làm dở
-- Nhánh `refactor/code-splitting` đã hoàn tất toàn bộ 4 phase, bản vá hậu review và vượt qua 100% Checklist kiểm thử tự động + thủ công (Mục 5A, 5B, 5C).
-- Entry `index-*.js` giảm từ **918.12 kB** (gzip 277.95 kB) xuống **259.77 kB** (gzip 76.92 kB); `npm run build` **0 lỗi, 0 cảnh báo chunk > 500 kB** (còn 1 cảnh báo externalize `stream` đã biết từ `sax`).
+- Nhánh `feat/bulk-shelf-grouping` đã hoàn tất Phase 1 → Phase 4 + bản vá nhận diện kệ đã đổi tên (`Mushoku` → `Mushoku Tensei`), đã vượt qua kiểm định tự động và kiểm thử thủ công.
+- Cloudflare Worker đã được deploy live tại `https://arcane-library-api.novel-check-d467614e.workers.dev` (Version ID: `7ebbf047-6119-4281-b257-43ebe51e7c92`) với endpoint `POST /api/books/bulk-shelf`.
 
 ## Bước tiếp theo
-1. Mở Pull Request `refactor/code-splitting` → `main` trên GitHub, xác nhận cả 2 job CI (`Frontend` và `Worker`) đều xanh → duyệt & Merge vào `main`.
-2. Theo dõi `.github/workflows/deploy.yml` deploy xong bản code-splitting lên `https://ofu.lol`.
-3. Triển khai Phase 4 (Thư viện 3D `FantasyLibrary3D`) trên nhánh mới tách từ `main` sau khi merge, tuân thủ D-004 + D-008.
+1. Mở Pull Request `feat/bulk-shelf-grouping` → `main` trên GitHub, xác nhận cả 2 job CI (`Frontend` và `Worker`) đều xanh → Merge vào `main`.
+2. Sau khi `.github/workflows/deploy.yml` cập nhật `https://ofu.lol`, gom nhanh 41 cuốn SAO về 1 kệ bằng `Tìm kiếm SAO` → `Chọn nhiều` → `Chọn tất cả` → `Chuyển kệ (41)` và gộp kệ `Mushoku` vào `Mushoku Tensei`.
+3. Khi cần làm tính năng tiếp theo (ví dụ Phase 4 Thư viện 3D `FantasyLibrary3D`), `git fetch origin` và tách nhánh mới từ `origin/main`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **Xác nhận hậu kỳ Phase 3:** `https://ofu.lol` đã chạy ổn định trên PC & mobile; đã dọn sạch project Supabase cũ và secret `VITE_SUPABASE_*` theo D-001.
-- **Kiểm thử thủ công Mục 5C (`refactor/code-splitting`):** đã xác nhận đăng nhập cổng 5173, Network ở `AuthGate` & preload idle ở Thư viện 2D, đọc Offline EPUB vs thông báo lỗi PDF/MOBI không reload mất tab, `PdfReaderFallback` cục bộ, đọc đủ 4 định dạng EPUB/PDF/MOBI/CBZ, upload trích bìa, `DOMPurify` chặn EPUB độc hại và tự tải lại 1 lần khi chunk cũ 404.
-- **Phase 1 → 4 (`refactor/code-splitting`):** ghi **D-008**, tách `parsers.ts` (`bookMetadata`, `coverImage`, `pdfjsLoader`, `sanitizeHtml` dùng `dompurify` v3, `chunkReload`), lazy-load `PdfReader.tsx` + `PdfReaderFallback.tsx`, đồng bộ `docs/ARCHITECTURE.md`.
+- **Kiểm thử thủ công `feat/bulk-shelf-grouping`:** xác nhận pill `Thêm vào kệ <Tên>` ở footer `UploadDropzone`, nhận diện kệ đã đổi tên (`Mushoku Tensei`) và chuyển kệ hàng loạt `BulkShelfModal`.
+- **Phase 1 → 4 (`feat/bulk-shelf-grouping`):** tách `workers/r2-storage/src/booksDb.ts` + `POST /api/books/bulk-shelf` (đã deploy Worker live), mở rộng `extractSeriesName` + `inferBatchCommonShelf` + `resolveExistingSeriesShelf`, thêm `UploadBatchShelfBar.tsx` và `BulkShelfModal.tsx`.

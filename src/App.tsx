@@ -4,6 +4,7 @@ import type { Book, ReadingProgress, StorageStats } from '@/types';
 import { fetchLibraryState, groupBooksIntoShelves, isAuthError, setAuthToken, sortBooksByTitle } from '@/lib/api';
 import { AuthGate } from '@/components/AuthGate';
 import { BookEditModal } from '@/components/BookEditModal';
+import { BulkShelfModal } from '@/components/BulkShelfModal';
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal';
 import { Library2DView } from '@/components/Library2DView';
 import { ReaderView } from '@/components/ReaderView';
@@ -27,6 +28,7 @@ type LibraryModalState =
   | { kind: 'upload' }
   | { kind: 'edit'; book: Book }
   | { kind: 'rename-shelf'; shelfName: string }
+  | { kind: 'bulk-shelf'; books: Book[] }
   | { kind: 'delete'; books: Book[] };
 
 export default function App() {
@@ -39,6 +41,7 @@ export default function App() {
   const [progress, setProgress] = useState<Record<string, ReadingProgress>>({});
   const [storage, setStorage] = useState<StorageStats | null>(null);
   const [modal, setModal] = useState<LibraryModalState>({ kind: 'none' });
+  const [selectionResetKey, setSelectionResetKey] = useState(0);
   const coreReadersPreloadedRef = useRef(false);
 
   const closeModal = useCallback(() => setModal({ kind: 'none' }), []);
@@ -130,6 +133,14 @@ export default function App() {
     setBooks((prev) => prev.map((item) => (item.shelf === oldName ? { ...item, shelf: newName } : item)));
   }, []);
 
+  const handleBooksShelfMoved = useCallback((bookIds: string[], targetShelf: string) => {
+    const idSet = new Set(bookIds);
+    setBooks((prev) =>
+      prev.map((item) => (idSet.has(item.id) ? { ...item, shelf: targetShelf } : item)),
+    );
+    setSelectionResetKey((prev) => prev + 1);
+  }, []);
+
   const handleBooksDeleted = useCallback((deletedIds: string[], nextStorage: StorageStats) => {
     const idSet = new Set(deletedIds);
     setBooks((prev) => prev.filter((item) => !idSet.has(item.id)));
@@ -185,13 +196,16 @@ export default function App() {
         onUploadClick={() => setModal({ kind: 'upload' })}
         onEditBook={(book) => setModal({ kind: 'edit', book })}
         onRenameShelf={(shelfName) => setModal({ kind: 'rename-shelf', shelfName })}
+        onMoveSelectedToShelf={(selectedBooks) => setModal({ kind: 'bulk-shelf', books: selectedBooks })}
         onDeleteSelected={(selectedBooks) => setModal({ kind: 'delete', books: selectedBooks })}
+        selectionResetKey={selectionResetKey}
       />
       {modal.kind === 'upload' && (
         <UploadDropzone open books={books} storage={storage} onClose={closeModal} onBookUploaded={handleBookUploaded} onBookUpdated={handleBookUpdated} onApiError={handleApiError} onNotify={addToast} />
       )}
       <BookEditModal book={modal.kind === 'edit' ? modal.book : null} existingShelves={existingShelves} onClose={closeModal} onUpdated={handleBookUpdated} onRequestDelete={(book) => setModal({ kind: 'delete', books: [book] })} onApiError={handleApiError} onNotify={addToast} />
       <ShelfRenameModal shelfName={renamingShelfName} bookCount={renamingShelfCount} existingShelves={existingShelves} onClose={closeModal} onRenamed={handleShelfRenamed} onApiError={handleApiError} onNotify={addToast} />
+      <BulkShelfModal books={modal.kind === 'bulk-shelf' ? modal.books : []} existingShelves={existingShelves} onClose={closeModal} onMoved={handleBooksShelfMoved} onApiError={handleApiError} onNotify={addToast} />
       <DeleteConfirmModal books={modal.kind === 'delete' ? modal.books : []} onClose={closeModal} onDeleted={handleBooksDeleted} onApiError={handleApiError} onNotify={addToast} />
       {reader.openingBook && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="status" aria-live="polite">

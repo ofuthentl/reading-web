@@ -20,6 +20,7 @@ import { compressCoverBlob } from '@/lib/coverImage';
 const API_BASE = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
 const TOKEN_STORAGE_KEY = 'arcane-library-auth-token';
 export const HARD_LIMIT_BYTES = 9 * 1024 * 1024 * 1024; // 9.0 GiB
+export const MAX_SHELF_NAME_LENGTH = 120;
 
 export const isMissingProductionApi = !import.meta.env.DEV && !API_BASE;
 export const isLocalDevMode = import.meta.env.DEV && !API_BASE;
@@ -194,7 +195,7 @@ export async function uploadBook(
   const bookId = crypto.randomUUID().replace(/-/g, '');
   const title = overrides?.title?.trim() || parsed.title;
   const author = overrides?.author?.trim() || parsed.author;
-  const shelf = overrides?.shelf?.trim() || parsed.shelf;
+  const shelf = (overrides?.shelf?.trim() || parsed.shelf).slice(0, MAX_SHELF_NAME_LENGTH);
   const coverColor = pickCoverColor(`${title}-${author}`);
   const fileType: BookFileType = parsed.extension;
 
@@ -280,10 +281,7 @@ export async function uploadBook(
     try {
       const coverRes = await apiFetch(`/api/books/${bookId}/cover`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'image/jpeg',
-          'X-File-Size': String(coverBlob.size),
-        },
+        headers: { 'Content-Type': 'image/jpeg', 'X-File-Size': String(coverBlob.size) },
         body: coverBlob,
       });
       const coverData = (await coverRes.json().catch(() => ({}))) as {
@@ -346,10 +344,7 @@ export async function updateBookCover(
 
   const res = await apiFetch(`/api/books/${book.id}/cover`, {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'image/jpeg',
-      'X-File-Size': String(compressed.size),
-    },
+    headers: { 'Content-Type': 'image/jpeg', 'X-File-Size': String(compressed.size) },
     body: compressed,
   });
   const data = (await res.json().catch(() => ({}))) as {
@@ -365,11 +360,15 @@ export async function updateBookCover(
 
 export async function renameShelfAll(oldName: string, newName: string): Promise<void> {
   assertApiConfigured();
+  const trimmedNew = newName.trim();
+  if (!trimmedNew || trimmedNew.length > MAX_SHELF_NAME_LENGTH) {
+    throw new Error(`Tên kệ sách không hợp lệ (tối đa ${MAX_SHELF_NAME_LENGTH} ký tự).`);
+  }
   if (!isCloudMode) {
     const books = await getLocalBooks();
     for (const b of books) {
       if (b.shelf === oldName) {
-        await putLocalBook({ ...b, shelf: newName });
+        await putLocalBook({ ...b, shelf: trimmedNew });
       }
     }
     return;
@@ -378,11 +377,41 @@ export async function renameShelfAll(oldName: string, newName: string): Promise<
   const res = await apiFetch('/api/shelves/rename', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ oldName, newName }),
+    body: JSON.stringify({ oldName, newName: trimmedNew }),
   });
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(data.error || 'Không thể đổi tên kệ sách.');
+  }
+}
+
+export async function bulkUpdateBooksShelf(bookIds: string[], targetShelf: string): Promise<void> {
+  assertApiConfigured();
+  if (bookIds.length === 0) return;
+  const shelf = targetShelf.trim();
+  if (!shelf || shelf.length > MAX_SHELF_NAME_LENGTH) {
+    throw new Error(`Tên kệ sách không hợp lệ (tối đa ${MAX_SHELF_NAME_LENGTH} ký tự).`);
+  }
+
+  if (!isCloudMode) {
+    const books = await getLocalBooks();
+    const idSet = new Set(bookIds);
+    for (const b of books) {
+      if (idSet.has(b.id)) {
+        await putLocalBook({ ...b, shelf });
+      }
+    }
+    return;
+  }
+
+  const res = await apiFetch('/api/books/bulk-shelf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: bookIds, shelf }),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || 'Không thể chuyển kệ cho các sách đã chọn.');
   }
 }
 
@@ -393,7 +422,6 @@ export async function deleteBooks(booksToDelete: Book[]): Promise<StorageStats> 
     return state.storage;
   }
 
-  // Always clear local IndexedDB blobs immediately
   for (const b of booksToDelete) {
     await deleteCachedBookBlob(b.file_key);
     if (b.cover_key) await deleteCachedCoverBlob(b.cover_key);
@@ -425,12 +453,9 @@ export async function deleteBooks(booksToDelete: Book[]): Promise<StorageStats> 
   return data.storage;
 }
 
-/**
- * Fetches book Blob with transparent IndexedDB cache:
- * - First open: streams from R2 and saves into IndexedDB.
- * - Every subsequent open: instant 0ms read from IndexedDB (works offline too!).
- */
-export async function fetchBookBlobCached(book: Book): Promise<{ blob: Blob; fromCache: boolean }> {
+export async function fetchBookBlobCached(
+  book: Book,
+): Promise<{ blob: Blob; fromCache: boolean }> {
   assertApiConfigured();
   const cached = await getCachedBookBlob(book.file_key);
   if (cached) return { blob: cached, fromCache: true };
@@ -466,9 +491,11 @@ export async function fetchCoverBlobCached(coverKey: string): Promise<Blob | nul
   }
 }
 
-export async function saveReadingProgress(bookId: string, progress: ReadingProgress): Promise<void> {
+export async function saveReadingProgress(
+  bookId: string,
+  progress: ReadingProgress,
+): Promise<void> {
   assertApiConfigured();
-  // Always persist locally right away
   await putLocalProgress(bookId, progress);
   if (!isCloudMode) return;
 
