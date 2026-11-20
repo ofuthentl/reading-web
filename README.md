@@ -1,83 +1,69 @@
-# reading-web
+# Arcane Library (`ofu.lol`)
 
-## Cấu hình môi trường
+Web đọc sách cá nhân (EPUB, MOBI, PDF, CBZ) xây bằng React + Vite + TypeScript, backend chạy trên Cloudflare Workers + D1 + R2 (giới hạn an toàn 9.0 GiB free tier), cache đọc tức thì qua IndexedDB và deploy GitHub Pages tại `https://ofu.lol`.
 
-Tạo file `.env.local` (hoặc `.env`) dựa trên `.env.example` và điền URL Supabase và anon key của dự án:
+## Chạy phát triển (Local Dev)
+
+### 1. Frontend
+```bash
+npm ci
+cp .env.example .env.local
+# Điền VITE_API_URL=http://127.0.0.1:8787 (hoặc để trống khi dev để chạy Local-First)
+npm run dev
+```
+
+Kiểm tra nhanh trước khi commit:
+```bash
+npm run typecheck
+npm run lint
+npm run build
+```
+
+### 2. Cloudflare Worker (Local)
+```bash
+cd workers/r2-storage
+npm ci
+npm run db:init:local
+# Tạo file .dev.vars (KHÔNG commit) với:
+# ACCESS_PASSCODE=your-passcode
+# AUTH_SECRET=random-long-secret
+npm run dev
+```
+
+## Triển khai Backend (Cloudflare D1 + R2 + Worker)
 
 ```bash
-cp .env.example .env.local
-```
+cd workers/r2-storage
+npm ci
 
-Nếu bạn cần file mẫu nhanh, ở repo này đã có `.env.local` mặc định để điền giá trị thật:
+# 1. Tạo R2 bucket
+npx wrangler r2 bucket create arcane-library-books
 
-```env
-VITE_SUPABASE_URL=
-VITE_SUPABASE_ANON_KEY=
-```
+# 2. Tạo D1 database, copy database_id dán vào workers/r2-storage/wrangler.toml
+npx wrangler d1 create library-db
 
-Các biến bắt buộc:
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
+# 3. Khởi tạo schema trên D1 production
+npm run db:init:remote
 
-### Lấy URL và anon key từ Supabase
-1. Mở Supabase Dashboard.
-2. Chọn project của bạn.
-3. Vào Project settings > API.
-4. Copy:
-   - `Project URL` => `VITE_SUPABASE_URL`
-   - `anon public` key => `VITE_SUPABASE_ANON_KEY`
-5. Dán vào `.env.local`.
+# 4. Cài secrets cho Worker (nhập giá trị khi được hỏi)
+npx wrangler secret put ACCESS_PASSCODE
+npx wrangler secret put AUTH_SECRET
 
-### Cấu hình Auth URL cho web
-1. Vào Authentication > URL Configuration.
-2. Thiết lập:
-   - Site URL: `https://ofu.lol` (production; domain lấy từ `public/CNAME`)
-   - Additional Redirect URLs:
-     - `https://ofu.lol/**`
-     - `http://localhost:5173/**` (development)
-3. Luồng đăng ký gửi email xác nhận trở lại origin hiện tại, nên local sẽ quay về localhost và production sẽ quay về `https://ofu.lol`. Hãy giữ cả hai URL trong danh sách cho phép.
-
-Không dùng fallback giả như `https://...supabase.co` hoặc `******` vì nó khiến ứng dụng cố kết nối tới tài nguyên sai và khó debug.
-
-## Chuyển file sách mới sang Cloudflare R2
-
-Supabase tiếp tục quản lý đăng nhập, database và metadata. File tải lên mới (bao gồm ảnh bìa) được lưu trong R2; file cũ trong Supabase Storage vẫn đọc được và không cần di chuyển trước.
-
-### 1. Tạo bucket và quyền truy cập R2
-1. Tạo một private R2 bucket trong Cloudflare Dashboard.
-2. Tạo S3 API token chỉ có quyền đọc/ghi object trong bucket đó. Không dùng token này trong frontend.
-3. Trong R2 bucket > Settings > CORS policy, thêm policy cho domain production và local dev:
-
-```json
-[
-  {
-    "AllowedOrigins": ["https://ofu.lol", "http://localhost:5173"],
-    "AllowedMethods": ["GET", "HEAD", "PUT"],
-    "AllowedHeaders": ["*"],
-    "ExposeHeaders": ["ETag", "Accept-Ranges", "Content-Length", "Content-Range"],
-    "MaxAgeSeconds": 3600
-  }
-]
-```
-
-### 2. Cài migration và deploy Worker
-Áp dụng migration `supabase/migrations/20261109000000_add_r2_book_file_access.sql` cho Supabase trước khi dùng file R2. Sau đó cấu hình và deploy Worker:
-
-```powershell
-cd workers\r2-storage
-npm install
-npx wrangler secret put SUPABASE_URL
-npx wrangler secret put SUPABASE_ANON_KEY
-npx wrangler secret put R2_ACCOUNT_ID
-npx wrangler secret put R2_BUCKET_NAME
-npx wrangler secret put R2_ACCESS_KEY_ID
-npx wrangler secret put R2_SECRET_ACCESS_KEY
+# 5. Deploy Worker
 npm run deploy
 ```
 
-Mỗi lệnh `wrangler secret put` sẽ hỏi giá trị tương ứng. `APP_ORIGINS` trong `wrangler.toml` cần khớp chính xác với domain website; thêm các origin staging nếu có. Worker chỉ trả URL ký tạm thời sau khi xác thực phiên Supabase và kiểm tra quyền đọc tệp trong database.
+## Cấu hình Deploy Frontend (GitHub Pages)
 
-### 3. Cấu hình frontend
-Đặt `VITE_R2_STORAGE_API_URL` trong `.env.local` và biến môi trường production thành URL Worker sau khi deploy (ví dụ `https://reading-web-r2-storage.<subdomain>.workers.dev`). Không thêm S3 access key hoặc secret key vào biến `VITE_*`.
+1. Vào **GitHub Repo → Settings → Secrets and variables → Actions → New repository secret**.
+2. Tạo secret `VITE_API_URL` với giá trị là URL Worker sau khi deploy (ví dụ `https://arcane-library-api.<subdomain>.workers.dev`).
+3. Khi Pull Request được merge vào `main`, workflow `.github/workflows/deploy.yml` sẽ tự động chạy `typecheck` → `lint` → `build` và deploy lên `ofu.lol`.
 
-File tải lên mới tối đa 400 MB. File hiện có tiếp tục dùng Supabase Storage cho đến khi được chuyển riêng; tránh xóa bucket Supabase khi còn file cũ.
+## Tài liệu dự án
+
+- [AGENTS.md](AGENTS.md) — Luật làm việc bất biến cho AI/cộng tác viên.
+- [HANDOFF.md](HANDOFF.md) — Tiến độ hiện tại và bước tiếp theo.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — Bản đồ module, API Worker, schema D1, biến môi trường, hàm tiện ích đã có.
+- [docs/DECISIONS.md](docs/DECISIONS.md) — Sổ quyết định kiến trúc đã chốt (ADR).
+- [docs/PROMPTS.md](docs/PROMPTS.md) — Prompt nhanh để bàn giao khi đổi phiên / sắp hết quota.
+- [docs/plans/phase-3-2d.md](docs/plans/phase-3-2d.md) — Kế hoạch triển khai Phase 3 (giao diện 2D & deploy).

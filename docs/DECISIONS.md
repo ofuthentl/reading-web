@@ -1,0 +1,13 @@
+# Sổ quyết định kiến trúc (ADR)
+
+> Các quyết định đã chốt dưới đây là bất biến trong phạm vi dự án hiện tại. Không tự ý đảo ngược nếu không có thảo luận và xác nhận rõ từ người dùng.
+
+| ID | Ngày | Quyết định | Lý do | Phương án đã loại |
+|---|---|---|---|---|
+| D-001 | 2026-11-20 | Bỏ hoàn toàn Supabase. Không chuyển dữ liệu cũ; chấp nhận mất sách/tiến độ cũ. Người dùng tự xoá project Supabase sau khi bản mới chạy ổn trên `ofu.lol`. | Giảm phức tạp vận hành, tránh chi phí và giới hạn free tier của Supabase; dữ liệu cá nhân có thể upload lại sạch với ảnh bìa nhẹ. | Giữ song song Supabase Auth/DB + R2; viết script migrate dữ liệu cũ. |
+| D-002 | 2026-11-20 | Backend = Cloudflare Worker + D1 + R2 Binding gốc (không dùng AWS SDK). Giới hạn cứng tổng dung lượng 9.0 GiB (`9663676416` byte). | Tận dụng free tier $0 của Cloudflare, tránh bundle AWS SDK nặng và S3 key; chốt 9.0 GiB chừa 1 GB an toàn dưới mức 10 GB của R2. | Dùng Cloudflare R2 qua `@aws-sdk/client-s3` + presigned URL; dùng dịch vụ lưu trữ trả phí khác. |
+| D-003 | 2026-11-20 | Đăng nhập 1 passcode duy nhất (token HMAC-SHA256 hiệu lực 30 ngày). Bỏ đa tài khoản, chia sẻ sách, sách công khai và trang admin. | Đây là thư viện đọc sách cá nhân; loại bỏ hoàn toàn bề mặt lỗi và code quản trị không cần thiết. | Tự xây hệ thống user/password/JWT đa tài khoản trên D1; dùng Cloudflare Access / Auth0. |
+| D-004 | 2026-11-20 | Hoàn thiện và deploy giao diện 2D trước. Thư viện 3D (`FantasyLibrary3D`) làm sau trên nhánh riêng. | Rút ngắn thời gian đưa `ofu.lol` trở lại hoạt động ổn định, kiểm soát rủi ro và giữ PR gọn. | Làm đồng thời cả 2D và 3D trong cùng nhánh `feat/migrate-cloudflare`. |
+| D-005 | 2026-11-20 | Chế độ Local-First (khi thiếu `VITE_API_URL`) **chỉ** được phép khi `import.meta.env.DEV`; bản production thiếu `VITE_API_URL` phải báo lỗi rõ ràng. *(Áp dụng ở Phase 3)* | Ngăn tình huống quên cấu hình secret trên GitHub khiến bản production âm thầm lưu vào IndexedDB thay vì Cloudflare mà người dùng không biết. | Tự động fallback sang Local-First trên cả production khi thiếu `VITE_API_URL`. |
+| D-006 | 2026-11-20 | Mỗi công việc làm trên nhánh riêng, merge vào `main` qua Pull Request khi CI xanh. | `main` tự động deploy lên `ofu.lol`; PR + CI chặn code lỗi tràn lên production. | Commit/push trực tiếp lên `main`. |
+| D-007 | 2026-11-20 | `HANDOFF.md` là sổ tiến độ — tuyệt đối không xoá, chỉ chứa trạng thái thay đổi (dưới 60 dòng). `HANDOFF_PROMPTS.md` chuyển thành `docs/PROMPTS.md` bằng `git mv` và rút gọn. | Đảm bảo bàn giao liền mạch khi hết quota hoặc đổi phiên, không lặp nội dung với `AGENTS.md` / `ARCHITECTURE.md` / `DECISIONS.md`. | Xoá `HANDOFF.md` hoặc gom cả kiến trúc/luật/quyết định vào 1 file bàn giao dài. |
