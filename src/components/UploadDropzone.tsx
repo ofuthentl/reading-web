@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, HardDrive, RotateCcw, Square, Upload, X } from 'lucide-react';
 import type { Book, StorageStats } from '@/types';
-import { HARD_LIMIT_BYTES, formatBytes, isAuthError, updateBookMetadata, uploadBook } from '@/lib/api';
+import {
+  HARD_LIMIT_BYTES,
+  formatBytes,
+  groupBooksIntoShelves,
+  isAuthError,
+  updateBookMetadata,
+  uploadBook,
+} from '@/lib/api';
 import { bookDuplicateKey, parseFileMetadata } from '@/lib/bookMetadata';
-import { resolveUploadShelfPlan } from '@/lib/shelfPlacement';
+import { inferBatchCommonShelf, resolveUploadShelfPlan } from '@/lib/shelfPlacement';
+import { UploadBatchShelfBar } from '@/components/UploadBatchShelfBar';
 import { UploadQueueList, type UploadQueueItem } from '@/components/UploadQueueList';
 import type { ToastType } from '@/hooks/useToast';
 
@@ -72,11 +80,15 @@ export function UploadDropzone({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const stopRequestedRef = useRef(false);
   const mountedRef = useRef(true);
+  const userToggledBatchRef = useRef(false);
 
   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [stopRequested, setStopRequested] = useState(false);
+  const [batchShelfEnabled, setBatchShelfEnabled] = useState(false);
+  const [batchShelfCustomName, setBatchShelfCustomName] = useState<string | null>(null);
+  const [lockedUploadShelf, setLockedUploadShelf] = useState<string | null>(null);
   const [progressState, setProgressState] = useState<{
     completed: number;
     total: number;
@@ -104,6 +116,49 @@ export function UploadDropzone({
     () => new Set(books.map((book) => bookDuplicateKey(book.title, book.author))),
     [books],
   );
+
+  const existingShelves = useMemo(
+    () => groupBooksIntoShelves(books).map((shelf) => shelf.name),
+    [books],
+  );
+
+  const activeQueueItems = useMemo(
+    () => queue.filter((item) => item.status === 'queued' || item.status === 'uploading'),
+    [queue],
+  );
+
+  const inferredCommonShelf = useMemo(
+    () => inferBatchCommonShelf(activeQueueItems, books),
+    [activeQueueItems, books],
+  );
+
+  useEffect(() => {
+    if (uploading) return;
+    if (activeQueueItems.length === 0) {
+      userToggledBatchRef.current = false;
+      setBatchShelfCustomName(null);
+      setBatchShelfEnabled(false);
+      setLockedUploadShelf(null);
+      return;
+    }
+    if (!userToggledBatchRef.current) {
+      setBatchShelfEnabled(Boolean(inferredCommonShelf));
+    }
+  }, [activeQueueItems.length, inferredCommonShelf, uploading]);
+
+  const showBatchShelfBar = activeQueueItems.length >= 2 || Boolean(inferredCommonShelf);
+  const pillShelfName = (
+    batchShelfCustomName ??
+    inferredCommonShelf ??
+    activeQueueItems[0]?.shelf ??
+    'Kho chưa phân loại'
+  ).trim();
+  const effectiveBatchShelf =
+    uploading
+      ? lockedUploadShelf
+      : showBatchShelfBar && batchShelfEnabled && pillShelfName
+        ? pillShelfName
+        : null;
 
   const addFilesToQueue = useCallback(
     (incomingFiles: FileList | File[]) => {
@@ -134,8 +189,12 @@ export function UploadDropzone({
     const targets = queue.filter((item) => item.status === 'queued');
     if (targets.length === 0 || uploading) return;
 
+    const batchShelfForRun =
+      showBatchShelfBar && batchShelfEnabled && pillShelfName ? pillShelfName : null;
+
     stopRequestedRef.current = false;
     setStopRequested(false);
+    setLockedUploadShelf(batchShelfForRun);
     setUploading(true);
     setProgressState({ completed: 0, total: targets.length, currentTitle: targets[0].title });
 
@@ -152,10 +211,9 @@ export function UploadDropzone({
       updateItem(current.id, { status: 'uploading', errorMessage: undefined });
 
       try {
-        const plan = resolveUploadShelfPlan(
-          { title: current.title, author: current.author },
-          workingBooks,
-        );
+        const plan = batchShelfForRun
+          ? { shelf: batchShelfForRun, booksToRegroup: [] as Book[] }
+          : resolveUploadShelfPlan({ title: current.title, author: current.author }, workingBooks);
         const result = await uploadBook(current.file, {
           title: current.title,
           author: current.author,
@@ -199,6 +257,7 @@ export function UploadDropzone({
     if (!mountedRef.current) return;
     setUploading(false);
     setStopRequested(false);
+    setLockedUploadShelf(null);
 
     if (authFailed) {
       onClose();
@@ -382,6 +441,7 @@ export function UploadDropzone({
             queue={queue}
             books={books}
             uploading={uploading}
+            batchShelfOverride={effectiveBatchShelf}
             onToggleSkip={handleToggleSkip}
             onRemove={(id) => setQueue((prev) => prev.filter((item) => item.id !== id))}
             onClearAll={() => {
@@ -392,7 +452,23 @@ export function UploadDropzone({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-canvas/60 px-5 py-3.5">
-          <div>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <UploadBatchShelfBar
+              visible={showBatchShelfBar}
+              enabled={batchShelfEnabled}
+              shelfName={pillShelfName}
+              existingShelves={existingShelves}
+              disabled={uploading}
+              onToggle={(nextEnabled) => {
+                userToggledBatchRef.current = true;
+                setBatchShelfEnabled(nextEnabled);
+              }}
+              onChangeShelfName={(nextName) => {
+                userToggledBatchRef.current = true;
+                setBatchShelfCustomName(nextName);
+                setBatchShelfEnabled(true);
+              }}
+            />
             {!uploading && errorCount > 0 && (
               <button
                 type="button"

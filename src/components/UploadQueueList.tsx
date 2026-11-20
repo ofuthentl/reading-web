@@ -29,6 +29,7 @@ interface UploadQueueListProps {
   queue: UploadQueueItem[];
   books: Book[];
   uploading: boolean;
+  batchShelfOverride?: string | null;
   onToggleSkip: (id: string) => void;
   onRemove: (id: string) => void;
   onClearAll: () => void;
@@ -71,6 +72,7 @@ export function UploadQueueList({
   queue,
   books,
   uploading,
+  batchShelfOverride,
   onToggleSkip,
   onRemove,
   onClearAll,
@@ -80,6 +82,7 @@ export function UploadQueueList({
   const activePreviewItems = queue.filter(
     (item) => item.status === 'queued' || item.status === 'uploading',
   );
+  const trimmedOverride = batchShelfOverride?.trim() || null;
 
   return (
     <div className="space-y-2">
@@ -101,7 +104,7 @@ export function UploadQueueList({
           const displayShelf =
             item.status === 'done'
               ? item.shelf
-              : resolvePreviewShelfName(item, activePreviewItems, books);
+              : trimmedOverride || resolvePreviewShelfName(item, activePreviewItems, books);
 
           return (
             <li
