@@ -1,6 +1,6 @@
 # Kế hoạch Triển khai — Tự động gom kệ theo lô & Chuyển kệ hàng loạt (`feat/bulk-shelf-grouping`)
 
-> **Trạng thái:** Chờ người dùng duyệt kế hoạch (chưa sửa code ứng dụng).
+> **Trạng thái:** Đã hoàn tất triển khai Phase 1 → 4, đã deploy Worker live và vượt qua Checklist kiểm định tự động 4A & 4B — chờ người dùng kiểm thử thủ công 4C trước khi mở PR vào `main`.
 > **Nhánh triển khai:** `feat/bulk-shelf-grouping` (tách mới từ `origin/main` sau khi PR #2 `refactor/code-splitting` đã merge; đã gỡ upstream tracking với `origin/main`).
 > **Ràng buộc liên quan:** `AGENTS.md` (mọi file ≤ 500 dòng hiệu dụng, không commit/push trực tiếp lên `main`, tra "Công cụ đã có — cấm viết lại" trước khi thêm helper, cập nhật `HANDOFF.md` ở mọi commit và `docs/ARCHITECTURE.md` ở mọi commit đổi cấu trúc/API), `docs/DECISIONS.md` (`D-001` → `D-008`).
 
@@ -273,19 +273,20 @@
 ## 4. Checklist Kiểm thử (Definition of Done)
 
 ### 4A. Kiểm định tĩnh & Build
-- [ ] `npm run typecheck` — 0 lỗi.
-- [ ] `npm run lint` — 0 lỗi, 0 cảnh báo (mọi file trong `src/` và `workers/r2-storage/src/` đều dưới trần 500 dòng hiệu dụng).
-- [ ] `cd workers/r2-storage && npx tsc --noEmit` — 0 lỗi.
-- [ ] `npm run build` — 0 lỗi, 0 cảnh báo chunk > 500 kB.
+- [x] `npm run typecheck` — 0 lỗi.
+- [x] `npm run lint` — 0 lỗi, 0 cảnh báo (mọi file trong `src/` và `workers/r2-storage/src/` đều dưới trần 500 dòng hiệu dụng).
+- [x] `cd workers/r2-storage && npx tsc --noEmit` — 0 lỗi.
+- [x] `npm run build` — 0 lỗi, 0 cảnh báo chunk > 500 kB.
 
 ### 4B. Kiểm thử đơn vị / logic phân kệ (`shelfPlacement.ts`)
-- [ ] `extractSeriesName`:
+- [x] `extractSeriesName`:
   - `SAO1`, `SAO2`, `SAO 01`, `SAO (01)`, `SAO [01]`, `SAO v01`, `SAO vol.1`, `SAO - 01` → `'SAO'`.
   - `Mushoku Tensei - Tập 12` → `'Mushoku Tensei'`.
   - Tác phẩm lẻ có số năm hoặc số trong tên (`1984`, `Fahrenheit 451`) → không bị cắt cụt sai.
-- [ ] `inferBatchCommonShelf`:
+- [x] `inferBatchCommonShelf`:
   - Lô `['SAO1', 'SAO2', 'SAO3', 'SAOP1', 'SAO_IF', 'SAO_ALT']` → `'SAO'`.
   - Lô `['Black Bullet: New World Order 01', 'Black Bullet: New World Order 02']` → `'Black Bullet: New World Order'`.
+  - Lô `['REMAKE1', 'REMAIN1']` → `null` (không tự sinh tiền tố 3 ký tự `'REM'` khi không có tệp hay kệ nào mang gốc đó).
   - Lô sách lẻ trùng từ mở đầu vô nghĩa `['The Hobbit', 'The Martian', 'The Alchemist']` hoặc `['Tập 1', 'Tập 2']` → `null` (không gom nhầm).
   - Khi trong kho đã có kệ `'sao'` hoặc `'SAO'`, trả về đúng tên kệ hiện có trong kho.
 
