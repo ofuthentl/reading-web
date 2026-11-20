@@ -31,15 +31,19 @@ export function pickCoverColor(seed: string): string {
   return ARCANE_COVER_PALETTE[hash % ARCANE_COVER_PALETTE.length];
 }
 
+const VOLUME_SEGMENT_RE =
+  /^(?:(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|book|part|ch|c|v|#)\.?\s*)?\d+(?:\s*[-–]\s*\d+)?$/i;
+
 export function inferShelfName(title: string, author: string): string {
-  if (author.trim() && author !== 'Không rõ tác giả') {
-    return author.trim();
-  }
   const stripped = title
-    .replace(/\s*[-_:|]\s*(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan)?\s*\d+.*$/i, '')
-    .replace(/\s+(?:vol(?:ume)?|tập|tap|quyển|quyen|phần|phan)\s*\d+.*$/i, '')
+    .replace(/\s*[-_:|]\s*(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|book|part|#)?\.?\s*\d+.*$/i, '')
+    .replace(/\s*(?:\(|\[)?\s*(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|book|part|#)\.?\s*\d+.*$/i, '')
     .trim();
-  return stripped || 'Kho chưa phân loại';
+  if (stripped && stripped !== 'Sách chưa đặt tên') return stripped;
+  const cleanTitle = title.trim();
+  if (cleanTitle && cleanTitle !== 'Sách chưa đặt tên') return cleanTitle;
+  if (author.trim() && author !== 'Không rõ tác giả') return author.trim();
+  return 'Kho chưa phân loại';
 }
 
 export function parseFileMetadata(fileName: string): {
@@ -51,9 +55,15 @@ export function parseFileMetadata(fileName: string): {
   const extMatch = fileName.match(/\.(epub|mobi|pdf|cbz)$/i);
   const extension = extMatch ? (extMatch[1].toLowerCase() as BookFileType) : null;
   const baseLabel = fileName.replace(/\.(epub|mobi|pdf|cbz)$/i, '').trim() || 'Sách chưa đặt tên';
-  const [titlePart, ...authorParts] = baseLabel.split(/\s+-\s+/);
-  const title = titlePart.trim() || baseLabel;
-  const author = authorParts.join(' - ').trim() || 'Không rõ tác giả';
+  const segments = baseLabel.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
+  const titleParts = segments.length > 0 ? [segments[0]] : [baseLabel];
+  let authorIndex = 1;
+  while (authorIndex < segments.length && VOLUME_SEGMENT_RE.test(segments[authorIndex])) {
+    titleParts.push(segments[authorIndex]);
+    authorIndex += 1;
+  }
+  const title = titleParts.join(' - ').trim() || baseLabel;
+  const author = segments.slice(authorIndex).join(' - ').trim() || 'Không rõ tác giả';
   const shelf = inferShelfName(title, author);
   return { title, author, shelf, extension };
 }

@@ -114,7 +114,7 @@ flowchart LR
 | `fetchBookBlobCached()` / `fetchCoverBlobCached()` | `src/lib/api.ts` | Tải sách/ảnh bìa ưu tiên IndexedDB (0ms), cache tự động khi tải từ R2. |
 | `saveReadingProgress()` / `clearReadingProgress()` | `src/lib/api.ts` | Lưu/xoá tiến độ đọc đồng thời local và D1. |
 | `pickCoverColor(seed)` | `src/lib/parsers.ts` | Chọn màu bìa mặc định ổn định từ bảng màu Arcane theo chuỗi seed. |
-| `inferShelfName(title, author)` | `src/lib/parsers.ts` | Suy luận tên kệ từ tác giả hoặc tên bộ truyện (bỏ số tập/chương). |
+| `inferShelfName(title, author)` | `src/lib/parsers.ts` | Suy luận tên kệ ưu tiên từ tên tác phẩm/bộ truyện (bỏ số tập/chương), chỉ fallback về tác giả khi thiếu tiêu đề. |
 | `parseFileMetadata(fileName)` | `src/lib/parsers.ts` | Tách `title`, `author`, `shelf`, `extension` từ tên file. |
 | `bookDuplicateKey(title, author)` | `src/lib/parsers.ts` | Tạo khoá chuẩn hoá để phát hiện sách trùng lặp. |
 | `compressCoverBlob(source)` | `src/lib/parsers.ts` | Crop tâm & nén ảnh bìa về JPEG `480×720` (~40 KB). |
