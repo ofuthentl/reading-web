@@ -211,9 +211,19 @@ export function UploadDropzone({
       updateItem(current.id, { status: 'uploading', errorMessage: undefined });
 
       try {
+        const autoPlan = resolveUploadShelfPlan(
+          { title: current.title, author: current.author },
+          workingBooks,
+        );
         const plan = batchShelfForRun
-          ? { shelf: batchShelfForRun, booksToRegroup: [] as Book[] }
-          : resolveUploadShelfPlan({ title: current.title, author: current.author }, workingBooks);
+          ? {
+              shelf: batchShelfForRun,
+              booksToRegroup:
+                autoPlan.shelf.toLocaleLowerCase('vi') === batchShelfForRun.toLocaleLowerCase('vi')
+                  ? autoPlan.booksToRegroup
+                  : ([] as Book[]),
+            }
+          : autoPlan;
         const result = await uploadBook(current.file, {
           title: current.title,
           author: current.author,

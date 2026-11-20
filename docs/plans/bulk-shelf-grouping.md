@@ -288,7 +288,7 @@
   - Lô `['Black Bullet: New World Order 01', 'Black Bullet: New World Order 02']` → `'Black Bullet: New World Order'`.
   - Lô `['REMAKE1', 'REMAIN1']` → `null` (không tự sinh tiền tố 3 ký tự `'REM'` khi không có tệp hay kệ nào mang gốc đó).
   - Lô sách lẻ trùng từ mở đầu vô nghĩa `['The Hobbit', 'The Martian', 'The Alchemist']` hoặc `['Tập 1', 'Tập 2']` → `null` (không gom nhầm).
-  - Khi trong kho đã có kệ `'sao'` hoặc `'SAO'`, trả về đúng tên kệ hiện có trong kho.
+  - Khi trong kho đã có kệ `'sao'` hoặc `'SAO'`, hoặc khi các tập cũ cùng bộ (`Mushoku Vol 1`) đã được đổi tên kệ sang `'Mushoku Tensei'`, các tập mới tải lên (`Mushoku Vol 2..5`) tự động nhận đúng kệ `'Mushoku Tensei'` và tự gom luôn các tập còn sót ở kệ `'Mushoku'` cũ.
 
 ### 4C. Kiểm thử giao diện & Luồng thực tế
 - [ ] **Footer `UploadDropzone` (`UploadBatchShelfBar`):**

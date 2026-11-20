@@ -163,7 +163,6 @@ function isValidCommonShelfCandidate(candidate: string): boolean {
   if (STOPWORD_PREFIXES.has(key) || TECHNICAL_SHORT_TOKENS.has(key)) return false;
   if (!hasMeaningfulLetters(clean)) return false;
 
-  // Nếu chỉ dài 2 ký tự thì bắt buộc là chữ in hoa viết tắt hoặc từ có nghĩa không nằm trong stopword
   const compactLen = clean.replace(/\s+/g, '').length;
   return compactLen >= 2;
 }
@@ -187,23 +186,21 @@ function collectDirectCandidatesForTitle(rawTitle: string): Map<string, string> 
   addCandidate(series);
 
   const baseForSplit = series || cleanTitle;
-  // Tách theo các dấu phân cách nhánh/phần phụ: `_`, `-`, `:`, `/`, `(`, `[`
   const delimiterSegments = baseForSplit.split(/\s*[_:\-|/([]+\s*/).filter(Boolean);
   if (delimiterSegments.length > 1) {
-    let acc = '';
     for (let i = 0; i < delimiterSegments.length; i += 1) {
-      acc = i === 0 ? delimiterSegments[0] : `${acc}: ${delimiterSegments[i]}`;
       const rawPrefix =
         i === 0
           ? delimiterSegments[0]
-          : baseForSplit.slice(0, baseForSplit.indexOf(delimiterSegments[i]) + delimiterSegments[i].length);
+          : baseForSplit.slice(
+              0,
+              baseForSplit.indexOf(delimiterSegments[i]) + delimiterSegments[i].length,
+            );
       addCandidate(rawPrefix);
-      const extractedSeg = extractSeriesName(rawPrefix);
-      addCandidate(extractedSeg);
+      addCandidate(extractSeriesName(rawPrefix));
     }
   }
 
-  // Tiền tố theo ranh giới từ (1..6 từ đầu) để bắt các bộ có hậu tố chữ (`SAO Progressive`, `Black Bullet New World`)
   const words = baseForSplit.split(/\s+/).filter(Boolean);
   for (let count = 1; count <= Math.min(words.length, 6); count += 1) {
     const wordPrefix = words.slice(0, count).join(' ');
@@ -215,12 +212,97 @@ function collectDirectCandidatesForTitle(rawTitle: string): Map<string, string> 
 }
 
 /**
+ * Tìm kệ đã có trong thư viện ứng với tên bộ `seriesName`:
+ * 1. Nếu trong kho đã có các tập cùng bộ (`extractSeriesName(book.title)` trùng `seriesName`)
+ *    nhưng người dùng đã đổi tên kệ sang tên đầy đủ hơn (VD: sách `Mushoku Vol 1` đang nằm ở kệ `Mushoku Tensei`),
+ *    ưu tiên trả về kệ đã đổi tên (`Mushoku Tensei`) và gom luôn các tập cùng bộ còn sót ở kệ gốc (`Mushoku`).
+ * 2. Nếu có kệ trùng khít `seriesName` (không phân biệt hoa/thường), trả về kệ đó.
+ * 3. Nếu `seriesName` (>= 4 ký tự) là tiền tố từ của một kệ đang có (VD: `Mushoku` -> `Mushoku Tensei`),
+ *    ưu tiên khớp vào kệ đầy đủ đã có.
+ */
+function resolveExistingSeriesShelf(
+  seriesName: string,
+  existingBooks: Book[],
+): { shelf: string; booksToRegroup: Book[] } {
+  const seriesKey = normalizeKey(seriesName);
+  const peerSeriesBooks = existingBooks.filter((book) => {
+    const bookSeries = extractSeriesName(book.title);
+    return Boolean(bookSeries) && normalizeKey(bookSeries!) === seriesKey;
+  });
+
+  if (peerSeriesBooks.length > 0) {
+    const shelfGroups = new Map<
+      string,
+      { shelf: string; count: number; isRenamed: boolean; books: Book[] }
+    >();
+    for (const book of peerSeriesBooks) {
+      const shelf = (book.shelf || '').trim();
+      if (!shelf || normalizeKey(shelf) === normalizeKey(DEFAULT_SHELF)) continue;
+      // Bỏ qua trường hợp sách đang nằm ở kệ trùng tên tác giả
+      if (isKnownAuthor(book.author) && normalizeKey(shelf) === normalizeKey(book.author)) continue;
+
+      const sKey = normalizeKey(shelf);
+      const isRenamed = sKey !== seriesKey;
+      const existing = shelfGroups.get(sKey);
+      if (existing) {
+        existing.count += 1;
+        existing.books.push(book);
+      } else {
+        shelfGroups.set(sKey, { shelf, count: 1, isRenamed, books: [book] });
+      }
+    }
+
+    let chosen: { shelf: string; count: number; isRenamed: boolean } | null = null;
+    for (const group of shelfGroups.values()) {
+      if (!chosen) {
+        chosen = group;
+        continue;
+      }
+      // Ưu tiên kệ do người dùng chủ động đặt/đổi tên (VD: `Mushoku Tensei` thay vì `Mushoku` gốc)
+      if (group.isRenamed !== chosen.isRenamed) {
+        if (group.isRenamed) chosen = group;
+        continue;
+      }
+      if (group.count > chosen.count) {
+        chosen = group;
+      }
+    }
+
+    if (chosen) {
+      const booksToRegroup = chosen.isRenamed
+        ? peerSeriesBooks.filter((b) => normalizeKey(b.shelf) === seriesKey)
+        : [];
+      return { shelf: chosen.shelf, booksToRegroup };
+    }
+  }
+
+  const exactMatch = existingBooks.find((book) => normalizeKey(book.shelf) === seriesKey)?.shelf;
+  if (exactMatch) {
+    return { shelf: exactMatch, booksToRegroup: [] };
+  }
+
+  // Nếu tên bộ ngắn (>= 4 ký tự, VD `Mushoku`) là tiền tố theo ranh giới từ của một kệ đã có (`Mushoku Tensei`)
+  if (seriesKey.length >= 4) {
+    const prefixShelf = existingBooks.find((book) => {
+      const sKey = normalizeKey(book.shelf);
+      return sKey.startsWith(`${seriesKey} `);
+    })?.shelf;
+    if (prefixShelf) {
+      return { shelf: prefixShelf, booksToRegroup: [] };
+    }
+  }
+
+  return { shelf: seriesName, booksToRegroup: [] };
+}
+
+/**
  * Tìm tên kệ / bộ truyện chung cho một lô từ 2 sách trở lên:
  * - Yêu cầu tiền tố gốc hợp lệ (không phải từ mở đầu vô nghĩa như `The`, `A`, `Tập`, `Vol`...),
  *   xuất hiện ở đa số (>= 50% và tối thiểu 2 tệp) trong lô.
  * - Tiền tố rút gọn từ mã viết tắt (như `SAOP` -> `SAO`) chỉ dùng để khớp với gốc/kệ
  *   đã tồn tại trực tiếp trong lô hoặc trong `existingBooks` (tránh `REMAKE1` + `REMAIN1` -> `REM`).
- * - Nếu khớp với kệ đã có trong `existingBooks` (không phân biệt hoa thường), ưu tiên trả về đúng tên kệ hiện có.
+ * - Nếu khớp với kệ đã có (hoặc kệ đã được đổi tên của cùng bộ truyện như `Mushoku` -> `Mushoku Tensei`),
+ *   ưu tiên trả về đúng tên kệ hiện có trong thư viện.
  */
 export function inferBatchCommonShelf(
   items: Array<{ title: string; author: string }>,
@@ -264,7 +346,6 @@ export function inferBatchCommonShelf(
     const map = itemDirectMaps[idx];
     const currentEntries = Array.from(map.values());
     for (const label of currentEntries) {
-      // Chỉ xét token đơn chữ cái viết tắt dài 4..8 ký tự (VD: SAOP, SAOIF,ier...)
       if (/^[A-Za-z]{4,8}$/.test(label)) {
         for (let len = 3; len < label.length; len += 1) {
           const shortPrefix = label.slice(0, len);
@@ -318,7 +399,8 @@ export function inferBatchCommonShelf(
   }
 
   if (!best) return null;
-  return existingShelfMap.get(best.key) || best.label;
+  const resolved = resolveExistingSeriesShelf(best.label, existingBooks);
+  return resolved.shelf || existingShelfMap.get(best.key) || best.label;
 }
 
 /**
@@ -343,7 +425,8 @@ function isStandaloneInTitleShelf(book: Book): boolean {
 
 /**
  * Quyết định kệ mục tiêu cho 1 sách sắp tải lên dựa trên các sách hiện có:
- * 1. Truyện nhiều tập (có Vol/Tập...): luôn ưu tiên tên bộ truyện (VD: "Mushoku").
+ * 1. Truyện nhiều tập (có Vol/Tập...): ưu tiên kệ đã có của cùng bộ truyện (kể cả khi kệ đó đã được
+ *    người dùng đổi tên như `Mushoku` -> `Mushoku Tensei`) và tự gom các tập còn sót ở kệ tên gốc cũ.
  * 2. Tác phẩm lẻ có tác giả rõ ràng:
  *    - Nếu chưa có sách lẻ nào khác cùng tác giả → kệ = tên tác phẩm (VD: "Bạch Dạ Hành").
  *    - Nếu đã có sách lẻ khác cùng tác giả (hoặc đã có kệ tên tác giả) → gom vào kệ tên tác giả
@@ -355,10 +438,7 @@ export function resolveUploadShelfPlan(
 ): { shelf: string; booksToRegroup: Book[] } {
   const series = extractSeriesName(incoming.title);
   if (series) {
-    const existingSeriesShelf = existingBooks.find(
-      (book) => normalizeKey(book.shelf) === normalizeKey(series),
-    )?.shelf;
-    return { shelf: existingSeriesShelf || series, booksToRegroup: [] };
+    return resolveExistingSeriesShelf(series, existingBooks);
   }
 
   const cleanTitle = incoming.title.trim();
@@ -399,10 +479,7 @@ export function resolvePreviewShelfName(
 ): string {
   const series = extractSeriesName(item.title);
   if (series) {
-    const existingSeriesShelf = existingBooks.find(
-      (book) => normalizeKey(book.shelf) === normalizeKey(series),
-    )?.shelf;
-    return existingSeriesShelf || series;
+    return resolveExistingSeriesShelf(series, existingBooks).shelf;
   }
 
   const cleanAuthor = item.author.trim();
