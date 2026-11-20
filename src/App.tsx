@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { Book, ReadingProgress, StorageStats } from '@/types';
 import { fetchLibraryState, groupBooksIntoShelves, isAuthError, setAuthToken, sortBooksByTitle } from '@/lib/api';
@@ -13,6 +13,14 @@ import { UploadDropzone } from '@/components/UploadDropzone';
 import { useBookReader } from '@/hooks/useBookReader';
 import { useTheme } from '@/hooks/useTheme';
 import { useToast } from '@/hooks/useToast';
+
+type IdleWindow = Window & { requestIdleCallback?: (cb: () => void) => number };
+type NetworkNavigator = Navigator & { connection?: { saveData?: boolean } };
+
+function canPreloadOnIdle(): boolean {
+  const nav = typeof navigator !== 'undefined' ? (navigator as NetworkNavigator) : undefined;
+  return nav?.onLine !== false && nav?.connection?.saveData !== true;
+}
 
 type LibraryModalState =
   | { kind: 'none' }
@@ -31,6 +39,7 @@ export default function App() {
   const [progress, setProgress] = useState<Record<string, ReadingProgress>>({});
   const [storage, setStorage] = useState<StorageStats | null>(null);
   const [modal, setModal] = useState<LibraryModalState>({ kind: 'none' });
+  const coreReadersPreloadedRef = useRef(false);
 
   const closeModal = useCallback(() => setModal({ kind: 'none' }), []);
 
@@ -68,6 +77,16 @@ export default function App() {
       setBooks(state.books);
       setProgress(state.progress);
       setStorage(state.storage);
+
+      if (!coreReadersPreloadedRef.current && canPreloadOnIdle()) {
+        coreReadersPreloadedRef.current = true;
+        const schedule = (window as IdleWindow).requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 1500));
+        schedule(() => {
+          if (canPreloadOnIdle()) {
+            void import('@/lib/parsers').then((m) => m.preloadCoreReaders()).catch(() => undefined);
+          }
+        });
+      }
     } catch (err) {
       handleApiError(err, 'Không thể tải dữ liệu thư viện.');
     } finally {

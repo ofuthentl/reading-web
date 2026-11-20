@@ -1,8 +1,10 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
+import { recoverFromChunkError } from '@/lib/chunkReload';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
+  fallback?: ReactNode | ((errorMessage: string) => ReactNode);
 }
 
 interface ErrorBoundaryState {
@@ -25,6 +27,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("Ofu's Library ErrorBoundary caught:", error, info.componentStack);
+    recoverFromChunkError(error);
   }
 
   private handleReset = () => {
@@ -38,6 +41,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   render() {
     if (!this.state.hasError) {
       return this.props.children;
+    }
+
+    if (this.props.fallback !== undefined) {
+      return typeof this.props.fallback === 'function'
+        ? this.props.fallback(this.state.errorMessage)
+        : this.props.fallback;
     }
 
     return (

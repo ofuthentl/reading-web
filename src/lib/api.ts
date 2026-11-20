@@ -13,12 +13,9 @@ import {
   setCachedBookBlob,
   setCachedCoverBlob,
 } from '@/lib/cache';
-import {
-  compressCoverBlob,
-  extractCoverAtUpload,
-  parseFileMetadata,
-  pickCoverColor,
-} from '@/lib/parsers';
+import { parseFileMetadata, pickCoverColor } from '@/lib/bookMetadata';
+import { isChunkLoadError } from '@/lib/chunkReload';
+import { compressCoverBlob } from '@/lib/coverImage';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
 const TOKEN_STORAGE_KEY = 'arcane-library-auth-token';
@@ -202,7 +199,18 @@ export async function uploadBook(
   const fileType: BookFileType = parsed.extension;
 
   // Extract tiny compressed cover JPEG (~40KB) once at upload time
-  const coverBlob = await extractCoverAtUpload(file, fileType);
+  let coverBlob: Blob | null = null;
+  try {
+    const { extractCoverAtUpload } = await import('@/lib/parsers');
+    coverBlob = await extractCoverAtUpload(file, fileType);
+  } catch (err) {
+    if (isChunkLoadError(err)) {
+      throw new Error(
+        'Ứng dụng vừa được cập nhật hoặc mất kết nối. Vui lòng tải lại trang rồi thử lại.',
+      );
+    }
+    coverBlob = null;
+  }
 
   if (!isCloudMode) {
     const existingBooks = await getLocalBooks();

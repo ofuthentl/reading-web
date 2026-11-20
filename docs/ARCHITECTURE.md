@@ -5,8 +5,10 @@
 ```mermaid
 flowchart LR
   Browser["Browser (React + Vite + TS)"]
+  Meta["bookMetadata.ts / coverImage.ts"]
   API["src/lib/api.ts"]
-  Parsers["src/lib/parsers.ts"]
+  Parsers["src/lib/parsers.ts\n(lazy: jszip, mobi, dompurify)"]
+  PdfLazy["PdfReader.tsx + pdfjsLoader.ts\n(React.lazy + pdfjs-dist)"]
   Cache["src/lib/cache.ts"]
   IDB[("IndexedDB\n(blobs, covers, local state)")]
   Worker["Cloudflare Worker\nworkers/r2-storage/src/index.ts"]
@@ -14,7 +16,11 @@ flowchart LR
   R2[("Cloudflare R2\n(books/*, covers/*)")]
 
   Browser --> API
-  Browser --> Parsers
+  API --> Meta
+  Browser -. "dynamic import()" .-> Parsers
+  API -. "dynamic import()" .-> Parsers
+  Browser -. "React.lazy" .-> PdfLazy
+  Parsers -. "pdfjsLoader" .-> PdfLazy
   API --> Cache
   Cache <--> IDB
   API -- "HTTPS + Bearer HMAC token" --> Worker
@@ -30,31 +36,37 @@ flowchart LR
 | `src/lib/cache.ts` | Lớp truy cập IndexedDB (`arcane-library-cache-v1`) lưu cache file sách/bìa và dữ liệu chế độ local | `getCachedBookBlob`, `setCachedBookBlob`, `deleteCachedBookBlob`, `getCachedCoverBlob`, `setCachedCoverBlob`, `deleteCachedCoverBlob`, `getLocalBooks`, `putLocalBook`, `deleteLocalBook`, `getAllLocalProgress`, `putLocalProgress`, `deleteLocalProgress` | `src/types.ts`, IndexedDB API |
 | `src/lib/shelfPlacement.ts` | Quy tắc phân bổ kệ thông minh: ưu tiên tên bộ truyện (VD `Mushoku`), tác phẩm lẻ đứng kệ riêng và tự động gom chung về kệ tác giả khi có từ 2 tác phẩm lẻ cùng tác giả | `extractSeriesName`, `isKnownAuthor`, `inferSingleBookShelf`, `resolveUploadShelfPlan`, `resolvePreviewShelfName` | `src/types.ts` |
 | `src/lib/epubChapters.ts` | Chuẩn hoá danh sách chương EPUB: gom toàn bộ ảnh minh hoạ đầu sách (trước Khúc dạo đầu / Mục lục / Mở đầu / Chương X...) thành 1 mục duy nhất `Minh họa`; tích hợp liền mạch ảnh minh hoạ giữa chương và các tệp nối tiếp vào ngay trong chương hiện tại (không tách nhỏ chương trước khi tới chương tiếp theo) | `buildEpubChapters`, `RawEpubSection` | `src/types.ts` |
-| `src/lib/parsers.ts` | Trích xuất metadata tên file, trích/nén ảnh bìa JPEG khi upload, parse EPUB/PDF/CBZ/MOBI thành `ParsedBook` kèm `dispose()` | `pdfWasmUrl`, `pickCoverColor`, `inferShelfName`, `parseFileMetadata`, `bookDuplicateKey`, `compressCoverBlob`, `extractCoverAtUpload`, `parseBookBlob` | `jszip`, `pdfjs-dist`, `@lingo-reader/mobi-parser`, `src/types.ts`, `src/lib/epubChapters.ts`, `src/lib/shelfPlacement.ts` |
+| `src/lib/bookMetadata.ts` | Hàm thuần trích xuất & chuẩn hoá metadata sách từ tên file (không phụ thuộc Canvas hay thư viện parse) | `pickCoverColor`, `inferShelfName`, `parseFileMetadata`, `bookDuplicateKey` | `src/types.ts`, `src/lib/shelfPlacement.ts` |
+| `src/lib/coverImage.ts` | Crop tâm & nén ảnh bìa bằng Canvas về JPEG nhẹ `480×720` (~40 KB), tự giải phóng `ImageBitmap` | `compressCoverBlob` | Canvas / `createImageBitmap` |
+| `src/lib/chunkReload.ts` | Phát hiện lỗi tải chunk động sau deploy (`404`) và tự tải lại trang tối đa 1 lần qua `sessionStorage` để chặn lặp vô hạn (không reload khi `navigator.onLine === false`) | `isChunkLoadError`, `reloadOnceForStaleChunk`, `recoverFromChunkError` | `sessionStorage`, `navigator.onLine` |
+| `src/lib/pdfjsLoader.ts` | Nạp lười `pdfjs-dist` (cache promise, tự reset & xử lý chunk cũ khi lỗi), cấu hình `GlobalWorkerOptions.workerSrc` và `pdfWasmUrl` | `loadPdfJs`, `pdfWasmUrl` | `pdfjs-dist` (dynamic), `src/lib/chunkReload.ts` |
+| `src/lib/sanitizeHtml.ts` | Làm sạch HTML sách EPUB/MOBI bằng `DOMPurify` v3 trước khi render (`dangerouslySetInnerHTML`), chạy trước bước đổi ảnh sang `blob:` URL | `sanitizeBookDocument` | `dompurify` |
+| `src/lib/parsers.ts` | Nạp lười `jszip`, `pdfjs-dist` (qua `pdfjsLoader`), `@lingo-reader/mobi-parser`; tải trước `jszip` khi trình duyệt rảnh (`preloadCoreReaders`); trích ảnh bìa lúc upload và parse EPUB/PDF/CBZ/MOBI thành `ParsedBook` kèm `dispose()` | `preloadCoreReaders`, `extractCoverAtUpload`, `parseBookBlob` | `jszip` (dynamic), `@lingo-reader/mobi-parser` (dynamic), `src/types.ts`, `src/lib/chunkReload.ts`, `src/lib/coverImage.ts`, `src/lib/epubChapters.ts`, `src/lib/pdfjsLoader.ts`, `src/lib/sanitizeHtml.ts` |
 | `src/lib/readerConfig.ts` | Cấu hình trình đọc: 4 bảng màu đọc (`paper`/`sepia`/`dark`/`midnight`), font/width map, lưu & nạp `ReaderSettings` trong `localStorage` | `DEFAULT_READER_SETTINGS`, `READER_THEME_STYLES`, `READER_FONT_CLASS`, `READER_WIDTH_MAX`, `loadReaderSettings`, `saveReaderSettings`, `ReaderThemePalette` | `src/types.ts`, `localStorage` |
-| `src/lib/api.ts` | Giao tiếp HTTP với Worker, quản lý token, bảo vệ D-005 (chặn Local-First trên production), giới hạn 9.0 GiB, cache-first blob/cover, đồng bộ tiến độ đọc | `HARD_LIMIT_BYTES`, `isMissingProductionApi`, `isLocalDevMode`, `isCloudMode`, `getAuthToken`, `setAuthToken`, `formatBytes`, `sortBooksByTitle`, `groupBooksIntoShelves`, `isAuthError`, `checkHealth`, `loginWithPasscode`, `fetchLibraryState`, `uploadBook`, `updateBookMetadata`, `updateBookCover`, `renameShelfAll`, `deleteBooks`, `fetchBookBlobCached`, `fetchCoverBlobCached`, `saveReadingProgress`, `clearReadingProgress` | `src/types.ts`, `src/lib/cache.ts`, `src/lib/parsers.ts` |
+| `src/lib/api.ts` | Giao tiếp HTTP với Worker, quản lý token, bảo vệ D-005 (chặn Local-First trên production), giới hạn 9.0 GiB, cache-first blob/cover, đồng bộ tiến độ đọc | `HARD_LIMIT_BYTES`, `isMissingProductionApi`, `isLocalDevMode`, `isCloudMode`, `getAuthToken`, `setAuthToken`, `formatBytes`, `sortBooksByTitle`, `groupBooksIntoShelves`, `isAuthError`, `checkHealth`, `loginWithPasscode`, `fetchLibraryState`, `uploadBook`, `updateBookMetadata`, `updateBookCover`, `renameShelfAll`, `deleteBooks`, `fetchBookBlobCached`, `fetchCoverBlobCached`, `saveReadingProgress`, `clearReadingProgress` | `src/types.ts`, `src/lib/bookMetadata.ts`, `src/lib/cache.ts`, `src/lib/chunkReload.ts`, `src/lib/coverImage.ts`, `src/lib/parsers.ts` (dynamic) |
 | `src/hooks/useTheme.ts` | Quản lý 3 chế độ màu (`light` Ban ngày `#f6f1e7` → `dim` Chiều tối `#0d1117` + gradient sương nhẹ → `midnight` Đêm khuya `#060608`) lưu `localStorage`, hỗ trợ View Transitions API & `meta[name="theme-color"]` | `useTheme`, `AppTheme`, `THEME_ORDER`, `THEME_LABELS`, `getNextTheme` | React, `localStorage` |
-| `src/hooks/useBookReader.ts` | Quản lý luồng mở/đóng sách (`fetchBookBlobCached` + `parseBookBlob`), chống rò rỉ `ObjectURL` (request ID + `dispose()` khi đóng/đổi/unmount), lưu `ReaderSettings` & `saveReadingProgress` | `useBookReader` | React, `src/types.ts`, `src/lib/api.ts`, `src/lib/parsers.ts`, `src/lib/readerConfig.ts` |
+| `src/hooks/useBookReader.ts` | Quản lý luồng mở/đóng sách (`fetchBookBlobCached` + dynamic `parseBookBlob`), chống rò rỉ `ObjectURL` (request ID + `dispose()` khi đóng/đổi/unmount), lưu `ReaderSettings` & `saveReadingProgress` | `useBookReader` | React, `src/types.ts`, `src/lib/api.ts`, `src/lib/chunkReload.ts`, `src/lib/parsers.ts` (dynamic), `src/lib/readerConfig.ts` |
 | `src/hooks/useCoverUrl.ts` | Tải ảnh bìa từ IndexedDB/R2 qua `fetchCoverBlobCached`, tạo & thu hồi `URL.revokeObjectURL` đúng vòng đời | `useCoverUrl` | React, `src/lib/api.ts` |
 | `src/hooks/useToast.ts` | Hook quản lý hàng đợi thông báo Toast tự tắt kèm dọn sạch timer khi unmount | `useToast`, `ToastItem`, `ToastType` | React |
 | `src/components/ThemeToggle.tsx` | Nút xoay vòng 3 chế độ (`Sun` → `Moon` → `MoonStar`) kiểu Cyanodex dùng chung cho `AuthGate` và `LibraryHeader` | `ThemeToggle` | `lucide-react`, `src/hooks/useTheme.ts` |
-| `src/components/ErrorBoundary.tsx` | React Error Boundary chống trắng trang, có nút tải lại & khôi phục, đồng bộ màu Sáng/Tối | `ErrorBoundary` | `lucide-react` |
+| `src/components/ErrorBoundary.tsx` | React Error Boundary chống trắng trang, nhận prop tuỳ chọn `fallback?: ReactNode \| ((errorMessage: string) => ReactNode)` (boundary gốc ở `main.tsx` giữ fallback mặc định), tự gọi `recoverFromChunkError(error)` trong `componentDidCatch` | `ErrorBoundary` | `lucide-react`, `src/lib/chunkReload.ts` |
 | `src/components/ToastContainer.tsx` | Hiển thị stack thông báo không chặn UI góc dưới-phải, đồng bộ màu Sáng/Tối | `ToastContainer` | `lucide-react`, `src/hooks/useToast.ts` |
 | `src/components/AuthGate.tsx` | Màn hình kiểm tra kết nối Worker, đăng nhập 1 passcode (D-003), báo lỗi thiếu `VITE_API_URL` (D-005), hỗ trợ đổi Sáng/Tối | `AuthGate` | `lucide-react`, `src/lib/api.ts` |
 | `src/components/BookCard.tsx` | Thẻ sách 2D (dọc/ngang): bìa tỉ lệ `3/4` (ảnh lazy qua `IntersectionObserver` + `useCoverUrl` hoặc bìa vải cổ điển fallback), thanh tiến độ %, badge định dạng, chế độ chọn nhiều | `BookCard` | `lucide-react`, `src/types.ts`, `src/hooks/useCoverUrl.ts` |
 | `src/components/LibraryHeader.tsx` | Header thương hiệu **Ofu's Library**: thanh dung lượng `usedBytes / limitBytes` (`formatBytes`), chuyển Sáng/Tối, upload, chọn nhiều, làm mới, đăng xuất | `LibraryHeader` | `lucide-react`, `src/types.ts`, `src/lib/api.ts` |
 | `src/components/Library2DView.tsx` | Giao diện thư viện 2D: khối "Tiếp tục đọc" theo `progress.updatedAt`, tìm kiếm tên/tác giả/kệ (hỗ trợ không dấu), lọc kệ, thanh chọn hàng loạt, danh sách kệ từ `groupBooksIntoShelves()`, nút đổi tên kệ/sửa sách/xoá | `Library2DView` | `lucide-react`, `src/types.ts`, `src/lib/api.ts`, `src/components/BookCard.tsx`, `src/components/LibraryHeader.tsx` |
-| `src/components/UploadDropzone.tsx` | Modal kéo-thả/chọn nhiều file EPUB/MOBI/PDF/CBZ, phát hiện trùng lặp qua `bookDuplicateKey()`, upload tuần tự từng tệp qua `uploadBook()` kèm tự động phân bổ/gom kệ thông minh (`resolveUploadShelfPlan`), hiển thị tiến độ & cảnh báo hạn mức 9.0 GB | `UploadDropzone` | `lucide-react`, `src/types.ts`, `src/lib/api.ts`, `src/lib/parsers.ts`, `src/lib/shelfPlacement.ts`, `src/components/UploadQueueList.tsx`, `src/hooks/useToast.ts` |
+| `src/components/UploadDropzone.tsx` | Modal kéo-thả/chọn nhiều file EPUB/MOBI/PDF/CBZ, phát hiện trùng lặp qua `bookDuplicateKey()`, upload tuần tự từng tệp qua `uploadBook()` kèm tự động phân bổ/gom kệ thông minh (`resolveUploadShelfPlan`), hiển thị tiến độ & cảnh báo hạn mức 9.0 GB | `UploadDropzone` | `lucide-react`, `src/types.ts`, `src/lib/api.ts`, `src/lib/bookMetadata.ts`, `src/lib/shelfPlacement.ts`, `src/components/UploadQueueList.tsx`, `src/hooks/useToast.ts` |
 | `src/components/UploadQueueList.tsx` | Danh sách hàng đợi tệp trong `UploadDropzone`: trạng thái từng tệp, cảnh báo trùng, preview kệ thông minh (`resolvePreviewShelfName`), nút bỏ qua/xoá | `UploadQueueList`, `UploadQueueItem`, `QueueItemStatus` | `lucide-react`, `src/types.ts`, `src/lib/api.ts`, `src/lib/shelfPlacement.ts` |
 | `src/components/BookEditModal.tsx` | Modal sửa metadata sách (`title`, `author`, `shelf` gợi ý kệ có sẵn, `description`) qua `updateBookMetadata()`, đổi ảnh bìa qua `updateBookCover()` kèm thu hồi `URL.revokeObjectURL`, nút xoá 1 sách | `BookEditModal` | `lucide-react`, `src/types.ts`, `src/lib/api.ts`, `src/hooks/useCoverUrl.ts`, `src/hooks/useToast.ts` |
 | `src/components/ShelfRenameModal.tsx` | Modal đổi tên (hoặc gộp) kệ hàng loạt qua `renameShelfAll()` | `ShelfRenameModal` | `lucide-react`, `src/lib/api.ts`, `src/hooks/useToast.ts` |
 | `src/components/DeleteConfirmModal.tsx` | Modal xác nhận xoá 1 sách hoặc xoá hàng loạt qua `deleteBooks()`, hiển thị danh sách tên sách & tổng dung lượng giải phóng (`formatBytes`) | `DeleteConfirmModal` | `lucide-react`, `src/types.ts`, `src/lib/api.ts`, `src/hooks/useToast.ts` |
-| `src/components/PdfReader.tsx` | Trình xem PDF canvas HiDPI, thanh thumbnail (tối đa 40 trang đầu), huỷ `RenderTask` cũ, zoom & tải xuống | `PdfReader` | `pdfjs-dist`, `lucide-react`, `src/lib/parsers.ts` |
+| `src/components/PdfReader.tsx` | Trình xem PDF canvas HiDPI tải lười (nạp `pdfjs-dist` qua `loadPdfJs()`), thanh thumbnail (tối đa 40 trang đầu), huỷ `RenderTask` & `loadingTask` cũ, zoom & tải xuống | `PdfReader` | `pdfjs-dist` (type-only), `lucide-react`, `src/lib/pdfjsLoader.ts` |
+| `src/components/PdfReaderFallback.tsx` | Thẻ báo lỗi cục bộ trong khung đọc khi trình đọc PDF không tải được, có nút "Tải lại trang" và "Đóng sách" | `PdfReaderFallback` | `lucide-react` |
 | `src/components/ReaderSettingsPopover.tsx` | Bảng tùy chỉnh trình đọc: 4 chế độ màu, kiểu chữ, cỡ chữ, giãn dòng, độ rộng cột, bật/tắt chạm lề & phím mũi tên | `ReaderSettingsPopover` | `lucide-react`, `src/types.ts`, `src/lib/readerConfig.ts` |
 | `src/components/ReaderTocDrawer.tsx` | Ngăn kéo mục lục chương/trang kèm ô lọc nhanh | `ReaderTocDrawer` | `lucide-react`, `src/types.ts`, `src/lib/readerConfig.ts` |
-| `src/components/ReaderView.tsx` | Trình đọc EPUB/MOBI/CBZ/PDF gọn ≤ 500 dòng: điều hướng chương/trang, lưu & khôi phục vị trí cuộn theo tỉ lệ, phím `←`/`→` an toàn | `ReaderView` | `lucide-react`, `src/types.ts`, `src/lib/readerConfig.ts`, `src/components/PdfReader.tsx`, `src/components/ReaderSettingsPopover.tsx`, `src/components/ReaderTocDrawer.tsx` |
-| `src/App.tsx` | Vỏ điều phối mỏng (< 200 dòng): quản lý theme 3 chế độ, auth state, xử lý `401` tập trung, tải thư viện, điều phối `AuthGate` ↔ `Library2DView` (+ 4 modal) ↔ `ReaderView` / `ToastContainer` | `default App` | `src/types.ts`, `src/lib/api.ts`, `src/components/*`, `src/hooks/{useBookReader,useTheme,useToast}.ts` |
-| `src/main.tsx` | Điểm khởi chạy React, bọc `<ErrorBoundary>` quanh `<App />` | — | `src/components/ErrorBoundary.tsx`, `src/App.tsx` |
+| `src/components/ReaderView.tsx` | Trình đọc EPUB/MOBI/CBZ/PDF gọn ≤ 500 dòng: điều hướng chương/trang, lưu & khôi phục vị trí cuộn theo tỉ lệ, phím `←`/`→` an toàn, nạp lười `PdfReader` bằng `React.lazy` + `Suspense` bọc trong `<ErrorBoundary fallback={...}>` (`PdfReaderFallback`) | `ReaderView` | `lucide-react`, `src/types.ts`, `src/lib/readerConfig.ts`, `src/components/ErrorBoundary.tsx`, `src/components/PdfReader.tsx` (lazy), `src/components/PdfReaderFallback.tsx`, `src/components/ReaderSettingsPopover.tsx`, `src/components/ReaderTocDrawer.tsx` |
+| `src/App.tsx` | Vỏ điều phối mỏng (< 200 dòng): quản lý theme 3 chế độ, auth state, xử lý `401` tập trung, tải thư viện, tải trước nền `preloadCoreReaders()` khi trình duyệt rảnh sau lần tải thư viện đầu tiên, điều phối `AuthGate` ↔ `Library2DView` (+ 4 modal) ↔ `ReaderView` / `ToastContainer` | `default App` | `src/types.ts`, `src/lib/api.ts`, `src/lib/parsers.ts` (dynamic idle preload), `src/components/*`, `src/hooks/{useBookReader,useTheme,useToast}.ts` |
+| `src/main.tsx` | Điểm khởi chạy React, bọc `<ErrorBoundary>` quanh `<App />` và lắng nghe `vite:preloadError` xử lý chunk cũ sau deploy | — | `src/components/ErrorBoundary.tsx`, `src/lib/chunkReload.ts`, `src/App.tsx` |
 | `workers/r2-storage/src/auth.ts` | Xác thực fail-closed cho Worker: so sánh timing-safe, ký & kiểm tra token HMAC-SHA256 30 ngày, `HttpError` | `HttpError`, `AuthEnv`, `isInsecureDevAuthDisabled`, `isAuthRequired`, `timingSafeEqual`, `signPayload`, `createAuthToken`, `authenticatePasscode`, `verifyAuth` | Web Crypto API (`crypto.subtle`) |
 | `workers/r2-storage/src/index.ts` | Cloudflare Worker API: CORS, kiểm soát hạn mức 9.0 GiB, CRUD D1, stream upload/download R2 (hỗ trợ HTTP Range) | `default { fetch }` | Cloudflare Workers Runtime (`D1Database`, `R2Bucket`), `workers/r2-storage/src/auth.ts` |
 
@@ -120,12 +132,16 @@ flowchart LR
 | `fetchLibraryState()` / `uploadBook()` / `updateBookMetadata()` / `updateBookCover()` / `renameShelfAll()` / `deleteBooks()` | `src/lib/api.ts` | Toàn bộ thao tác thư viện (tự động xử lý cache IndexedDB & hạn mức 9.0 GiB). |
 | `fetchBookBlobCached()` / `fetchCoverBlobCached()` | `src/lib/api.ts` | Tải sách/ảnh bìa ưu tiên IndexedDB (0ms), cache tự động khi tải từ R2. |
 | `saveReadingProgress()` / `clearReadingProgress()` | `src/lib/api.ts` | Lưu/xoá tiến độ đọc đồng thời local và D1. |
-| `pickCoverColor(seed)` | `src/lib/parsers.ts` | Chọn màu bìa mặc định ổn định từ bảng màu Arcane theo chuỗi seed. |
+| `pickCoverColor(seed)` | `src/lib/bookMetadata.ts` | Chọn màu bìa mặc định ổn định từ bảng màu Arcane theo chuỗi seed. |
 | `extractSeriesName` / `resolveUploadShelfPlan` / `resolvePreviewShelfName` | `src/lib/shelfPlacement.ts` | Nhận diện bộ truyện nhiều tập (ưu tiên kệ theo tên bộ) và tự động gom các tác phẩm lẻ cùng tác giả về chung kệ tác giả khi có ≥ 2 tác phẩm lẻ. |
-| `inferShelfName(title, author)` | `src/lib/parsers.ts` | Suy luận tên kệ đơn lẻ (uỷ quyền `inferSingleBookShelf`): ưu tiên tên bộ/tác phẩm, chỉ fallback về tác giả khi thiếu tiêu đề. |
-| `parseFileMetadata(fileName)` | `src/lib/parsers.ts` | Tách `title`, `author`, `shelf`, `extension` từ tên file. |
-| `bookDuplicateKey(title, author)` | `src/lib/parsers.ts` | Tạo khoá chuẩn hoá để phát hiện sách trùng lặp. |
-| `compressCoverBlob(source)` | `src/lib/parsers.ts` | Crop tâm & nén ảnh bìa về JPEG `480×720` (~40 KB). |
+| `inferShelfName(title, author)` | `src/lib/bookMetadata.ts` | Suy luận tên kệ đơn lẻ (uỷ quyền `inferSingleBookShelf`): ưu tiên tên bộ/tác phẩm, chỉ fallback về tác giả khi thiếu tiêu đề. |
+| `parseFileMetadata(fileName)` | `src/lib/bookMetadata.ts` | Tách `title`, `author`, `shelf`, `extension` từ tên file. |
+| `bookDuplicateKey(title, author)` | `src/lib/bookMetadata.ts` | Tạo khoá chuẩn hoá để phát hiện sách trùng lặp. |
+| `compressCoverBlob(source)` | `src/lib/coverImage.ts` | Crop tâm & nén ảnh bìa về JPEG `480×720` (~40 KB). |
+| `isChunkLoadError(err)` / `reloadOnceForStaleChunk()` / `recoverFromChunkError(err)` | `src/lib/chunkReload.ts` | Nhận diện lỗi tải chunk động sau deploy và tự tải lại trang đúng 1 lần qua `sessionStorage` (bỏ qua khi `navigator.onLine === false`). |
+| `loadPdfJs()` / `pdfWasmUrl` | `src/lib/pdfjsLoader.ts` | Nạp lười `pdfjs-dist` có cache promise, cấu hình `GlobalWorkerOptions.workerSrc` và đường dẫn WASM. |
+| `sanitizeBookDocument(doc)` | `src/lib/sanitizeHtml.ts` | Làm sạch HTML EPUB/MOBI bằng `DOMPurify` v3 (gọi trước bước đổi ảnh sang `blob:` URL). |
+| `preloadCoreReaders()` | `src/lib/parsers.ts` | Tải trước ngầm `jszip` khi trình duyệt rảnh sau khi vào thư viện 2D để sẵn sàng đọc EPUB/CBZ offline. |
 | `extractCoverAtUpload(file, fileType)` | `src/lib/parsers.ts` | Trích xuất ảnh bìa nhẹ 1 lần duy nhất lúc upload cho EPUB/CBZ/MOBI/PDF. |
 | `parseBookBlob(blob, book)` | `src/lib/parsers.ts` | Parse EPUB/PDF/CBZ/MOBI thành `ParsedBook` kèm `dispose()` thu hồi Object URL. |
 | `getCachedBookBlob` / `setCachedBookBlob` / `deleteCachedBookBlob` | `src/lib/cache.ts` | Đọc/ghi/xoá blob sách trong IndexedDB. |
@@ -137,5 +153,10 @@ flowchart LR
 
 ## 7. Trạng thái hiện tại
 
-- **Sub-phase 3.4 đã hoàn tất**: tách gọn `ReaderView.tsx` (`ReaderSettingsPopover`, `ReaderTocDrawer`, `readerConfig.ts`), dọn sạch CSS `.pdf-*` lỗi thời và thêm `.font-reader-*` trong `src/index.css`, nối hoàn chỉnh trình đọc vào `App.tsx` (< 200 dòng) qua `useBookReader` kèm `dispose()` an toàn.
-- **Kiểm định toàn repo XANH 100%**: `npm run typecheck`, `npm run lint` (`eslint .` — mọi file frontend & Worker đều ≤ 500 dòng hiệu dụng), `npm run build`, và `workers/r2-storage` `npm run typecheck` đều **0 lỗi, 0 cảnh báo**. Sẵn sàng sang Sub-phase 3.5 (kiểm thử checklist thực tế & cấu hình GitHub Secret `VITE_API_URL`) → 3.6 (mở PR merge vào `main`).
+- **Phase 3 (2D + Cloudflare Worker/D1/R2)** đã merge vào `main` qua PR #1, đang chạy ổn định trên `https://ofu.lol` (PC & mobile); Worker live tại `https://arcane-library-api.novel-check-d467614e.workers.dev`; đã dọn sạch Supabase theo D-001.
+- **Nhánh `refactor/code-splitting` đã hoàn tất Phase 1 → 4 & kiểm thử thủ công**:
+  - Ghi quyết định **D-008** (điều kiện bật Thư viện 3D Desktop-only & chặn mobile tải Three.js) trong `docs/DECISIONS.md`.
+  - Tách `src/lib/parsers.ts` đúng trách nhiệm (`bookMetadata.ts`, `coverImage.ts`, `pdfjsLoader.ts`, `sanitizeHtml.ts` dùng `dompurify` v3, `chunkReload.ts`), chuyển `parsers.ts`, `jszip`, `@lingo-reader/mobi-parser`, `pdfjs-dist` và `PdfReader.tsx` sang nạp lười (`import()` / `React.lazy`).
+  - Mở rộng `ErrorBoundary.tsx` (prop `fallback` & `recoverFromChunkError` không reload khi offline), tách `PdfReaderFallback.tsx` bọc quanh `LazyPdfReader`, và preload ngầm `parsers` + `jszip` khi trình duyệt rảnh sau khi vào thư viện 2D.
+  - Entry bundle `dist/assets/index-*.js` giảm từ **918.12 kB** (gzip **277.95 kB**) xuống **259.77 kB** (gzip **76.92 kB**).
+- **Kiểm định tự động & thủ công XANH 100%**: `npm run typecheck`, `npm run lint` và `cd workers/r2-storage && npx tsc --noEmit` đều **0 lỗi, 0 cảnh báo**; `npm run build` **0 lỗi, 0 cảnh báo chunk > 500 kB** (còn 1 cảnh báo externalize `stream` đã biết từ `sax` qua chuỗi phụ thuộc `@lingo-reader/mobi-parser` → `@lingo-reader/shared` → `sax`); đã hoàn tất toàn bộ Checklist Mục 5C, sẵn sàng mở PR merge vào `main`.

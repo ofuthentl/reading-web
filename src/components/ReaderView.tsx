@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -6,11 +6,13 @@ import {
   ChevronRight,
   HardDrive,
   List,
+  Loader2,
   Sparkles,
   Type,
 } from 'lucide-react';
 import type { Book, ParsedBook, ReaderSettings, ReadingProgress } from '@/types';
-import { PdfReader } from '@/components/PdfReader';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { PdfReaderFallback } from '@/components/PdfReaderFallback';
 import { ReaderSettingsPopover } from '@/components/ReaderSettingsPopover';
 import { ReaderTocDrawer } from '@/components/ReaderTocDrawer';
 import {
@@ -18,6 +20,10 @@ import {
   READER_THEME_STYLES,
   READER_WIDTH_MAX,
 } from '@/lib/readerConfig';
+
+const LazyPdfReader = lazy(() =>
+  import('@/components/PdfReader').then((mod) => ({ default: mod.PdfReader })),
+);
 
 type ReaderViewProps = {
   book: Book;
@@ -327,13 +333,34 @@ export function ReaderView({
 
       {/* Main Content Area */}
       {isPdf && pdfBlobUrl ? (
-        <PdfReader
-          url={pdfBlobUrl}
-          fileName={book.title}
-          pageNumber={chapterIndex + 1}
-          pageCount={chapters.length}
-          onPageChange={(page) => goToChapter(page - 1)}
-        />
+        <ErrorBoundary
+          fallback={(errorMessage) => (
+            <PdfReaderFallback
+              errorMessage={errorMessage}
+              onClose={() => {
+                flushProgress();
+                onClose();
+              }}
+            />
+          )}
+        >
+          <Suspense
+            fallback={
+              <div className="theme-canvas flex h-[calc(100vh-3.25rem)] flex-col items-center justify-center gap-3 p-8 text-ink-muted">
+                <Loader2 className="h-6 w-6 animate-spin text-accent" />
+                <p className="text-sm">Đang tải trình đọc PDF...</p>
+              </div>
+            }
+          >
+            <LazyPdfReader
+              url={pdfBlobUrl}
+              fileName={book.title}
+              pageNumber={chapterIndex + 1}
+              pageCount={chapters.length}
+              onPageChange={(page) => goToChapter(page - 1)}
+            />
+          </Suspense>
+        </ErrorBoundary>
       ) : (
         <main
           ref={scrollContainerRef}

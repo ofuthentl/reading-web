@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
+import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import {
   ChevronLeft,
   ChevronRight,
@@ -9,7 +9,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { pdfWasmUrl } from '@/lib/parsers';
+import { loadPdfJs, pdfWasmUrl } from '@/lib/pdfjsLoader';
 
 type PdfReaderProps = {
   url: string;
@@ -28,10 +28,10 @@ export function PdfReader({
 }: PdfReaderProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
-  const activeRenderRef = useRef<pdfjsLib.RenderTask | null>(null);
+  const activeRenderRef = useRef<RenderTask | null>(null);
   const thumbRefs = useRef<Record<number, HTMLCanvasElement | null>>({});
 
-  const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [scale, setScale] = useState(1.35);
   const [showThumbs, setShowThumbs] = useState(() => window.innerWidth >= 768);
   const [renderError, setRenderError] = useState<string | null>(null);
@@ -40,13 +40,17 @@ export function PdfReader({
   // Load PDF document cleanly & reset error on URL change
   useEffect(() => {
     let cancelled = false;
+    let loadingTask: ReturnType<Awaited<ReturnType<typeof loadPdfJs>>['getDocument']> | null = null;
     setRenderError(null);
     setPdf(null);
 
-    const loadingTask = pdfjsLib.getDocument({ url, wasmUrl: pdfWasmUrl });
-    void loadingTask.promise
-      .then((doc) => {
-        if (!cancelled) setPdf(doc);
+    void loadPdfJs()
+      .then((pdfjsLib) => {
+        if (cancelled) return;
+        loadingTask = pdfjsLib.getDocument({ url, wasmUrl: pdfWasmUrl });
+        return loadingTask.promise.then((doc) => {
+          if (!cancelled) setPdf(doc);
+        });
       })
       .catch(() => {
         if (!cancelled) setRenderError('Không thể hiển thị tệp PDF này.');
@@ -54,7 +58,9 @@ export function PdfReader({
 
     return () => {
       cancelled = true;
-      void loadingTask.destroy();
+      if (loadingTask) {
+        void loadingTask.destroy();
+      }
     };
   }, [url]);
 

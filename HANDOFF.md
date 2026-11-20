@@ -1,21 +1,21 @@
 # HANDOFF
-Cập nhật: 2026-11-20 23:46 | Nhánh: feat/migrate-cloudflare | Build: 🟢 frontend · 🟢 Worker · 🟢 ESLint 100%
-Nhiệm vụ hiện tại: Phase 3 — Sub-phase 3.6 (Push nhánh & mở Pull Request merge vào `main` deploy lên `ofu.lol`)
+Cập nhật: 2026-11-21 00:58 | Nhánh: refactor/code-splitting | Build: 🟢 frontend · 🟢 Worker · 🟢 ESLint 100%
+Nhiệm vụ hiện tại: Refactor code-splitting — đã hoàn tất kiểm thử tự động & thủ công Mục 5C, đã push nhánh sẵn sàng mở PR vào `main`
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/
 
 ## Đang làm dở
-- Đã hoàn tất kiểm thử & kiểm định Sub-phase 3.5 (CI giả lập, Worker live/CORS/auth fail-closed, D1/R2, 3 chế độ màu, EPUB/PDF reader, phân bổ kệ thông minh).
-- Worker live tại `https://arcane-library-api.novel-check-d467614e.workers.dev`.
+- Nhánh `refactor/code-splitting` đã hoàn tất toàn bộ 4 phase, bản vá hậu review và vượt qua 100% Checklist kiểm thử tự động + thủ công (Mục 5A, 5B, 5C).
+- Entry `index-*.js` giảm từ **918.12 kB** (gzip 277.95 kB) xuống **259.77 kB** (gzip 76.92 kB); `npm run build` **0 lỗi, 0 cảnh báo chunk > 500 kB** (còn 1 cảnh báo externalize `stream` đã biết từ `sax`).
 
 ## Bước tiếp theo
-1. Mở Pull Request `feat/migrate-cloudflare` → `main` trên GitHub, xác nhận cả 2 job CI (`Frontend` và `Worker`) đều xanh → duyệt & Merge vào `main`.
-2. Theo dõi `.github/workflows/deploy.yml` deploy xong, kiểm tra thực tế trên `https://ofu.lol` (PC & mobile).
-3. Dọn hậu kỳ (D-001): xoá project Supabase cũ và xoá secret `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` trên GitHub.
-4. Phase 4 (nhánh mới tách từ `main` sau khi merge): thư viện 3D `FantasyLibrary3D` theo D-004.
+1. Mở Pull Request `refactor/code-splitting` → `main` trên GitHub, xác nhận cả 2 job CI (`Frontend` và `Worker`) đều xanh → duyệt & Merge vào `main`.
+2. Theo dõi `.github/workflows/deploy.yml` deploy xong bản code-splitting lên `https://ofu.lol`.
+3. Triển khai Phase 4 (Thư viện 3D `FantasyLibrary3D`) trên nhánh mới tách từ `main` sau khi merge, tuân thủ D-004 + D-008.
 
 ## Lỗi / chặn
-- Không có lỗi/chặn nào. Mọi file `.ts`/`.tsx` toàn repo đều ≤ 500 dòng; `src/App.tsx` gọn 192 dòng (< 200).
+- Không có lỗi/chặn nào.
 
-## Xong trong nhiệm vụ này
-- **Sub-phase 3.5**: hoàn tất kiểm định tự động & thủ công (cache Offline 0ms, đồng bộ tên chương + % tổng trên `BookCard`, đồng bộ theme Thư viện ↔ Trình đọc/PDF, gộp ảnh minh hoạ đầu sách & giữ liền mạch ảnh minh hoạ giữa chương EPUB).
-- **Sub-phase 3.0 → 3.4**: Worker fail-closed + D1/R2 live, `AuthGate` + D-005 + `ErrorBoundary` + `Toast`, `Library2DView` 3 chế độ màu (**Ban ngày / Chiều tối / Đêm khuya**), 4 modal quản lý sách + phân bổ kệ thông minh, tách gọn `ReaderView` + nối `useBookReader`.
+## Xong gần nhất
+- **Xác nhận hậu kỳ Phase 3:** `https://ofu.lol` đã chạy ổn định trên PC & mobile; đã dọn sạch project Supabase cũ và secret `VITE_SUPABASE_*` theo D-001.
+- **Kiểm thử thủ công Mục 5C (`refactor/code-splitting`):** đã xác nhận đăng nhập cổng 5173, Network ở `AuthGate` & preload idle ở Thư viện 2D, đọc Offline EPUB vs thông báo lỗi PDF/MOBI không reload mất tab, `PdfReaderFallback` cục bộ, đọc đủ 4 định dạng EPUB/PDF/MOBI/CBZ, upload trích bìa, `DOMPurify` chặn EPUB độc hại và tự tải lại 1 lần khi chunk cũ 404.
+- **Phase 1 → 4 (`refactor/code-splitting`):** ghi **D-008**, tách `parsers.ts` (`bookMetadata`, `coverImage`, `pdfjsLoader`, `sanitizeHtml` dùng `dompurify` v3, `chunkReload`), lazy-load `PdfReader.tsx` + `PdfReaderFallback.tsx`, đồng bộ `docs/ARCHITECTURE.md`.
