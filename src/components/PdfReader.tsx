@@ -158,9 +158,9 @@ export function PdfReader({
   }
 
   return (
-    <div className={`flex h-[calc(100vh-3.25rem)] flex-col ${isDark ? 'bg-[#14141c] text-stone-100' : 'bg-stone-200/80 text-stone-800'}`}>
+    <div className={`flex h-[calc(100vh-3.25rem)] flex-col ${isDark ? 'bg-[#0d1117] text-[#e6ebf0]' : 'bg-[#efe8da] text-[#2b241d]'}`}>
       {/* PDF Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#1c1b29] px-3 py-2 text-stone-100">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#141a23] px-3 py-2 text-[#e6ebf0]">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -240,7 +240,7 @@ export function PdfReader({
       {/* PDF Stage */}
       <div className="flex min-h-0 flex-1">
         {showThumbs && (
-          <aside className="scrollbar-thin w-28 shrink-0 overflow-y-auto border-r border-white/10 bg-[#181724] p-2.5 sm:w-36">
+          <aside className="scrollbar-thin w-28 shrink-0 overflow-y-auto border-r border-white/10 bg-[#0e131b] p-2.5 sm:w-36">
             {Array.from({ length: Math.min(pageCount, 40) }, (_, idx) => idx + 1).map((num) => (
               <button
                 key={num}
@@ -248,7 +248,7 @@ export function PdfReader({
                 onClick={() => onPageChange(num)}
                 className={`mb-3 block w-full rounded-lg border-2 p-1 text-center transition ${
                   num === pageNumber
-                    ? 'border-indigo-400 bg-indigo-500/20'
+                    ? 'border-white/80 bg-white/15'
                     : 'border-transparent hover:border-white/20'
                 }`}
               >

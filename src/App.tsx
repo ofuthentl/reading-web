@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import type { Book, ReadingProgress, StorageStats } from '@/types';
 import { fetchLibraryState, groupBooksIntoShelves, isAuthError, setAuthToken, sortBooksByTitle } from '@/lib/api';
 import { AuthGate } from '@/components/AuthGate';
 import { BookEditModal } from '@/components/BookEditModal';
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal';
 import { Library2DView } from '@/components/Library2DView';
+import { ReaderView } from '@/components/ReaderView';
 import { ShelfRenameModal } from '@/components/ShelfRenameModal';
 import { ToastContainer } from '@/components/ToastContainer';
 import { UploadDropzone } from '@/components/UploadDropzone';
+import { useBookReader } from '@/hooks/useBookReader';
 import { useTheme } from '@/hooks/useTheme';
 import { useToast } from '@/hooks/useToast';
 
@@ -47,6 +50,16 @@ export default function App() {
     [addToast],
   );
 
+  const handleProgressUpdated = useCallback((bookId: string, nextProgress: ReadingProgress) => {
+    setProgress((prev) => ({ ...prev, [bookId]: nextProgress }));
+  }, []);
+
+  const reader = useBookReader({
+    onProgressUpdated: handleProgressUpdated,
+    onApiError: handleApiError,
+  });
+  const { closeBook } = reader;
+
   const loadLibrary = useCallback(async () => {
     setLoading(true);
     try {
@@ -63,20 +76,17 @@ export default function App() {
 
   useEffect(() => {
     if (authenticated) void loadLibrary();
-  }, [authenticated, loadLibrary]);
+    else closeBook();
+  }, [authenticated, closeBook, loadLibrary]);
 
   const existingShelves = useMemo(
     () => groupBooksIntoShelves(books).map((shelf) => shelf.name),
     [books],
   );
 
-  const handleAuthenticated = useCallback(() => {
-    setAuthReason(null);
-    setAuthenticated(true);
-  }, []);
-
   const handleLogout = useCallback(() => {
     setAuthToken(null);
+    closeBook();
     setModal({ kind: 'none' });
     setBooks([]);
     setProgress({});
@@ -84,14 +94,7 @@ export default function App() {
     setAuthenticated(false);
     setAuthReason(null);
     addToast('Đã đăng xuất khỏi thư viện.', 'info');
-  }, [addToast]);
-
-  const handleOpenBook = useCallback(
-    (book: Book) => {
-      addToast(`Đã chọn "${book.title}". Trình đọc sẽ được nối ở Sub-phase 3.4.`, 'info');
-    },
-    [addToast],
-  );
+  }, [addToast, closeBook]);
 
   const handleBookUploaded = useCallback((book: Book, nextStorage: StorageStats) => {
     setBooks((prev) => sortBooksByTitle([...prev.filter((item) => item.id !== book.id), book]));
@@ -99,35 +102,43 @@ export default function App() {
   }, []);
 
   const handleBookUpdated = useCallback((updatedBook: Book, nextStorage?: StorageStats) => {
-    setBooks((prev) =>
-      sortBooksByTitle(prev.map((item) => (item.id === updatedBook.id ? updatedBook : item))),
-    );
+    setBooks((prev) => sortBooksByTitle(prev.map((item) => (item.id === updatedBook.id ? updatedBook : item))));
     if (nextStorage) setStorage(nextStorage);
   }, []);
 
   const handleShelfRenamed = useCallback((oldName: string, newName: string) => {
-    setBooks((prev) =>
-      prev.map((item) => (item.shelf === oldName ? { ...item, shelf: newName } : item)),
-    );
+    setBooks((prev) => prev.map((item) => (item.shelf === oldName ? { ...item, shelf: newName } : item)));
   }, []);
 
   const handleBooksDeleted = useCallback((deletedIds: string[], nextStorage: StorageStats) => {
     const idSet = new Set(deletedIds);
     setBooks((prev) => prev.filter((item) => !idSet.has(item.id)));
-    setProgress((prev) =>
-      Object.fromEntries(Object.entries(prev).filter(([id]) => !idSet.has(id))),
-    );
+    setProgress((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => !idSet.has(id))));
     setStorage(nextStorage);
   }, []);
 
   if (!authenticated) {
     return (
       <>
-        <AuthGate
-          onAuthenticated={handleAuthenticated}
-          authReason={authReason}
-          theme={theme}
-          onCycleTheme={cycleTheme}
+        <AuthGate onAuthenticated={() => { setAuthReason(null); setAuthenticated(true); }} authReason={authReason} theme={theme} onCycleTheme={cycleTheme} />
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      </>
+    );
+  }
+
+  if (reader.activeBook && reader.parsedBook) {
+    return (
+      <>
+        <ReaderView
+          key={reader.activeBook.id}
+          book={reader.activeBook}
+          parsedBook={reader.parsedBook}
+          loadedFromCache={reader.loadedFromCache}
+          initialProgress={progress[reader.activeBook.id]}
+          settings={reader.settings}
+          onUpdateSettings={reader.updateSettings}
+          onSaveProgress={reader.handleSaveProgress}
+          onClose={reader.closeBook}
         />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </>
@@ -150,49 +161,30 @@ export default function App() {
         onCycleTheme={cycleTheme}
         onRefresh={() => void loadLibrary()}
         onLogout={handleLogout}
-        onOpenBook={handleOpenBook}
+        onOpenBook={(book) => void reader.openBook(book)}
         onUploadClick={() => setModal({ kind: 'upload' })}
         onEditBook={(book) => setModal({ kind: 'edit', book })}
         onRenameShelf={(shelfName) => setModal({ kind: 'rename-shelf', shelfName })}
         onDeleteSelected={(selectedBooks) => setModal({ kind: 'delete', books: selectedBooks })}
       />
       {modal.kind === 'upload' && (
-        <UploadDropzone
-          open
-          books={books}
-          storage={storage}
-          onClose={closeModal}
-          onBookUploaded={handleBookUploaded}
-          onBookUpdated={handleBookUpdated}
-          onApiError={handleApiError}
-          onNotify={addToast}
-        />
+        <UploadDropzone open books={books} storage={storage} onClose={closeModal} onBookUploaded={handleBookUploaded} onBookUpdated={handleBookUpdated} onApiError={handleApiError} onNotify={addToast} />
       )}
-      <BookEditModal
-        book={modal.kind === 'edit' ? modal.book : null}
-        existingShelves={existingShelves}
-        onClose={closeModal}
-        onUpdated={handleBookUpdated}
-        onRequestDelete={(book) => setModal({ kind: 'delete', books: [book] })}
-        onApiError={handleApiError}
-        onNotify={addToast}
-      />
-      <ShelfRenameModal
-        shelfName={renamingShelfName}
-        bookCount={renamingShelfCount}
-        existingShelves={existingShelves}
-        onClose={closeModal}
-        onRenamed={handleShelfRenamed}
-        onApiError={handleApiError}
-        onNotify={addToast}
-      />
-      <DeleteConfirmModal
-        books={modal.kind === 'delete' ? modal.books : []}
-        onClose={closeModal}
-        onDeleted={handleBooksDeleted}
-        onApiError={handleApiError}
-        onNotify={addToast}
-      />
+      <BookEditModal book={modal.kind === 'edit' ? modal.book : null} existingShelves={existingShelves} onClose={closeModal} onUpdated={handleBookUpdated} onRequestDelete={(book) => setModal({ kind: 'delete', books: [book] })} onApiError={handleApiError} onNotify={addToast} />
+      <ShelfRenameModal shelfName={renamingShelfName} bookCount={renamingShelfCount} existingShelves={existingShelves} onClose={closeModal} onRenamed={handleShelfRenamed} onApiError={handleApiError} onNotify={addToast} />
+      <DeleteConfirmModal books={modal.kind === 'delete' ? modal.books : []} onClose={closeModal} onDeleted={handleBooksDeleted} onApiError={handleApiError} onNotify={addToast} />
+      {reader.openingBook && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="status" aria-live="polite">
+          <div className="moonlit-card fade-in flex w-full max-w-sm flex-col items-center rounded-2xl border border-line bg-surface px-6 py-7 text-center shadow-2xl dark:border-line-strong/70">
+            <Loader2 className="h-7 w-7 animate-spin text-accent" />
+            <p className="mt-3 font-display text-base font-semibold text-ink">Đang mở sách...</p>
+            <p className="mt-1 line-clamp-2 text-xs text-ink-muted">{reader.openingBook.title}</p>
+            <button type="button" onClick={reader.closeBook} className="mt-4 rounded-xl border border-line bg-canvas px-4 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink">
+              Huỷ
+            </button>
+          </div>
+        </div>
+      )}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </>
   );
