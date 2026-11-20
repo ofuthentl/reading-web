@@ -1,50 +1,19 @@
-# HANDOFF — Bàn giao tiến độ
+# HANDOFF
+Cập nhật: 2026-11-20 20:23 | Nhánh: feat/migrate-cloudflare | Build: 🔴 (App.tsx còn import Supabase đã xoá; CI trên nhánh này dự kiến đỏ)
+Nhiệm vụ hiện tại: Thiết lập quy trình dự án (Phase 0–2) — plan: chưa tạo (Phase 2)
+Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md (chưa tạo) · docs/DECISIONS.md (chưa tạo) · docs/plans/
 
-> File này để bàn giao công việc giữa các phiên/tài khoản AI.
-> AI đang làm phải cập nhật file này thường xuyên. AI mới phải đọc file này TRƯỚC KHI làm gì khác.
+## Đang làm dở
+- Phase 2: chuẩn bị đọc toàn bộ mã nguồn core và tạo `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `README.md`, `docs/plans/phase-3-2d.md`, hoàn thiện `HANDOFF.md`.
 
-**Cập nhật lần cuối:** YYYY-MM-DD HH:mm
-**Commit gần nhất:** `<hash>` — <message>
+## Bước tiếp theo
+1. Thực hiện Phase 2 (đọc code core, tạo sổ kiến trúc, sổ quyết định, README mới, plan Phase 3).
+2. Commit & push Phase 2.
 
----
+## Lỗi / chặn
+- `src/App.tsx` chưa nối sang backend mới (còn import `@/lib/supabase`, `@/lib/book-storage`, `@supabase/supabase-js`) → typecheck/build/CI frontend đang đỏ (trạng thái đã biết).
+- `workers/r2-storage/wrangler.toml` còn placeholder `REPLACE_WITH_YOUR_D1_DATABASE_ID`; Worker chưa deploy.
 
-## 1. Mục tiêu tổng thể
-<!-- Dự án/tính năng này nhằm làm gì? Định nghĩa "xong" là gì? -->
--
-
-## 2. Bối cảnh kỹ thuật
-<!-- Stack, cấu trúc thư mục chính, cách chạy / build / test -->
-- Stack:
-- Chạy dev:
-- Chạy test:
-- File/thư mục quan trọng:
-
-## 3. Đã hoàn thành ✅
-- [x]
-
-## 4. Đang làm dở 🚧
-<!-- Cụ thể tới mức file nào, hàm nào, đang sửa gì, đã làm được bao nhiêu -->
-- [ ] **Việc:**
-  - File liên quan:
-  - Trạng thái hiện tại:
-  - Còn thiếu:
-
-## 5. Bước tiếp theo ▶️
-<!-- Theo thứ tự ưu tiên. AI mới bắt đầu từ mục 1 -->
-1.
-2.
-3.
-
-## 6. Quyết định quan trọng & lý do
-<!-- Để AI mới KHÔNG làm lại / KHÔNG đảo ngược những gì đã chốt -->
-| Quyết định | Lý do | Phương án đã loại |
-|---|---|---|
-|  |  |  |
-
-## 7. Lỗi / vấn đề còn tồn tại ⚠️
-<!-- Kèm thông báo lỗi, cách tái hiện, những gì đã thử mà không được -->
--
-
-## 8. Lưu ý / yêu cầu riêng của người dùng
-<!-- Phong cách code, ngôn ngữ, những điều KHÔNG được làm -->
--
+## Xong trong nhiệm vụ này
+- Phase 0: cứu hộ Git sang nhánh `feat/migrate-cloudflare`, bổ sung `.gitignore`.
+- Phase 1: tạo `AGENTS.md`, thêm ESLint `max-lines` (kèm override tạm cho `src/App.tsx`), tạo `.github/workflows/ci.yml`, thêm typecheck/lint vào `deploy.yml`, rút gọn `docs/PROMPTS.md`.
