@@ -1,20 +1,21 @@
 # HANDOFF
-Cập nhật: 2026-11-21 01:38 | Nhánh: feat/bulk-shelf-grouping | Build: 🟢 frontend · 🟢 Worker (đã deploy live) · 🟢 ESLint 100%
-Nhiệm vụ hiện tại: Đã hoàn tất kiểm thử tự động & thủ công `feat/bulk-shelf-grouping`, đã push nhánh sẵn sàng mở PR vào `main`
-Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/
+Cập nhật: 2026-11-21 02:35 | Nhánh: feat/docx-drop-mobi-cbz | Build: 🟢 frontend · 🟢 Worker (live) · 🟢 ESLint 100%
+Nhiệm vụ hiện tại: Hoàn tất `feat/docx-drop-mobi-cbz` (D-009: xoá MOBI/CBZ, thêm DOCX, vá lỗi review) — đã push sẵn sàng mở PR vào `main`
+Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/docx-drop-mobi-cbz.md
 
 ## Đang làm dở
-- Nhánh `feat/bulk-shelf-grouping` đã hoàn tất Phase 1 → Phase 4 + bản vá nhận diện kệ đã đổi tên (`Mushoku` → `Mushoku Tensei`), đã vượt qua kiểm định tự động và kiểm thử thủ công.
-- Cloudflare Worker đã được deploy live tại `https://arcane-library-api.novel-check-d467614e.workers.dev` (Version ID: `7ebbf047-6119-4281-b257-43ebe51e7c92`) với endpoint `POST /api/books/bulk-shelf`.
+- Nhánh `feat/docx-drop-mobi-cbz` đã xong 100% Phase 1 → 3 và kiểm thử tự động + trình duyệt E2E (upload `.docx` có bìa, tách chương, bảng, danh sách, ảnh nhúng; chặn `.mobi`/`.cbz`; 0 lỗi console).
+- Cloudflare D1 remote `library-db` đã chạy migration `0001_docx_drop_mobi_cbz.sql` (giữ nguyên 49 sách EPUB + 4 tiến độ đọc); Worker đã deploy live (`b5f00281-9310-469b-a64a-120ab227535b`).
 
 ## Bước tiếp theo
-1. Mở Pull Request `feat/bulk-shelf-grouping` → `main` trên GitHub, xác nhận cả 2 job CI (`Frontend` và `Worker`) đều xanh → Merge vào `main`.
-2. Sau khi `.github/workflows/deploy.yml` cập nhật `https://ofu.lol`, gom nhanh 41 cuốn SAO về 1 kệ bằng `Tìm kiếm SAO` → `Chọn nhiều` → `Chọn tất cả` → `Chuyển kệ (41)` và gộp kệ `Mushoku` vào `Mushoku Tensei`.
-3. Khi cần làm tính năng tiếp theo (ví dụ Phase 4 Thư viện 3D `FantasyLibrary3D`), `git fetch origin` và tách nhánh mới từ `origin/main`.
+1. Mở Pull Request `feat/docx-drop-mobi-cbz` → `main` trên GitHub, xác nhận cả 2 job CI (`Frontend` và `Worker`) đều xanh → Merge vào `main`.
+2. Sau khi merge vào `main`: chuyển sang nhánh `feat/library-3d`, rebase lên `origin/main` (và cập nhật bỏ mục ngoại lệ CBZ QĐ-4.3 trong `docs/plans/phase-4-3d.md`) để tiếp tục Phase 4 3D (`FantasyLibrary3D` & `BookSpreadReader`).
+3. (Tuỳ chọn sau) Thêm giới hạn số lần thử đăng nhập (rate limit) cho `POST /api/auth/login` trên Cloudflare Worker/WAF.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **Kiểm thử thủ công `feat/bulk-shelf-grouping`:** xác nhận pill `Thêm vào kệ <Tên>` ở footer `UploadDropzone`, nhận diện kệ đã đổi tên (`Mushoku Tensei`) và chuyển kệ hàng loạt `BulkShelfModal`.
-- **Phase 1 → 4 (`feat/bulk-shelf-grouping`):** tách `workers/r2-storage/src/booksDb.ts` + `POST /api/books/bulk-shelf` (đã deploy Worker live), mở rộng `extractSeriesName` + `inferBatchCommonShelf` + `resolveExistingSeriesShelf`, thêm `UploadBatchShelfBar.tsx` và `BulkShelfModal.tsx`.
+- **Kiểm thử E2E & Phase 3 (`feat/docx-drop-mobi-cbz`):** xác nhận thực tế trích bìa & đọc `.docx`, chặn `.mobi`/`.cbz`; đồng bộ đổi tên kệ không phân biệt hoa/thường tiếng Việt, sửa thứ tự xoá cache `deleteBooks()` và kiểm tra `res.ok` ở `saveReadingProgress()`.
+- **Phase 2 (`feat/docx-drop-mobi-cbz`):** gỡ `@lingo-reader/mobi-parser` & `cbz`, xây `docxXml.ts` + `docxParser.ts` (dùng chung `jszip` + `DOMPurify`), `npm audit --omit=dev` đạt 0 lỗ hổng.
+- **Phase 1 (`feat/docx-drop-mobi-cbz`):** chốt `D-009`, migrate D1 remote (`epub`/`pdf`/`docx`), vá các lỗi Worker và deploy live.

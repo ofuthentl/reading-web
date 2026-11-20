@@ -1,4 +1,4 @@
-export type BookFileType = 'epub' | 'mobi' | 'pdf' | 'cbz';
+export type BookFileType = 'epub' | 'pdf' | 'docx';
 
 export type Book = {
   id: string;

@@ -390,9 +390,7 @@ export function ReaderView({
             >
               <header className={`mb-8 border-b pb-5 text-center ${palette.border}`}>
                 <p className={`mb-1.5 text-xs uppercase tracking-[0.2em] ${palette.textSecondary}`}>
-                  {book.file_type === 'cbz'
-                    ? 'Tập ảnh'
-                    : `Phần ${chapterIndex + 1} / ${chapters.length}`}
+                  {`Phần ${chapterIndex + 1} / ${chapters.length}`}
                 </p>
                 <h1 className="font-display text-2xl font-bold leading-snug sm:text-3xl">
                   {currentChapter.title}

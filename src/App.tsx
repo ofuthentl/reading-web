@@ -130,7 +130,14 @@ export default function App() {
   }, []);
 
   const handleShelfRenamed = useCallback((oldName: string, newName: string) => {
-    setBooks((prev) => prev.map((item) => (item.shelf === oldName ? { ...item, shelf: newName } : item)));
+    const oldKey = oldName.trim().toLocaleLowerCase('vi');
+    setBooks((prev) =>
+      prev.map((item) =>
+        (item.shelf || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi') === oldKey
+          ? { ...item, shelf: newName }
+          : item,
+      ),
+    );
   }, []);
 
   const handleBooksShelfMoved = useCallback((bookIds: string[], targetShelf: string) => {
@@ -177,8 +184,12 @@ export default function App() {
   }
 
   const renamingShelfName = modal.kind === 'rename-shelf' ? modal.shelfName : null;
-  const renamingShelfCount = renamingShelfName
-    ? books.filter((book) => book.shelf === renamingShelfName).length
+  const renamingShelfKey = renamingShelfName?.trim().toLocaleLowerCase('vi') ?? null;
+  const renamingShelfCount = renamingShelfKey
+    ? books.filter(
+        (book) =>
+          (book.shelf || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi') === renamingShelfKey,
+      ).length
     : 0;
 
   return (

@@ -333,7 +333,7 @@ export function Library2DView({
               Kệ sách của bạn còn trống
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-ink-muted">
-              Tải lên những cuốn EPUB, MOBI, PDF hoặc CBZ yêu thích để bắt đầu xây dựng thư viện
+              Tải lên những cuốn EPUB, PDF hoặc DOCX yêu thích để bắt đầu xây dựng thư viện
               đồng bộ của riêng bạn.
             </p>
             <button

@@ -35,9 +35,9 @@ export function parseFileMetadata(fileName: string): {
   shelf: string;
   extension: BookFileType | null;
 } {
-  const extMatch = fileName.match(/\.(epub|mobi|pdf|cbz)$/i);
+  const extMatch = fileName.match(/\.(epub|pdf|docx)$/i);
   const extension = extMatch ? (extMatch[1].toLowerCase() as BookFileType) : null;
-  const baseLabel = fileName.replace(/\.(epub|mobi|pdf|cbz)$/i, '').trim() || 'Sách chưa đặt tên';
+  const baseLabel = fileName.replace(/\.(epub|pdf|docx)$/i, '').trim() || 'Sách chưa đặt tên';
   const segments = baseLabel
     .split(/\s+-\s+/)
     .map((part) => part.trim())
