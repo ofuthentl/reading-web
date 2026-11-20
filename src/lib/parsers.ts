@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import * as pdfjsLib from 'pdfjs-dist';
 import { initMobiFile } from '@lingo-reader/mobi-parser';
 import type { Book, BookFileType, Chapter, ParsedBook } from '@/types';
+import { buildEpubChapters, type RawEpubSection } from '@/lib/epubChapters';
 import { inferSingleBookShelf } from '@/lib/shelfPlacement';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -348,7 +349,7 @@ async function parseEpubBlob(blob: Blob, book: Book): Promise<ParsedBook> {
       return url;
     }
 
-    const chapters: Chapter[] = [];
+    const rawSections: RawEpubSection[] = [];
 
     for (const { path } of spineItems) {
       const source = await zip.file(path)?.async('string');
@@ -399,22 +400,15 @@ async function parseEpubBlob(blob: Blob, book: Book): Promise<ParsedBook> {
       if (!plainText && !hasMedia) continue;
 
       const headingText = doc.querySelector('h1, h2, h3')?.textContent?.replace(/\s+/g, ' ').trim();
-      const title =
+      const explicitTitle =
         tocTitlesByPath.get(path) ||
         getFilenameChapterTitle(path) ||
-        (headingText && headingText.length <= 90 ? headingText : null) ||
-        (hasMedia && !plainText ? `Minh họa ${chapters.length + 1}` : `Chương ${chapters.length + 1}`);
+        (headingText && headingText.length <= 90 ? headingText : null);
 
-      chapters.push({
-        id: `${book.id}-epub-${chapters.length}`,
-        book_id: book.id,
-        title,
-        content: plainText,
-        content_html: `<section class="epub-file">${bodyHtml}</section>`,
-        chapter_number: chapters.length + 1,
-      });
+      rawSections.push({ explicitTitle, bodyHtml, plainText, hasMedia });
     }
 
+    const chapters = buildEpubChapters(rawSections, book.id);
     if (chapters.length === 0) throw new Error('EPUB không có nội dung để đọc.');
     return { chapters, dispose };
   } catch (err) {
