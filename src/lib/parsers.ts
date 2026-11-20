@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import * as pdfjsLib from 'pdfjs-dist';
 import { initMobiFile } from '@lingo-reader/mobi-parser';
 import type { Book, BookFileType, Chapter, ParsedBook } from '@/types';
+import { inferSingleBookShelf } from '@/lib/shelfPlacement';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -35,15 +36,7 @@ const VOLUME_SEGMENT_RE =
   /^(?:(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|book|part|ch|c|v|#)\.?\s*)?\d+(?:\s*[-–]\s*\d+)?$/i;
 
 export function inferShelfName(title: string, author: string): string {
-  const stripped = title
-    .replace(/\s*[-_:|]\s*(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|book|part|#)?\.?\s*\d+.*$/i, '')
-    .replace(/\s*(?:\(|\[)?\s*(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|book|part|#)\.?\s*\d+.*$/i, '')
-    .trim();
-  if (stripped && stripped !== 'Sách chưa đặt tên') return stripped;
-  const cleanTitle = title.trim();
-  if (cleanTitle && cleanTitle !== 'Sách chưa đặt tên') return cleanTitle;
-  if (author.trim() && author !== 'Không rõ tác giả') return author.trim();
-  return 'Kho chưa phân loại';
+  return inferSingleBookShelf(title, author);
 }
 
 export function parseFileMetadata(fileName: string): {

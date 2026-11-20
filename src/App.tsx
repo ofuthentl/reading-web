@@ -163,6 +163,7 @@ export default function App() {
           storage={storage}
           onClose={closeModal}
           onBookUploaded={handleBookUploaded}
+          onBookUpdated={handleBookUpdated}
           onApiError={handleApiError}
           onNotify={addToast}
         />

@@ -1,5 +1,5 @@
 # HANDOFF
-Cập nhật: 2026-11-20 23:02 | Nhánh: feat/migrate-cloudflare | Build: 🟢 frontend · 🟢 Worker (ESLint chỉ còn ReaderView.tsx tách ở 3.4)
+Cập nhật: 2026-11-20 23:07 | Nhánh: feat/migrate-cloudflare | Build: 🟢 frontend · 🟢 Worker (ESLint chỉ còn ReaderView.tsx tách ở 3.4)
 Nhiệm vụ hiện tại: Phase 3 (giao diện 2D & deploy) — xong Sub-phase 3.0, 3.1, 3.2 & 3.3 theo docs/plans/phase-3-2d.md
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/
 
@@ -15,7 +15,7 @@ Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · d
 - ESLint `max-lines` (500): chỉ còn duy nhất `src/components/ReaderView.tsx` (673 dòng hiệu dụng, tách ở 3.4).
 
 ## Xong trong nhiệm vụ này
-- **Sub-phase 3.3**: tạo `UploadDropzone` (kéo-thả nhiều file EPUB/MOBI/PDF/CBZ, kiểm tra trùng qua `bookDuplicateKey`, upload tuần tự từng tệp qua `uploadBook`, tiến độ & cảnh báo 9.0 GB), `BookEditModal` (sửa metadata, gợi ý kệ, đổi bìa qua `updateBookCover` kèm `URL.revokeObjectURL`, nút xoá 1 sách), `ShelfRenameModal` (`renameShelfAll`), `DeleteConfirmModal` (`deleteBooks` + dung lượng giải phóng `formatBytes`), nối toàn bộ vào `Library2DView` và `App.tsx` (< 200 dòng) với 100% semantic tokens cho cả 3 chế độ màu.
+- **Sub-phase 3.3**: tạo `UploadDropzone` + `UploadQueueList` + `src/lib/shelfPlacement.ts` (kéo-thả nhiều file, kiểm tra trùng `bookDuplicateKey`, upload tuần tự `uploadBook`, phân bổ kệ thông minh: ưu tiên tên bộ nhiều tập như `Mushoku`, còn ≥ 2 tác phẩm lẻ cùng tác giả tự gom về kệ tác giả), `BookEditModal`, `ShelfRenameModal`, `DeleteConfirmModal`, nối toàn bộ vào `Library2DView` và `App.tsx` (< 200 dòng).
 - **Sub-phase 3.2**: hệ 3 chế độ màu (`useTheme`, `ThemeToggle`), `useCoverUrl`, `BookCard`, `LibraryHeader`, `Library2DView`.
 - **Sub-phase 3.1**: áp dụng D-005, `ErrorBoundary`, `useToast`, `ToastContainer`, `AuthGate`, vỏ `App.tsx` tối giản.
 - **Sub-phase 3.0**: tách `workers/r2-storage/src/auth.ts` (fail-closed), tạo D1 `library-db` + R2 `arcane-library-books`, đặt secret và deploy Worker.

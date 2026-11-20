@@ -1,39 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AlertCircle,
-  AlertTriangle,
-  CheckCircle2,
-  FileText,
-  HardDrive,
-  Loader2,
-  RotateCcw,
-  Square,
-  Trash2,
-  Upload,
-  X,
-} from 'lucide-react';
-import type { Book, BookFileType, StorageStats } from '@/types';
-import { HARD_LIMIT_BYTES, formatBytes, isAuthError, uploadBook } from '@/lib/api';
+import { AlertTriangle, HardDrive, RotateCcw, Square, Upload, X } from 'lucide-react';
+import type { Book, StorageStats } from '@/types';
+import { HARD_LIMIT_BYTES, formatBytes, isAuthError, updateBookMetadata, uploadBook } from '@/lib/api';
 import { bookDuplicateKey, parseFileMetadata } from '@/lib/parsers';
+import { resolveUploadShelfPlan } from '@/lib/shelfPlacement';
+import { UploadQueueList, type UploadQueueItem } from '@/components/UploadQueueList';
 import type { ToastType } from '@/hooks/useToast';
 
 const MAX_SINGLE_FILE_BYTES = 350 * 1024 * 1024;
 const ACCEPTED_EXTENSIONS = '.epub,.mobi,.pdf,.cbz';
-
-type QueueItemStatus = 'queued' | 'skipped' | 'uploading' | 'done' | 'error' | 'invalid';
-
-interface UploadQueueItem {
-  id: string;
-  file: File;
-  title: string;
-  author: string;
-  shelf: string;
-  extension: BookFileType | null;
-  duplicateKey: string;
-  duplicateReason: 'library' | 'queue' | null;
-  status: QueueItemStatus;
-  errorMessage?: string;
-}
 
 interface UploadDropzoneProps {
   open: boolean;
@@ -41,6 +16,7 @@ interface UploadDropzoneProps {
   storage: StorageStats | null;
   onClose: () => void;
   onBookUploaded: (book: Book, storage: StorageStats) => void;
+  onBookUpdated: (book: Book, storage?: StorageStats) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
   onNotify: (message: string, type?: ToastType) => void;
 }
@@ -58,7 +34,13 @@ function createQueueItems(
     const parsed = parseFileMetadata(file.name);
     const duplicateKey = bookDuplicateKey(parsed.title, parsed.author);
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    const base = { id, file, ...parsed, duplicateKey, duplicateReason: null as 'library' | 'queue' | null };
+    const base = {
+      id,
+      file,
+      ...parsed,
+      duplicateKey,
+      duplicateReason: null as 'library' | 'queue' | null,
+    };
 
     if (!parsed.extension) {
       return { ...base, status: 'invalid', errorMessage: 'Chỉ hỗ trợ EPUB, MOBI, PDF hoặc CBZ.' };
@@ -77,41 +59,13 @@ function createQueueItems(
   });
 }
 
-function QueueItemStatusNote({ item }: { item: UploadQueueItem }) {
-  if (item.status === 'uploading') {
-    return (
-      <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-accent">
-        <Loader2 className="h-3 w-3 animate-spin" /> Đang trích ảnh bìa & tải lên R2...
-      </p>
-    );
-  }
-  if (item.status === 'done') {
-    return (
-      <p className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
-        <CheckCircle2 className="h-3 w-3" /> Đã lưu vào thư viện
-      </p>
-    );
-  }
-  if (item.status === 'skipped') {
-    return <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">Tạm bỏ qua do nghi ngờ trùng lặp.</p>;
-  }
-  if ((item.status === 'error' || item.status === 'invalid') && item.errorMessage) {
-    return (
-      <p className="mt-1 inline-flex items-start gap-1 text-xs text-red-700 dark:text-red-400">
-        <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
-        <span>{item.errorMessage}</span>
-      </p>
-    );
-  }
-  return null;
-}
-
 export function UploadDropzone({
   open,
   books,
   storage,
   onClose,
   onBookUploaded,
+  onBookUpdated,
   onApiError,
   onNotify,
 }: UploadDropzoneProps) {
@@ -188,6 +142,7 @@ export function UploadDropzone({
     let successCount = 0;
     let failCount = 0;
     let authFailed = false;
+    const workingBooks = [...books];
 
     for (let index = 0; index < targets.length; index += 1) {
       if (stopRequestedRef.current || !mountedRef.current) break;
@@ -197,11 +152,32 @@ export function UploadDropzone({
       updateItem(current.id, { status: 'uploading', errorMessage: undefined });
 
       try {
-        const result = await uploadBook(current.file);
+        const plan = resolveUploadShelfPlan(
+          { title: current.title, author: current.author },
+          workingBooks,
+        );
+        const result = await uploadBook(current.file, {
+          title: current.title,
+          author: current.author,
+          shelf: plan.shelf,
+        });
         if (!mountedRef.current) break;
         successCount += 1;
+        workingBooks.push(result.book);
         onBookUploaded(result.book, result.storage);
-        updateItem(current.id, { status: 'done', errorMessage: undefined });
+
+        for (const peer of plan.booksToRegroup) {
+          try {
+            const moved = await updateBookMetadata(peer.id, { shelf: plan.shelf });
+            const idx = workingBooks.findIndex((b) => b.id === moved.id);
+            if (idx >= 0) workingBooks[idx] = moved;
+            if (mountedRef.current) onBookUpdated(moved);
+          } catch (regroupErr) {
+            if (isAuthError(regroupErr)) throw regroupErr;
+          }
+        }
+
+        updateItem(current.id, { status: 'done', shelf: result.book.shelf, errorMessage: undefined });
       } catch (err) {
         if (!mountedRef.current) break;
         if (isAuthError(err)) {
@@ -210,7 +186,8 @@ export function UploadDropzone({
           break;
         }
         failCount += 1;
-        const message = err instanceof Error ? err.message : `Không thể tải "${current.title}" lên kho.`;
+        const message =
+          err instanceof Error ? err.message : `Không thể tải "${current.title}" lên kho.`;
         updateItem(current.id, { status: 'error', errorMessage: message });
       }
 
@@ -229,7 +206,9 @@ export function UploadDropzone({
     }
     if (stopRequestedRef.current) {
       onNotify(
-        successCount > 0 ? `Đã dừng tải lên sau khi hoàn tất ${successCount} cuốn.` : 'Đã dừng hàng đợi tải lên.',
+        successCount > 0
+          ? `Đã dừng tải lên sau khi hoàn tất ${successCount} cuốn.`
+          : 'Đã dừng hàng đợi tải lên.',
         'info',
       );
       return;
@@ -317,7 +296,8 @@ export function UploadDropzone({
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <p>
                 Tổng dung lượng chờ tải ({formatBytes(queuedBytes)}) vượt hạn mức an toàn 9.0 GB
-                (còn trống {formatBytes(remainingBytes)}). Hãy bỏ bớt tệp hoặc xoá sách cũ trước khi tải lên.
+                (còn trống {formatBytes(remainingBytes)}). Hãy bỏ bớt tệp hoặc xoá sách cũ trước khi
+                tải lên.
               </p>
             </div>
           )}
@@ -343,7 +323,9 @@ export function UploadDropzone({
             onDrop={(event) => {
               event.preventDefault();
               setIsDragging(false);
-              if (!uploading && event.dataTransfer.files?.length) addFilesToQueue(event.dataTransfer.files);
+              if (!uploading && event.dataTransfer.files?.length) {
+                addFilesToQueue(event.dataTransfer.files);
+              }
             }}
             className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-7 text-center transition-colors ${
               uploading
@@ -388,79 +370,25 @@ export function UploadDropzone({
                 <span className="shrink-0 font-medium text-accent">{progressPercent}%</span>
               </div>
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-subtle">
-                <div className="h-full rounded-full bg-accent transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+                <div
+                  className="h-full rounded-full bg-accent transition-all duration-300"
+                  style={{ width: `${progressPercent}%` }}
+                />
               </div>
             </div>
           )}
 
-          {queue.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs text-ink-muted">
-                <span>Danh sách tệp ({queue.length})</span>
-                {!uploading && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQueue([]);
-                      setProgressState(null);
-                    }}
-                    className="text-ink-muted transition-colors hover:text-ink"
-                  >
-                    Xoá danh sách
-                  </button>
-                )}
-              </div>
-
-              <ul className="max-h-64 space-y-2 overflow-y-auto pr-1 scrollbar-thin">
-                {queue.map((item) => (
-                  <li key={item.id} className="flex items-start justify-between gap-3 rounded-xl border border-line bg-canvas px-3 py-2.5">
-                    <div className="flex min-w-0 flex-1 items-start gap-2.5">
-                      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-xs font-semibold uppercase text-ink-muted">
-                        {item.extension || <FileText className="h-4 w-4" />}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <p className="truncate text-sm font-medium text-ink">{item.title}</p>
-                          {item.duplicateReason && item.status !== 'done' && (
-                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-700/30 bg-amber-600/10 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:border-amber-400/30 dark:text-amber-300">
-                              <AlertTriangle className="h-2.5 w-2.5" />
-                              {item.duplicateReason === 'library' ? 'Trùng trong kho' : 'Trùng hàng đợi'}
-                            </span>
-                          )}
-                        </div>
-                        <p className="truncate text-xs text-ink-muted">
-                          {item.author} · Kệ: {item.shelf} · {formatBytes(item.file.size)}
-                        </p>
-                        <QueueItemStatusNote item={item} />
-                      </div>
-                    </div>
-
-                    {!uploading && (
-                      <div className="flex shrink-0 items-center gap-1">
-                        {(item.status === 'skipped' || (item.status === 'queued' && item.duplicateReason)) && (
-                          <button
-                            type="button"
-                            onClick={() => handleToggleSkip(item.id)}
-                            className="rounded-lg border border-line bg-surface px-2 py-1 text-[11px] font-medium text-ink transition-colors hover:border-line-strong hover:bg-subtle"
-                          >
-                            {item.status === 'skipped' ? 'Vẫn tải' : 'Bỏ qua'}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setQueue((prev) => prev.filter((q) => q.id !== item.id))}
-                          aria-label={`Xoá ${item.title} khỏi hàng đợi`}
-                          className="rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-subtle hover:text-ink"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <UploadQueueList
+            queue={queue}
+            books={books}
+            uploading={uploading}
+            onToggleSkip={handleToggleSkip}
+            onRemove={(id) => setQueue((prev) => prev.filter((item) => item.id !== id))}
+            onClearAll={() => {
+              setQueue([]);
+              setProgressState(null);
+            }}
+          />
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-canvas/60 px-5 py-3.5">
@@ -471,7 +399,9 @@ export function UploadDropzone({
                 onClick={() =>
                   setQueue((prev) =>
                     prev.map((item) =>
-                      item.status === 'error' ? { ...item, status: 'queued', errorMessage: undefined } : item,
+                      item.status === 'error'
+                        ? { ...item, status: 'queued', errorMessage: undefined }
+                        : item,
                     ),
                   )
                 }
