@@ -175,7 +175,7 @@ export function FantasyLibrary3D({
       {/* Lightweight Sub-phase 4A.3 HUD (strictly <= z-20 so modals z-40 & toasts z-50 sit above) */}
       {layout.shelves.length > 0 && !paused && (
         <div className="pointer-events-none absolute inset-x-0 top-[4.5rem] z-20 flex justify-center px-4">
-          <div className="pointer-events-auto flex max-w-4xl items-center gap-1.5 overflow-x-auto rounded-2xl border border-line bg-surface/85 px-2.5 py-1.5 shadow-sm backdrop-blur-md">
+          <div className="pointer-events-auto flex max-w-4xl items-center gap-1.5 overflow-x-auto rounded-2xl border border-line-strong/80 bg-surface/95 px-2.5 py-1.5 shadow-md backdrop-blur-md">
             <Compass className="ml-1 h-3.5 w-3.5 shrink-0 text-accent" />
             {layout.shelves.map((shelf) => {
               const isCurrent = shelf.key === centerShelfKey;
@@ -200,7 +200,7 @@ export function FantasyLibrary3D({
 
       {layout.shelves.length === 0 && !loading && !paused && (
         <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4">
-          <div className="pointer-events-auto rounded-2xl border border-line bg-surface/90 px-6 py-5 text-center shadow-lg backdrop-blur-md">
+          <div className="pointer-events-auto rounded-2xl border border-line-strong/80 bg-surface/95 px-6 py-5 text-center shadow-lg backdrop-blur-md">
             <p className="font-display text-base font-semibold text-ink">
               {viewState.isFiltering ? 'Không tìm thấy sách khớp bộ lọc' : 'Thư viện chưa có sách'}
             </p>
@@ -231,7 +231,7 @@ export function FantasyLibrary3D({
       {!paused && (
         <div className="pointer-events-none absolute inset-x-0 bottom-5 z-20 flex flex-col items-center gap-2 px-4">
           {activeFocusBook && (
-            <div className="pointer-events-auto flex max-w-xl items-center gap-3 rounded-2xl border border-line bg-surface/92 px-4 py-2.5 shadow-lg backdrop-blur-md">
+            <div className="pointer-events-auto flex max-w-xl items-center gap-3 rounded-2xl border border-line-strong/80 bg-surface/95 px-4 py-2.5 shadow-xl backdrop-blur-md">
               <div className="min-w-0 flex-1">
                 <p className="truncate font-display text-sm font-semibold text-ink">
                   {activeFocusBook.title}
@@ -275,7 +275,7 @@ export function FantasyLibrary3D({
             </div>
           )}
 
-          <p className="rounded-full border border-line/70 bg-surface/75 px-3 py-1 text-[11px] text-ink-muted backdrop-blur-sm">
+          <p className="rounded-full border border-line-strong/70 bg-surface/90 px-3.5 py-1 text-[11px] font-medium text-ink-muted shadow-sm backdrop-blur-sm">
             Kéo chuột · Lăn con lăn · Phím ← / → để lướt đại sảnh · Nhấn sách để mở
           </p>
         </div>

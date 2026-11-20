@@ -1,5 +1,5 @@
 # HANDOFF
-Cập nhật: 2026-11-21 03:52 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 83.60 kB gzip, 0 B three · chunk 3D lazy 237.50 kB gzip) · 🟢 ESLint 100%
+Cập nhật: 2026-11-21 03:56 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 83.60 kB gzip, 0 B three · chunk 3D lazy 237.50 kB gzip) · 🟢 ESLint 100%
 Nhiệm vụ hiện tại: Hoàn tất **Sub-phase 4A.3** (cảnh WebGL `frameloop="demand"`) — sẵn sàng cho người dùng test trình duyệt và duyệt sang **Sub-phase 4A.4**
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/phase-4-3d.md
 
