@@ -311,7 +311,7 @@ export function Library2DView({
             <button
               type="button"
               onClick={onUploadClick}
-              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_20px_-6px_rgba(241,241,241,0.28)]"
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_22px_-6px_rgba(206,72,93,0.52)]"
             >
               <Upload className="h-4 w-4" />
               Tải sách đầu tiên

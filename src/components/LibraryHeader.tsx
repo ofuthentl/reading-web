@@ -101,7 +101,7 @@ export function LibraryHeader({
           <button
             type="button"
             onClick={onUploadClick}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_20px_-6px_rgba(241,241,241,0.28)]"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_22px_-6px_rgba(206,72,93,0.52)]"
           >
             <Upload className="h-4 w-4" />
             <span className="hidden sm:inline">Tải sách</span>

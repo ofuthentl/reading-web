@@ -111,7 +111,7 @@ export function BookCard({
       className={`relative aspect-[3/4] overflow-hidden rounded-lg border border-line bg-subtle shadow-sm transition-all duration-200 ${
         selected
           ? 'ring-2 ring-accent ring-offset-2 ring-offset-canvas'
-          : 'group-hover:-translate-y-0.5 group-hover:border-line-strong group-hover:shadow-md dark:group-hover:border-line-strong dark:group-hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.92),0_0_0_1px_rgba(241,241,241,0.14)]'
+          : 'group-hover:-translate-y-0.5 group-hover:border-line-strong group-hover:shadow-md dark:group-hover:border-accent/45 dark:group-hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.92),0_0_22px_-8px_rgba(206,72,93,0.3)]'
       } ${compact ? 'w-[4.5rem] shrink-0' : 'w-full'}`}
     >
       {showImage ? (
