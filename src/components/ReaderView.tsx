@@ -223,11 +223,15 @@ export function ReaderView({
 
   return (
     <div
-      className={`flex h-screen flex-col overflow-hidden transition-colors duration-200 ${palette.pageBg} ${palette.textPrimary}`}
+      className={`flex h-screen flex-col overflow-hidden transition-colors duration-200 ${
+        isPdf ? 'bg-canvas text-ink' : `${palette.pageBg} ${palette.textPrimary}`
+      }`}
     >
       {/* Slim Reader Header */}
       <header
-        className={`relative z-30 flex h-[3.25rem] shrink-0 items-center justify-between border-b px-3 backdrop-blur-md sm:px-5 ${palette.headerBg} ${palette.border}`}
+        className={`relative z-30 flex h-[3.25rem] shrink-0 items-center justify-between border-b px-3 backdrop-blur-md sm:px-5 ${
+          isPdf ? 'border-line bg-surface/95' : `${palette.headerBg} ${palette.border}`
+        }`}
       >
         <div className="flex min-w-0 items-center gap-1.5 sm:gap-2.5">
           <button
@@ -329,7 +333,6 @@ export function ReaderView({
           pageNumber={chapterIndex + 1}
           pageCount={chapters.length}
           onPageChange={(page) => goToChapter(page - 1)}
-          isDark={palette.isDark}
         />
       ) : (
         <main

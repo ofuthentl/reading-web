@@ -17,7 +17,6 @@ type PdfReaderProps = {
   pageNumber: number;
   pageCount: number;
   onPageChange: (page: number) => void;
-  isDark: boolean;
 };
 
 export function PdfReader({
@@ -26,7 +25,6 @@ export function PdfReader({
   pageNumber,
   pageCount,
   onPageChange,
-  isDark,
 }: PdfReaderProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -151,86 +149,103 @@ export function PdfReader({
 
   if (renderError) {
     return (
-      <div className="flex h-[calc(100vh-3.25rem)] items-center justify-center p-8 text-center">
-        <p className="text-sm opacity-80">{renderError}</p>
+      <div className="flex h-[calc(100vh-3.25rem)] items-center justify-center bg-canvas p-8 text-center text-ink-muted">
+        <p className="text-sm">{renderError}</p>
       </div>
     );
   }
 
   return (
-    <div className={`flex h-[calc(100vh-3.25rem)] flex-col ${isDark ? 'bg-[#0d1117] text-[#e6ebf0]' : 'bg-[#efe8da] text-[#2b241d]'}`}>
+    <div className="theme-canvas flex h-[calc(100vh-3.25rem)] flex-col text-ink transition-colors duration-200">
       {/* PDF Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#141a23] px-3 py-2 text-[#e6ebf0]">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-surface/95 px-3 py-2 backdrop-blur-sm sm:px-4">
+        <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
             onClick={() => setShowThumbs((v) => !v)}
-            className="rounded-lg p-1.5 hover:bg-white/10"
+            aria-pressed={showThumbs}
+            className={`rounded-xl border p-1.5 transition-colors ${
+              showThumbs
+                ? 'border-accent/40 bg-accent/10 text-accent'
+                : 'border-line bg-canvas text-ink-muted hover:border-line-strong hover:bg-subtle hover:text-ink'
+            }`}
             title="Hiện/ẩn danh sách trang"
             aria-label="Hiện hoặc ẩn danh sách trang"
           >
             <PanelLeft className="h-4 w-4" />
           </button>
-          <span className="hidden max-w-[14rem] truncate text-xs text-stone-300 sm:inline" title={fileName}>
+          <span
+            className="hidden max-w-[14rem] truncate text-xs font-medium text-ink-muted sm:inline"
+            title={fileName}
+          >
             {fileName}
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 rounded-xl border border-line bg-canvas px-1 py-0.5">
           <button
             type="button"
             onClick={() => onPageChange(Math.max(1, pageNumber - 1))}
             disabled={pageNumber <= 1}
-            className="rounded-lg p-1.5 hover:bg-white/10 disabled:opacity-35"
+            className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink disabled:opacity-35"
             aria-label="Trang trước"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="min-w-[4.5rem] text-center text-xs font-medium tabular-nums">
+          <span className="min-w-[4.5rem] text-center text-xs font-medium tabular-nums text-ink">
             {pageNumber} / {pageCount}
           </span>
           <button
             type="button"
             onClick={() => onPageChange(Math.min(pageCount, pageNumber + 1))}
             disabled={pageNumber >= pageCount}
-            className="rounded-lg p-1.5 hover:bg-white/10 disabled:opacity-35"
+            className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink disabled:opacity-35"
             aria-label="Trang sau"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setScale((v) => Math.max(0.6, Number((v - 0.15).toFixed(2))))}
-            className="rounded-lg p-1.5 hover:bg-white/10"
-            title="Thu nhỏ"
-          >
-            <ZoomOut className="h-4 w-4" />
-          </button>
-          <span className="min-w-[3.2rem] text-center text-xs tabular-nums">{Math.round(scale * 100)}%</span>
-          <button
-            type="button"
-            onClick={() => setScale((v) => Math.min(2.5, Number((v + 0.15).toFixed(2))))}
-            className="rounded-lg p-1.5 hover:bg-white/10"
-            title="Phóng to"
-          >
-            <ZoomIn className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setScale(1.35)}
-            className="rounded-lg p-1.5 hover:bg-white/10"
-            title="Đặt lại tỉ lệ"
-          >
-            <RotateCw className="h-4 w-4" />
-          </button>
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-0.5 rounded-xl border border-line bg-canvas px-1 py-0.5">
+            <button
+              type="button"
+              onClick={() => setScale((v) => Math.max(0.6, Number((v - 0.15).toFixed(2))))}
+              className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink"
+              title="Thu nhỏ"
+              aria-label="Thu nhỏ"
+            >
+              <ZoomOut className="h-4 w-4" />
+            </button>
+            <span className="min-w-[3.2rem] text-center text-xs font-medium tabular-nums text-ink">
+              {Math.round(scale * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={() => setScale((v) => Math.min(2.5, Number((v + 0.15).toFixed(2))))}
+              className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink"
+              title="Phóng to"
+              aria-label="Phóng to"
+            >
+              <ZoomIn className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setScale(1.35)}
+              className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink"
+              title="Đặt lại tỉ lệ"
+              aria-label="Đặt lại tỉ lệ"
+            >
+              <RotateCw className="h-4 w-4" />
+            </button>
+          </div>
+
           <a
             href={url}
             download={`${fileName}.pdf`}
-            className="rounded-lg p-1.5 hover:bg-white/10"
+            className="rounded-xl border border-line bg-canvas p-1.5 text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink"
             title="Tải PDF xuống"
+            aria-label="Tải PDF xuống"
           >
             <Download className="h-4 w-4" />
           </a>
@@ -240,29 +255,35 @@ export function PdfReader({
       {/* PDF Stage */}
       <div className="flex min-h-0 flex-1">
         {showThumbs && (
-          <aside className="scrollbar-thin w-28 shrink-0 overflow-y-auto border-r border-white/10 bg-[#0e131b] p-2.5 sm:w-36">
+          <aside className="scrollbar-thin w-28 shrink-0 overflow-y-auto border-r border-line bg-surface p-2.5 sm:w-36">
             {Array.from({ length: Math.min(pageCount, 40) }, (_, idx) => idx + 1).map((num) => (
               <button
                 key={num}
                 type="button"
                 onClick={() => onPageChange(num)}
-                className={`mb-3 block w-full rounded-lg border-2 p-1 text-center transition ${
+                className={`mb-2.5 block w-full rounded-xl border p-1.5 text-center transition-all ${
                   num === pageNumber
-                    ? 'border-white/80 bg-white/15'
-                    : 'border-transparent hover:border-white/20'
+                    ? 'border-accent bg-accent/10 shadow-sm ring-1 ring-accent/30'
+                    : 'border-line/70 bg-canvas/60 hover:border-line-strong hover:bg-subtle'
                 }`}
               >
                 <canvas
                   ref={(el) => {
                     thumbRefs.current[num] = el;
                   }}
-                  className="mx-auto block w-full rounded bg-white"
+                  className="mx-auto block w-full rounded-md border border-line/50 bg-white"
                 />
-                <span className="mt-1 block text-[11px] text-stone-300">{num}</span>
+                <span
+                  className={`mt-1.5 block text-[11px] tabular-nums ${
+                    num === pageNumber ? 'font-semibold text-accent' : 'text-ink-muted'
+                  }`}
+                >
+                  {num}
+                </span>
               </button>
             ))}
             {pageCount > 40 && (
-              <p className="py-2 text-center text-[11px] text-stone-400">
+              <p className="py-2 text-center text-[11px] text-ink-faint">
                 ... và {pageCount - 40} trang nữa
               </p>
             )}
@@ -280,10 +301,10 @@ export function PdfReader({
             else if (ratio > 0.75) onPageChange(Math.min(pageCount, pageNumber + 1));
           }}
         >
-          <div className="inline-block rounded-lg bg-white shadow-2xl">
+          <div className="inline-block overflow-hidden rounded-xl border border-line bg-white shadow-lg dark:border-line-strong/40 dark:shadow-[0_24px_48px_-16px_rgba(0,0,0,0.88)]">
             <canvas
               ref={canvasRef}
-              className={`block max-w-full rounded-lg transition-opacity duration-150 ${
+              className={`block max-w-full transition-opacity duration-150 ${
                 rendering ? 'opacity-70' : 'opacity-100'
               }`}
               aria-label={`Trang ${pageNumber}`}
