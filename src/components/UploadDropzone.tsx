@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, HardDrive, RotateCcw, Square, Upload, X } from 'lucide-react';
 import type { Book, StorageStats } from '@/types';
 import { HARD_LIMIT_BYTES, formatBytes, isAuthError, updateBookMetadata, uploadBook } from '@/lib/api';
-import { bookDuplicateKey, parseFileMetadata } from '@/lib/parsers';
+import { bookDuplicateKey, parseFileMetadata } from '@/lib/bookMetadata';
 import { resolveUploadShelfPlan } from '@/lib/shelfPlacement';
 import { UploadQueueList, type UploadQueueItem } from '@/components/UploadQueueList';
 import type { ToastType } from '@/hooks/useToast';

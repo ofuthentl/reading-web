@@ -9,7 +9,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { pdfWasmUrl } from '@/lib/parsers';
+import { pdfWasmUrl } from '@/lib/pdfjsLoader';
 
 type PdfReaderProps = {
   url: string;

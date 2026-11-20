@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Book, ParsedBook, ReaderSettings, ReadingProgress } from '@/types';
 import type { AppTheme } from '@/hooks/useTheme';
 import { fetchBookBlobCached, isAuthError, saveReadingProgress } from '@/lib/api';
-import { parseBookBlob } from '@/lib/parsers';
+import { isChunkLoadError, reloadOnceForStaleChunk } from '@/lib/chunkReload';
 import {
   appThemeToReaderTheme,
   loadReaderSettings,
@@ -86,6 +86,9 @@ export function useBookReader({ appTheme, onProgressUpdated, onApiError }: UseBo
         const { blob, fromCache } = await fetchBookBlobCached(book);
         if (requestId !== requestIdRef.current) return;
 
+        const { parseBookBlob } = await import('@/lib/parsers');
+        if (requestId !== requestIdRef.current) return;
+
         const parsed = await parseBookBlob(blob, book);
         if (requestId !== requestIdRef.current) {
           parsed.dispose();
@@ -99,6 +102,9 @@ export function useBookReader({ appTheme, onProgressUpdated, onApiError }: UseBo
         setLoadedFromCache(fromCache);
         setOpeningBook(null);
       } catch (err) {
+        if (isChunkLoadError(err)) {
+          reloadOnceForStaleChunk();
+        }
         if (requestId !== requestIdRef.current) return;
         setOpeningBook(null);
         onApiError(err, `Không thể mở "${book.title}".`);
