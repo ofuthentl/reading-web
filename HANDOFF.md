@@ -1,21 +1,23 @@
 # HANDOFF
-Cập nhật: 2026-11-21 00:58 | Nhánh: refactor/code-splitting | Build: 🟢 frontend · 🟢 Worker · 🟢 ESLint 100%
-Nhiệm vụ hiện tại: Refactor code-splitting — đã hoàn tất kiểm thử tự động & thủ công Mục 5C, đã push nhánh sẵn sàng mở PR vào `main`
+Cập nhật: 2026-11-21 01:08 | Nhánh: feat/bulk-shelf-grouping | Build: 🟢 frontend · 🟢 Worker · 🟢 ESLint 100%
+Nhiệm vụ hiện tại: Lập kế hoạch tự động gom kệ theo lô & chuyển kệ hàng loạt (`docs/plans/bulk-shelf-grouping.md`) — chờ người dùng duyệt
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/
 
 ## Đang làm dở
-- Nhánh `refactor/code-splitting` đã hoàn tất toàn bộ 4 phase, bản vá hậu review và vượt qua 100% Checklist kiểm thử tự động + thủ công (Mục 5A, 5B, 5C).
-- Entry `index-*.js` giảm từ **918.12 kB** (gzip 277.95 kB) xuống **259.77 kB** (gzip 76.92 kB); `npm run build` **0 lỗi, 0 cảnh báo chunk > 500 kB** (còn 1 cảnh báo externalize `stream` đã biết từ `sax`).
+- Đã xác nhận `refactor/code-splitting` được merge vào `origin/main` (PR #2) và tách nhánh mới `feat/bulk-shelf-grouping` từ `origin/main`.
+- Đã viết kế hoạch chi tiết 4 phase vào `docs/plans/bulk-shelf-grouping.md` (chưa sửa code ứng dụng), bao gồm:
+  1. **Phase 1 (Worker):** tách `workers/r2-storage/src/booksDb.ts` để giữ mọi file Worker < 380 dòng, thêm `POST /api/books/bulk-shelf` (chia lô ≤ 50 ID trong `env.DB.batch`) và deploy Worker live.
+  2. **Phase 2 (`shelfPlacement.ts`):** mở rộng `extractSeriesName` (`SAO1`, `SAOP1`, `SAO (01)`, `SAO v01`...) và thêm `inferBatchCommonShelf` (tìm gốc chung đa số ≥ 50% & ≥ 2 tệp, chống gom nhầm từ mở đầu vô nghĩa).
+  3. **Phase 3 (`UploadBatchShelfBar.tsx` + `UploadDropzone.tsx`):** pill checkbox `Thêm vào kệ <Tên>` ở góc trái footer modal tải sách (cho phép sửa nhanh tên kệ kèm `<datalist>` và ép `shelfOverride` cho cả lô).
+  4. **Phase 4 (`BulkShelfModal.tsx` + `Library2DView.tsx` + `App.tsx` + `api.ts`):** thêm `bulkUpdateBooksShelf`, nút `Chuyển kệ (N)` trong thanh chọn nhiều để gom nhanh 41 cuốn SAO trên `ofu.lol` chỉ bằng 1 thao tác.
 
 ## Bước tiếp theo
-1. Mở Pull Request `refactor/code-splitting` → `main` trên GitHub, xác nhận cả 2 job CI (`Frontend` và `Worker`) đều xanh → duyệt & Merge vào `main`.
-2. Theo dõi `.github/workflows/deploy.yml` deploy xong bản code-splitting lên `https://ofu.lol`.
-3. Triển khai Phase 4 (Thư viện 3D `FantasyLibrary3D`) trên nhánh mới tách từ `main` sau khi merge, tuân thủ D-004 + D-008.
+1. Chờ người dùng duyệt kế hoạch `docs/plans/bulk-shelf-grouping.md`.
+2. Sau khi được duyệt: triển khai lần lượt Phase 1 → Phase 4 (mỗi phase 1 commit nhỏ kèm cập nhật `HANDOFF.md` & `docs/ARCHITECTURE.md`), deploy Worker live ở Phase 1 và chạy đủ Checklist kiểm thử Mục 4.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
+- **Merge PR #2 (`refactor/code-splitting` → `main`):** hoàn tất tách `parsers.ts`, lazy-load `PdfReader` + 3 engine đọc sách, vá XSS bằng `DOMPurify` v3, giảm entry bundle từ 918.12 kB xuống 259.77 kB.
 - **Xác nhận hậu kỳ Phase 3:** `https://ofu.lol` đã chạy ổn định trên PC & mobile; đã dọn sạch project Supabase cũ và secret `VITE_SUPABASE_*` theo D-001.
-- **Kiểm thử thủ công Mục 5C (`refactor/code-splitting`):** đã xác nhận đăng nhập cổng 5173, Network ở `AuthGate` & preload idle ở Thư viện 2D, đọc Offline EPUB vs thông báo lỗi PDF/MOBI không reload mất tab, `PdfReaderFallback` cục bộ, đọc đủ 4 định dạng EPUB/PDF/MOBI/CBZ, upload trích bìa, `DOMPurify` chặn EPUB độc hại và tự tải lại 1 lần khi chunk cũ 404.
-- **Phase 1 → 4 (`refactor/code-splitting`):** ghi **D-008**, tách `parsers.ts` (`bookMetadata`, `coverImage`, `pdfjsLoader`, `sanitizeHtml` dùng `dompurify` v3, `chunkReload`), lazy-load `PdfReader.tsx` + `PdfReaderFallback.tsx`, đồng bộ `docs/ARCHITECTURE.md`.
