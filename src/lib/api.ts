@@ -24,7 +24,17 @@ const API_BASE = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '')
 const TOKEN_STORAGE_KEY = 'arcane-library-auth-token';
 export const HARD_LIMIT_BYTES = 9 * 1024 * 1024 * 1024; // 9.0 GiB
 
+export const isMissingProductionApi = !import.meta.env.DEV && !API_BASE;
+export const isLocalDevMode = import.meta.env.DEV && !API_BASE;
 export const isCloudMode = Boolean(API_BASE);
+
+function assertApiConfigured() {
+  if (isMissingProductionApi) {
+    throw new Error(
+      'Thiếu cấu hình VITE_API_URL trên bản production. Vui lòng thiết lập secret VITE_API_URL trỏ về Cloudflare Worker và deploy lại.',
+    );
+  }
+}
 
 export function getAuthToken(): string | null {
   try {
@@ -114,6 +124,7 @@ async function apiFetch(path: string, init: RequestInit = {}): Promise<Response>
 }
 
 export async function checkHealth(): Promise<{ ok: boolean; authRequired: boolean }> {
+  assertApiConfigured();
   if (!isCloudMode) return { ok: true, authRequired: false };
   const response = await fetch(`${API_BASE}/api/health`);
   if (!response.ok) throw new Error('Không thể kết nối máy chủ Cloudflare Worker.');
@@ -121,6 +132,7 @@ export async function checkHealth(): Promise<{ ok: boolean; authRequired: boolea
 }
 
 export async function loginWithPasscode(passcode: string): Promise<void> {
+  assertApiConfigured();
   if (!isCloudMode) return;
   const response = await fetch(`${API_BASE}/api/auth/login`, {
     method: 'POST',
@@ -139,6 +151,7 @@ export async function fetchLibraryState(): Promise<{
   progress: Record<string, ReadingProgress>;
   storage: StorageStats;
 }> {
+  assertApiConfigured();
   if (!isCloudMode) {
     const [books, progress] = await Promise.all([getLocalBooks(), getAllLocalProgress()]);
     const sorted = sortBooksByTitle(books);
@@ -172,6 +185,7 @@ export async function uploadBook(
   file: File,
   overrides?: { title?: string; author?: string; shelf?: string },
 ): Promise<{ book: Book; storage: StorageStats }> {
+  assertApiConfigured();
   const parsed = parseFileMetadata(file.name);
   if (!parsed.extension) {
     throw new Error(`${file.name}: chỉ hỗ trợ EPUB, MOBI, PDF hoặc CBZ.`);
@@ -285,6 +299,7 @@ export async function updateBookMetadata(
   bookId: string,
   patch: Partial<Pick<Book, 'title' | 'author' | 'shelf' | 'description' | 'cover_color'>>,
 ): Promise<Book> {
+  assertApiConfigured();
   if (!isCloudMode) {
     const books = await getLocalBooks();
     const target = books.find((b) => b.id === bookId);
@@ -308,6 +323,7 @@ export async function updateBookCover(
   book: Book,
   imageFile: File,
 ): Promise<{ book: Book; coverBlob: Blob; storage?: StorageStats }> {
+  assertApiConfigured();
   const compressed = await compressCoverBlob(imageFile);
 
   if (!isCloudMode) {
@@ -340,6 +356,7 @@ export async function updateBookCover(
 }
 
 export async function renameShelfAll(oldName: string, newName: string): Promise<void> {
+  assertApiConfigured();
   if (!isCloudMode) {
     const books = await getLocalBooks();
     for (const b of books) {
@@ -362,6 +379,7 @@ export async function renameShelfAll(oldName: string, newName: string): Promise<
 }
 
 export async function deleteBooks(booksToDelete: Book[]): Promise<StorageStats> {
+  assertApiConfigured();
   if (booksToDelete.length === 0) {
     const state = await fetchLibraryState();
     return state.storage;
@@ -405,6 +423,7 @@ export async function deleteBooks(booksToDelete: Book[]): Promise<StorageStats> 
  * - Every subsequent open: instant 0ms read from IndexedDB (works offline too!).
  */
 export async function fetchBookBlobCached(book: Book): Promise<{ blob: Blob; fromCache: boolean }> {
+  assertApiConfigured();
   const cached = await getCachedBookBlob(book.file_key);
   if (cached) return { blob: cached, fromCache: true };
 
@@ -423,6 +442,7 @@ export async function fetchBookBlobCached(book: Book): Promise<{ blob: Blob; fro
 }
 
 export async function fetchCoverBlobCached(coverKey: string): Promise<Blob | null> {
+  assertApiConfigured();
   const cached = await getCachedCoverBlob(coverKey);
   if (cached) return cached;
   if (!isCloudMode) return null;
@@ -439,6 +459,7 @@ export async function fetchCoverBlobCached(coverKey: string): Promise<Blob | nul
 }
 
 export async function saveReadingProgress(bookId: string, progress: ReadingProgress): Promise<void> {
+  assertApiConfigured();
   // Always persist locally right away
   await putLocalProgress(bookId, progress);
   if (!isCloudMode) return;
@@ -451,6 +472,7 @@ export async function saveReadingProgress(bookId: string, progress: ReadingProgr
 }
 
 export async function clearReadingProgress(bookId: string): Promise<void> {
+  assertApiConfigured();
   await deleteLocalProgress(bookId);
   if (!isCloudMode) return;
   await apiFetch(`/api/progress/${bookId}`, { method: 'DELETE' });

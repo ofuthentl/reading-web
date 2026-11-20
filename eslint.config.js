@@ -26,11 +26,4 @@ export default tseslint.config(
       'max-lines': ['error', { max: 500, skipBlankLines: true, skipComments: true }],
     },
   },
-  // TODO(Phase 3): gỡ khi tách App.tsx
-  {
-    files: ['src/App.tsx'],
-    rules: {
-      'max-lines': 'off',
-    },
-  }
 );

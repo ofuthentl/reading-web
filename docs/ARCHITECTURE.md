@@ -29,10 +29,15 @@ flowchart LR
 | `src/types.ts` | Định nghĩa kiểu dữ liệu dùng chung (Book, Chapter, ParsedBook, Progress, Storage, ReaderSettings) | `Book`, `BookFileType`, `Chapter`, `ParsedBook`, `ReadingProgress`, `StorageStats`, `ShelfGroup`, `ReaderSettings`, `ViewMode` | — |
 | `src/lib/cache.ts` | Lớp truy cập IndexedDB (`arcane-library-cache-v1`) lưu cache file sách/bìa và dữ liệu chế độ local | `getCachedBookBlob`, `setCachedBookBlob`, `deleteCachedBookBlob`, `getCachedCoverBlob`, `setCachedCoverBlob`, `deleteCachedCoverBlob`, `getLocalBooks`, `putLocalBook`, `deleteLocalBook`, `getAllLocalProgress`, `putLocalProgress`, `deleteLocalProgress` | `src/types.ts`, IndexedDB API |
 | `src/lib/parsers.ts` | Trích xuất metadata tên file, trích/nén ảnh bìa JPEG khi upload, parse EPUB/PDF/CBZ/MOBI thành `ParsedBook` kèm `dispose()` | `pdfWasmUrl`, `pickCoverColor`, `inferShelfName`, `parseFileMetadata`, `bookDuplicateKey`, `compressCoverBlob`, `extractCoverAtUpload`, `parseBookBlob` | `jszip`, `pdfjs-dist`, `@lingo-reader/mobi-parser`, `src/types.ts` |
-| `src/lib/api.ts` | Giao tiếp HTTP với Worker, quản lý token, giới hạn 9.0 GiB, cache-first blob/cover, đồng bộ tiến độ đọc | `HARD_LIMIT_BYTES`, `isCloudMode`, `getAuthToken`, `setAuthToken`, `formatBytes`, `sortBooksByTitle`, `groupBooksIntoShelves`, `isAuthError`, `checkHealth`, `loginWithPasscode`, `fetchLibraryState`, `uploadBook`, `updateBookMetadata`, `updateBookCover`, `renameShelfAll`, `deleteBooks`, `fetchBookBlobCached`, `fetchCoverBlobCached`, `saveReadingProgress`, `clearReadingProgress` | `src/types.ts`, `src/lib/cache.ts`, `src/lib/parsers.ts` |
+| `src/lib/api.ts` | Giao tiếp HTTP với Worker, quản lý token, bảo vệ D-005 (chặn Local-First trên production), giới hạn 9.0 GiB, cache-first blob/cover, đồng bộ tiến độ đọc | `HARD_LIMIT_BYTES`, `isMissingProductionApi`, `isLocalDevMode`, `isCloudMode`, `getAuthToken`, `setAuthToken`, `formatBytes`, `sortBooksByTitle`, `groupBooksIntoShelves`, `isAuthError`, `checkHealth`, `loginWithPasscode`, `fetchLibraryState`, `uploadBook`, `updateBookMetadata`, `updateBookCover`, `renameShelfAll`, `deleteBooks`, `fetchBookBlobCached`, `fetchCoverBlobCached`, `saveReadingProgress`, `clearReadingProgress` | `src/types.ts`, `src/lib/cache.ts`, `src/lib/parsers.ts` |
+| `src/hooks/useToast.ts` | Hook quản lý hàng đợi thông báo Toast tự tắt kèm dọn sạch timer khi unmount | `useToast`, `ToastItem`, `ToastType` | React |
+| `src/components/ErrorBoundary.tsx` | React Error Boundary chống trắng trang, có nút tải lại & khôi phục | `ErrorBoundary` | `lucide-react` |
+| `src/components/ToastContainer.tsx` | Hiển thị stack thông báo không chặn UI góc dưới-phải | `ToastContainer` | `lucide-react`, `src/hooks/useToast.ts` |
+| `src/components/AuthGate.tsx` | Màn hình kiểm tra kết nối Worker, đăng nhập 1 passcode (D-003) và báo lỗi thiếu `VITE_API_URL` trên production (D-005) | `AuthGate` | `lucide-react`, `src/lib/api.ts` |
 | `src/components/PdfReader.tsx` | Trình xem PDF canvas HiDPI, thanh thumbnail (tối đa 40 trang đầu), huỷ `RenderTask` cũ, zoom & tải xuống | `PdfReader` | `pdfjs-dist`, `lucide-react`, `src/lib/parsers.ts` |
 | `src/components/ReaderView.tsx` | Trình đọc EPUB/MOBI/CBZ/PDF: mục lục, cài đặt theme/font/cỡ chữ/giãn dòng/độ rộng, lưu & khôi phục vị trí cuộn theo tỉ lệ, phím `←`/`→` an toàn | `ReaderView` | `lucide-react`, `src/types.ts`, `src/components/PdfReader.tsx` |
-| `src/App.tsx` *(cũ)* | Ứng dụng nguyên khối bản cũ (~2.958 dòng) còn import Supabase đã xoá — **chờ thay thế ở Phase 3** | `default App` | *(đứt import `@/lib/supabase`, `@/lib/book-storage`, `@supabase/supabase-js`)* |
+| `src/App.tsx` | Vỏ điều phối mỏng (< 100 dòng ở 3.1): quản lý auth state, xử lý `401` tập trung, tải trạng thái thư viện, `ToastContainer` | `default App` | `src/types.ts`, `src/lib/api.ts`, `src/components/AuthGate.tsx`, `src/components/ToastContainer.tsx`, `src/hooks/useToast.ts` |
+| `src/main.tsx` | Điểm khởi chạy React, bọc `<ErrorBoundary>` quanh `<App />` | — | `src/components/ErrorBoundary.tsx`, `src/App.tsx` |
 | `workers/r2-storage/src/auth.ts` | Xác thực fail-closed cho Worker: so sánh timing-safe, ký & kiểm tra token HMAC-SHA256 30 ngày, `HttpError` | `HttpError`, `AuthEnv`, `isInsecureDevAuthDisabled`, `isAuthRequired`, `timingSafeEqual`, `signPayload`, `createAuthToken`, `authenticatePasscode`, `verifyAuth` | Web Crypto API (`crypto.subtle`) |
 | `workers/r2-storage/src/index.ts` | Cloudflare Worker API: CORS, kiểm soát hạn mức 9.0 GiB, CRUD D1, stream upload/download R2 (hỗ trợ HTTP Range) | `default { fetch }` | Cloudflare Workers Runtime (`D1Database`, `R2Bucket`), `workers/r2-storage/src/auth.ts` |
 
@@ -76,7 +81,7 @@ flowchart LR
 
 | Biến / Binding | Phía | Loại | Đặt ở đâu | Vai trò |
 |---|---|---|---|---|
-| `VITE_API_URL` | Frontend | Env var (public) | `.env.local` (dev), GitHub Actions Secret (deploy) | URL Cloudflare Worker. Khi trống: dự kiến chỉ cho Local-First ở `DEV` (D-005). |
+| `VITE_API_URL` | Frontend | Env var (public) | `.env.local` (dev), GitHub Actions Secret (deploy) | URL Cloudflare Worker. Khi trống: chỉ cho phép Local-First ở `DEV`; bản production báo lỗi cấu hình rõ ràng (D-005). |
 | `VITE_BASE_PATH` | Frontend | Env var (public) | `.github/workflows/deploy.yml` (`/`) | Base path của Vite build cho domain `ofu.lol`. |
 | `APP_ORIGINS` | Worker | Var | `workers/r2-storage/wrangler.toml` `[vars]` | Danh sách origin được phép CORS (`https://ofu.lol`, `http://localhost:5173`, `http://127.0.0.1:5173`). |
 | `STORAGE_LIMIT_BYTES` | Worker | Var | `workers/r2-storage/wrangler.toml` `[vars]` | Chốt chặn cứng `9663676416` (9.0 GiB). |
@@ -110,13 +115,7 @@ flowchart LR
 
 ## 7. Trạng thái hiện tại
 
-- **`src/App.tsx` (2.958 dòng)** là code cũ của bản Supabase, **đang chờ thay thế hoàn toàn ở Phase 3**. Các khối chính trong `App.tsx` cũ:
-  - Dòng 1–186: imports Supabase/parsers cũ, helper đọc/ghi `localStorage` cho tiến độ & ảnh bìa override, cache RAM.
-  - Dòng 188–217: chuẩn hoá metadata (có hardcode `/bạch dạ hành/i`), sort & phân kệ cũ.
-  - Dòng 218–480: các component nội tuyến cũ (`AuthScreen`, `LibraryBookCard`, `RenameDialog`, `ShareDialog`, `DeleteDialog`).
-  - Dòng 482–628: `PdfReader` cũ (không huỷ `RenderTask`).
-  - Dòng 629–1079: parser EPUB/PDF/CBZ/MOBI cũ (nhiều lỗi rò rỉ bộ nhớ & race condition).
-  - Dòng 1080–2958: `App()` chính (quản lý auth đa user, chia sẻ, admin, thư viện 2D, trình đọc cũ).
-- **Cảnh báo ESLint `max-lines` trên code mới (cần tách ở Phase 3)**:
-  - `src/components/ReaderView.tsx`: 673 dòng hiệu dụng (vượt ngưỡng 500, tách ở 3.4).
-  - `workers/r2-storage/src/{auth,index}.ts`, `src/lib/{api,cache,parsers}.ts`, `src/components/PdfReader.tsx`, `src/types.ts`: đã đạt chuẩn ≤ 500 dòng.
+- **`src/App.tsx`** đã được thay bằng vỏ điều phối mỏng (Sub-phase 3.1, build frontend đã xanh). Các phần giao diện 2D, modal quản lý sách và nối `ReaderView` tiếp tục ở Sub-phase 3.2 → 3.4.
+- **Cảnh báo ESLint `max-lines` còn lại (tách ở 3.4)**:
+  - `src/components/ReaderView.tsx`: 673 dòng hiệu dụng (vượt ngưỡng 500).
+  - Toàn bộ các module còn lại (`workers/r2-storage/src/*`, `src/App.tsx`, `src/lib/*`, `src/hooks/*`, `src/components/{AuthGate,ErrorBoundary,PdfReader,ToastContainer}.tsx`, `src/types.ts`): đã đạt chuẩn ≤ 500 dòng.
