@@ -400,12 +400,14 @@ async function parseEpubBlob(blob: Blob, book: Book): Promise<ParsedBook> {
       if (!plainText && !hasMedia) continue;
 
       const headingText = doc.querySelector('h1, h2, h3')?.textContent?.replace(/\s+/g, ' ').trim();
-      const explicitTitle =
-        tocTitlesByPath.get(path) ||
-        getFilenameChapterTitle(path) ||
-        (headingText && headingText.length <= 90 ? headingText : null);
-
-      rawSections.push({ explicitTitle, bodyHtml, plainText, hasMedia });
+      rawSections.push({
+        tocTitle: tocTitlesByPath.get(path) ?? null,
+        filenameTitle: getFilenameChapterTitle(path),
+        headingTitle: headingText && headingText.length <= 90 ? headingText : null,
+        bodyHtml,
+        plainText,
+        hasMedia,
+      });
     }
 
     const chapters = buildEpubChapters(rawSections, book.id);
