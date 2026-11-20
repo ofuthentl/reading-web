@@ -6,9 +6,10 @@ import {
   RefreshCw,
   Upload,
 } from 'lucide-react';
-import type { StorageStats } from '@/types';
+import type { StorageStats, ViewMode } from '@/types';
 import { HARD_LIMIT_BYTES, formatBytes, isCloudMode } from '@/lib/api';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { ViewModeToggle } from '@/components/ViewModeToggle';
 import type { AppTheme } from '@/hooks/useTheme';
 
 interface LibraryHeaderProps {
@@ -18,6 +19,9 @@ interface LibraryHeaderProps {
   theme: AppTheme;
   selectionMode: boolean;
   selectedCount: number;
+  canUse3D?: boolean;
+  viewMode?: ViewMode;
+  onChangeViewMode?: (mode: ViewMode) => void;
   onCycleTheme: (origin?: { x: number; y: number }) => void;
   onUploadClick: () => void;
   onToggleSelectionMode: () => void;
@@ -32,6 +36,9 @@ export function LibraryHeader({
   theme,
   selectionMode,
   selectedCount,
+  canUse3D = false,
+  viewMode = '2d',
+  onChangeViewMode,
   onCycleTheme,
   onUploadClick,
   onToggleSelectionMode,
@@ -129,6 +136,14 @@ export function LibraryHeader({
                 : 'Chọn'}
             </span>
           </button>
+
+          {canUse3D && onChangeViewMode && (
+            <ViewModeToggle
+              canUse3D={canUse3D}
+              viewMode={viewMode}
+              onChange={onChangeViewMode}
+            />
+          )}
 
           <ThemeToggle theme={theme} onCycle={onCycleTheme} />
 

@@ -1,4 +1,3 @@
-import { useEffect, useMemo, useState } from 'react';
 import {
   BookMarked,
   BookOpen,
@@ -11,20 +10,11 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import type { Book, ReadingProgress, StorageStats } from '@/types';
-import { groupBooksIntoShelves } from '@/lib/api';
+import type { Book, ReadingProgress, StorageStats, ViewMode } from '@/types';
 import { BookCard } from '@/components/BookCard';
 import { LibraryHeader } from '@/components/LibraryHeader';
+import type { LibraryViewState } from '@/hooks/useLibraryViewState';
 import type { AppTheme } from '@/hooks/useTheme';
-
-function normalizeSearchText(input: string): string {
-  return input
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/gi, 'd')
-    .toLocaleLowerCase('vi')
-    .trim();
-}
 
 interface Library2DViewProps {
   books: Book[];
@@ -32,6 +22,10 @@ interface Library2DViewProps {
   storage: StorageStats | null;
   loading: boolean;
   theme: AppTheme;
+  viewState: LibraryViewState;
+  canUse3D?: boolean;
+  viewMode?: ViewMode;
+  onChangeViewMode?: (mode: ViewMode) => void;
   onCycleTheme: (origin?: { x: number; y: number }) => void;
   onRefresh: () => void;
   onLogout: () => void;
@@ -41,7 +35,6 @@ interface Library2DViewProps {
   onRenameShelf?: (shelfName: string) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
-  selectionResetKey?: number;
 }
 
 export function Library2DView({
@@ -50,6 +43,10 @@ export function Library2DView({
   storage,
   loading,
   theme,
+  viewState,
+  canUse3D = false,
+  viewMode = '2d',
+  onChangeViewMode,
   onCycleTheme,
   onRefresh,
   onLogout,
@@ -59,101 +56,27 @@ export function Library2DView({
   onRenameShelf,
   onMoveSelectedToShelf,
   onDeleteSelected,
-  selectionResetKey,
 }: Library2DViewProps) {
   const isDark = theme !== 'light';
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeShelfKey, setActiveShelfKey] = useState<string | null>(null);
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-
-  useEffect(() => {
-    if (selectionResetKey) {
-      setSelectionMode(false);
-      setSelectedIds(new Set());
-    }
-  }, [selectionResetKey]);
-
-  useEffect(() => {
-    if (books.length === 0) {
-      setSelectionMode(false);
-    }
-    const validIds = new Set(books.map((book) => book.id));
-    setSelectedIds((prev) => {
-      let changed = false;
-      const next = new Set<string>();
-      for (const id of prev) {
-        if (validIds.has(id)) {
-          next.add(id);
-        } else {
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [books]);
-
-  const allShelves = useMemo(() => groupBooksIntoShelves(books), [books]);
-
-  useEffect(() => {
-    if (activeShelfKey && !allShelves.some((shelf) => shelf.key === activeShelfKey)) {
-      setActiveShelfKey(null);
-    }
-  }, [activeShelfKey, allShelves]);
-
-  const continueReadingBooks = useMemo(() => {
-    return books
-      .filter((book) => Boolean(progress[book.id]))
-      .sort((a, b) => (progress[b.id]?.updatedAt ?? 0) - (progress[a.id]?.updatedAt ?? 0))
-      .slice(0, 8);
-  }, [books, progress]);
-
-  const normalizedQuery = useMemo(() => normalizeSearchText(searchQuery), [searchQuery]);
-
-  const filteredBooks = useMemo(() => {
-    return books.filter((book) => {
-      if (activeShelfKey) {
-        const shelfKey = (book.shelf || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi');
-        if (shelfKey !== activeShelfKey) return false;
-      }
-      if (!normalizedQuery) return true;
-      const haystack = normalizeSearchText(`${book.title} ${book.author} ${book.shelf}`);
-      return haystack.includes(normalizedQuery);
-    });
-  }, [books, activeShelfKey, normalizedQuery]);
-
-  const visibleShelves = useMemo(() => groupBooksIntoShelves(filteredBooks), [filteredBooks]);
-
-  const handleToggleSelectionMode = () => {
-    setSelectionMode((prev) => {
-      if (prev) setSelectedIds(new Set());
-      return !prev;
-    });
-  };
-
-  const handleToggleSelect = (bookId: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(bookId)) next.delete(bookId);
-      else next.add(bookId);
-      return next;
-    });
-  };
-
-  const handleSelectAllVisible = () => {
-    setSelectedIds(new Set(filteredBooks.map((book) => book.id)));
-  };
-
-  const handleClearSelection = () => {
-    setSelectedIds(new Set());
-  };
-
-  const selectedBooks = useMemo(
-    () => books.filter((book) => selectedIds.has(book.id)),
-    [books, selectedIds],
-  );
-
-  const isFiltering = Boolean(normalizedQuery || activeShelfKey);
+  const {
+    searchQuery,
+    setSearchQuery,
+    activeShelfKey,
+    setActiveShelfKey,
+    selectionMode,
+    selectedIds,
+    allShelves,
+    continueReadingBooks,
+    filteredBooks,
+    visibleShelves,
+    selectedBooks,
+    isFiltering,
+    toggleSelectionMode,
+    toggleSelectBook,
+    selectAllVisible,
+    clearSelection,
+    clearFilters,
+  } = viewState;
 
   return (
     <div className="theme-canvas min-h-screen text-ink transition-colors duration-200">
@@ -164,9 +87,12 @@ export function Library2DView({
         theme={theme}
         selectionMode={selectionMode}
         selectedCount={selectedIds.size}
+        canUse3D={canUse3D}
+        viewMode={viewMode}
+        onChangeViewMode={onChangeViewMode}
         onCycleTheme={onCycleTheme}
         onUploadClick={onUploadClick}
-        onToggleSelectionMode={handleToggleSelectionMode}
+        onToggleSelectionMode={toggleSelectionMode}
         onRefresh={onRefresh}
         onLogout={onLogout}
       />
@@ -207,10 +133,7 @@ export function Library2DView({
                   </span>
                   <button
                     type="button"
-                    onClick={() => {
-                      setSearchQuery('');
-                      setActiveShelfKey(null);
-                    }}
+                    onClick={clearFilters}
                     className="rounded-lg border border-line bg-surface px-2.5 py-1 font-medium text-accent transition-colors hover:border-line-strong hover:bg-subtle"
                   >
                     Xoá lọc
@@ -266,8 +189,8 @@ export function Library2DView({
                 type="button"
                 onClick={
                   selectedIds.size === filteredBooks.length && filteredBooks.length > 0
-                    ? handleClearSelection
-                    : handleSelectAllVisible
+                    ? clearSelection
+                    : selectAllVisible
                 }
                 disabled={filteredBooks.length === 0}
                 className="rounded-lg border border-line bg-canvas px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-line-strong disabled:opacity-50"
@@ -300,7 +223,7 @@ export function Library2DView({
               )}
               <button
                 type="button"
-                onClick={handleToggleSelectionMode}
+                onClick={toggleSelectionMode}
                 className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
               >
                 Xong
@@ -377,7 +300,7 @@ export function Library2DView({
                       selected={selectedIds.has(book.id)}
                       layout="horizontal"
                       onOpen={onOpenBook}
-                      onToggleSelect={handleToggleSelect}
+                      onToggleSelect={toggleSelectBook}
                     />
                   ))}
                 </div>
@@ -396,10 +319,7 @@ export function Library2DView({
                 </p>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setActiveShelfKey(null);
-                  }}
+                  onClick={clearFilters}
                   className="mt-4 rounded-xl border border-line-strong bg-canvas px-4 py-2 text-xs font-medium text-ink transition-colors hover:bg-subtle"
                 >
                   Hiển thị toàn bộ thư viện
@@ -443,7 +363,7 @@ export function Library2DView({
                           selectionMode={selectionMode}
                           selected={selectedIds.has(book.id)}
                           onOpen={onOpenBook}
-                          onToggleSelect={handleToggleSelect}
+                          onToggleSelect={toggleSelectBook}
                           onEdit={onEditBook}
                         />
                       ))}

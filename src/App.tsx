@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { Book, ReadingProgress, StorageStats } from '@/types';
-import { fetchLibraryState, groupBooksIntoShelves, isAuthError, setAuthToken, sortBooksByTitle } from '@/lib/api';
+import { fetchLibraryState, isAuthError, setAuthToken, sortBooksByTitle } from '@/lib/api';
 import { AuthGate } from '@/components/AuthGate';
 import { BookEditModal } from '@/components/BookEditModal';
 import { BulkShelfModal } from '@/components/BulkShelfModal';
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal';
 import { Library2DView } from '@/components/Library2DView';
+import { Library3DHost } from '@/components/Library3DHost';
 import { ReaderView } from '@/components/ReaderView';
 import { ShelfRenameModal } from '@/components/ShelfRenameModal';
 import { ToastContainer } from '@/components/ToastContainer';
 import { UploadDropzone } from '@/components/UploadDropzone';
 import { useBookReader } from '@/hooks/useBookReader';
+import { useCanUse3D } from '@/hooks/useCanUse3D';
+import { useLibraryViewState } from '@/hooks/useLibraryViewState';
 import { useTheme } from '@/hooks/useTheme';
 import { useToast } from '@/hooks/useToast';
 
@@ -34,6 +37,14 @@ type LibraryModalState =
 export default function App() {
   const { theme, cycleTheme } = useTheme();
   const { toasts, addToast, dismissToast } = useToast();
+  const {
+    canUse3D,
+    effectiveMode,
+    prefersReducedMotion,
+    retryKey,
+    setViewMode,
+    mark3DFailed,
+  } = useCanUse3D();
   const [authenticated, setAuthenticated] = useState(false);
   const [authReason, setAuthReason] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -43,8 +54,17 @@ export default function App() {
   const [modal, setModal] = useState<LibraryModalState>({ kind: 'none' });
   const [selectionResetKey, setSelectionResetKey] = useState(0);
   const coreReadersPreloadedRef = useRef(false);
+  const libraryViewState = useLibraryViewState(books, progress, selectionResetKey);
 
   const closeModal = useCallback(() => setModal({ kind: 'none' }), []);
+
+  const handleFallbackTo2D = useCallback(
+    (reason: string) => {
+      mark3DFailed();
+      addToast(reason, 'warning');
+    },
+    [addToast, mark3DFailed],
+  );
 
   const handleApiError = useCallback(
     (err: unknown, fallbackMessage: string) => {
@@ -103,8 +123,8 @@ export default function App() {
   }, [authenticated, closeBook, loadLibrary]);
 
   const existingShelves = useMemo(
-    () => groupBooksIntoShelves(books).map((shelf) => shelf.name),
-    [books],
+    () => libraryViewState.allShelves.map((shelf) => shelf.name),
+    [libraryViewState.allShelves],
   );
 
   const handleLogout = useCallback(() => {
@@ -192,25 +212,39 @@ export default function App() {
       ).length
     : 0;
 
+  const sharedLibraryProps = {
+    books,
+    progress,
+    storage,
+    loading,
+    theme,
+    viewState: libraryViewState,
+    canUse3D,
+    viewMode: effectiveMode,
+    onChangeViewMode: setViewMode,
+    onCycleTheme: cycleTheme,
+    onRefresh: () => void loadLibrary(),
+    onLogout: handleLogout,
+    onOpenBook: (book: Book) => void reader.openBook(book),
+    onUploadClick: () => setModal({ kind: 'upload' }),
+    onEditBook: (book: Book) => setModal({ kind: 'edit', book }),
+    onRenameShelf: (shelfName: string) => setModal({ kind: 'rename-shelf', shelfName }),
+    onMoveSelectedToShelf: (selectedBooks: Book[]) => setModal({ kind: 'bulk-shelf', books: selectedBooks }),
+    onDeleteSelected: (selectedBooks: Book[]) => setModal({ kind: 'delete', books: selectedBooks }),
+  };
+
   return (
     <>
-      <Library2DView
-        books={books}
-        progress={progress}
-        storage={storage}
-        loading={loading}
-        theme={theme}
-        onCycleTheme={cycleTheme}
-        onRefresh={() => void loadLibrary()}
-        onLogout={handleLogout}
-        onOpenBook={(book) => void reader.openBook(book)}
-        onUploadClick={() => setModal({ kind: 'upload' })}
-        onEditBook={(book) => setModal({ kind: 'edit', book })}
-        onRenameShelf={(shelfName) => setModal({ kind: 'rename-shelf', shelfName })}
-        onMoveSelectedToShelf={(selectedBooks) => setModal({ kind: 'bulk-shelf', books: selectedBooks })}
-        onDeleteSelected={(selectedBooks) => setModal({ kind: 'delete', books: selectedBooks })}
-        selectionResetKey={selectionResetKey}
-      />
+      {effectiveMode === '3d' ? (
+        <Library3DHost
+          {...sharedLibraryProps}
+          retryKey={retryKey}
+          prefersReducedMotion={prefersReducedMotion}
+          onFallbackTo2D={handleFallbackTo2D}
+        />
+      ) : (
+        <Library2DView {...sharedLibraryProps} />
+      )}
       {modal.kind === 'upload' && (
         <UploadDropzone open books={books} storage={storage} onClose={closeModal} onBookUploaded={handleBookUploaded} onBookUpdated={handleBookUpdated} onApiError={handleApiError} onNotify={addToast} />
       )}
