@@ -1,11 +1,11 @@
 {
-  "name": "Thư Viện Huyền Ảo — Arcane Reader",
-  "short_name": "Arcane Reader",
-  "description": "Thư viện phép thuật 3D & trình đọc ebook EPUB, MOBI, PDF, CBZ siêu nhanh",
+  "name": "Ofu's Library",
+  "short_name": "Ofu's Library",
+  "description": "Thư viện cá nhân & trình đọc sách EPUB, MOBI, PDF, CBZ",
   "start_url": ".",
   "display": "standalone",
-  "background_color": "#0f0c24",
-  "theme_color": "#0f0c24",
+  "background_color": "#fafaf9",
+  "theme_color": "#fafaf9",
   "icons": [
     {
       "src": "title.png",

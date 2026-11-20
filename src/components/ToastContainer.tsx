@@ -6,25 +6,25 @@ interface ToastContainerProps {
   onDismiss: (id: string) => void;
 }
 
-const STYLE_BY_TYPE: Record<ToastType, { border: string; iconClass: string; Icon: typeof Info }> = {
+const STYLE_BY_TYPE: Record<ToastType, { container: string; iconClass: string; Icon: typeof Info }> = {
   success: {
-    border: 'border-emerald-500/35 bg-slate-900/95 text-emerald-100',
-    iconClass: 'text-emerald-400',
+    container: 'border-emerald-200 bg-white text-stone-800',
+    iconClass: 'text-emerald-600',
     Icon: CheckCircle2,
   },
   error: {
-    border: 'border-rose-500/40 bg-slate-900/95 text-rose-100',
-    iconClass: 'text-rose-400',
+    container: 'border-red-200 bg-white text-stone-800',
+    iconClass: 'text-red-600',
     Icon: AlertCircle,
   },
   warning: {
-    border: 'border-amber-500/40 bg-slate-900/95 text-amber-100',
-    iconClass: 'text-amber-400',
+    container: 'border-amber-200 bg-amber-50/95 text-amber-950',
+    iconClass: 'text-amber-600',
     Icon: AlertTriangle,
   },
   info: {
-    border: 'border-indigo-500/35 bg-slate-900/95 text-slate-100',
-    iconClass: 'text-indigo-400',
+    container: 'border-stone-200 bg-white text-stone-800',
+    iconClass: 'text-stone-600',
     Icon: Info,
   },
 };
@@ -38,12 +38,12 @@ export function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
       aria-live="polite"
     >
       {toasts.map((toast) => {
-        const { border, iconClass, Icon } = STYLE_BY_TYPE[toast.type];
+        const { container, iconClass, Icon } = STYLE_BY_TYPE[toast.type];
         return (
           <div
             key={toast.id}
             role={toast.type === 'error' ? 'alert' : 'status'}
-            className={`pointer-events-auto flex items-start gap-2.5 rounded-xl border px-3.5 py-3 shadow-xl backdrop-blur fade-in ${border}`}
+            className={`pointer-events-auto flex items-start gap-2.5 rounded-xl border px-3.5 py-3 shadow-lg fade-in ${container}`}
           >
             <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${iconClass}`} />
             <p className="flex-1 text-sm leading-snug break-words">{toast.message}</p>
@@ -51,7 +51,7 @@ export function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
               type="button"
               onClick={() => onDismiss(toast.id)}
               aria-label="Đóng thông báo"
-              className="rounded-lg p-1 text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+              className="rounded-lg p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition-colors"
             >
               <X className="h-3.5 w-3.5" />
             </button>

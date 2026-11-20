@@ -73,35 +73,50 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0d0b1a] text-slate-100">
-      <header className="border-b border-slate-800/80 bg-slate-900/70 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3.5">
-          <div className="flex items-center gap-2.5">
-            <BookOpen className="h-5 w-5 text-indigo-400" />
-            <span className="font-semibold">Thư Viện Huyền Ảo</span>
-            <span className="rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-xs text-indigo-300">
-              {isCloudMode ? 'Cloudflare R2 + D1' : 'Local Dev'}
+    <div className="min-h-screen bg-stone-50 text-stone-800">
+      <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-stone-200 bg-white/95 px-4 backdrop-blur sm:px-6">
+        <div className="flex items-center gap-2 text-lg font-semibold text-stone-900">
+          <BookOpen className="h-5 w-5 text-stone-500" />
+          <span>Ofu&apos;s Library</span>
+          {!isCloudMode && (
+            <span className="rounded-md bg-stone-100 px-2 py-0.5 text-xs font-normal text-stone-600">
+              Local Dev
             </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => void loadLibrary()} disabled={loading} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50">
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Làm mới
-            </button>
-            <button type="button" onClick={handleLogout} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/35 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-200 hover:bg-rose-500/20">
-              <LogOut className="h-3.5 w-3.5" /> Đăng xuất
-            </button>
-          </div>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => void loadLibrary()}
+            disabled={loading}
+            aria-label="Làm mới"
+            title="Làm mới"
+            className="rounded-lg p-2 text-stone-500 hover:bg-stone-100 hover:text-stone-800 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            type="button"
+            onClick={handleLogout}
+            aria-label="Đăng xuất"
+            title="Đăng xuất"
+            className="rounded-lg p-2 text-stone-500 hover:bg-stone-100 hover:text-stone-800"
+          >
+            <LogOut className="h-5 w-5" />
+          </button>
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-10">
         {loading && !storage ? (
-          <div className="flex items-center justify-center gap-2.5 py-20 text-slate-400">
-            <Loader2 className="h-5 w-5 animate-spin text-indigo-400" /> Đang đồng bộ thư viện...
+          <div className="flex items-center justify-center gap-2.5 py-20 text-stone-500">
+            <Loader2 className="h-5 w-5 animate-spin text-stone-700" /> Đang đồng bộ thư viện...
           </div>
         ) : (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-sm text-slate-300">
-            Kết nối thành công · <strong className="text-white">{books.length}</strong> sách · Dung lượng:{' '}
-            <strong className="text-white">{storage ? `${formatBytes(storage.usedBytes)} / ${formatBytes(storage.limitBytes)}` : '—'}</strong>
+          <div className="rounded-xl border border-stone-200 bg-white p-6 text-sm text-stone-600 shadow-sm">
+            Kết nối thành công · <strong className="text-stone-900">{books.length}</strong> sách · Dung lượng:{' '}
+            <strong className="text-stone-900">
+              {storage ? `${formatBytes(storage.usedBytes)} / ${formatBytes(storage.limitBytes)}` : '—'}
+            </strong>
           </div>
         )}
       </main>

@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, BookOpen, Eye, EyeOff, KeyRound, Loader2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, BookOpen, Eye, EyeOff, Loader2, RefreshCw } from 'lucide-react';
 import {
   checkHealth,
   getAuthToken,
@@ -79,31 +79,29 @@ export function AuthGate({ onAuthenticated, authReason }: AuthGateProps) {
 
   if (isMissingProductionApi) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0d0b1a] text-slate-100 px-4">
-        <div className="w-full max-w-lg rounded-2xl border border-amber-500/35 bg-slate-900/90 p-6 shadow-2xl">
-          <div className="flex items-center gap-3 text-amber-400">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/15">
-              <AlertTriangle className="h-6 w-6" />
+      <div className="min-h-screen flex items-center justify-center bg-stone-50 text-stone-800 px-6 py-16">
+        <div className="w-full max-w-md rounded-xl border border-amber-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+              <AlertTriangle className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-slate-100">
+              <h1 className="text-base font-semibold text-stone-900">
                 Thiếu cấu hình máy chủ (VITE_API_URL)
               </h1>
-              <p className="text-xs text-slate-400">Bảo vệ dữ liệu bản Production (D-005)</p>
+              <p className="text-xs text-stone-500">Bảo vệ dữ liệu bản Production (D-005)</p>
             </div>
           </div>
 
-          <p className="mt-4 text-sm leading-relaxed text-slate-300">
-            Ứng dụng đang chạy ở chế độ production nhưng chưa được cấu hình biến môi trường{' '}
-            <code className="rounded bg-slate-800 px-1.5 py-0.5 text-amber-300">VITE_API_URL</code>.
-            Chế độ lưu cục bộ (Local-First) bị tắt trên production để tránh việc bạn tưởng đang lưu lên
-            Cloudflare nhưng sách lại chỉ nằm trong trình duyệt.
+          <p className="mt-4 text-sm leading-relaxed text-stone-600">
+            Ứng dụng đang chạy ở chế độ production nhưng chưa có biến môi trường{' '}
+            <code className="rounded bg-stone-100 px-1.5 py-0.5 text-stone-900">VITE_API_URL</code>.
+            Chế độ lưu cục bộ (Local-First) bị tắt trên production để tránh lưu nhầm vào trình duyệt.
           </p>
 
-          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 text-xs leading-relaxed text-slate-400">
+          <div className="mt-4 rounded-lg border border-stone-200 bg-stone-50 p-3 text-xs leading-relaxed text-stone-600">
             Cách khắc phục: cấu hình GitHub Actions Secret{' '}
-            <code className="text-slate-200">VITE_API_URL</code> trỏ tới URL Cloudflare Worker của bạn
-            rồi chạy lại quy trình deploy.
+            <code className="font-medium text-stone-900">VITE_API_URL</code> trỏ về Cloudflare Worker rồi deploy lại.
           </div>
         </div>
       </div>
@@ -111,38 +109,29 @@ export function AuthGate({ onAuthenticated, authReason }: AuthGateProps) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0c0a1a] via-[#131029] to-[#0b1020] text-slate-100 px-4">
-      <div className="w-full max-w-md rounded-2xl border border-indigo-500/20 bg-slate-900/80 p-7 shadow-2xl backdrop-blur">
-        <div className="flex flex-col items-center text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-400/30">
-            <BookOpen className="h-6 w-6" />
-          </div>
-          <h1 className="mt-4 text-xl font-semibold tracking-tight text-white">
-            Thư Viện Huyền Ảo
-          </h1>
-          <p className="mt-1 text-sm text-slate-400">
-            {isLocalDevMode
-              ? 'Chế độ Local Dev (IndexedDB)'
-              : 'Nhập mật mã để mở kho sách cá nhân trên Cloudflare'}
-          </p>
+    <div className="min-h-screen bg-stone-50 px-6 py-16 text-stone-800">
+      <div className="mx-auto max-w-sm rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
+        <div className="mb-6 flex items-center gap-2">
+          <BookOpen className="h-6 w-6 text-stone-600" />
+          <h1 className="text-xl font-semibold text-stone-900">Ofu&apos;s Library</h1>
         </div>
 
         {status === 'checking' && (
-          <div className="mt-8 flex flex-col items-center gap-3 py-4 text-slate-300">
-            <Loader2 className="h-6 w-6 animate-spin text-indigo-400" />
-            <p className="text-sm">Đang kết nối tới máy chủ thư viện...</p>
+          <div className="flex flex-col items-center gap-3 py-8 text-stone-500">
+            <Loader2 className="h-5 w-5 animate-spin text-stone-700" />
+            <p className="text-sm">Đang kết nối tới thư viện...</p>
           </div>
         )}
 
         {status === 'error' && (
-          <div className="mt-6 space-y-4">
-            <div className="rounded-xl border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          <div className="space-y-4">
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
               {errorMessage || 'Không thể kết nối máy chủ thư viện.'}
-            </div>
+            </p>
             <button
               type="button"
               onClick={() => void verifyServer()}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-stone-800 transition-colors"
             >
               <RefreshCw className="h-4 w-4" />
               Thử kết nối lại
@@ -151,13 +140,17 @@ export function AuthGate({ onAuthenticated, authReason }: AuthGateProps) {
         )}
 
         {status === 'login' && (
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-            <div>
-              <label htmlFor="passcode-input" className="block text-xs font-medium text-slate-300 mb-1.5">
-                Mật mã thư viện
-              </label>
-              <div className="relative">
-                <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <form onSubmit={handleSubmit}>
+            <h2 className="mb-1 text-lg font-semibold text-stone-900">Đăng nhập</h2>
+            <p className="mb-5 text-sm text-stone-500">
+              {isLocalDevMode
+                ? 'Chế độ Local Dev (IndexedDB).'
+                : 'Nhập mật mã để mở kho sách đồng bộ của bạn.'}
+            </p>
+
+            <label htmlFor="passcode-input" className="mb-4 block text-sm text-stone-700">
+              Mật mã thư viện
+              <div className="relative mt-1">
                 <input
                   id="passcode-input"
                   type={showPasscode ? 'text' : 'password'}
@@ -167,37 +160,34 @@ export function AuthGate({ onAuthenticated, authReason }: AuthGateProps) {
                   autoFocus
                   disabled={submitting}
                   placeholder="Nhập mật mã..."
-                  className="w-full rounded-xl border border-slate-700/80 bg-slate-950/70 py-2.5 pl-10 pr-10 text-sm text-white placeholder-slate-500 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
+                  className="w-full rounded-lg border border-stone-300 bg-white py-2 pl-3 pr-10 text-sm text-stone-900 outline-none focus:border-stone-500 disabled:opacity-60"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPasscode((prev) => !prev)}
                   aria-label={showPasscode ? 'Ẩn mật mã' : 'Hiện mật mã'}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
                 >
                   {showPasscode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
-            </div>
+            </label>
 
             {errorMessage && (
-              <div
-                role="alert"
-                className="rounded-xl border border-rose-500/35 bg-rose-500/10 px-3.5 py-2.5 text-sm text-rose-200"
-              >
+              <p role="alert" className="mb-4 text-sm text-red-600">
                 {errorMessage}
-              </div>
+              </p>
             )}
 
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60 transition-colors"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50 transition-colors"
             >
               {submitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Đang xác thực...
+                  Đang xử lý...
                 </>
               ) : (
                 'Mở thư viện'
