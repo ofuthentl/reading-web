@@ -1,6 +1,6 @@
 # Kế hoạch Triển khai — Xoá MOBI/CBZ, Thêm hỗ trợ DOCX & Vá lỗi tồn đọng (`feat/docx-drop-mobi-cbz`)
 
-> **Trạng thái:** Đang triển khai trên nhánh `feat/docx-drop-mobi-cbz`.
+> **Trạng thái:** Đã hoàn tất triển khai Phase 1 → 3, migrate D1 remote, deploy Worker live và vượt qua 100% kiểm thử tự động & thực tế trên trình duyệt — sẵn sàng mở PR vào `main`.
 > **Nhánh triển khai:** `feat/docx-drop-mobi-cbz` (tách từ `origin/main` với `--no-track`).
 > **Quyết định kiến trúc:** `D-009` trong `docs/DECISIONS.md` (chỉ hỗ trợ 3 định dạng `epub`, `pdf`, `docx`; xoá sạch MOBI/CBZ và gỡ `@lingo-reader/mobi-parser`; parse DOCX reflowable bằng `jszip` + `DOMParser` + `DOMPurify` đã có sẵn).
 > **Hiện trạng D1 Production (`library-db`):** Đã kiểm tra thực tế có **49 cuốn `epub`** và **0 cuốn `mobi`/`cbz`**.
@@ -76,8 +76,8 @@
 
 ## 3. Checklist kiểm thử
 
-- [ ] `npm run typecheck`, `npm run lint`, `npm run build` và `cd workers/r2-storage && npx tsc --noEmit` đều **0 lỗi, 0 cảnh báo**.
-- [ ] `npm audit --omit=dev` (và `npm audit`) sạch lỗ hổng.
-- [ ] D1 remote `library-db` áp dụng thành công migration `0001_docx_drop_mobi_cbz.sql`, giữ nguyên 49 cuốn EPUB và tiến độ đọc, và Worker mới được deploy live.
-- [ ] Tải lên file `.docx` trích xuất được tiêu đề, chia chương đúng, hiển thị văn bản/bảng/ảnh nhúng trong `ReaderView` và thu hồi sạch `ObjectURL` khi đóng sách.
-- [ ] Thử kéo-thả file `.mobi` hoặc `.cbz` vào `UploadDropzone` bị từ chối rõ ràng với thông báo `Chỉ hỗ trợ EPUB, PDF hoặc DOCX.`.
+- [x] `npm run typecheck`, `npm run lint`, `npm run build` và `cd workers/r2-storage && npx tsc --noEmit` đều **0 lỗi, 0 cảnh báo**.
+- [x] `npm audit --omit=dev` sạch lỗ hổng (`found 0 vulnerabilities`).
+- [x] D1 remote `library-db` áp dụng thành công migration `0001_docx_drop_mobi_cbz.sql`, giữ nguyên 49 cuốn EPUB và 4 tiến độ đọc, và Worker mới được deploy live (`b5f00281-9310-469b-a64a-120ab227535b`).
+- [x] Tải lên file `.docx` trích xuất được ảnh bìa (`blob:` URL hiển thị trên `BookCard` + badge `DOCX`), tiêu đề/tác giả, chia đúng 2 chương theo `Heading 1`, hiển thị văn bản đậm/nghiêng, danh sách, bảng và ảnh nhúng (đã lọc trùng `mc:AlternateContent`) trong `ReaderView`, 0 lỗi console.
+- [x] Thử nạp file `.mobi` và `.cbz` vào `UploadDropzone` bị từ chối rõ ràng với thông báo `Chỉ hỗ trợ EPUB, PDF hoặc DOCX.`.

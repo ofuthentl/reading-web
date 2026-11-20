@@ -186,7 +186,7 @@ export async function uploadBook(
   assertApiConfigured();
   const parsed = parseFileMetadata(file.name);
   if (!parsed.extension) {
-    throw new Error(`${file.name}: chỉ hỗ trợ EPUB, MOBI, PDF hoặc CBZ.`);
+    throw new Error(`${file.name}: chỉ hỗ trợ EPUB, PDF hoặc DOCX.`);
   }
   if (file.size > 350 * 1024 * 1024) {
     throw new Error(`${file.name}: vượt quá giới hạn 350 MB mỗi tệp.`);
@@ -365,9 +365,10 @@ export async function renameShelfAll(oldName: string, newName: string): Promise<
     throw new Error(`Tên kệ sách không hợp lệ (tối đa ${MAX_SHELF_NAME_LENGTH} ký tự).`);
   }
   if (!isCloudMode) {
+    const oldKey = oldName.trim().toLocaleLowerCase('vi');
     const books = await getLocalBooks();
     for (const b of books) {
-      if (b.shelf === oldName) {
+      if ((b.shelf || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi') === oldKey) {
         await putLocalBook({ ...b, shelf: trimmedNew });
       }
     }
@@ -422,35 +423,35 @@ export async function deleteBooks(booksToDelete: Book[]): Promise<StorageStats> 
     return state.storage;
   }
 
-  for (const b of booksToDelete) {
-    await deleteCachedBookBlob(b.file_key);
-    if (b.cover_key) await deleteCachedCoverBlob(b.cover_key);
-  }
-
+  let nextStorage: StorageStats;
   if (!isCloudMode) {
     for (const b of booksToDelete) {
       await deleteLocalBook(b.id);
       await deleteLocalProgress(b.id);
     }
     const remaining = await getLocalBooks();
-    return computeLocalStorageStats(remaining);
-  }
-
-  if (booksToDelete.length === 1) {
+    nextStorage = await computeLocalStorageStats(remaining);
+  } else if (booksToDelete.length === 1) {
     const res = await apiFetch(`/api/books/${booksToDelete[0].id}`, { method: 'DELETE' });
     const data = (await res.json().catch(() => ({}))) as { storage?: StorageStats; error?: string };
     if (!res.ok || !data.storage) throw new Error(data.error || 'Không thể xóa sách.');
-    return data.storage;
+    nextStorage = data.storage;
+  } else {
+    const res = await apiFetch('/api/books/bulk-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: booksToDelete.map((b) => b.id) }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { storage?: StorageStats; error?: string };
+    if (!res.ok || !data.storage) throw new Error(data.error || 'Không thể xóa các sách đã chọn.');
+    nextStorage = data.storage;
   }
 
-  const res = await apiFetch('/api/books/bulk-delete', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ids: booksToDelete.map((b) => b.id) }),
-  });
-  const data = (await res.json().catch(() => ({}))) as { storage?: StorageStats; error?: string };
-  if (!res.ok || !data.storage) throw new Error(data.error || 'Không thể xóa các sách đã chọn.');
-  return data.storage;
+  for (const b of booksToDelete) {
+    await deleteCachedBookBlob(b.file_key);
+    if (b.cover_key) await deleteCachedCoverBlob(b.cover_key);
+  }
+  return nextStorage;
 }
 
 export async function fetchBookBlobCached(
@@ -499,16 +500,24 @@ export async function saveReadingProgress(
   await putLocalProgress(bookId, progress);
   if (!isCloudMode) return;
 
-  await apiFetch(`/api/progress/${bookId}`, {
+  const res = await apiFetch(`/api/progress/${bookId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(progress),
   });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || 'Không thể đồng bộ tiến độ đọc.');
+  }
 }
 
 export async function clearReadingProgress(bookId: string): Promise<void> {
   assertApiConfigured();
   await deleteLocalProgress(bookId);
   if (!isCloudMode) return;
-  await apiFetch(`/api/progress/${bookId}`, { method: 'DELETE' });
+  const res = await apiFetch(`/api/progress/${bookId}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || 'Không thể xóa tiến độ đọc.');
+  }
 }

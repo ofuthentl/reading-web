@@ -16,7 +16,7 @@ import { UploadQueueList, type UploadQueueItem } from '@/components/UploadQueueL
 import type { ToastType } from '@/hooks/useToast';
 
 const MAX_SINGLE_FILE_BYTES = 350 * 1024 * 1024;
-const ACCEPTED_EXTENSIONS = '.epub,.mobi,.pdf,.cbz';
+const ACCEPTED_EXTENSIONS = '.epub,.pdf,.docx';
 
 interface UploadDropzoneProps {
   open: boolean;
@@ -51,7 +51,7 @@ function createQueueItems(
     };
 
     if (!parsed.extension) {
-      return { ...base, status: 'invalid', errorMessage: 'Chỉ hỗ trợ EPUB, MOBI, PDF hoặc CBZ.' };
+      return { ...base, status: 'invalid', errorMessage: 'Chỉ hỗ trợ EPUB, PDF hoặc DOCX.' };
     }
     if (file.size > MAX_SINGLE_FILE_BYTES) {
       return { ...base, status: 'invalid', errorMessage: 'Tệp vượt quá giới hạn tối đa 350 MB.' };
@@ -325,7 +325,7 @@ export function UploadDropzone({
                 Tải sách vào thư viện
               </h2>
               <p className="text-xs text-ink-muted">
-                Hỗ trợ EPUB, MOBI, PDF, CBZ · Tối đa 350 MB/tệp · Tải tuần tự từng cuốn
+                Hỗ trợ EPUB, PDF, DOCX · Tối đa 350 MB/tệp · Tải tuần tự từng cuốn
               </p>
             </div>
           </div>

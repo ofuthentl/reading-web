@@ -418,7 +418,10 @@ export async function extractDocxCover(zip: JSZip): Promise<Blob | null> {
       /^docProps\/thumbnail\.[^.]+$/i.test(entry.name) &&
       RASTER_IMAGE_EXT_RE.test(entry.name),
   );
-  if (thumbEntry) return compressCoverBlob(await thumbEntry.async('blob'));
+  if (thumbEntry) {
+    const raw = await thumbEntry.async('blob');
+    return compressCoverBlob(new Blob([raw], { type: guessImageMimeType(thumbEntry.name) }));
+  }
 
   const mediaEntry = Object.values(zip.files)
     .filter(
@@ -427,7 +430,8 @@ export async function extractDocxCover(zip: JSZip): Promise<Blob | null> {
     )
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))[0];
   if (!mediaEntry) return null;
-  return compressCoverBlob(await mediaEntry.async('blob'));
+  const raw = await mediaEntry.async('blob');
+  return compressCoverBlob(new Blob([raw], { type: guessImageMimeType(mediaEntry.name) }));
 }
 
 export async function parseDocxZip(zip: JSZip, book: Book): Promise<ParsedBook> {
