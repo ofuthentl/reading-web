@@ -1,7 +1,7 @@
 import { useEffect, useMemo, type MutableRefObject } from 'react';
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { AppTheme } from '@/hooks/useTheme';
+import { mergeSimpleGeometries } from './geometryUtils';
 import { LIBRARY_3D_CONSTANTS, type LibraryLayout3D } from './layout3d';
 import {
   createShelfNameplateAtlas,
@@ -66,12 +66,7 @@ function createScaledBox(
 }
 
 function mergeAndDispose(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  if (parts.length === 0) return new THREE.BufferGeometry();
-  const merged = mergeGeometries(parts, false);
-  for (let i = 0; i < parts.length; i += 1) {
-    parts[i].dispose();
-  }
-  return merged ?? new THREE.BufferGeometry();
+  return mergeSimpleGeometries(parts);
 }
 
 function buildNameplateQuad(

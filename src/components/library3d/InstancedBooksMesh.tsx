@@ -8,9 +8,9 @@ import {
 } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Book } from '@/types';
 import type { AppTheme } from '@/hooks/useTheme';
+import { mergeSimpleGeometries } from './geometryUtils';
 import {
   DEFAULT_FEATURED_COVER_SLOTS,
   LIBRARY_3D_CONSTANTS,
@@ -58,9 +58,7 @@ function buildSpineTrimGeometry(): THREE.BufferGeometry {
     geom.translate(0, y, 0.5 - d * 0.35);
     return geom;
   });
-  const merged = mergeGeometries(parts, false);
-  parts.forEach((p) => p.dispose());
-  return merged ?? new THREE.BoxGeometry(1, 0.04, 0.03);
+  return mergeSimpleGeometries(parts);
 }
 
 /**

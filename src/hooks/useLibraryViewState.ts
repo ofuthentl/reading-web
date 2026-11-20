@@ -11,6 +11,22 @@ export function normalizeSearchText(input: string): string {
     .trim();
 }
 
+export function computeBookProgressPercent(book: Book, progress?: ReadingProgress): number | null {
+  if (!progress) return null;
+  if (progress.completed) return 100;
+  const clamped = Math.min(1, Math.max(0, progress.scrollRatio || 0));
+  if (progress.totalChapters && progress.totalChapters > 0) {
+    if (book.file_type === 'pdf') {
+      return Math.min(100, Math.round(((progress.chapterIndex + 1) / progress.totalChapters) * 100));
+    }
+    return Math.min(
+      100,
+      Math.round(((progress.chapterIndex + clamped) / progress.totalChapters) * 100),
+    );
+  }
+  return Math.round(clamped * 100);
+}
+
 export interface LibraryViewState {
   searchQuery: string;
   setSearchQuery: (value: string) => void;

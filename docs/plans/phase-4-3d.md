@@ -513,11 +513,11 @@ Bảng `reading_progress` trên Cloudflare D1 (`workers/r2-storage/schema.sql`) 
 
 | Chunk / Asset | Baseline `origin/main` (sau PR #4) | Sau PR 4A (`feat/library-3d`) | Sau PR 4B (`feat/book-spread-reader`) | Giới hạn mục tiêu |
 |---|---:|---:|---:|---|
-| `index-*.js` (entry chính) | **275.72 kB** (**81.04 kB** gzip) | _(điền sau 4A.4)_ | _(điền sau 4B.3)_ | **`<= 86.04 kB gzip`** |
-| `index-*.css` | 43.13 kB (8.60 kB gzip) | _(điền sau 4A.4)_ | _(điền sau 4B.3)_ | Ổn định |
-| Chunk 3D (`FantasyLibrary3D` + `three` + `fiber`) | **0 kB** | _(điền sau 4A.4)_ | _(điền sau 4B.3)_ | Lazy only; tổng **`<= 240 kB gzip`** |
+| `index-*.js` (entry chính) | **275.72 kB** (**81.04 kB** gzip) | **284.43 kB** (**83.74 kB** gzip) | _(điền sau 4B.3)_ | **`<= 86.04 kB gzip`** |
+| `index-*.css` | 43.13 kB (8.60 kB gzip) | 46.36 kB (9.03 kB gzip) | _(điền sau 4B.3)_ | Ổn định |
+| Chunk 3D (`FantasyLibrary3D` + `three` + `fiber`) | **0 kB** | **877.84 kB** (**239.94 kB** gzip) | _(điền sau 4B.3)_ | Lazy only; tổng **`<= 240 kB gzip`** |
 | Chunk `BookSpreadReader-*.js` | **0 kB** | **0 kB** | _(điền sau 4B.3)_ | Lazy only (0 byte trên mobile/2D) |
-| `pdf-*.js` (`pdfjs-dist` lazy) | 483.15 kB (144.26 kB gzip) | _(điền sau 4A.4)_ | _(điền sau 4B.3)_ | Không đổi |
+| `pdf-*.js` (`pdfjs-dist` lazy) | 483.15 kB (144.26 kB gzip) | 483.15 kB (144.26 kB gzip) | _(điền sau 4B.3)_ | Không đổi |
 
 ---
 
@@ -543,11 +543,11 @@ Bảng `reading_progress` trên Cloudflare D1 (`workers/r2-storage/schema.sql`) 
 > ```
 
 ### 7A. Kiểm định tự động & Quy tắc Build (chạy cho cả PR 4A và PR 4B)
-- [ ] `npm run typecheck` — 0 lỗi.
-- [ ] `npm run lint` — 0 lỗi, 0 cảnh báo (mọi file `.ts`/`.tsx` đều `<= 500` dòng hiệu dụng).
-- [ ] `npm run build` — 0 lỗi, 0 cảnh báo ngoài ngoại lệ duy nhất (chunk lazy `three`/`pdfjs` `> 500 kB` raw không tăng `chunkSizeWarningLimit`; **0 cảnh báo `sax`**).
-- [ ] Chunk entry `index-*.js` **`<= 86.04 kB gzip`** (không vượt baseline `81.04 kB gzip` quá `5 kB gzip`).
-- [ ] Tổng chunk 3D lazy **`<= 240 kB gzip`**; không sửa Worker / schema D1.
+- [x] `npm run typecheck` — 0 lỗi *(đã kiểm định PR 4A)*.
+- [x] `npm run lint` — 0 lỗi, 0 cảnh báo (mọi file `.ts`/`.tsx` đều `<= 500` dòng hiệu dụng) *(đã kiểm định PR 4A)*.
+- [x] `npm run build` — 0 lỗi, 0 cảnh báo ngoài ngoại lệ duy nhất (chunk lazy `three`/`pdfjs` `> 500 kB` raw không tăng `chunkSizeWarningLimit`; **0 cảnh báo `sax`**) *(đã kiểm định PR 4A)*.
+- [x] Chunk entry `index-*.js` **`<= 86.04 kB gzip`** (thực đo PR 4A: `83.74 kB gzip`, **0 byte** `three` trong entry).
+- [x] Tổng chunk 3D lazy **`<= 240 kB gzip`** (thực đo PR 4A: `239.94 kB gzip`, **0 CDN**); không sửa Worker / schema D1.
 
 ### 7B. Kiểm thử Ranh giới thiết bị D-008 & Chịu lỗi (PR 4A)
 - [ ] **PC Chrome & Edge (`>= 1024px`, chuột/touchpad):** vào được 3D, thấy công tắc 2D/3D, gạt sang 2D → F5 vẫn giữ 2D (`localStorage`), gạt lại 3D → vào lại mượt.
