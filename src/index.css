@@ -20,18 +20,18 @@
   }
 
   .dark {
-    /* Nocturnal Library — Chế độ Tối */
-    --color-canvas: 19 17 16; /* #131110 */
-    --color-surface: 28 25 23; /* #1c1917 */
-    --color-subtle: 38 34 30; /* #26221e */
-    --color-line: 54 45 34; /* #362d22 — viền ánh vàng đồng mảnh */
-    --color-line-strong: 86 70 49; /* #564631 */
-    --color-ink: 236 229 216; /* #ece5d8 */
-    --color-ink-muted: 156 145 132; /* #9c9184 */
-    --color-ink-faint: 112 102 91; /* #70665b */
-    --color-accent: 201 155 89; /* #c99b59 */
-    --color-accent-hover: 216 174 112; /* #d8ae70 */
-    --color-accent-fg: 22 18 15; /* #16120f */
+    /* Moonlit Obsidian — Chế độ Tối (Đêm trăng ma mị) */
+    --color-canvas: 11 12 18; /* #0b0c12 */
+    --color-surface: 19 21 31; /* #13151f */
+    --color-subtle: 28 31 45; /* #1c1f2d */
+    --color-line: 42 45 62; /* #2a2d3e */
+    --color-line-strong: 71 70 92; /* #47465c */
+    --color-ink: 237 232 222; /* #ede8de */
+    --color-ink-muted: 156 153 171; /* #9c99ab */
+    --color-ink-faint: 105 103 122; /* #69677a */
+    --color-accent: 216 185 126; /* #d8b97e — vàng ánh trăng */
+    --color-accent-hover: 232 204 148; /* #e8cc94 */
+    --color-accent-fg: 13 14 20; /* #0d0e14 */
     color-scheme: dark;
   }
 
@@ -44,7 +44,26 @@
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     background-color: rgb(var(--color-canvas));
     color: rgb(var(--color-ink));
-    transition: background-color 180ms ease, color 180ms ease;
+    transition: background-color 240ms ease, color 240ms ease;
+  }
+
+  .theme-canvas {
+    background-color: rgb(var(--color-canvas));
+  }
+
+  .dark .theme-canvas {
+    background-color: rgb(var(--color-canvas));
+    background-image:
+      radial-gradient(ellipse 68% 42% at 50% -12%, rgba(216, 185, 126, 0.11), transparent 68%),
+      radial-gradient(ellipse 48% 36% at 88% 10%, rgba(118, 138, 184, 0.08), transparent 64%),
+      radial-gradient(ellipse 46% 38% at 10% 94%, rgba(138, 108, 166, 0.075), transparent 66%);
+    background-attachment: fixed;
+  }
+
+  .dark .moonlit-card {
+    box-shadow:
+      inset 0 1px 0 rgba(237, 232, 222, 0.06),
+      0 14px 34px -18px rgba(0, 0, 0, 0.85);
   }
 }
 

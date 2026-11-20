@@ -111,7 +111,7 @@ export function BookCard({
       className={`relative aspect-[3/4] overflow-hidden rounded-lg border border-line bg-subtle shadow-sm transition-all duration-200 ${
         selected
           ? 'ring-2 ring-accent ring-offset-2 ring-offset-canvas'
-          : 'group-hover:-translate-y-0.5 group-hover:border-line-strong group-hover:shadow-md'
+          : 'group-hover:-translate-y-0.5 group-hover:border-line-strong group-hover:shadow-md dark:group-hover:border-accent/45 dark:group-hover:shadow-[0_14px_28px_-10px_rgba(0,0,0,0.85),0_0_22px_-6px_rgba(216,185,126,0.25)]'
       } ${compact ? 'w-[4.5rem] shrink-0' : 'w-full'}`}
     >
       {showImage ? (
@@ -222,8 +222,10 @@ export function BookCard({
             handleActivate();
           }
         }}
-        className={`group flex w-72 shrink-0 cursor-pointer items-center gap-3.5 rounded-xl border bg-surface p-3 text-left shadow-sm transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-80 ${
-          selected ? 'border-accent bg-subtle/60' : 'border-line hover:border-line-strong'
+        className={`moonlit-card group flex w-72 shrink-0 cursor-pointer items-center gap-3.5 rounded-xl border bg-surface p-3 text-left shadow-sm transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-80 ${
+          selected
+            ? 'border-accent bg-subtle/60'
+            : 'border-line hover:border-line-strong dark:hover:border-accent/35'
         }`}
       >
         {renderCover(true)}

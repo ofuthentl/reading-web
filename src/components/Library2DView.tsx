@@ -139,7 +139,7 @@ export function Library2DView({
   const isFiltering = Boolean(normalizedQuery || activeShelfKey);
 
   return (
-    <div className="min-h-screen bg-canvas text-ink transition-colors duration-200">
+    <div className="theme-canvas min-h-screen text-ink transition-colors duration-200">
       <LibraryHeader
         storage={storage}
         bookCount={books.length}
@@ -297,7 +297,7 @@ export function Library2DView({
           </section>
         ) : books.length === 0 ? (
           /* Trạng thái thư viện trống */
-          <section className="mx-auto flex max-w-md flex-col items-center rounded-2xl border border-line bg-surface px-6 py-14 text-center shadow-sm">
+          <section className="moonlit-card mx-auto flex max-w-md flex-col items-center rounded-2xl border border-line bg-surface px-6 py-14 text-center shadow-sm dark:border-accent/20">
             <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-line bg-subtle text-accent">
               <BookOpen className="h-7 w-7" />
             </div>
@@ -358,7 +358,7 @@ export function Library2DView({
 
             {/* Danh sách kệ sách */}
             {visibleShelves.length === 0 ? (
-              <section className="mx-auto flex max-w-md flex-col items-center rounded-2xl border border-line bg-surface px-6 py-12 text-center shadow-sm">
+              <section className="moonlit-card mx-auto flex max-w-md flex-col items-center rounded-2xl border border-line bg-surface px-6 py-12 text-center shadow-sm dark:border-accent/20">
                 <BookMarked className="mb-3 h-8 w-8 text-ink-faint" />
                 <h2 className="font-display text-base font-semibold text-ink">
                   Không tìm thấy cuốn sách nào

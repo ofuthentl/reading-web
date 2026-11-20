@@ -3,13 +3,12 @@ import {
   CheckSquare,
   HardDrive,
   LogOut,
-  Moon,
   RefreshCw,
-  Sun,
   Upload,
 } from 'lucide-react';
 import type { StorageStats } from '@/types';
 import { HARD_LIMIT_BYTES, formatBytes, isCloudMode } from '@/lib/api';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 interface LibraryHeaderProps {
   storage: StorageStats | null;
@@ -50,7 +49,7 @@ export function LibraryHeader({
         : 'bg-accent';
 
   return (
-    <header className="sticky top-0 z-30 border-b border-line bg-surface transition-colors duration-200">
+    <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur-sm transition-colors duration-200 dark:border-accent/15 dark:shadow-[0_1px_0_rgba(216,185,126,0.06)]">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
         {/* Thương hiệu */}
         <div className="flex min-w-0 items-center gap-2.5">
@@ -102,7 +101,7 @@ export function LibraryHeader({
           <button
             type="button"
             onClick={onUploadClick}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_18px_-4px_rgba(216,185,126,0.4)]"
           >
             <Upload className="h-4 w-4" />
             <span className="hidden sm:inline">Tải sách</span>
@@ -130,15 +129,7 @@ export function LibraryHeader({
             </span>
           </button>
 
-          <button
-            type="button"
-            onClick={onToggleTheme}
-            aria-label={isDark ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối'}
-            title={isDark ? 'Chế độ sáng (Giấy ấm)' : 'Chế độ tối (Thư viện đêm)'}
-            className="rounded-xl border border-line bg-canvas p-2 text-ink-muted transition-colors hover:border-line-strong hover:text-accent"
-          >
-            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </button>
+          <ThemeToggle isDark={isDark} onToggle={onToggleTheme} />
 
           <button
             type="button"

@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, BookOpen, Eye, EyeOff, Loader2, Moon, RefreshCw, Sun } from 'lucide-react';
+import { AlertTriangle, BookOpen, Eye, EyeOff, Loader2, RefreshCw } from 'lucide-react';
 import {
   checkHealth,
   getAuthToken,
@@ -7,6 +7,7 @@ import {
   isMissingProductionApi,
   loginWithPasscode,
 } from '@/lib/api';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 interface AuthGateProps {
   onAuthenticated: () => void;
@@ -81,8 +82,8 @@ export function AuthGate({ onAuthenticated, authReason, isDark, onToggleTheme }:
 
   if (isMissingProductionApi) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-canvas px-6 py-16 text-ink transition-colors duration-200">
-        <div className="w-full max-w-md rounded-2xl border border-amber-700/30 bg-surface p-6 shadow-sm dark:border-amber-400/25">
+      <div className="theme-canvas flex min-h-screen items-center justify-center px-6 py-16 text-ink transition-colors duration-200">
+        <div className="moonlit-card w-full max-w-md rounded-2xl border border-amber-700/30 bg-surface p-6 shadow-sm dark:border-amber-400/25">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-600/10 text-amber-700 dark:text-amber-400">
               <AlertTriangle className="h-5 w-5" />
@@ -112,21 +113,14 @@ export function AuthGate({ onAuthenticated, authReason, isDark, onToggleTheme }:
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-canvas px-6 py-16 text-ink transition-colors duration-200">
+    <div className="theme-canvas relative flex min-h-screen items-center justify-center px-6 py-16 text-ink transition-colors duration-200">
       {onToggleTheme && (
-        <button
-          type="button"
-          onClick={onToggleTheme}
-          aria-label={isDark ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối'}
-          title={isDark ? 'Chế độ sáng (Giấy ấm)' : 'Chế độ tối (Thư viện đêm)'}
-          className="fixed right-4 top-4 inline-flex items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-xs font-medium text-ink-muted shadow-sm transition-colors hover:border-line-strong hover:text-ink"
-        >
-          {isDark ? <Sun className="h-4 w-4 text-accent" /> : <Moon className="h-4 w-4 text-accent" />}
-          <span className="hidden sm:inline">{isDark ? 'Chế độ sáng' : 'Thư viện đêm'}</span>
-        </button>
+        <div className="fixed right-4 top-4">
+          <ThemeToggle isDark={Boolean(isDark)} onToggle={onToggleTheme} showLabel />
+        </div>
       )}
 
-      <div className="w-full max-w-sm rounded-2xl border border-line bg-surface p-7 shadow-sm">
+      <div className="moonlit-card w-full max-w-sm rounded-2xl border border-line bg-surface p-7 shadow-sm dark:border-accent/20">
         <div className="mb-6 flex items-center gap-2.5 border-b border-line pb-4">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
             <BookOpen className="h-5 w-5" />
@@ -208,7 +202,7 @@ export function AuthGate({ onAuthenticated, authReason, isDark, onToggleTheme }:
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-50"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover disabled:opacity-50 dark:shadow-[0_0_20px_-4px_rgba(216,185,126,0.42)]"
             >
               {submitting ? (
                 <>

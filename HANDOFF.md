@@ -1,12 +1,12 @@
 # HANDOFF
-Cập nhật: 2026-11-20 21:26 | Nhánh: feat/migrate-cloudflare | Build: 🟢 frontend · 🟢 Worker (ESLint chỉ còn ReaderView.tsx tách ở 3.4)
+Cập nhật: 2026-11-20 21:35 | Nhánh: feat/migrate-cloudflare | Build: 🟢 frontend · 🟢 Worker (ESLint chỉ còn ReaderView.tsx tách ở 3.4)
 Nhiệm vụ hiện tại: Phase 3 (giao diện 2D & deploy) — xong Sub-phase 3.0, 3.1 & 3.2 theo docs/plans/phase-3-2d.md
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/
 
 ## Đang làm dở
-- Thương hiệu chuẩn: **Ofu's Library**. Hệ màu Sáng/Tối đồng nhất toàn app (lưu `ofu-library-theme` trong `localStorage`, tokens trong `src/index.css` & `tailwind.config.js`):
-  - Sáng (Warm Parchment): nền `#f6f1e7`, thẻ `#fdfaf4`, viền `#e5dccb`, chữ `#2b241d`/`#6d6154`, nhấn nâu đồng `#8c5e35`.
-  - Tối (Nocturnal Library): nền `#131110`, thẻ `#1c1917`, viền ánh đồng mảnh `#362d22`, chữ `#ece5d8`/`#9c9184`, nhấn vàng đồng `#c99b59`.
+- Thương hiệu chuẩn: **Ofu's Library**. Hệ màu Mặt Trời / Mặt Trăng đồng nhất toàn app (`ofu-library-theme` trong `localStorage`, công tắc trượt `ThemeToggle`, tokens trong `src/index.css` & `tailwind.config.js`):
+  - Sáng (Mặt Trời — Warm Parchment): nền `#f6f1e7`, thẻ `#fdfaf4`, viền `#e5dccb`, chữ `#2b241d`/`#6d6154`, nhấn nâu đồng `#8c5e35`.
+  - Tối (Mặt Trăng — Moonlit Obsidian ma mị): nền đêm sâu `#0b0c12` phủ vầng ánh trăng khẽ (`.theme-canvas`), thẻ nhung `#13151f` (`.moonlit-card`), viền bạc đêm `#2a2d3e`, chữ trắng ánh trăng `#ede8de`/`#9c99ab`, nhấn vàng ánh trăng `#d8b97e`.
 - Worker live tại `https://arcane-library-api.novel-check-d467614e.workers.dev` (`.env.local` đã trỏ sẵn).
 
 ## Bước tiếp theo
