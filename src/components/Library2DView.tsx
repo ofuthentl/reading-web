@@ -14,6 +14,7 @@ import type { Book, ReadingProgress, StorageStats } from '@/types';
 import { groupBooksIntoShelves } from '@/lib/api';
 import { BookCard } from '@/components/BookCard';
 import { LibraryHeader } from '@/components/LibraryHeader';
+import type { AppTheme } from '@/hooks/useTheme';
 
 function normalizeSearchText(input: string): string {
   return input
@@ -29,8 +30,8 @@ interface Library2DViewProps {
   progress: Record<string, ReadingProgress>;
   storage: StorageStats | null;
   loading: boolean;
-  isDark: boolean;
-  onToggleTheme: () => void;
+  theme: AppTheme;
+  onCycleTheme: (origin?: { x: number; y: number }) => void;
   onRefresh: () => void;
   onLogout: () => void;
   onOpenBook: (book: Book) => void;
@@ -45,8 +46,8 @@ export function Library2DView({
   progress,
   storage,
   loading,
-  isDark,
-  onToggleTheme,
+  theme,
+  onCycleTheme,
   onRefresh,
   onLogout,
   onOpenBook,
@@ -55,6 +56,7 @@ export function Library2DView({
   onRenameShelf,
   onDeleteSelected,
 }: Library2DViewProps) {
+  const isDark = theme !== 'light';
   const [searchQuery, setSearchQuery] = useState('');
   const [activeShelfKey, setActiveShelfKey] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -144,10 +146,10 @@ export function Library2DView({
         storage={storage}
         bookCount={books.length}
         loading={loading}
-        isDark={isDark}
+        theme={theme}
         selectionMode={selectionMode}
         selectedCount={selectedIds.size}
-        onToggleTheme={onToggleTheme}
+        onCycleTheme={onCycleTheme}
         onUploadClick={onUploadClick}
         onToggleSelectionMode={handleToggleSelectionMode}
         onRefresh={onRefresh}
@@ -311,7 +313,7 @@ export function Library2DView({
             <button
               type="button"
               onClick={onUploadClick}
-              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_22px_-6px_rgba(206,72,93,0.52)]"
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
             >
               <Upload className="h-4 w-4" />
               Tải sách đầu tiên

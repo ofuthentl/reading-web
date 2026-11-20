@@ -1,53 +1,44 @@
-import { Moon, Sun } from 'lucide-react';
+import type { MouseEvent } from 'react';
+import { Moon, MoonStar, Sun } from 'lucide-react';
+import { type AppTheme, THEME_LABELS, getNextTheme } from '@/hooks/useTheme';
 
 interface ThemeToggleProps {
-  isDark: boolean;
-  onToggle: () => void;
+  theme: AppTheme;
+  onCycle: (origin?: { x: number; y: number }) => void;
   showLabel?: boolean;
 }
 
-export function ThemeToggle({ isDark, onToggle, showLabel = false }: ThemeToggleProps) {
+const ICON_BY_THEME: Record<AppTheme, typeof Sun> = {
+  light: Sun,
+  dim: Moon,
+  midnight: MoonStar,
+};
+
+export function ThemeToggle({ theme, onCycle, showLabel = false }: ThemeToggleProps) {
+  const Icon = ICON_BY_THEME[theme];
+  const currentLabel = THEME_LABELS[theme];
+  const nextLabel = THEME_LABELS[getNextTheme(theme)];
+
+  const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    onCycle({
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    });
+  };
+
   return (
     <button
       type="button"
-      role="switch"
-      aria-checked={isDark}
-      onClick={onToggle}
-      aria-label={isDark ? 'Chuyển sang chế độ Mặt Trời (Sáng)' : 'Chuyển sang chế độ Mặt Trăng (Tối)'}
-      title={isDark ? 'Chế độ Đêm Trăng — bấm để chuyển sang Ban Ngày' : 'Chế độ Ban Ngày — bấm để chuyển sang Đêm Trăng'}
-      className="group inline-flex items-center gap-2 rounded-full border border-line bg-canvas p-1 text-xs font-medium text-ink-muted transition-colors duration-200 hover:border-line-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      onClick={handleClick}
+      aria-label={`Giao diện ${currentLabel} — bấm để chuyển sang ${nextLabel}`}
+      title={`${currentLabel} · Bấm để chuyển sang ${nextLabel}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-full border border-line bg-canvas text-ink transition-colors duration-200 hover:border-line-strong hover:bg-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+        showLabel ? 'h-9 px-3 text-xs font-medium' : 'h-9 w-9'
+      }`}
     >
-      <span className="relative grid h-7 w-14 grid-cols-2 items-center rounded-full bg-subtle/80 p-0.5">
-        {/* Viên Mặt Trời / Mặt Trăng trượt mượt */}
-        <span
-          aria-hidden="true"
-          className={`pointer-events-none absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-accent transition-all duration-300 ease-out ${
-            isDark
-              ? 'translate-x-7 shadow-[0_0_14px_rgba(206,72,93,0.52)]'
-              : 'translate-x-0 shadow-sm'
-          }`}
-        />
-        <span
-          className={`relative z-10 flex items-center justify-center transition-colors duration-200 ${
-            !isDark ? 'text-accent-foreground' : 'text-ink-faint group-hover:text-ink-muted'
-          }`}
-        >
-          <Sun className="h-3.5 w-3.5" />
-        </span>
-        <span
-          className={`relative z-10 flex items-center justify-center transition-colors duration-200 ${
-            isDark ? 'text-accent-foreground' : 'text-ink-faint group-hover:text-ink-muted'
-          }`}
-        >
-          <Moon className="h-3.5 w-3.5" />
-        </span>
-      </span>
-
-      {showLabel && (
-        <span className="hidden pr-2 text-ink-muted transition-colors group-hover:text-ink sm:inline">
-          {isDark ? 'Đêm trăng' : 'Ban ngày'}
-        </span>
-      )}
+      <Icon key={theme} className="theme-icon-spin h-4 w-4 text-accent" />
+      {showLabel && <span className="text-ink-muted">{currentLabel}</span>}
     </button>
   );
 }

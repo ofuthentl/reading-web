@@ -8,7 +8,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useToast } from '@/hooks/useToast';
 
 export default function App() {
-  const { isDark, toggleTheme } = useTheme();
+  const { theme, cycleTheme } = useTheme();
   const { toasts, addToast, dismissToast } = useToast();
   const [authenticated, setAuthenticated] = useState(false);
   const [authReason, setAuthReason] = useState<string | null>(null);
@@ -92,8 +92,8 @@ export default function App() {
         <AuthGate
           onAuthenticated={handleAuthenticated}
           authReason={authReason}
-          isDark={isDark}
-          onToggleTheme={toggleTheme}
+          theme={theme}
+          onCycleTheme={cycleTheme}
         />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </>
@@ -107,8 +107,8 @@ export default function App() {
         progress={progress}
         storage={storage}
         loading={loading}
-        isDark={isDark}
-        onToggleTheme={toggleTheme}
+        theme={theme}
+        onCycleTheme={cycleTheme}
         onRefresh={() => void loadLibrary()}
         onLogout={handleLogout}
         onOpenBook={handleOpenBook}

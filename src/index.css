@@ -19,19 +19,36 @@
     color-scheme: light;
   }
 
+  /* Mode 2: Than chì (Tối dịu, trung tính, chữ trắng sắc nét) */
+  [data-theme='dim'],
   .dark {
-    /* Crimson Noir — Chế độ Tối (Đêm đen ít sắc xanh + Đỏ rượu trầm) */
-    --color-canvas: 15 16 19; /* #0f1013 */
-    --color-surface: 23 24 28; /* #17181c */
-    --color-subtle: 33 34 40; /* #212228 */
-    --color-line: 44 45 53; /* #2c2d35 */
-    --color-line-strong: 70 70 80; /* #464650 */
-    --color-ink: 236 236 239; /* #ececef */
-    --color-ink-muted: 156 156 166; /* #9c9ca6 */
-    --color-ink-faint: 107 107 117; /* #6b6b75 */
-    --color-accent: 206 72 93; /* #ce485d — đỏ rượu vang trầm */
-    --color-accent-hover: 223 90 111; /* #df5a6f */
-    --color-accent-fg: 255 246 247; /* #fff6f7 */
+    --color-canvas: 23 23 26; /* #17171a */
+    --color-surface: 33 33 37; /* #212125 */
+    --color-subtle: 43 43 48; /* #2b2b30 */
+    --color-line: 54 54 61; /* #36363d */
+    --color-line-strong: 82 82 91; /* #52525b */
+    --color-ink: 242 242 240; /* #f2f2f0 */
+    --color-ink-muted: 181 181 179; /* #b5b5b3 */
+    --color-ink-faint: 132 132 138; /* #84848a */
+    --color-accent: 242 242 240; /* #f2f2f0 */
+    --color-accent-hover: 222 222 220; /* #dededc */
+    --color-accent-fg: 23 23 26; /* #17171a */
+    color-scheme: dark;
+  }
+
+  /* Mode 3: Đêm khuya (Đen sâu nhất — Obsidian Pitch Dark) */
+  [data-theme='midnight'] {
+    --color-canvas: 8 8 10; /* #08080a */
+    --color-surface: 17 17 20; /* #111114 */
+    --color-subtle: 26 26 31; /* #1a1a1f */
+    --color-line: 36 36 43; /* #24242b */
+    --color-line-strong: 62 62 72; /* #3e3e48 */
+    --color-ink: 244 244 245; /* #f4f4f5 */
+    --color-ink-muted: 161 161 170; /* #a1a1aa */
+    --color-ink-faint: 110 110 119; /* #6e6e77 */
+    --color-accent: 244 244 245; /* #f4f4f5 */
+    --color-accent-hover: 220 220 224; /* #dcdce0 */
+    --color-accent-fg: 9 9 11; /* #09090b */
     color-scheme: dark;
   }
 
@@ -44,26 +61,75 @@
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     background-color: rgb(var(--color-canvas));
     color: rgb(var(--color-ink));
-    transition: background-color 240ms ease, color 240ms ease;
+    transition: background-color 220ms ease, color 220ms ease;
   }
 
   .theme-canvas {
     background-color: rgb(var(--color-canvas));
   }
 
-  .dark .theme-canvas {
+  [data-theme='dim'] .theme-canvas {
+    background-color: rgb(var(--color-canvas));
+    background-image: radial-gradient(
+      ellipse 64% 38% at 50% -10%,
+      rgba(242, 242, 240, 0.045),
+      transparent 68%
+    );
+    background-attachment: fixed;
+  }
+
+  [data-theme='midnight'] .theme-canvas {
     background-color: rgb(var(--color-canvas));
     background-image:
-      radial-gradient(ellipse 66% 40% at 50% -12%, rgba(206, 72, 93, 0.11), transparent 68%),
-      radial-gradient(ellipse 44% 34% at 86% 12%, rgba(236, 236, 239, 0.03), transparent 64%),
-      radial-gradient(ellipse 46% 36% at 12% 94%, rgba(164, 54, 74, 0.065), transparent 66%);
+      radial-gradient(ellipse 62% 36% at 50% -12%, rgba(244, 244, 245, 0.05), transparent 68%),
+      radial-gradient(ellipse 42% 32% at 88% 12%, rgba(200, 200, 210, 0.025), transparent 64%);
     background-attachment: fixed;
   }
 
   .dark .moonlit-card {
     box-shadow:
-      inset 0 1px 0 rgba(236, 236, 239, 0.055),
-      0 18px 40px -20px rgba(0, 0, 0, 0.92);
+      inset 0 1px 0 rgba(244, 244, 245, 0.06),
+      0 16px 38px -18px rgba(0, 0, 0, 0.85);
+  }
+
+  [data-theme='midnight'] .moonlit-card {
+    box-shadow:
+      inset 0 1px 0 rgba(244, 244, 245, 0.05),
+      0 20px 44px -20px rgba(0, 0, 0, 0.96);
+  }
+
+  @keyframes themeIconSpin {
+    from {
+      opacity: 0.4;
+      transform: rotate(-90deg) scale(0.65);
+    }
+    to {
+      opacity: 1;
+      transform: rotate(0deg) scale(1);
+    }
+  }
+
+  .theme-icon-spin {
+    animation: themeIconSpin 360ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  :root[data-theme-switch]::view-transition-old(root),
+  :root[data-theme-switch]::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+  }
+
+  :root[data-theme-switch]::view-transition-new(root) {
+    animation: themeReveal 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @keyframes themeReveal {
+    from {
+      clip-path: circle(0px at var(--theme-reveal-x, 90%) var(--theme-reveal-y, 32px));
+    }
+    to {
+      clip-path: circle(var(--theme-reveal-r, 150vmax) at var(--theme-reveal-x, 90%) var(--theme-reveal-y, 32px));
+    }
   }
 }
 

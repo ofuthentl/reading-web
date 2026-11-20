@@ -9,15 +9,16 @@ import {
 import type { StorageStats } from '@/types';
 import { HARD_LIMIT_BYTES, formatBytes, isCloudMode } from '@/lib/api';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import type { AppTheme } from '@/hooks/useTheme';
 
 interface LibraryHeaderProps {
   storage: StorageStats | null;
   bookCount: number;
   loading: boolean;
-  isDark: boolean;
+  theme: AppTheme;
   selectionMode: boolean;
   selectedCount: number;
-  onToggleTheme: () => void;
+  onCycleTheme: (origin?: { x: number; y: number }) => void;
   onUploadClick: () => void;
   onToggleSelectionMode: () => void;
   onRefresh: () => void;
@@ -28,10 +29,10 @@ export function LibraryHeader({
   storage,
   bookCount,
   loading,
-  isDark,
+  theme,
   selectionMode,
   selectedCount,
-  onToggleTheme,
+  onCycleTheme,
   onUploadClick,
   onToggleSelectionMode,
   onRefresh,
@@ -101,7 +102,7 @@ export function LibraryHeader({
           <button
             type="button"
             onClick={onUploadClick}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_22px_-6px_rgba(206,72,93,0.52)]"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
           >
             <Upload className="h-4 w-4" />
             <span className="hidden sm:inline">Tải sách</span>
@@ -129,7 +130,7 @@ export function LibraryHeader({
             </span>
           </button>
 
-          <ThemeToggle isDark={isDark} onToggle={onToggleTheme} />
+          <ThemeToggle theme={theme} onCycle={onCycleTheme} />
 
           <button
             type="button"

@@ -8,17 +8,18 @@ import {
   loginWithPasscode,
 } from '@/lib/api';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import type { AppTheme } from '@/hooks/useTheme';
 
 interface AuthGateProps {
   onAuthenticated: () => void;
   authReason?: string | null;
-  isDark?: boolean;
-  onToggleTheme?: () => void;
+  theme?: AppTheme;
+  onCycleTheme?: (origin?: { x: number; y: number }) => void;
 }
 
 type GateStatus = 'checking' | 'login' | 'error';
 
-export function AuthGate({ onAuthenticated, authReason, isDark, onToggleTheme }: AuthGateProps) {
+export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: AuthGateProps) {
   const [status, setStatus] = useState<GateStatus>('checking');
   const [passcode, setPasscode] = useState('');
   const [showPasscode, setShowPasscode] = useState(false);
@@ -114,9 +115,9 @@ export function AuthGate({ onAuthenticated, authReason, isDark, onToggleTheme }:
 
   return (
     <div className="theme-canvas relative flex min-h-screen items-center justify-center px-6 py-16 text-ink transition-colors duration-200">
-      {onToggleTheme && (
+      {theme && onCycleTheme && (
         <div className="fixed right-4 top-4">
-          <ThemeToggle isDark={Boolean(isDark)} onToggle={onToggleTheme} showLabel />
+          <ThemeToggle theme={theme} onCycle={onCycleTheme} showLabel />
         </div>
       )}
 
@@ -202,7 +203,7 @@ export function AuthGate({ onAuthenticated, authReason, isDark, onToggleTheme }:
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover disabled:opacity-50 dark:shadow-[0_0_22px_-6px_rgba(206,72,93,0.52)]"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover disabled:opacity-50 dark:shadow-[0_0_22px_-6px_rgba(244,244,245,0.28)]"
             >
               {submitting ? (
                 <>

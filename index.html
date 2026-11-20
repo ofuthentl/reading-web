@@ -10,17 +10,23 @@
     <script>
       (function () {
         try {
-          var saved = localStorage.getItem('ofu-library-theme');
-          var isDark =
-            saved === 'dark' ||
-            (saved !== 'light' &&
-              window.matchMedia &&
-              window.matchMedia('(prefers-color-scheme: dark)').matches);
-          if (isDark) {
-            document.documentElement.classList.add('dark');
-            var meta = document.querySelector('meta[name="theme-color"]');
-            if (meta) meta.setAttribute('content', '#0f1013');
+          var raw = localStorage.getItem('ofu-library-theme');
+          var theme =
+            raw === 'light' || raw === 'dim' || raw === 'midnight'
+              ? raw
+              : raw === 'dark'
+                ? 'dim'
+                : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+                  ? 'dim'
+                  : 'light';
+          var root = document.documentElement;
+          root.dataset.theme = theme;
+          if (theme !== 'light') {
+            root.classList.add('dark');
           }
+          var colors = { light: '#f6f1e7', dim: '#17171a', midnight: '#08080a' };
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', colors[theme] || '#f6f1e7');
         } catch (_) {}
       })();
     </script>
