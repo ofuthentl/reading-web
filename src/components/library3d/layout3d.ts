@@ -123,10 +123,10 @@ export const LIBRARY_3D_CONSTANTS = {
   CROWN_HEIGHT: 0.48,
   /** Total bookcase height: plinth + 5*(plank + clear) + top plank + crown */
   SHELF_TOTAL_HEIGHT: 0.28 + 5 * (0.50 + 0.048) + 0.048 + 0.48,
-  /** Comfortable camera eye level looking at middle tiers */
-  EYE_LEVEL_Y: 1.88,
+  /** Comfortable camera eye level framing tall bookcases + 2nd-story mezzanine gallery */
+  EYE_LEVEL_Y: 2.22,
   /** Default camera Z distance in front of bookcases */
-  CAMERA_Z: 4.55,
+  CAMERA_Z: 5.55,
   /** Second-story mezzanine balcony height for Grand Hall architecture */
   MEZZANINE_Y: 4.15,
   /** Grand Hall ceiling height */
@@ -472,7 +472,7 @@ export function buildLibraryLayout3D(shelfGroups: readonly ShelfGroup[]): Librar
       backZ: SHELF_BACK_Z,
       frontZ,
       tierYs,
-      nameplateCenter: [centerX, SHELF_TOTAL_HEIGHT - CROWN_HEIGHT * 0.54, frontZ + 0.028],
+      nameplateCenter: [centerX, SHELF_TOTAL_HEIGHT - CROWN_HEIGHT + 0.17, frontZ + 0.032],
       bookIndices: shelfBookIndices,
       books: shelfBooks,
     };

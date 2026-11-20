@@ -240,6 +240,7 @@ export default function App() {
           {...sharedLibraryProps}
           retryKey={retryKey}
           prefersReducedMotion={prefersReducedMotion}
+          paused={Boolean(reader.openingBook)}
           onFallbackTo2D={handleFallbackTo2D}
         />
       ) : (
