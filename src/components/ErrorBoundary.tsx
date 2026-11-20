@@ -41,19 +41,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     }
 
     return (
-      <div className="min-h-screen flex items-center justify-center bg-stone-50 text-stone-800 px-4">
-        <div className="w-full max-w-md rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
+      <div className="flex min-h-screen items-center justify-center bg-canvas px-4 text-ink transition-colors duration-200">
+        <div className="w-full max-w-md rounded-2xl border border-line bg-surface p-6 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-50 text-red-600">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-red-700/20 bg-red-500/10 text-red-700 dark:border-red-400/25 dark:text-red-300">
               <AlertTriangle className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-base font-semibold text-stone-900">Giao diện gặp sự cố</h1>
-              <p className="text-xs text-stone-500">Dữ liệu thư viện của bạn vẫn an toàn.</p>
+              <h1 className="font-display text-base font-semibold text-ink">Giao diện gặp sự cố</h1>
+              <p className="text-xs text-ink-muted">Dữ liệu thư viện của bạn vẫn an toàn.</p>
             </div>
           </div>
 
-          <p className="mt-4 rounded-lg border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-sm text-red-700 break-words">
+          <p className="mt-4 break-words rounded-xl border border-line bg-subtle px-3.5 py-2.5 text-sm text-red-800 dark:text-red-300">
             {this.state.errorMessage}
           </p>
 
@@ -61,7 +61,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             <button
               type="button"
               onClick={this.handleReload}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-stone-800 transition-colors"
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
             >
               <RotateCcw className="h-4 w-4" />
               Tải lại trang
@@ -69,7 +69,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             <button
               type="button"
               onClick={this.handleReset}
-              className="rounded-lg border border-stone-300 px-4 py-2.5 text-sm font-medium text-stone-700 hover:bg-stone-100 transition-colors"
+              className="rounded-xl border border-line-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-subtle"
             >
               Thử khôi phục
             </button>

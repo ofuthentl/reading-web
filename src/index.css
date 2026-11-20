@@ -3,14 +3,48 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* Warm Parchment — Chế độ Sáng */
+    --color-canvas: 246 241 231; /* #f6f1e7 */
+    --color-surface: 253 250 244; /* #fdfaf4 */
+    --color-subtle: 239 232 218; /* #efe8da */
+    --color-line: 229 220 203; /* #e5dccb */
+    --color-line-strong: 203 188 163; /* #cbbca3 */
+    --color-ink: 43 36 29; /* #2b241d */
+    --color-ink-muted: 109 97 84; /* #6d6154 */
+    --color-ink-faint: 149 135 119; /* #958777 */
+    --color-accent: 140 94 53; /* #8c5e35 */
+    --color-accent-hover: 115 75 40; /* #734b28 */
+    --color-accent-fg: 253 250 244; /* #fdfaf4 */
+    color-scheme: light;
+  }
+
+  .dark {
+    /* Nocturnal Library — Chế độ Tối */
+    --color-canvas: 19 17 16; /* #131110 */
+    --color-surface: 28 25 23; /* #1c1917 */
+    --color-subtle: 38 34 30; /* #26221e */
+    --color-line: 54 45 34; /* #362d22 — viền ánh vàng đồng mảnh */
+    --color-line-strong: 86 70 49; /* #564631 */
+    --color-ink: 236 229 216; /* #ece5d8 */
+    --color-ink-muted: 156 145 132; /* #9c9184 */
+    --color-ink-faint: 112 102 91; /* #70665b */
+    --color-accent: 201 155 89; /* #c99b59 */
+    --color-accent-hover: 216 174 112; /* #d8ae70 */
+    --color-accent-fg: 22 18 15; /* #16120f */
+    color-scheme: dark;
+  }
+
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   body {
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    background: #f8f9fa;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background-color: rgb(var(--color-canvas));
+    color: rgb(var(--color-ink));
+    transition: background-color 180ms ease, color 180ms ease;
   }
 }
 

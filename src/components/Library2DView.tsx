@@ -1,0 +1,430 @@
+import { useEffect, useMemo, useState } from 'react';
+import {
+  BookMarked,
+  BookOpen,
+  Clock,
+  FolderEdit,
+  Library,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
+import type { Book, ReadingProgress, StorageStats } from '@/types';
+import { groupBooksIntoShelves } from '@/lib/api';
+import { BookCard } from '@/components/BookCard';
+import { LibraryHeader } from '@/components/LibraryHeader';
+
+function normalizeSearchText(input: string): string {
+  return input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd')
+    .toLocaleLowerCase('vi')
+    .trim();
+}
+
+interface Library2DViewProps {
+  books: Book[];
+  progress: Record<string, ReadingProgress>;
+  storage: StorageStats | null;
+  loading: boolean;
+  isDark: boolean;
+  onToggleTheme: () => void;
+  onRefresh: () => void;
+  onLogout: () => void;
+  onOpenBook: (book: Book) => void;
+  onUploadClick: () => void;
+  onEditBook?: (book: Book) => void;
+  onRenameShelf?: (shelfName: string) => void;
+  onDeleteSelected?: (selectedBooks: Book[]) => void;
+}
+
+export function Library2DView({
+  books,
+  progress,
+  storage,
+  loading,
+  isDark,
+  onToggleTheme,
+  onRefresh,
+  onLogout,
+  onOpenBook,
+  onUploadClick,
+  onEditBook,
+  onRenameShelf,
+  onDeleteSelected,
+}: Library2DViewProps) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeShelfKey, setActiveShelfKey] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    const validIds = new Set(books.map((book) => book.id));
+    setSelectedIds((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (validIds.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [books]);
+
+  const allShelves = useMemo(() => groupBooksIntoShelves(books), [books]);
+
+  useEffect(() => {
+    if (activeShelfKey && !allShelves.some((shelf) => shelf.key === activeShelfKey)) {
+      setActiveShelfKey(null);
+    }
+  }, [activeShelfKey, allShelves]);
+
+  const continueReadingBooks = useMemo(() => {
+    return books
+      .filter((book) => Boolean(progress[book.id]))
+      .sort((a, b) => (progress[b.id]?.updatedAt ?? 0) - (progress[a.id]?.updatedAt ?? 0))
+      .slice(0, 8);
+  }, [books, progress]);
+
+  const normalizedQuery = useMemo(() => normalizeSearchText(searchQuery), [searchQuery]);
+
+  const filteredBooks = useMemo(() => {
+    return books.filter((book) => {
+      if (activeShelfKey) {
+        const shelfKey = (book.shelf || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi');
+        if (shelfKey !== activeShelfKey) return false;
+      }
+      if (!normalizedQuery) return true;
+      const haystack = normalizeSearchText(`${book.title} ${book.author} ${book.shelf}`);
+      return haystack.includes(normalizedQuery);
+    });
+  }, [books, activeShelfKey, normalizedQuery]);
+
+  const visibleShelves = useMemo(() => groupBooksIntoShelves(filteredBooks), [filteredBooks]);
+
+  const handleToggleSelectionMode = () => {
+    setSelectionMode((prev) => {
+      if (prev) setSelectedIds(new Set());
+      return !prev;
+    });
+  };
+
+  const handleToggleSelect = (bookId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(bookId)) next.delete(bookId);
+      else next.add(bookId);
+      return next;
+    });
+  };
+
+  const handleSelectAllVisible = () => {
+    setSelectedIds(new Set(filteredBooks.map((book) => book.id)));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedIds(new Set());
+  };
+
+  const selectedBooks = useMemo(
+    () => books.filter((book) => selectedIds.has(book.id)),
+    [books, selectedIds],
+  );
+
+  const isFiltering = Boolean(normalizedQuery || activeShelfKey);
+
+  return (
+    <div className="min-h-screen bg-canvas text-ink transition-colors duration-200">
+      <LibraryHeader
+        storage={storage}
+        bookCount={books.length}
+        loading={loading}
+        isDark={isDark}
+        selectionMode={selectionMode}
+        selectedCount={selectedIds.size}
+        onToggleTheme={onToggleTheme}
+        onUploadClick={onUploadClick}
+        onToggleSelectionMode={handleToggleSelectionMode}
+        onRefresh={onRefresh}
+        onLogout={onLogout}
+      />
+
+      <main className="mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6 sm:py-8">
+        {/* Thanh tìm kiếm & lọc kệ */}
+        {books.length > 0 && (
+          <section aria-label="Tìm kiếm và lọc thư viện" className="space-y-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="relative flex-1 sm:max-w-md">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
+                <input
+                  type="text"
+                  inputMode="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Tìm theo tên sách, tác giả hoặc tên kệ..."
+                  aria-label="Tìm theo tên sách, tác giả hoặc tên kệ"
+                  className="w-full rounded-xl border border-line bg-surface py-2.5 pl-10 pr-9 text-sm text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-accent"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    aria-label="Xoá từ khoá tìm kiếm"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-ink-faint transition-colors hover:bg-subtle hover:text-ink"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {isFiltering && (
+                <div className="flex items-center gap-2 text-xs text-ink-muted">
+                  <span>
+                    Hiển thị <strong className="text-ink">{filteredBooks.length}</strong> /{' '}
+                    {books.length} cuốn
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setActiveShelfKey(null);
+                    }}
+                    className="rounded-lg border border-line bg-surface px-2.5 py-1 font-medium text-accent transition-colors hover:border-line-strong hover:bg-subtle"
+                  >
+                    Xoá lọc
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {allShelves.length > 1 && (
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hover">
+                <button
+                  type="button"
+                  onClick={() => setActiveShelfKey(null)}
+                  className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                    activeShelfKey === null
+                      ? 'border-accent bg-accent text-accent-foreground'
+                      : 'border-line bg-surface text-ink-muted hover:border-line-strong hover:text-ink'
+                  }`}
+                >
+                  Tất cả kệ ({books.length})
+                </button>
+                {allShelves.map((shelf) => {
+                  const active = activeShelfKey === shelf.key;
+                  return (
+                    <button
+                      key={shelf.key}
+                      type="button"
+                      onClick={() => setActiveShelfKey(active ? null : shelf.key)}
+                      className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                        active
+                          ? 'border-accent bg-accent text-accent-foreground'
+                          : 'border-line bg-surface text-ink-muted hover:border-line-strong hover:text-ink'
+                      }`}
+                    >
+                      {shelf.name} ({shelf.books.length})
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Thanh thao tác khi bật chế độ chọn nhiều */}
+        {selectionMode && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/40 bg-surface px-4 py-3 shadow-sm">
+            <p className="text-sm text-ink">
+              Đã chọn <strong className="text-accent">{selectedIds.size}</strong> /{' '}
+              {filteredBooks.length} cuốn sách
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={
+                  selectedIds.size === filteredBooks.length && filteredBooks.length > 0
+                    ? handleClearSelection
+                    : handleSelectAllVisible
+                }
+                disabled={filteredBooks.length === 0}
+                className="rounded-lg border border-line bg-canvas px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-line-strong disabled:opacity-50"
+              >
+                {selectedIds.size === filteredBooks.length && filteredBooks.length > 0
+                  ? 'Bỏ chọn tất cả'
+                  : 'Chọn tất cả'}
+              </button>
+              {onDeleteSelected && (
+                <button
+                  type="button"
+                  disabled={selectedBooks.length === 0}
+                  onClick={() => onDeleteSelected(selectedBooks)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-700/30 bg-red-600/10 px-3 py-1.5 text-xs font-medium text-red-800 transition-colors hover:bg-red-600/20 disabled:opacity-45 dark:border-red-400/30 dark:text-red-300"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Xoá đã chọn ({selectedBooks.length})
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleToggleSelectionMode}
+                className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
+              >
+                Xong
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Trạng thái đang tải lần đầu */}
+        {loading && books.length === 0 ? (
+          <section aria-label="Đang tải thư viện" className="space-y-4">
+            <div className="h-5 w-44 animate-pulse rounded bg-subtle" />
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div key={index} className="space-y-2.5">
+                  <div className="aspect-[3/4] w-full animate-pulse rounded-lg border border-line bg-subtle" />
+                  <div className="h-3.5 w-4/5 animate-pulse rounded bg-subtle" />
+                  <div className="h-3 w-1/2 animate-pulse rounded bg-subtle" />
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : books.length === 0 ? (
+          /* Trạng thái thư viện trống */
+          <section className="mx-auto flex max-w-md flex-col items-center rounded-2xl border border-line bg-surface px-6 py-14 text-center shadow-sm">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-line bg-subtle text-accent">
+              <BookOpen className="h-7 w-7" />
+            </div>
+            <h2 className="font-display text-xl font-semibold text-ink">
+              Kệ sách của bạn còn trống
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+              Tải lên những cuốn EPUB, MOBI, PDF hoặc CBZ yêu thích để bắt đầu xây dựng thư viện
+              đồng bộ của riêng bạn.
+            </p>
+            <button
+              type="button"
+              onClick={onUploadClick}
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
+            >
+              <Upload className="h-4 w-4" />
+              Tải sách đầu tiên
+            </button>
+          </section>
+        ) : (
+          <>
+            {/* Khối Tiếp tục đọc */}
+            {!isFiltering && continueReadingBooks.length > 0 && (
+              <section aria-labelledby="continue-reading-heading" className="space-y-3.5">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-accent" />
+                  <h2
+                    id="continue-reading-heading"
+                    className="font-display text-lg font-semibold text-ink"
+                  >
+                    Tiếp tục đọc
+                  </h2>
+                  <span className="rounded-full border border-line bg-surface px-2 py-0.5 text-xs text-ink-muted">
+                    {continueReadingBooks.length}
+                  </span>
+                </div>
+
+                <div
+                  className={`flex gap-3.5 overflow-x-auto pb-2 scrollbar-hover ${
+                    isDark ? 'scrollbar-hover-dark' : ''
+                  }`}
+                >
+                  {continueReadingBooks.map((book) => (
+                    <BookCard
+                      key={`continue-${book.id}`}
+                      book={book}
+                      progress={progress[book.id]}
+                      selectionMode={selectionMode}
+                      selected={selectedIds.has(book.id)}
+                      layout="horizontal"
+                      onOpen={onOpenBook}
+                      onToggleSelect={handleToggleSelect}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Danh sách kệ sách */}
+            {visibleShelves.length === 0 ? (
+              <section className="mx-auto flex max-w-md flex-col items-center rounded-2xl border border-line bg-surface px-6 py-12 text-center shadow-sm">
+                <BookMarked className="mb-3 h-8 w-8 text-ink-faint" />
+                <h2 className="font-display text-base font-semibold text-ink">
+                  Không tìm thấy cuốn sách nào
+                </h2>
+                <p className="mt-1 text-sm text-ink-muted">
+                  Thử đổi từ khoá tìm kiếm hoặc xoá bộ lọc kệ hiện tại.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setActiveShelfKey(null);
+                  }}
+                  className="mt-4 rounded-xl border border-line-strong bg-canvas px-4 py-2 text-xs font-medium text-ink transition-colors hover:bg-subtle"
+                >
+                  Hiển thị toàn bộ thư viện
+                </button>
+              </section>
+            ) : (
+              <div className="space-y-9">
+                {visibleShelves.map((shelf) => (
+                  <section key={shelf.key} aria-label={`Kệ ${shelf.name}`} className="space-y-4">
+                    <div className="flex items-center justify-between gap-3 border-b border-line pb-2.5">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <Library className="h-4 w-4 shrink-0 text-accent" />
+                        <h2 className="truncate font-display text-lg font-semibold text-ink">
+                          {shelf.name}
+                        </h2>
+                        <span className="shrink-0 rounded-full border border-line bg-surface px-2 py-0.5 text-xs text-ink-muted">
+                          {shelf.books.length} cuốn
+                        </span>
+                      </div>
+
+                      {onRenameShelf && (
+                        <button
+                          type="button"
+                          onClick={() => onRenameShelf(shelf.name)}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-transparent px-2.5 py-1 text-xs font-medium text-ink-muted transition-colors hover:border-line hover:bg-surface hover:text-ink"
+                        >
+                          <FolderEdit className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">Đổi tên kệ</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                      {shelf.books.map((book) => (
+                        <BookCard
+                          key={book.id}
+                          book={book}
+                          progress={progress[book.id]}
+                          selectionMode={selectionMode}
+                          selected={selectedIds.has(book.id)}
+                          onOpen={onOpenBook}
+                          onToggleSelect={handleToggleSelect}
+                          onEdit={onEditBook}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
