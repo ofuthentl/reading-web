@@ -153,10 +153,10 @@ flowchart LR
 
 ## 7. Trạng thái hiện tại
 
-- **Phase 3 (2D + Cloudflare Worker/D1/R2)** đã merge vào `main` qua PR #1; Worker live tại `https://arcane-library-api.novel-check-d467614e.workers.dev`.
-- **Nhánh `refactor/code-splitting` đã hoàn tất Phase 1 → 4**:
+- **Phase 3 (2D + Cloudflare Worker/D1/R2)** đã merge vào `main` qua PR #1, đang chạy ổn định trên `https://ofu.lol` (PC & mobile); Worker live tại `https://arcane-library-api.novel-check-d467614e.workers.dev`; đã dọn sạch Supabase theo D-001.
+- **Nhánh `refactor/code-splitting` đã hoàn tất Phase 1 → 4 & kiểm thử thủ công**:
   - Ghi quyết định **D-008** (điều kiện bật Thư viện 3D Desktop-only & chặn mobile tải Three.js) trong `docs/DECISIONS.md`.
   - Tách `src/lib/parsers.ts` đúng trách nhiệm (`bookMetadata.ts`, `coverImage.ts`, `pdfjsLoader.ts`, `sanitizeHtml.ts` dùng `dompurify` v3, `chunkReload.ts`), chuyển `parsers.ts`, `jszip`, `@lingo-reader/mobi-parser`, `pdfjs-dist` và `PdfReader.tsx` sang nạp lười (`import()` / `React.lazy`).
   - Mở rộng `ErrorBoundary.tsx` (prop `fallback` & `recoverFromChunkError` không reload khi offline), tách `PdfReaderFallback.tsx` bọc quanh `LazyPdfReader`, và preload ngầm `parsers` + `jszip` khi trình duyệt rảnh sau khi vào thư viện 2D.
   - Entry bundle `dist/assets/index-*.js` giảm từ **918.12 kB** (gzip **277.95 kB**) xuống **259.77 kB** (gzip **76.92 kB**).
-- **Kiểm định tự động XANH 100%**: `npm run typecheck`, `npm run lint` và `cd workers/r2-storage && npx tsc --noEmit` đều **0 lỗi, 0 cảnh báo**; `npm run build` **0 lỗi, 0 cảnh báo chunk > 500 kB** (còn 1 cảnh báo externalize `stream` đã biết từ `sax` qua chuỗi phụ thuộc `@lingo-reader/mobi-parser` → `@lingo-reader/shared` → `sax`). Chờ hoàn tất kiểm thử thủ công Checklist Mục 5C trước khi mở PR vào `main`.
+- **Kiểm định tự động & thủ công XANH 100%**: `npm run typecheck`, `npm run lint` và `cd workers/r2-storage && npx tsc --noEmit` đều **0 lỗi, 0 cảnh báo**; `npm run build` **0 lỗi, 0 cảnh báo chunk > 500 kB** (còn 1 cảnh báo externalize `stream` đã biết từ `sax` qua chuỗi phụ thuộc `@lingo-reader/mobi-parser` → `@lingo-reader/shared` → `sax`); đã hoàn tất toàn bộ Checklist Mục 5C, sẵn sàng mở PR merge vào `main`.

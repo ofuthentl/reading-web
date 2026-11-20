@@ -1,6 +1,6 @@
 # Kế hoạch Refactor — Code-Splitting, Tách `parsers.ts`, Bảo mật HTML & D-008
 
-> **Trạng thái:** Đã hoàn tất triển khai Phase 1 → 4 — chờ kiểm thử thủ công Mục 5C và xác nhận mở PR vào `main`.
+> **Trạng thái:** Đã hoàn tất triển khai Phase 1 → 4 & vượt qua toàn bộ Checklist kiểm thử Mục 5 — sẵn sàng mở PR merge vào `main`.
 > **Nhánh triển khai:** `refactor/code-splitting` (tách mới từ `origin/main` sau khi Phase 3 đã merge qua PR #1; đã bỏ upstream tracking `origin/main`).
 > **Ràng buộc liên quan:** `AGENTS.md` (mọi file ≤ 500 dòng hiệu dụng, không sửa trực tiếp trên `main`, tra "Công cụ đã có" trước khi tạo helper mới, cập nhật `ARCHITECTURE.md` ở mọi commit đổi cấu trúc và `HANDOFF.md` ở mọi commit), `docs/DECISIONS.md` (`D-001` → `D-008`).
 
@@ -203,25 +203,25 @@ Chạy bản build production cục bộ bằng lệnh chuẩn:
 npm run build && npm run preview -- --port 5173 --strictPort
 ```
 
-- [ ] **Preview ở cổng 5173 đăng nhập Worker live OK:** Mở `http://localhost:5173`, đăng nhập passcode thành công vào Worker thật (khớp `APP_ORIGINS` giữ nguyên theo QĐ-2).
-- [ ] **Tab Network ở trang đăng nhập `AuthGate` & Thư viện 2D:** Mở DevTools Network (lọc JS):
+- [x] **Preview ở cổng 5173 đăng nhập Worker live OK:** Mở `http://localhost:5173`, đăng nhập passcode thành công vào Worker thật (khớp `APP_ORIGINS` giữ nguyên theo QĐ-2).
+- [x] **Tab Network ở trang đăng nhập `AuthGate` & Thư viện 2D:** Mở DevTools Network (lọc JS):
   - Ở màn hình `AuthGate`: chỉ tải `index-*.js`; **không** tải `parsers`, `dompurify`, `jszip`, `mobi-parser`, `pdfjs-dist`, `PdfReader`, `pdf.worker`.
   - Sau khi đăng nhập vào Thư viện 2D: khi trình duyệt rảnh (`requestIdleCallback` / `1500ms`), tải nền `parsers-*.js` + `jszip.min-*.js` để sẵn sàng đọc EPUB/CBZ offline; vẫn **không** tải `index.browser-*.js` (MOBI), `PdfReader-*.js`, `pdf-*.js`, hay `pdf.worker.min-*.mjs`.
-- [ ] **Kiểm thử đọc Offline (không reload mất tab):**
+- [x] **Kiểm thử đọc Offline (không reload mất tab):**
   - Sau khi vào Thư viện 2D (chunk `parsers` + `jszip` đã preload và đã có ít nhất 1 cuốn EPUB trong cache IndexedDB), bật DevTools Network → **Offline**.
   - Bấm mở cuốn EPUB đã cache → mở đọc tức thì (`Cache 0ms`), **không** tự reload làm mất trang.
   - Đóng sách, vẫn để **Offline**, bấm mở 1 cuốn PDF hoặc MOBI (chưa tải chunk `pdf-*.js` / `index.browser-*.js`) → hiện thông báo lỗi rõ ràng (`"Cần kết nối mạng để tải trình đọc lần đầu."`), **không** reload làm mất tab.
-- [ ] **Kiểm thử Fallback lỗi PDF cục bộ (`PdfReaderFallback`):**
+- [x] **Kiểm thử Fallback lỗi PDF cục bộ (`PdfReaderFallback`):**
   - Tắt Offline, vào DevTools Network → **Block request URL**, thêm mẫu chặn `*pdf-*.js` (hoặc `*PdfReader-*.js`), rồi bấm mở 1 cuốn PDF.
   - Hiển thị thẻ lỗi `PdfReaderFallback` ngay bên trong khung đọc (kèm nút "Tải lại trang" và "Đóng sách"); bấm **"Đóng sách"** quay về Thư viện 2D bình thường, toàn bộ ứng dụng không bị sập. (Bỏ chặn URL sau khi test.)
-- [ ] **Đọc sách EPUB thật (nhiều ảnh minh hoạ):** ảnh minh hoạ đầu sách, giữa chương và ảnh `<svg><image>` hiển thị đầy đủ; đóng sách không rò rỉ `ObjectURL`.
-- [ ] **Đọc sách PDF:** hiển thị trạng thái `<Suspense>` mượt, sau đó tải chunk `PdfReader` + `pdfjsLoader` + `pdf-*.js` + `pdf.worker.min-*.mjs`; chuyển trang, zoom, thumbnail hoạt động bình thường; mở rồi đóng thật nhanh không báo lỗi console.
-- [ ] **Đọc sách MOBI thật & CBZ:** MOBI chỉ tải thêm `index.browser-*.js`, hiển thị đầy đủ văn bản & ảnh; CBZ dùng `jszip` đã có.
-- [ ] **Upload sách & đổi ảnh bìa:** upload thử EPUB/PDF trích bìa tự động thành công (`compressCoverBlob` từ `coverImage.ts`), phát hiện trùng lặp (`bookDuplicateKey`) và gợi ý kệ (`parseFileMetadata`) vẫn chính xác.
-- [ ] **Kiểm thử sanitizer (`DOMPurify`) với EPUB độc hại tự tạo tại máy (KHÔNG commit):**
+- [x] **Đọc sách EPUB thật (nhiều ảnh minh hoạ):** ảnh minh hoạ đầu sách, giữa chương và ảnh `<svg><image>` hiển thị đầy đủ; đóng sách không rò rỉ `ObjectURL`.
+- [x] **Đọc sách PDF:** hiển thị trạng thái `<Suspense>` mượt, sau đó tải chunk `PdfReader` + `pdfjsLoader` + `pdf-*.js` + `pdf.worker.min-*.mjs`; chuyển trang, zoom, thumbnail hoạt động bình thường; mở rồi đóng thật nhanh không báo lỗi console.
+- [x] **Đọc sách MOBI thật & CBZ:** MOBI chỉ tải thêm `index.browser-*.js`, hiển thị đầy đủ văn bản & ảnh; CBZ dùng `jszip` đã có.
+- [x] **Upload sách & đổi ảnh bìa:** upload thử EPUB/PDF trích bìa tự động thành công (`compressCoverBlob` từ `coverImage.ts`), phát hiện trùng lặp (`bookDuplicateKey`) và gợi ý kệ (`parseFileMetadata`) vẫn chính xác.
+- [x] **Kiểm thử sanitizer (`DOMPurify`) với EPUB độc hại tự tạo tại máy (KHÔNG commit):**
   - Tạo 1 file EPUB thử nghiệm cục bộ chứa đủ các payload: `<script>`, `<style>`, `<iframe>`, `onclick="..."`, `<a href="javascript:alert(1)">`, `<a href="java&#x09;script:alert(1)">`, `<img src="vbscript:msgbox(1)">`, `<svg><image xlink:href="javascript:alert(1)"/></svg>`, `<base href="https://evil.example/">`, `<meta http-equiv="refresh" content="0;url=https://evil.example/">`, `<form action="javascript:alert(1)">`, `<button formaction="javascript:alert(1)">`, `<svg><a><animate attributeName="href" to="javascript:alert(1)"/></a></svg>`, `<svg><a><set attributeName="href" to="javascript:alert(1)"/></a></svg>`, kèm ảnh hợp lệ `<img src="data:image/png;base64,...">` và ảnh tương đối `../Images/*` (gồm cả `<img>` và `<svg><image>`).
   - *Kỳ vọng:* mở sách không chạy script, kiểm tra DOM thấy toàn bộ payload độc đã bị gỡ sạch, ảnh `data:image/png` và ảnh tương đối `../Images/*` đều hiển thị đầy đủ. Xoá file EPUB thử nghiệm khỏi máy/repo sau khi test (không commit).
-- [ ] **Kiểm thử chunk cũ 404 sau deploy (`chunkReload.ts`):**
+- [x] **Kiểm thử chunk cũ 404 sau deploy (`chunkReload.ts`):**
   - Mở `http://localhost:5173` (đang chạy `npm run preview -- --port 5173 --strictPort`) và giữ nguyên tab ở màn hình Thư viện 2D.
   - Sửa tạm 1 dòng bất kỳ trong `src/components/PdfReader.tsx` rồi chạy lại `npm run build` để đổi hash chunk (không commit).
   - Ở tab cũ đang mở (đang Online), bấm mở 1 cuốn PDF → trang tự tải lại **đúng 1 lần** và không rơi vào vòng lặp reload vô hạn.
