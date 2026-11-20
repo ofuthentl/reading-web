@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Book, ParsedBook, ReaderSettings, ReadingProgress } from '@/types';
 import type { AppTheme } from '@/hooks/useTheme';
 import { fetchBookBlobCached, isAuthError, saveReadingProgress } from '@/lib/api';
-import { isChunkLoadError, reloadOnceForStaleChunk } from '@/lib/chunkReload';
+import { isChunkLoadError, recoverFromChunkError } from '@/lib/chunkReload';
 import {
   appThemeToReaderTheme,
   loadReaderSettings,
@@ -102,11 +102,16 @@ export function useBookReader({ appTheme, onProgressUpdated, onApiError }: UseBo
         setLoadedFromCache(fromCache);
         setOpeningBook(null);
       } catch (err) {
-        if (isChunkLoadError(err)) {
-          reloadOnceForStaleChunk();
-        }
+        if (recoverFromChunkError(err)) return;
         if (requestId !== requestIdRef.current) return;
         setOpeningBook(null);
+        if (isChunkLoadError(err)) {
+          onApiError(
+            new Error('Cần kết nối mạng để tải trình đọc lần đầu.'),
+            'Cần kết nối mạng để tải trình đọc lần đầu.',
+          );
+          return;
+        }
         onApiError(err, `Không thể mở "${book.title}".`);
       }
     },

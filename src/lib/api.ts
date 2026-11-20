@@ -14,7 +14,7 @@ import {
   setCachedCoverBlob,
 } from '@/lib/cache';
 import { parseFileMetadata, pickCoverColor } from '@/lib/bookMetadata';
-import { isChunkLoadError, reloadOnceForStaleChunk } from '@/lib/chunkReload';
+import { isChunkLoadError } from '@/lib/chunkReload';
 import { compressCoverBlob } from '@/lib/coverImage';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
@@ -205,8 +205,9 @@ export async function uploadBook(
     coverBlob = await extractCoverAtUpload(file, fileType);
   } catch (err) {
     if (isChunkLoadError(err)) {
-      reloadOnceForStaleChunk();
-      throw err;
+      throw new Error(
+        'Ứng dụng vừa được cập nhật hoặc mất kết nối. Vui lòng tải lại trang rồi thử lại.',
+      );
     }
     coverBlob = null;
   }

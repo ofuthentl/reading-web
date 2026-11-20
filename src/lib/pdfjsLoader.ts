@@ -1,4 +1,4 @@
-import { isChunkLoadError, reloadOnceForStaleChunk } from '@/lib/chunkReload';
+import { recoverFromChunkError } from '@/lib/chunkReload';
 
 export const pdfWasmUrl = `${import.meta.env.BASE_URL}pdfjs-wasm/`;
 
@@ -16,9 +16,7 @@ export function loadPdfJs(): Promise<typeof import('pdfjs-dist')> {
       })
       .catch((err: unknown) => {
         pdfjsPromise = null;
-        if (isChunkLoadError(err)) {
-          reloadOnceForStaleChunk();
-        }
+        recoverFromChunkError(err);
         throw err;
       });
   }

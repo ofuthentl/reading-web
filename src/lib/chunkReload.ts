@@ -24,9 +24,12 @@ export function isChunkLoadError(err: unknown): boolean {
 
 /**
  * Reloads the page at most once within the cooldown window when a stale hashed
- * chunk is missing after a fresh deploy, preventing infinite reload loops.
+ * chunk is missing after a fresh deploy. Never reloads while offline.
  */
 export function reloadOnceForStaleChunk(): boolean {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return false;
+  }
   try {
     const now = Date.now();
     const lastReloadAt = Number(sessionStorage.getItem(STALE_CHUNK_RELOAD_KEY) || '0');
@@ -39,4 +42,9 @@ export function reloadOnceForStaleChunk(): boolean {
   } catch {
     return false;
   }
+}
+
+export function recoverFromChunkError(err: unknown): boolean {
+  if (!isChunkLoadError(err)) return false;
+  return reloadOnceForStaleChunk();
 }

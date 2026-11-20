@@ -1,11 +1,13 @@
 # HANDOFF
-Cập nhật: 2026-11-21 00:34 | Nhánh: refactor/code-splitting | Build: 🟢 frontend · 🟢 Worker · 🟢 ESLint 100%
-Nhiệm vụ hiện tại: Refactor code-splitting — xong Phase 1 → 4, chờ kiểm thử thủ công Mục 5C & xác nhận mở PR vào `main`
+Cập nhật: 2026-11-21 00:53 | Nhánh: refactor/code-splitting | Build: 🟢 frontend · 🟢 Worker · 🟢 ESLint 100%
+Nhiệm vụ hiện tại: Refactor code-splitting — đã bổ sung bảo vệ offline reload, preload idle & tách `PdfReaderFallback`, chờ kiểm thử thủ công Mục 5C
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/
 
 ## Đang làm dở
-- Đã hoàn tất toàn bộ 4 phase trên nhánh `refactor/code-splitting`; entry `index-*.js` giảm từ **918.12 kB** (gzip 277.95 kB) xuống **259.00 kB** (gzip 76.61 kB), 0 cảnh báo > 500 kB.
-- Đang chờ người dùng kiểm thử thủ công theo Checklist Mục 5C (`npm run preview -- --port 5173 --strictPort`) và xác nhận trước khi push / mở PR vào `main`.
+- Hoàn tất Phase 1 → 4 và bản vá hậu review trên `refactor/code-splitting`:
+  - Entry `index-*.js` giảm từ **918.12 kB** (gzip 277.95 kB) xuống **259.77 kB** (gzip 76.92 kB).
+  - `npm run build`: **0 lỗi, 0 cảnh báo chunk > 500 kB** (còn 1 cảnh báo externalize `stream` đã biết từ `sax` qua `@lingo-reader/mobi-parser` → `@lingo-reader/shared` → `sax`).
+- Đang chờ người dùng kiểm thử thủ công theo Checklist Mục 5C (`npm run preview -- --port 5173 --strictPort`) trước khi push / mở PR vào `main`.
 
 ## Chưa xác nhận (từ Phase 3)
 - `https://ofu.lol` đã chạy ổn thực tế trên PC & mobile *(chưa xác nhận)*.
@@ -20,7 +22,5 @@ Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · d
 - Không có lỗi/chặn nào. Không sửa `workers/` hay `wrangler.toml`.
 
 ## Xong gần nhất
-- **Phase 4:** điền bảng đo đạc chunk JS trước/sau vào `docs/plans/refactor-code-splitting.md`, rà soát toàn diện `docs/ARCHITECTURE.md` (Mục 1, 2, 6, 7), kiểm định xanh cả frontend và `workers/r2-storage`.
-- **Phase 3:** lazy-load `PdfReader.tsx` + `pdfjs-dist`, mở rộng `ErrorBoundary.tsx` (`fallback` + `isChunkLoadError`), bọc boundary cục bộ quanh `LazyPdfReader`.
-- **Phase 2:** tách `parsers.ts` (`bookMetadata`, `coverImage`, `pdfjsLoader`, `sanitizeHtml` dùng `dompurify` v3, `chunkReload`) + dynamic import theo định dạng.
-- **Phase 1:** ghi **D-008** vào `docs/DECISIONS.md`.
+- **Fix hậu review:** chặn `reloadOnceForStaleChunk` khi offline (`navigator.onLine === false`), gom `recoverFromChunkError`, preload ngầm `parsers` + `jszip` khi rảnh sau khi tải thư viện 2D (`preloadCoreReaders`), không tự reload giữa lúc `uploadBook`, tách `PdfReaderFallback.tsx` khỏi `ReaderView.tsx`.
+- **Phase 1 → 4:** ghi **D-008**, tách `parsers.ts` (`bookMetadata`, `coverImage`, `pdfjsLoader`, `sanitizeHtml` dùng `dompurify` v3, `chunkReload`), lazy-load `PdfReader.tsx`, đồng bộ `docs/ARCHITECTURE.md`.

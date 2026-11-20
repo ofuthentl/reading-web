@@ -1,6 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
-import { isChunkLoadError, reloadOnceForStaleChunk } from '@/lib/chunkReload';
+import { recoverFromChunkError } from '@/lib/chunkReload';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -27,9 +27,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("Ofu's Library ErrorBoundary caught:", error, info.componentStack);
-    if (isChunkLoadError(error)) {
-      reloadOnceForStaleChunk();
-    }
+    recoverFromChunkError(error);
   }
 
   private handleReset = () => {

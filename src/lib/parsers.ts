@@ -1,6 +1,6 @@
 import type JSZip from 'jszip';
 import type { Book, BookFileType, Chapter, ParsedBook } from '@/types';
-import { isChunkLoadError, reloadOnceForStaleChunk } from '@/lib/chunkReload';
+import { isChunkLoadError, recoverFromChunkError } from '@/lib/chunkReload';
 import { compressCoverBlob } from '@/lib/coverImage';
 import { buildEpubChapters, type RawEpubSection } from '@/lib/epubChapters';
 import { loadPdfJs, pdfWasmUrl } from '@/lib/pdfjsLoader';
@@ -17,9 +17,7 @@ function loadJSZip(): Promise<JSZipStatic> {
       .then((mod) => (mod.default ?? (mod as unknown as JSZipStatic)))
       .catch((err: unknown) => {
         jszipPromise = null;
-        if (isChunkLoadError(err)) {
-          reloadOnceForStaleChunk();
-        }
+        recoverFromChunkError(err);
         throw err;
       });
     jszipPromise = pending;
@@ -32,13 +30,15 @@ function loadMobiParser(): Promise<typeof import('@lingo-reader/mobi-parser')> {
   if (!mobiParserPromise) {
     mobiParserPromise = import('@lingo-reader/mobi-parser').catch((err: unknown) => {
       mobiParserPromise = null;
-      if (isChunkLoadError(err)) {
-        reloadOnceForStaleChunk();
-      }
+      recoverFromChunkError(err);
       throw err;
     });
   }
   return mobiParserPromise;
+}
+
+export async function preloadCoreReaders(): Promise<void> {
+  await loadJSZip().catch(() => undefined);
 }
 
 function resolveZipPath(basePath: string, relativePath: string): string {

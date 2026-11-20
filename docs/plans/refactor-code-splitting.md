@@ -178,20 +178,20 @@
 ### A. Kiểm định tự động (CI cục bộ)
 - [x] `npm run typecheck` — 0 lỗi.
 - [x] `npm run lint` — 0 lỗi, 0 cảnh báo (mọi file `.ts`/`.tsx` đều ≤ 500 dòng hiệu dụng).
-- [x] `npm run build` — 0 lỗi; `index-*.js` = **259.00 kB** (gzip **76.61 kB**), **0 cảnh báo** `> 500 kB` (không thay đổi `chunkSizeWarningLimit`).
+- [x] `npm run build` — 0 lỗi, **0 cảnh báo chunk > 500 kB** (`index-*.js` = **259.77 kB** / gzip **76.92 kB**, không thay đổi `chunkSizeWarningLimit`; còn 1 cảnh báo upstream đã biết `Module "stream" has been externalized for browser compatibility` từ `node_modules/sax/lib/sax.js` qua chuỗi `@lingo-reader/mobi-parser` → `@lingo-reader/shared` → `sax`, không thêm alias/stub khi chưa có yêu cầu).
 - [x] `cd workers/r2-storage && npx tsc --noEmit` — 0 lỗi.
 
 ### B. So sánh dung lượng chunk JS trong `dist/assets/` (Trước vs Sau)
 
 | Chunk / Asset | Trước refactor (Baseline) | Sau refactor (Số đo thực tế) | Mục tiêu kỳ vọng |
 |---|---:|---:|---|
-| `index-*.js` (entry chính) | **918.12 kB** (gzip **277.95 kB**) | **259.00 kB** (gzip **76.61 kB**) | **< 350 kB** (gzip **< 115 kB**), không chứa `dompurify`/parser ✅ |
-| Chunk `parsers-*.js` *(gồm `sanitizeHtml` + `dompurify` + `epubChapters`)* | _(gộp trong `index`)_ | **44.49 kB** (gzip **17.15 kB**) | Tách riêng (~35–55 kB raw, ~12–20 kB gzip) ✅ |
+| `index-*.js` (entry chính) | **918.12 kB** (gzip **277.95 kB**) | **259.77 kB** (gzip **76.92 kB**) | **< 350 kB** (gzip **< 115 kB**), không chứa `dompurify`/parser ✅ |
+| Chunk `parsers-*.js` *(gồm `sanitizeHtml` + `dompurify` + `epubChapters`)* | _(gộp trong `index`)_ | **44.55 kB** (gzip **17.18 kB**) | Tách riêng (~35–55 kB raw, ~12–20 kB gzip) ✅ |
 | Chunk `jszip.min-*.js` | _(gộp trong `index`)_ | **97.58 kB** (gzip **30.34 kB**) | Tách riêng (~95–105 kB) ✅ |
 | Chunk `index.browser-*.js` (`@lingo-reader/mobi-parser`) | _(gộp trong `index`)_ | **66.81 kB** (gzip **23.53 kB**) | Tách riêng ✅ |
 | Chunk `PdfReader-*.js` | _(gộp trong `index`)_ | **8.42 kB** (gzip **2.87 kB**) | Tách riêng (~10–20 kB) ✅ |
 | Chunk `pdf-*.js` (`pdfjs-dist` tải lười) | _(gộp trong `index`)_ | **483.23 kB** (gzip **144.28 kB**) | Tách riêng; dưới 500 kB raw (0 cảnh báo) ✅ |
-| Chunk `pdfjsLoader-*.js` | _(gộp trong `index`)_ | **0.33 kB** (gzip **0.27 kB**) | Tách riêng ✅ |
+| Chunk `pdfjsLoader-*.js` | _(gộp trong `index`)_ | **0.32 kB** (gzip **0.27 kB**) | Tách riêng ✅ |
 | Chunk `_commonjsHelpers-*.js` | _(gộp trong `index`)_ | **0.69 kB** (gzip **0.38 kB**) | Helper dùng chung cho chunk động ✅ |
 | `pdf.worker.min-*.mjs` | 1,265.41 kB | **1,265.41 kB** | Vẫn emit đầy đủ ✅ |
 | `index-*.css` | 41.70 kB (gzip 8.32 kB) | **41.72 kB** (gzip **8.32 kB**) | Ổn định ✅ |
@@ -204,17 +204,25 @@ npm run build && npm run preview -- --port 5173 --strictPort
 ```
 
 - [ ] **Preview ở cổng 5173 đăng nhập Worker live OK:** Mở `http://localhost:5173`, đăng nhập passcode thành công vào Worker thật (khớp `APP_ORIGINS` giữ nguyên theo QĐ-2).
-- [ ] **Mở trang đăng nhập `AuthGate`:** mở DevTools Network (lọc JS) → chỉ tải `index-*.js`; **không** tải `parsers`, `dompurify`, `jszip`, `mobi-parser`, `pdfjs-dist`, `PdfReader`, `pdf.worker`.
-- [ ] **Duyệt thư viện 2D:** đăng nhập, cuộn kệ, tìm kiếm → vẫn **không** tải chunk parser/PDF nào.
-- [ ] **Đọc sách EPUB thật (nhiều ảnh minh hoạ):** chỉ tải thêm chunk `parsers` + `jszip`; ảnh minh hoạ đầu sách, giữa chương và ảnh `<svg><image>` hiển thị đầy đủ; đóng sách không rò rỉ `ObjectURL`.
-- [ ] **Đọc sách PDF:** hiển thị trạng thái `<Suspense>` mượt, sau đó tải chunk `PdfReader` + `pdfjs-dist` + `pdf.worker.min-*.mjs`; chuyển trang, zoom, thumbnail hoạt động bình thường; mở rồi đóng thật nhanh không báo lỗi console.
-- [ ] **Đọc sách MOBI thật & CBZ:** MOBI chỉ tải thêm `parsers` + `mobi-parser`, hiển thị đầy đủ văn bản & ảnh; CBZ chỉ tải `parsers` + `jszip`.
+- [ ] **Tab Network ở trang đăng nhập `AuthGate` & Thư viện 2D:** Mở DevTools Network (lọc JS):
+  - Ở màn hình `AuthGate`: chỉ tải `index-*.js`; **không** tải `parsers`, `dompurify`, `jszip`, `mobi-parser`, `pdfjs-dist`, `PdfReader`, `pdf.worker`.
+  - Sau khi đăng nhập vào Thư viện 2D: khi trình duyệt rảnh (`requestIdleCallback` / `1500ms`), tải nền `parsers-*.js` + `jszip.min-*.js` để sẵn sàng đọc EPUB/CBZ offline; vẫn **không** tải `index.browser-*.js` (MOBI), `PdfReader-*.js`, `pdf-*.js`, hay `pdf.worker.min-*.mjs`.
+- [ ] **Kiểm thử đọc Offline (không reload mất tab):**
+  - Sau khi vào Thư viện 2D (chunk `parsers` + `jszip` đã preload và đã có ít nhất 1 cuốn EPUB trong cache IndexedDB), bật DevTools Network → **Offline**.
+  - Bấm mở cuốn EPUB đã cache → mở đọc tức thì (`Cache 0ms`), **không** tự reload làm mất trang.
+  - Đóng sách, vẫn để **Offline**, bấm mở 1 cuốn PDF hoặc MOBI (chưa tải chunk `pdf-*.js` / `index.browser-*.js`) → hiện thông báo lỗi rõ ràng (`"Cần kết nối mạng để tải trình đọc lần đầu."`), **không** reload làm mất tab.
+- [ ] **Kiểm thử Fallback lỗi PDF cục bộ (`PdfReaderFallback`):**
+  - Tắt Offline, vào DevTools Network → **Block request URL**, thêm mẫu chặn `*pdf-*.js` (hoặc `*PdfReader-*.js`), rồi bấm mở 1 cuốn PDF.
+  - Hiển thị thẻ lỗi `PdfReaderFallback` ngay bên trong khung đọc (kèm nút "Tải lại trang" và "Đóng sách"); bấm **"Đóng sách"** quay về Thư viện 2D bình thường, toàn bộ ứng dụng không bị sập. (Bỏ chặn URL sau khi test.)
+- [ ] **Đọc sách EPUB thật (nhiều ảnh minh hoạ):** ảnh minh hoạ đầu sách, giữa chương và ảnh `<svg><image>` hiển thị đầy đủ; đóng sách không rò rỉ `ObjectURL`.
+- [ ] **Đọc sách PDF:** hiển thị trạng thái `<Suspense>` mượt, sau đó tải chunk `PdfReader` + `pdfjsLoader` + `pdf-*.js` + `pdf.worker.min-*.mjs`; chuyển trang, zoom, thumbnail hoạt động bình thường; mở rồi đóng thật nhanh không báo lỗi console.
+- [ ] **Đọc sách MOBI thật & CBZ:** MOBI chỉ tải thêm `index.browser-*.js`, hiển thị đầy đủ văn bản & ảnh; CBZ dùng `jszip` đã có.
 - [ ] **Upload sách & đổi ảnh bìa:** upload thử EPUB/PDF trích bìa tự động thành công (`compressCoverBlob` từ `coverImage.ts`), phát hiện trùng lặp (`bookDuplicateKey`) và gợi ý kệ (`parseFileMetadata`) vẫn chính xác.
 - [ ] **Kiểm thử sanitizer (`DOMPurify`) với EPUB độc hại tự tạo tại máy (KHÔNG commit):**
   - Tạo 1 file EPUB thử nghiệm cục bộ chứa đủ các payload: `<script>`, `<style>`, `<iframe>`, `onclick="..."`, `<a href="javascript:alert(1)">`, `<a href="java&#x09;script:alert(1)">`, `<img src="vbscript:msgbox(1)">`, `<svg><image xlink:href="javascript:alert(1)"/></svg>`, `<base href="https://evil.example/">`, `<meta http-equiv="refresh" content="0;url=https://evil.example/">`, `<form action="javascript:alert(1)">`, `<button formaction="javascript:alert(1)">`, `<svg><a><animate attributeName="href" to="javascript:alert(1)"/></a></svg>`, `<svg><a><set attributeName="href" to="javascript:alert(1)"/></a></svg>`, kèm ảnh hợp lệ `<img src="data:image/png;base64,...">` và ảnh tương đối `../Images/*` (gồm cả `<img>` và `<svg><image>`).
   - *Kỳ vọng:* mở sách không chạy script, kiểm tra DOM thấy toàn bộ payload độc đã bị gỡ sạch, ảnh `data:image/png` và ảnh tương đối `../Images/*` đều hiển thị đầy đủ. Xoá file EPUB thử nghiệm khỏi máy/repo sau khi test (không commit).
 - [ ] **Kiểm thử chunk cũ 404 sau deploy (`chunkReload.ts`):**
   - Mở `http://localhost:5173` (đang chạy `npm run preview -- --port 5173 --strictPort`) và giữ nguyên tab ở màn hình Thư viện 2D.
-  - Sửa tạm 1 dòng bất kỳ trong `src/lib/parsers.ts` rồi chạy lại `npm run build` để đổi hash chunk (không commit).
-  - Ở tab cũ đang mở, bấm mở 1 cuốn sách → trang tự tải lại **đúng 1 lần** và không rơi vào vòng lặp reload vô hạn.
-  - Hoàn tác thay đổi tạm bằng `git checkout -- src/lib/parsers.ts` và chạy lại `npm run build`.
+  - Sửa tạm 1 dòng bất kỳ trong `src/components/PdfReader.tsx` rồi chạy lại `npm run build` để đổi hash chunk (không commit).
+  - Ở tab cũ đang mở (đang Online), bấm mở 1 cuốn PDF → trang tự tải lại **đúng 1 lần** và không rơi vào vòng lặp reload vô hạn.
+  - Hoàn tác thay đổi tạm bằng `git checkout -- src/components/PdfReader.tsx` và chạy lại `npm run build`.
