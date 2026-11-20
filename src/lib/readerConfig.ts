@@ -97,9 +97,9 @@ export const READER_FONT_CLASS: Record<ReaderFont, string> = {
 };
 
 export const READER_WIDTH_MAX: Record<ReaderWidth, string> = {
-  narrow: '42rem',
-  medium: '52rem',
-  wide: '64rem',
+  narrow: '50.4rem',
+  medium: '62.4rem',
+  wide: '76.8rem',
 };
 
 const VALID_THEMES = new Set<ReaderTheme>(['paper', 'sepia', 'dark', 'midnight']);
