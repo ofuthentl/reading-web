@@ -13,8 +13,8 @@ STORAGE_LIMIT_BYTES = "9663676416"
 binding = "BOOKS_BUCKET"
 bucket_name = "arcane-library-books"
 
-# Binding D1 database (chạy: wrangler d1 create library-db rồi dán database_id vào đây)
+# Binding D1 database
 [[d1_databases]]
 binding = "DB"
 database_name = "library-db"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "1718c115-0bad-4fd2-b1eb-43a2b63b4ce9"

@@ -1,8 +1,14 @@
-interface Env {
+import {
+  type AuthEnv,
+  HttpError,
+  authenticatePasscode,
+  isAuthRequired,
+  verifyAuth,
+} from './auth';
+
+interface Env extends AuthEnv {
   APP_ORIGINS: string;
   STORAGE_LIMIT_BYTES?: string;
-  ACCESS_PASSCODE?: string;
-  AUTH_SECRET?: string;
   BOOKS_BUCKET: R2Bucket;
   DB: D1Database;
 }
@@ -35,7 +41,6 @@ interface ProgressRow {
 const DEFAULT_HARD_LIMIT_BYTES = 9 * 1024 * 1024 * 1024; // 9.0 GiB safety cap under 10 GB Free Tier
 const MAX_SINGLE_FILE_BYTES = 350 * 1024 * 1024; // 350 MiB
 const MAX_COVER_BYTES = 5 * 1024 * 1024; // 5 MiB
-const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 const ACCEPTED_FILE_TYPES = new Set(['epub', 'mobi', 'pdf', 'cbz']);
 const CONTENT_TYPES: Record<string, string> = {
@@ -44,15 +49,6 @@ const CONTENT_TYPES: Record<string, string> = {
   pdf: 'application/pdf',
   cbz: 'application/vnd.comicbook+zip',
 };
-
-class HttpError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
-    super(message);
-  }
-}
 
 function getLimitBytes(env: Env): number {
   const parsed = Number(env.STORAGE_LIMIT_BYTES);
@@ -101,75 +97,6 @@ function safeDecodeHeader(value: string | null, fallback: string): string {
   }
 }
 
-function timingSafeEqual(a: string, b: string): boolean {
-  const encoder = new TextEncoder();
-  const bufA = encoder.encode(a);
-  const bufB = encoder.encode(b);
-  const maxLen = Math.max(bufA.length, bufB.length);
-  let diff = bufA.length ^ bufB.length;
-  for (let i = 0; i < maxLen; i += 1) {
-    diff |= (bufA[i] ?? 0) ^ (bufB[i] ?? 0);
-  }
-  return diff === 0;
-}
-
-async function signPayload(payload: string, secret: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
-  return btoa(String.fromCharCode(...new Uint8Array(sig)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-}
-
-async function createAuthToken(env: Env): Promise<{ token: string; expiresAt: number }> {
-  const secret = env.AUTH_SECRET || env.ACCESS_PASSCODE || 'local-dev-secret';
-  const expiresAt = Date.now() + TOKEN_TTL_MS;
-  const payload = btoa(JSON.stringify({ sub: 'owner', exp: expiresAt }))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-  const sig = await signPayload(payload, secret);
-  return { token: `${payload}.${sig}`, expiresAt };
-}
-
-async function verifyAuth(request: Request, env: Env): Promise<void> {
-  if (!env.ACCESS_PASSCODE) return; // Auth disabled if no passcode secret configured
-
-  const url = new URL(request.url);
-  const headerToken = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '').trim();
-  const queryToken = url.searchParams.get('token')?.trim();
-  const token = headerToken || queryToken;
-  if (!token) throw new HttpError('Vui lòng đăng nhập để truy cập thư viện.', 401);
-
-  const [payload, signature] = token.split('.');
-  if (!payload || !signature) throw new HttpError('Phiên đăng nhập không hợp lệ.', 401);
-
-  const secret = env.AUTH_SECRET || env.ACCESS_PASSCODE;
-  const expectedSig = await signPayload(payload, secret);
-  if (!timingSafeEqual(signature, expectedSig)) {
-    throw new HttpError('Phiên đăng nhập không hợp lệ.', 401);
-  }
-
-  try {
-    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const decoded = JSON.parse(atob(normalized)) as { exp?: number };
-    if (!decoded.exp || decoded.exp < Date.now()) {
-      throw new HttpError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 401);
-    }
-  } catch (err) {
-    if (err instanceof HttpError) throw err;
-    throw new HttpError('Phiên đăng nhập bị lỗi.', 401);
-  }
-}
-
 async function getStorageStats(env: Env) {
   const row = await env.DB.prepare(
     'SELECT COALESCE(SUM(file_size + cover_size), 0) AS used_bytes, COUNT(*) AS book_count FROM books',
@@ -213,7 +140,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   // Public health check
   if (pathname === '/api/health' && request.method === 'GET') {
     return jsonResponse(
-      { ok: true, authRequired: Boolean(env.ACCESS_PASSCODE), limitBytes: getLimitBytes(env) },
+      { ok: true, authRequired: isAuthRequired(env), limitBytes: getLimitBytes(env) },
       200,
       origin,
     );
@@ -223,14 +150,11 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   if (pathname === '/api/auth/login' && request.method === 'POST') {
     const body = (await request.json().catch(() => null)) as { passcode?: unknown } | null;
     const passcode = typeof body?.passcode === 'string' ? body.passcode : '';
-    if (env.ACCESS_PASSCODE && !timingSafeEqual(passcode, env.ACCESS_PASSCODE)) {
-      throw new HttpError('Mật mã thư viện không đúng.', 401);
-    }
-    const session = await createAuthToken(env);
+    const session = await authenticatePasscode(passcode, env);
     return jsonResponse(session, 200, origin);
   }
 
-  // All routes below require valid auth token (when ACCESS_PASSCODE is set)
+  // All routes below require valid auth token (fail-closed unless ALLOW_INSECURE_DEV_NO_AUTH="true")
   await verifyAuth(request, env);
 
   // Storage usage

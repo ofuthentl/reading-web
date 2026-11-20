@@ -33,11 +33,12 @@ flowchart LR
 | `src/components/PdfReader.tsx` | Trình xem PDF canvas HiDPI, thanh thumbnail (tối đa 40 trang đầu), huỷ `RenderTask` cũ, zoom & tải xuống | `PdfReader` | `pdfjs-dist`, `lucide-react`, `src/lib/parsers.ts` |
 | `src/components/ReaderView.tsx` | Trình đọc EPUB/MOBI/CBZ/PDF: mục lục, cài đặt theme/font/cỡ chữ/giãn dòng/độ rộng, lưu & khôi phục vị trí cuộn theo tỉ lệ, phím `←`/`→` an toàn | `ReaderView` | `lucide-react`, `src/types.ts`, `src/components/PdfReader.tsx` |
 | `src/App.tsx` *(cũ)* | Ứng dụng nguyên khối bản cũ (~2.958 dòng) còn import Supabase đã xoá — **chờ thay thế ở Phase 3** | `default App` | *(đứt import `@/lib/supabase`, `@/lib/book-storage`, `@supabase/supabase-js`)* |
-| `workers/r2-storage/src/index.ts` | Cloudflare Worker API: CORS, auth HMAC 30 ngày, kiểm soát hạn mức 9.0 GiB, CRUD D1, stream upload/download R2 (hỗ trợ HTTP Range) | `default { fetch }` | Cloudflare Workers Runtime (`D1Database`, `R2Bucket`) |
+| `workers/r2-storage/src/auth.ts` | Xác thực fail-closed cho Worker: so sánh timing-safe, ký & kiểm tra token HMAC-SHA256 30 ngày, `HttpError` | `HttpError`, `AuthEnv`, `isInsecureDevAuthDisabled`, `isAuthRequired`, `timingSafeEqual`, `signPayload`, `createAuthToken`, `authenticatePasscode`, `verifyAuth` | Web Crypto API (`crypto.subtle`) |
+| `workers/r2-storage/src/index.ts` | Cloudflare Worker API: CORS, kiểm soát hạn mức 9.0 GiB, CRUD D1, stream upload/download R2 (hỗ trợ HTTP Range) | `default { fetch }` | Cloudflare Workers Runtime (`D1Database`, `R2Bucket`), `workers/r2-storage/src/auth.ts` |
 
 ## 3. API của Cloudflare Worker
 
-> Auth `Có*`: bắt buộc `Authorization: Bearer <token>` (hoặc query `?token=`) khi Worker có cấu hình secret `ACCESS_PASSCODE`.
+> Auth `Có*`: bắt buộc `Authorization: Bearer <token>` (hoặc query `?token=`). Mặc định **fail-closed**: thiếu `ACCESS_PASSCODE` sẽ trả `503` (chỉ tắt auth khi chạy dev và đặt tường minh `ALLOW_INSECURE_DEV_NO_AUTH="true"` cùng với việc bỏ trống `ACCESS_PASSCODE`).
 
 | Method | Path | Auth? | Mô tả |
 |---|---|---|---|
@@ -80,9 +81,10 @@ flowchart LR
 | `APP_ORIGINS` | Worker | Var | `workers/r2-storage/wrangler.toml` `[vars]` | Danh sách origin được phép CORS (`https://ofu.lol`, `http://localhost:5173`, `http://127.0.0.1:5173`). |
 | `STORAGE_LIMIT_BYTES` | Worker | Var | `workers/r2-storage/wrangler.toml` `[vars]` | Chốt chặn cứng `9663676416` (9.0 GiB). |
 | `BOOKS_BUCKET` | Worker | R2 Binding | `workers/r2-storage/wrangler.toml` | Bucket R2 `arcane-library-books`. |
-| `DB` | Worker | D1 Binding | `workers/r2-storage/wrangler.toml` | D1 database `library-db` (`database_id` chưa điền). |
-| `ACCESS_PASSCODE` | Worker | Secret | `wrangler secret put` (prod) / `.dev.vars` (local) | Mật mã đăng nhập thư viện. |
-| `AUTH_SECRET` | Worker | Secret | `wrangler secret put` (prod) / `.dev.vars` (local) | Khoá ký HMAC-SHA256 cho session token 30 ngày. |
+| `DB` | Worker | D1 Binding | `workers/r2-storage/wrangler.toml` | D1 database `library-db` (`1718c115-0bad-4fd2-b1eb-43a2b63b4ce9`, region APAC). |
+| `ACCESS_PASSCODE` | Worker | Secret | `wrangler secret put` (prod) / `.dev.vars` (local) | Mật mã đăng nhập thư viện (thiếu sẽ trả `503` fail-closed). |
+| `AUTH_SECRET` | Worker | Secret | `wrangler secret put` (prod) / `.dev.vars` (local) | Khoá ký HMAC-SHA256 cho session token 30 ngày (nếu thiếu chỉ fallback về `ACCESS_PASSCODE`, không dùng chuỗi cố định). |
+| `ALLOW_INSECURE_DEV_NO_AUTH` | Worker | Var (tuỳ chọn dev) | `.dev.vars` (chỉ local dev) | Đặt `"true"` (và không đặt `ACCESS_PASSCODE`) để tắt auth khi dev local; tuyệt đối không đặt trên production. |
 
 ## 6. Công cụ đã có — cấm viết lại
 
@@ -116,6 +118,5 @@ flowchart LR
   - Dòng 629–1079: parser EPUB/PDF/CBZ/MOBI cũ (nhiều lỗi rò rỉ bộ nhớ & race condition).
   - Dòng 1080–2958: `App()` chính (quản lý auth đa user, chia sẻ, admin, thư viện 2D, trình đọc cũ).
 - **Cảnh báo ESLint `max-lines` trên code mới (cần tách ở Phase 3)**:
-  - `src/components/ReaderView.tsx`: 673 dòng hiệu dụng (vượt ngưỡng 500).
-  - `workers/r2-storage/src/index.ts`: 505 dòng hiệu dụng (vượt ngưỡng 500 đúng 5 dòng).
-  - `src/lib/api.ts`, `src/lib/cache.ts`, `src/lib/parsers.ts`, `src/components/PdfReader.tsx`, `src/types.ts`: đã đạt chuẩn ≤ 500 dòng.
+  - `src/components/ReaderView.tsx`: 673 dòng hiệu dụng (vượt ngưỡng 500, tách ở 3.4).
+  - `workers/r2-storage/src/{auth,index}.ts`, `src/lib/{api,cache,parsers}.ts`, `src/components/PdfReader.tsx`, `src/types.ts`: đã đạt chuẩn ≤ 500 dòng.
