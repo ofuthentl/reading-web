@@ -4,6 +4,8 @@ import { compressCoverBlob } from '@/lib/coverImage';
 import {
   type DocxRel,
   type StyleMeta,
+  RENDERABLE_IMAGE_EXT_RE,
+  collectDocxCoverCandidates,
   escapeHtml,
   findDirectChild,
   findImageRelIds,
@@ -18,8 +20,6 @@ import {
 } from '@/lib/docxXml';
 import { sanitizeBookDocument } from '@/lib/sanitizeHtml';
 
-const RASTER_IMAGE_EXT_RE = /\.(?:avif|bmp|gif|jpe?g|png|webp)$/i;
-const RENDERABLE_IMAGE_EXT_RE = /\.(?:avif|bmp|gif|jpe?g|png|svg|webp)$/i;
 const CHAPTER_HEADING_TEXT_RE =
   /^(?:chương|hồi|phần|quyển|tập|mở\s+đầu|lời\s+mở\s+đầu|lời\s+nói\s+đầu|khúc\s+dạo\s+đầu|ngoại\s+truyện|phụ\s+lục|lời\s+kết|vĩ\s+thanh|chapter|prologue|epilogue|interlude|part|act|extra)\b/i;
 
@@ -412,26 +412,19 @@ function buildDocxChapters(
 }
 
 export async function extractDocxCover(zip: JSZip): Promise<Blob | null> {
-  const thumbEntry = Object.values(zip.files).find(
-    (entry) =>
-      !entry.dir &&
-      /^docProps\/thumbnail\.[^.]+$/i.test(entry.name) &&
-      RASTER_IMAGE_EXT_RE.test(entry.name),
-  );
-  if (thumbEntry) {
-    const raw = await thumbEntry.async('blob');
-    return compressCoverBlob(new Blob([raw], { type: guessImageMimeType(thumbEntry.name) }));
+  const candidates = await collectDocxCoverCandidates(zip);
+  for (const zipPath of candidates) {
+    const entry = zip.file(zipPath);
+    if (!entry) continue;
+    try {
+      const raw = await entry.async('blob');
+      const typedBlob = new Blob([raw], { type: guessImageMimeType(zipPath) });
+      return await compressCoverBlob(typedBlob, { rejectBlankOrTiny: true });
+    } catch {
+      // Skip blank thumbnails, tiny dividers, or undecodable images and try next candidate
+    }
   }
-
-  const mediaEntry = Object.values(zip.files)
-    .filter(
-      (entry) =>
-        !entry.dir && /^word\/media\//i.test(entry.name) && RASTER_IMAGE_EXT_RE.test(entry.name),
-    )
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))[0];
-  if (!mediaEntry) return null;
-  const raw = await mediaEntry.async('blob');
-  return compressCoverBlob(new Blob([raw], { type: guessImageMimeType(mediaEntry.name) }));
+  return null;
 }
 
 export async function parseDocxZip(zip: JSZip, book: Book): Promise<ParsedBook> {
