@@ -1,0 +1,16 @@
+{
+  "name": "Thư Viện Huyền Ảo — Arcane Reader",
+  "short_name": "Arcane Reader",
+  "description": "Thư viện phép thuật 3D & trình đọc ebook EPUB, MOBI, PDF, CBZ siêu nhanh",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0f0c24",
+  "theme_color": "#0f0c24",
+  "icons": [
+    {
+      "src": "title.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

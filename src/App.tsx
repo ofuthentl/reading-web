@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { supabase, type Book, type Chapter } from '@/lib/supabase';
+import { getBookFileUrl, downloadBookFile, uploadBookFile } from '@/lib/book-storage';
 import type { User } from '@supabase/supabase-js';
 import {
   BookOpen,
@@ -152,19 +153,6 @@ async function prepareCoverImage(file: File) {
   return new File([blob], 'cover.jpg', { type: 'image/jpeg' });
 }
 
-async function getBookFileUrl(path: string) {
-  const { data, error } = await supabase.storage.from('books').createSignedUrl(path, 3600);
-  if (error || !data?.signedUrl) throw error || new Error('Không thể tạo URL đọc tệp.');
-  return data.signedUrl;
-}
-
-async function downloadBookFile(path: string) {
-  const { data, error } = await supabase.storage.from('books').download(path);
-  if (error || !data) throw error || new Error('Không thể tải tệp sách.');
-  return data;
-}
-
-const MAX_STORAGE_OBJECT_BYTES = 45 * 1024 * 1024;
 const bookDataCache = new Map<string, Promise<Blob>>();
 
 async function downloadBookData(book: Book) {
@@ -239,7 +227,11 @@ function AuthScreen() {
     setBusy(true);
     setMessage(null);
     const result = isSignUp
-      ? await supabase.auth.signUp({ email, password })
+      ? await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: `${window.location.origin}/` },
+        })
       : await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (result.error) setMessage(result.error.message);
@@ -1469,7 +1461,7 @@ export default function App() {
       const uploadedBooks = await Promise.all(uploadCandidates.map(async (file) => {
         const extension = file.name.split('.').pop()?.toLowerCase() as BookFileType;
         const fileId = crypto.randomUUID();
-        const filePath = `${user.id}/${fileId}.${extension}`;
+        const filePath = `r2/${user.id}/${fileId}.${extension}`;
         const contentTypes: Record<BookFileType, string> = {
           pdf: 'application/pdf',
           epub: 'application/epub+zip',
@@ -1477,42 +1469,7 @@ export default function App() {
           cbz: 'application/vnd.comicbook+zip',
         };
         const contentType = contentTypes[extension] || file.type || 'application/octet-stream';
-        const fileParts: string[] = [];
-        if (file.size > MAX_STORAGE_OBJECT_BYTES) {
-          const partCount = Math.ceil(file.size / MAX_STORAGE_OBJECT_BYTES);
-          const uploadPart = async (index: number) => {
-            const partPath = `${user.id}/${fileId}.part-${String(index).padStart(4, '0')}`;
-            const start = index * MAX_STORAGE_OBJECT_BYTES;
-            const part = file.slice(start, Math.min(start + MAX_STORAGE_OBJECT_BYTES, file.size), contentType);
-            const { error: partError } = await supabase.storage.from('books').upload(partPath, part, {
-              contentType,
-              upsert: false,
-            });
-            if (partError) throw partError;
-            return { index, partPath };
-          };
-          const nextPart = { value: 0 };
-          const uploadWorker = async () => {
-            const uploaded: { index: number; partPath: string }[] = [];
-            while (nextPart.value < partCount) {
-              const index = nextPart.value;
-              nextPart.value += 1;
-              uploaded.push(await uploadPart(index));
-            }
-            return uploaded;
-          };
-          const workerCount = Math.min(3, partCount);
-          const uploadedParts = (await Promise.all(
-            Array.from({ length: workerCount }, () => uploadWorker()),
-          )).flat().sort((left, right) => left.index - right.index);
-          fileParts.push(...uploadedParts.map(({ partPath }) => partPath));
-        } else {
-          const { error: uploadError } = await supabase.storage.from('books').upload(filePath, file, {
-            contentType,
-            upsert: false,
-          });
-          if (uploadError) throw uploadError;
-        }
+        await uploadBookFile(filePath, file, contentType);
 
         const fileLabel = file.name.replace(/\.(pdf|epub|mobi|cbz)$/i, '').trim() || 'Sách chưa đặt tên';
         const [titlePart, ...authorParts] = fileLabel.split(/\s+-\s+/);
@@ -1520,15 +1477,15 @@ export default function App() {
         const author = authorParts.join(' - ').trim() || 'Không rõ tác giả';
         const { data: newBook, error: insertError } = await supabase
           .from('books')
-            .insert({
-              title,
-              author,
-              file_path: fileParts.length > 0 ? null : filePath,
-              file_parts: fileParts.length > 0 ? fileParts : null,
-              file_type: extension,
-              owner_id: user.id,
-              is_public: false,
-            })
+          .insert({
+            title,
+            author,
+            file_path: filePath,
+            file_parts: null,
+            file_type: extension,
+            owner_id: user.id,
+            is_public: false,
+          })
           .select('*')
           .single();
         if (insertError) throw insertError;
@@ -1796,21 +1753,18 @@ export default function App() {
         return;
       }
       const coverPath = `${user.id}/covers/${targetBook!.id}-${crypto.randomUUID()}`;
-      const { error: uploadError } = await supabase.storage.from('books').upload(coverPath, coverFile, {
-        contentType: coverFile.type,
-        upsert: false,
-      });
-      if (uploadError) throw uploadError;
+      const r2CoverPath = `r2/${coverPath}`;
+      await uploadBookFile(r2CoverPath, coverFile, coverFile.type);
       const { data, error: updateError } = await supabase
         .from('books')
-        .update({ cover_path: coverPath })
+        .update({ cover_path: r2CoverPath })
         .eq('id', targetBook!.id)
         .select('*')
         .single();
       if (updateError) throw updateError;
       const updatedBook = normalizeBookMetadata(data);
       setBooks((currentBooks) => currentBooks.map((item) => item.id === updatedBook.id ? updatedBook : item));
-      const coverUrl = await getBookFileUrl(coverPath);
+      const coverUrl = await getBookFileUrl(r2CoverPath);
       setCoverUrls((current) => ({ ...current, [updatedBook.id]: coverUrl }));
     } catch {
       const reader = new FileReader();
