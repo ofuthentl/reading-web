@@ -4,7 +4,7 @@ export type AppTheme = 'light' | 'dark';
 
 const THEME_STORAGE_KEY = 'ofu-library-theme';
 const LIGHT_THEME_COLOR = '#f6f1e7';
-const DARK_THEME_COLOR = '#0b0c12';
+const DARK_THEME_COLOR = '#0e0e10';
 
 function readInitialTheme(): AppTheme {
   if (typeof window === 'undefined') return 'light';

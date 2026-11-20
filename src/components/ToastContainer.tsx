@@ -49,7 +49,7 @@ export function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
           <div
             key={toast.id}
             role={toast.type === 'error' ? 'alert' : 'status'}
-            className={`pointer-events-auto flex items-start gap-2.5 rounded-xl border px-3.5 py-3 shadow-lg fade-in ${container}`}
+            className={`moonlit-card pointer-events-auto flex items-start gap-2.5 rounded-xl border px-3.5 py-3 shadow-lg fade-in ${container}`}
           >
             <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${iconClass}`} />
             <p className="flex-1 break-words text-sm leading-snug">{toast.message}</p>

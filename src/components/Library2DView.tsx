@@ -297,7 +297,7 @@ export function Library2DView({
           </section>
         ) : books.length === 0 ? (
           /* Trạng thái thư viện trống */
-          <section className="moonlit-card mx-auto flex max-w-md flex-col items-center rounded-2xl border border-line bg-surface px-6 py-14 text-center shadow-sm dark:border-accent/20">
+          <section className="moonlit-card mx-auto flex max-w-md flex-col items-center rounded-2xl border border-line bg-surface px-6 py-14 text-center shadow-sm dark:border-line-strong/60">
             <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-line bg-subtle text-accent">
               <BookOpen className="h-7 w-7" />
             </div>
@@ -311,7 +311,7 @@ export function Library2DView({
             <button
               type="button"
               onClick={onUploadClick}
-              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_20px_-6px_rgba(241,241,241,0.28)]"
             >
               <Upload className="h-4 w-4" />
               Tải sách đầu tiên
@@ -358,7 +358,7 @@ export function Library2DView({
 
             {/* Danh sách kệ sách */}
             {visibleShelves.length === 0 ? (
-              <section className="moonlit-card mx-auto flex max-w-md flex-col items-center rounded-2xl border border-line bg-surface px-6 py-12 text-center shadow-sm dark:border-accent/20">
+              <section className="moonlit-card mx-auto flex max-w-md flex-col items-center rounded-2xl border border-line bg-surface px-6 py-12 text-center shadow-sm dark:border-line-strong/60">
                 <BookMarked className="mb-3 h-8 w-8 text-ink-faint" />
                 <h2 className="font-display text-base font-semibold text-ink">
                   Không tìm thấy cuốn sách nào

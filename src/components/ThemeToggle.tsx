@@ -23,7 +23,7 @@ export function ThemeToggle({ isDark, onToggle, showLabel = false }: ThemeToggle
           aria-hidden="true"
           className={`pointer-events-none absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-accent transition-all duration-300 ease-out ${
             isDark
-              ? 'translate-x-7 shadow-[0_0_12px_rgba(216,185,126,0.55)]'
+              ? 'translate-x-7 shadow-[0_0_14px_rgba(241,241,241,0.35)]'
               : 'translate-x-0 shadow-sm'
           }`}
         />

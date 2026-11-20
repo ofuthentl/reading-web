@@ -49,7 +49,7 @@ export function LibraryHeader({
         : 'bg-accent';
 
   return (
-    <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur-sm transition-colors duration-200 dark:border-accent/15 dark:shadow-[0_1px_0_rgba(216,185,126,0.06)]">
+    <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur-sm transition-colors duration-200 dark:shadow-[0_1px_0_rgba(241,241,241,0.04)]">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
         {/* Thương hiệu */}
         <div className="flex min-w-0 items-center gap-2.5">
@@ -101,7 +101,7 @@ export function LibraryHeader({
           <button
             type="button"
             onClick={onUploadClick}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_18px_-4px_rgba(216,185,126,0.4)]"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_20px_-6px_rgba(241,241,241,0.28)]"
           >
             <Upload className="h-4 w-4" />
             <span className="hidden sm:inline">Tải sách</span>
@@ -116,7 +116,7 @@ export function LibraryHeader({
             className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-sm font-medium transition-colors ${
               selectionMode
                 ? 'border-accent bg-accent/15 text-accent'
-                : 'border-line bg-canvas text-ink-muted hover:border-line-strong hover:text-ink'
+                : 'border-line bg-canvas text-ink-muted hover:border-line-strong hover:bg-subtle hover:text-ink'
             }`}
           >
             <CheckSquare className="h-4 w-4" />
@@ -137,7 +137,7 @@ export function LibraryHeader({
             disabled={loading}
             aria-label="Làm mới thư viện"
             title="Làm mới thư viện"
-            className="rounded-xl border border-line bg-canvas p-2 text-ink-muted transition-colors hover:border-line-strong hover:text-ink disabled:opacity-50"
+            className="rounded-xl border border-line bg-canvas p-2 text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink disabled:opacity-50"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -147,7 +147,7 @@ export function LibraryHeader({
             onClick={onLogout}
             aria-label="Đăng xuất"
             title="Đăng xuất"
-            className="rounded-xl border border-line bg-canvas p-2 text-ink-muted transition-colors hover:border-red-700/35 hover:text-red-700 dark:hover:border-red-400/35 dark:hover:text-red-300"
+            className="rounded-xl border border-line bg-canvas p-2 text-ink-muted transition-colors hover:border-red-700/35 hover:bg-subtle hover:text-red-700 dark:hover:border-red-400/35 dark:hover:text-red-300"
           >
             <LogOut className="h-4 w-4" />
           </button>

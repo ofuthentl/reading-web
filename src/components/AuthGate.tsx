@@ -120,7 +120,7 @@ export function AuthGate({ onAuthenticated, authReason, isDark, onToggleTheme }:
         </div>
       )}
 
-      <div className="moonlit-card w-full max-w-sm rounded-2xl border border-line bg-surface p-7 shadow-sm dark:border-accent/20">
+      <div className="moonlit-card w-full max-w-sm rounded-2xl border border-line bg-surface p-7 shadow-sm dark:border-line-strong/60">
         <div className="mb-6 flex items-center gap-2.5 border-b border-line pb-4">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
             <BookOpen className="h-5 w-5" />
@@ -202,7 +202,7 @@ export function AuthGate({ onAuthenticated, authReason, isDark, onToggleTheme }:
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover disabled:opacity-50 dark:shadow-[0_0_20px_-4px_rgba(216,185,126,0.42)]"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover disabled:opacity-50 dark:shadow-[0_0_22px_-6px_rgba(241,241,241,0.28)]"
             >
               {submitting ? (
                 <>
