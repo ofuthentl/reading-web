@@ -6,7 +6,7 @@ export const THEME_ORDER: readonly AppTheme[] = ['light', 'dim', 'midnight'];
 
 export const THEME_LABELS: Record<AppTheme, string> = {
   light: 'Ban ngày',
-  dim: 'Than chì',
+  dim: 'Chiều tối',
   midnight: 'Đêm khuya',
 };
 
@@ -14,8 +14,8 @@ const THEME_STORAGE_KEY = 'ofu-library-theme';
 
 const THEME_META_COLORS: Record<AppTheme, string> = {
   light: '#f6f1e7',
-  dim: '#17171a',
-  midnight: '#08080a',
+  dim: '#0d1117',
+  midnight: '#060608',
 };
 
 function parseStoredTheme(value: string | null): AppTheme | null {

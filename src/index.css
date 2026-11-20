@@ -19,36 +19,36 @@
     color-scheme: light;
   }
 
-  /* Mode 2: Than chì (Tối dịu, trung tính, chữ trắng sắc nét) */
+  /* Mode 2: Chiều tối (Đêm mực dịu + gradient sương nhẹ, chữ & nút trắng) */
   [data-theme='dim'],
   .dark {
-    --color-canvas: 23 23 26; /* #17171a */
-    --color-surface: 33 33 37; /* #212125 */
-    --color-subtle: 43 43 48; /* #2b2b30 */
-    --color-line: 54 54 61; /* #36363d */
-    --color-line-strong: 82 82 91; /* #52525b */
-    --color-ink: 242 242 240; /* #f2f2f0 */
-    --color-ink-muted: 181 181 179; /* #b5b5b3 */
-    --color-ink-faint: 132 132 138; /* #84848a */
-    --color-accent: 242 242 240; /* #f2f2f0 */
-    --color-accent-hover: 222 222 220; /* #dededc */
-    --color-accent-fg: 23 23 26; /* #17171a */
+    --color-canvas: 13 17 23; /* #0d1117 */
+    --color-surface: 20 26 35; /* #141a23 */
+    --color-subtle: 29 37 49; /* #1d2531 */
+    --color-line: 37 46 60; /* #252e3c */
+    --color-line-strong: 59 71 90; /* #3b475a */
+    --color-ink: 230 235 240; /* #e6ebf0 */
+    --color-ink-muted: 139 150 168; /* #8b96a8 */
+    --color-ink-faint: 95 106 125; /* #5f6a7d */
+    --color-accent: 238 242 246; /* #eef2f6 */
+    --color-accent-hover: 214 221 229; /* #d6dde5 */
+    --color-accent-fg: 13 17 23; /* #0d1117 */
     color-scheme: dark;
   }
 
-  /* Mode 3: Đêm khuya (Đen sâu nhất — Obsidian Pitch Dark) */
+  /* Mode 3: Đêm khuya (Đen tuyền sâu nhất — Pitch Obsidian) */
   [data-theme='midnight'] {
-    --color-canvas: 8 8 10; /* #08080a */
-    --color-surface: 17 17 20; /* #111114 */
-    --color-subtle: 26 26 31; /* #1a1a1f */
-    --color-line: 36 36 43; /* #24242b */
-    --color-line-strong: 62 62 72; /* #3e3e48 */
-    --color-ink: 244 244 245; /* #f4f4f5 */
-    --color-ink-muted: 161 161 170; /* #a1a1aa */
-    --color-ink-faint: 110 110 119; /* #6e6e77 */
-    --color-accent: 244 244 245; /* #f4f4f5 */
-    --color-accent-hover: 220 220 224; /* #dcdce0 */
-    --color-accent-fg: 9 9 11; /* #09090b */
+    --color-canvas: 6 6 8; /* #060608 */
+    --color-surface: 14 14 17; /* #0e0e11 */
+    --color-subtle: 22 22 26; /* #16161a */
+    --color-line: 31 31 37; /* #1f1f25 */
+    --color-line-strong: 52 52 60; /* #34343c */
+    --color-ink: 238 238 240; /* #eeeef0 */
+    --color-ink-muted: 154 154 163; /* #9a9aa3 */
+    --color-ink-faint: 102 102 110; /* #66666e */
+    --color-accent: 242 242 244; /* #f2f2f4 */
+    --color-accent-hover: 218 218 222; /* #dadade */
+    --color-accent-fg: 6 6 8; /* #060608 */
     color-scheme: dark;
   }
 
@@ -70,19 +70,19 @@
 
   [data-theme='dim'] .theme-canvas {
     background-color: rgb(var(--color-canvas));
-    background-image: radial-gradient(
-      ellipse 64% 38% at 50% -10%,
-      rgba(242, 242, 240, 0.045),
-      transparent 68%
-    );
+    background-image:
+      radial-gradient(ellipse 68% 42% at 50% -12%, rgba(206, 222, 245, 0.085), transparent 68%),
+      radial-gradient(ellipse 46% 36% at 88% 12%, rgba(124, 152, 198, 0.06), transparent 64%);
     background-attachment: fixed;
   }
 
   [data-theme='midnight'] .theme-canvas {
     background-color: rgb(var(--color-canvas));
-    background-image:
-      radial-gradient(ellipse 62% 36% at 50% -12%, rgba(244, 244, 245, 0.05), transparent 68%),
-      radial-gradient(ellipse 42% 32% at 88% 12%, rgba(200, 200, 210, 0.025), transparent 64%);
+    background-image: radial-gradient(
+      ellipse 58% 32% at 50% -14%,
+      rgba(242, 242, 244, 0.032),
+      transparent 66%
+    );
     background-attachment: fixed;
   }
 
