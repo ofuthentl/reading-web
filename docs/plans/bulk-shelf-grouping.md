@@ -1,6 +1,6 @@
 # Kế hoạch Triển khai — Tự động gom kệ theo lô & Chuyển kệ hàng loạt (`feat/bulk-shelf-grouping`)
 
-> **Trạng thái:** Đã hoàn tất triển khai Phase 1 → 4, đã deploy Worker live và vượt qua Checklist kiểm định tự động 4A & 4B — chờ người dùng kiểm thử thủ công 4C trước khi mở PR vào `main`.
+> **Trạng thái:** Đã hoàn tất triển khai Phase 1 → 4 + bản vá kệ đổi tên (`Mushoku` → `Mushoku Tensei`), đã deploy Worker live và vượt qua 100% Checklist kiểm thử 4A, 4B, 4C — đã push nhánh sẵn sàng mở PR vào `main`.
 > **Nhánh triển khai:** `feat/bulk-shelf-grouping` (tách mới từ `origin/main` sau khi PR #2 `refactor/code-splitting` đã merge; đã gỡ upstream tracking với `origin/main`).
 > **Ràng buộc liên quan:** `AGENTS.md` (mọi file ≤ 500 dòng hiệu dụng, không commit/push trực tiếp lên `main`, tra "Công cụ đã có — cấm viết lại" trước khi thêm helper, cập nhật `HANDOFF.md` ở mọi commit và `docs/ARCHITECTURE.md` ở mọi commit đổi cấu trúc/API), `docs/DECISIONS.md` (`D-001` → `D-008`).
 
@@ -291,12 +291,12 @@
   - Khi trong kho đã có kệ `'sao'` hoặc `'SAO'`, hoặc khi các tập cũ cùng bộ (`Mushoku Vol 1`) đã được đổi tên kệ sang `'Mushoku Tensei'`, các tập mới tải lên (`Mushoku Vol 2..5`) tự động nhận đúng kệ `'Mushoku Tensei'` và tự gom luôn các tập còn sót ở kệ `'Mushoku'` cũ.
 
 ### 4C. Kiểm thử giao diện & Luồng thực tế
-- [ ] **Footer `UploadDropzone` (`UploadBatchShelfBar`):**
+- [x] **Footer `UploadDropzone` (`UploadBatchShelfBar`):**
   - Thêm `>= 2` tệp cùng bộ vào hàng đợi: pill `Thêm vào kệ <Tên>` tự hiện bên trái footer và mặc định được tick.
   - Khi đang tick: toàn bộ tệp trong hàng đợi hiển thị preview `Kệ: <Tên>`; sửa `<Tên>` ngay trên pill thì preview của toàn bộ tệp cập nhật theo; bấm `Tải lên (N)` thì tất cả sách được lưu vào đúng kệ `<Tên>`.
   - Khi bỏ tick: preview và kết quả tải lên quay về phân kệ tự động theo từng cuốn.
-- [ ] **Chuyển kệ hàng loạt (`BulkShelfModal`):**
+- [x] **Chuyển kệ hàng loạt (`BulkShelfModal`):**
   - Bật `Chọn nhiều` → lọc từ khoá → bấm `Chọn tất cả` → bấm `Chuyển kệ (N)`.
   - Chọn nhanh 1 chip kệ có sẵn hoặc nhập tên kệ mới → bấm xác nhận → sách chuyển về kệ đích trên cả D1 và UI, hiện toast thành công và tự thoát chế độ `Chọn nhiều`.
-- [ ] **Live trên `https://ofu.lol`:**
-  - Worker đã deploy bản mới, gom thành công 41 cuốn SAO về 1 kệ duy nhất, tải lại trang (`F5`) kệ vẫn giữ nguyên trên D1.
+- [ ] **Live trên `https://ofu.lol` (ngay sau khi merge PR):**
+  - Worker đã deploy bản mới, gom 41 cuốn SAO về 1 kệ duy nhất, tải lại trang (`F5`) kệ vẫn giữ nguyên trên D1.
