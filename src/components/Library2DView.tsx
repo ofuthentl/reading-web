@@ -63,6 +63,9 @@ export function Library2DView({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
+    if (books.length === 0) {
+      setSelectionMode(false);
+    }
     const validIds = new Set(books.map((book) => book.id));
     setSelectedIds((prev) => {
       let changed = false;
@@ -398,6 +401,8 @@ export function Library2DView({
                         <button
                           type="button"
                           onClick={() => onRenameShelf(shelf.name)}
+                          aria-label={`Đổi tên kệ ${shelf.name}`}
+                          title="Đổi tên kệ"
                           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-transparent px-2.5 py-1 text-xs font-medium text-ink-muted transition-colors hover:border-line hover:bg-surface hover:text-ink"
                         >
                           <FolderEdit className="h-3.5 w-3.5" />

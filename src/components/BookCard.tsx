@@ -187,7 +187,7 @@ export function BookCard({
           }}
           aria-label={`Chỉnh sửa ${book.title}`}
           title="Chỉnh sửa thông tin"
-          className="absolute left-1.5 top-1.5 rounded-md border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] opacity-0 transition-opacity hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100"
+          className="absolute left-1.5 top-1.5 rounded-md border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] opacity-85 transition-opacity hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0"
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>

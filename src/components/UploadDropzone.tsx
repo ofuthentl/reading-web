@@ -1,0 +1,524 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  FileText,
+  HardDrive,
+  Loader2,
+  RotateCcw,
+  Square,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
+import type { Book, BookFileType, StorageStats } from '@/types';
+import { HARD_LIMIT_BYTES, formatBytes, isAuthError, uploadBook } from '@/lib/api';
+import { bookDuplicateKey, parseFileMetadata } from '@/lib/parsers';
+import type { ToastType } from '@/hooks/useToast';
+
+const MAX_SINGLE_FILE_BYTES = 350 * 1024 * 1024;
+const ACCEPTED_EXTENSIONS = '.epub,.mobi,.pdf,.cbz';
+
+type QueueItemStatus = 'queued' | 'skipped' | 'uploading' | 'done' | 'error' | 'invalid';
+
+interface UploadQueueItem {
+  id: string;
+  file: File;
+  title: string;
+  author: string;
+  shelf: string;
+  extension: BookFileType | null;
+  duplicateKey: string;
+  duplicateReason: 'library' | 'queue' | null;
+  status: QueueItemStatus;
+  errorMessage?: string;
+}
+
+interface UploadDropzoneProps {
+  open: boolean;
+  books: Book[];
+  storage: StorageStats | null;
+  onClose: () => void;
+  onBookUploaded: (book: Book, storage: StorageStats) => void;
+  onApiError: (err: unknown, fallbackMessage: string) => void;
+  onNotify: (message: string, type?: ToastType) => void;
+}
+
+function createQueueItems(
+  files: File[],
+  libraryKeys: Set<string>,
+  existingQueue: UploadQueueItem[],
+): UploadQueueItem[] {
+  const queuedKeys = new Set(
+    existingQueue.filter((item) => item.status !== 'invalid').map((item) => item.duplicateKey),
+  );
+
+  return files.map((file) => {
+    const parsed = parseFileMetadata(file.name);
+    const duplicateKey = bookDuplicateKey(parsed.title, parsed.author);
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const base = { id, file, ...parsed, duplicateKey, duplicateReason: null as 'library' | 'queue' | null };
+
+    if (!parsed.extension) {
+      return { ...base, status: 'invalid', errorMessage: 'Chỉ hỗ trợ EPUB, MOBI, PDF hoặc CBZ.' };
+    }
+    if (file.size > MAX_SINGLE_FILE_BYTES) {
+      return { ...base, status: 'invalid', errorMessage: 'Tệp vượt quá giới hạn tối đa 350 MB.' };
+    }
+
+    const duplicateReason = libraryKeys.has(duplicateKey)
+      ? 'library'
+      : queuedKeys.has(duplicateKey)
+        ? 'queue'
+        : null;
+    queuedKeys.add(duplicateKey);
+    return { ...base, duplicateReason, status: duplicateReason ? 'skipped' : 'queued' };
+  });
+}
+
+function QueueItemStatusNote({ item }: { item: UploadQueueItem }) {
+  if (item.status === 'uploading') {
+    return (
+      <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-accent">
+        <Loader2 className="h-3 w-3 animate-spin" /> Đang trích ảnh bìa & tải lên R2...
+      </p>
+    );
+  }
+  if (item.status === 'done') {
+    return (
+      <p className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
+        <CheckCircle2 className="h-3 w-3" /> Đã lưu vào thư viện
+      </p>
+    );
+  }
+  if (item.status === 'skipped') {
+    return <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">Tạm bỏ qua do nghi ngờ trùng lặp.</p>;
+  }
+  if ((item.status === 'error' || item.status === 'invalid') && item.errorMessage) {
+    return (
+      <p className="mt-1 inline-flex items-start gap-1 text-xs text-red-700 dark:text-red-400">
+        <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+        <span>{item.errorMessage}</span>
+      </p>
+    );
+  }
+  return null;
+}
+
+export function UploadDropzone({
+  open,
+  books,
+  storage,
+  onClose,
+  onBookUploaded,
+  onApiError,
+  onNotify,
+}: UploadDropzoneProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const stopRequestedRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  const [queue, setQueue] = useState<UploadQueueItem[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [stopRequested, setStopRequested] = useState(false);
+  const [progressState, setProgressState] = useState<{
+    completed: number;
+    total: number;
+    currentTitle: string;
+  } | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      stopRequestedRef.current = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !uploading) onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, uploading, onClose]);
+
+  const libraryKeys = useMemo(
+    () => new Set(books.map((book) => bookDuplicateKey(book.title, book.author))),
+    [books],
+  );
+
+  const addFilesToQueue = useCallback(
+    (incomingFiles: FileList | File[]) => {
+      const files = Array.from(incomingFiles);
+      if (files.length > 0) {
+        setQueue((prev) => [...prev, ...createQueueItems(files, libraryKeys, prev)]);
+      }
+    },
+    [libraryKeys],
+  );
+
+  const updateItem = (id: string, patch: Partial<UploadQueueItem>) => {
+    setQueue((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  };
+
+  const handleToggleSkip = (id: string) => {
+    setQueue((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        if (item.status === 'skipped') return { ...item, status: 'queued', errorMessage: undefined };
+        if (item.status === 'queued') return { ...item, status: 'skipped' };
+        return item;
+      }),
+    );
+  };
+
+  const handleStartUpload = async () => {
+    const targets = queue.filter((item) => item.status === 'queued');
+    if (targets.length === 0 || uploading) return;
+
+    stopRequestedRef.current = false;
+    setStopRequested(false);
+    setUploading(true);
+    setProgressState({ completed: 0, total: targets.length, currentTitle: targets[0].title });
+
+    let successCount = 0;
+    let failCount = 0;
+    let authFailed = false;
+
+    for (let index = 0; index < targets.length; index += 1) {
+      if (stopRequestedRef.current || !mountedRef.current) break;
+      const current = targets[index];
+
+      setProgressState({ completed: index, total: targets.length, currentTitle: current.title });
+      updateItem(current.id, { status: 'uploading', errorMessage: undefined });
+
+      try {
+        const result = await uploadBook(current.file);
+        if (!mountedRef.current) break;
+        successCount += 1;
+        onBookUploaded(result.book, result.storage);
+        updateItem(current.id, { status: 'done', errorMessage: undefined });
+      } catch (err) {
+        if (!mountedRef.current) break;
+        if (isAuthError(err)) {
+          authFailed = true;
+          onApiError(err, 'Phiên đăng nhập đã hết hạn.');
+          break;
+        }
+        failCount += 1;
+        const message = err instanceof Error ? err.message : `Không thể tải "${current.title}" lên kho.`;
+        updateItem(current.id, { status: 'error', errorMessage: message });
+      }
+
+      if (mountedRef.current) {
+        setProgressState({ completed: index + 1, total: targets.length, currentTitle: current.title });
+      }
+    }
+
+    if (!mountedRef.current) return;
+    setUploading(false);
+    setStopRequested(false);
+
+    if (authFailed) {
+      onClose();
+      return;
+    }
+    if (stopRequestedRef.current) {
+      onNotify(
+        successCount > 0 ? `Đã dừng tải lên sau khi hoàn tất ${successCount} cuốn.` : 'Đã dừng hàng đợi tải lên.',
+        'info',
+      );
+      return;
+    }
+    if (successCount > 0 && failCount === 0) {
+      onNotify(`Đã tải lên thành công ${successCount} cuốn sách.`, 'success');
+    } else if (successCount > 0 && failCount > 0) {
+      onNotify(`Đã tải lên ${successCount} cuốn, ${failCount} tệp gặp lỗi.`, 'warning');
+    } else if (failCount > 0) {
+      onNotify(`Không thể tải lên ${failCount} tệp. Vui lòng xem chi tiết lỗi.`, 'error');
+    }
+  };
+
+  if (!open) return null;
+
+  const limitBytes = storage?.limitBytes || HARD_LIMIT_BYTES;
+  const remainingBytes = Math.max(0, storage?.remainingBytes ?? limitBytes - (storage?.usedBytes ?? 0));
+  const queuedItems = queue.filter((item) => item.status === 'queued');
+  const errorCount = queue.filter((item) => item.status === 'error').length;
+  const queuedBytes = queuedItems.reduce((sum, item) => sum + item.file.size, 0);
+  const exceedsQuota = queuedBytes > remainingBytes;
+  const progressPercent = progressState
+    ? Math.round((progressState.completed / Math.max(1, progressState.total)) * 100)
+    : 0;
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="upload-modal-title"
+      onClick={() => !uploading && onClose()}
+    >
+      <div
+        className="moonlit-card fade-in flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
+              <Upload className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 id="upload-modal-title" className="font-display text-lg font-semibold text-ink">
+                Tải sách vào thư viện
+              </h2>
+              <p className="text-xs text-ink-muted">
+                Hỗ trợ EPUB, MOBI, PDF, CBZ · Tối đa 350 MB/tệp · Tải tuần tự từng cuốn
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={uploading}
+            aria-label="Đóng cửa sổ tải sách"
+            className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink disabled:opacity-40"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4 scrollbar-thin">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-xs">
+            <span className="inline-flex items-center gap-1.5 text-ink-muted">
+              <HardDrive className="h-3.5 w-3.5 text-accent" />
+              Còn trống: <strong className="text-ink">{formatBytes(remainingBytes)}</strong> /{' '}
+              {formatBytes(limitBytes)}
+            </span>
+            {queuedItems.length > 0 && (
+              <span className="text-ink-muted">
+                Chờ tải:{' '}
+                <strong className={exceedsQuota ? 'text-red-700 dark:text-red-400' : 'text-ink'}>
+                  {queuedItems.length} tệp ({formatBytes(queuedBytes)})
+                </strong>
+              </span>
+            )}
+          </div>
+
+          {exceedsQuota && (
+            <div
+              role="alert"
+              className="flex items-start gap-2.5 rounded-xl border border-red-800/30 bg-red-600/10 px-3.5 py-2.5 text-xs text-red-800 dark:border-red-400/30 dark:text-red-300"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>
+                Tổng dung lượng chờ tải ({formatBytes(queuedBytes)}) vượt hạn mức an toàn 9.0 GB
+                (còn trống {formatBytes(remainingBytes)}). Hãy bỏ bớt tệp hoặc xoá sách cũ trước khi tải lên.
+              </p>
+            </div>
+          )}
+
+          <div
+            role="button"
+            tabIndex={uploading ? -1 : 0}
+            onClick={() => !uploading && inputRef.current?.click()}
+            onKeyDown={(event) => {
+              if (!uploading && (event.key === 'Enter' || event.key === ' ')) {
+                event.preventDefault();
+                inputRef.current?.click();
+              }
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              if (!uploading) setIsDragging(true);
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault();
+              setIsDragging(false);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              setIsDragging(false);
+              if (!uploading && event.dataTransfer.files?.length) addFilesToQueue(event.dataTransfer.files);
+            }}
+            className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-7 text-center transition-colors ${
+              uploading
+                ? 'cursor-not-allowed border-line bg-canvas/40 opacity-60'
+                : isDragging
+                  ? 'border-accent bg-accent/10'
+                  : 'border-line-strong bg-canvas/70 hover:border-accent/60 hover:bg-subtle/60'
+            }`}
+          >
+            <input
+              ref={inputRef}
+              type="file"
+              multiple
+              accept={ACCEPTED_EXTENSIONS}
+              onChange={(event) => {
+                if (event.target.files) {
+                  addFilesToQueue(event.target.files);
+                  event.target.value = '';
+                }
+              }}
+              className="hidden"
+            />
+            <div className="mb-2.5 flex h-11 w-11 items-center justify-center rounded-xl border border-line bg-surface text-accent">
+              <Upload className="h-5 w-5" />
+            </div>
+            <p className="text-sm font-medium text-ink">
+              {isDragging ? 'Thả tệp sách vào đây' : 'Kéo-thả sách vào đây hoặc bấm để chọn tệp'}
+            </p>
+            <p className="mt-1 text-xs text-ink-muted">
+              Chọn nhiều cuốn cùng lúc · Ảnh bìa nhẹ được tự động trích xuất khi tải lên
+            </p>
+          </div>
+
+          {progressState && (uploading || progressState.completed > 0) && (
+            <div className="space-y-2 rounded-xl border border-line bg-canvas px-3.5 py-3">
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="truncate font-medium text-ink">
+                  {uploading
+                    ? `Đang xử lý (${progressState.completed + 1}/${progressState.total}): ${progressState.currentTitle}`
+                    : `Đã xử lý ${progressState.completed}/${progressState.total} tệp`}
+                </span>
+                <span className="shrink-0 font-medium text-accent">{progressPercent}%</span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-subtle">
+                <div className="h-full rounded-full bg-accent transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+              </div>
+            </div>
+          )}
+
+          {queue.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-ink-muted">
+                <span>Danh sách tệp ({queue.length})</span>
+                {!uploading && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQueue([]);
+                      setProgressState(null);
+                    }}
+                    className="text-ink-muted transition-colors hover:text-ink"
+                  >
+                    Xoá danh sách
+                  </button>
+                )}
+              </div>
+
+              <ul className="max-h-64 space-y-2 overflow-y-auto pr-1 scrollbar-thin">
+                {queue.map((item) => (
+                  <li key={item.id} className="flex items-start justify-between gap-3 rounded-xl border border-line bg-canvas px-3 py-2.5">
+                    <div className="flex min-w-0 flex-1 items-start gap-2.5">
+                      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-xs font-semibold uppercase text-ink-muted">
+                        {item.extension || <FileText className="h-4 w-4" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <p className="truncate text-sm font-medium text-ink">{item.title}</p>
+                          {item.duplicateReason && item.status !== 'done' && (
+                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-700/30 bg-amber-600/10 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:border-amber-400/30 dark:text-amber-300">
+                              <AlertTriangle className="h-2.5 w-2.5" />
+                              {item.duplicateReason === 'library' ? 'Trùng trong kho' : 'Trùng hàng đợi'}
+                            </span>
+                          )}
+                        </div>
+                        <p className="truncate text-xs text-ink-muted">
+                          {item.author} · Kệ: {item.shelf} · {formatBytes(item.file.size)}
+                        </p>
+                        <QueueItemStatusNote item={item} />
+                      </div>
+                    </div>
+
+                    {!uploading && (
+                      <div className="flex shrink-0 items-center gap-1">
+                        {(item.status === 'skipped' || (item.status === 'queued' && item.duplicateReason)) && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSkip(item.id)}
+                            className="rounded-lg border border-line bg-surface px-2 py-1 text-[11px] font-medium text-ink transition-colors hover:border-line-strong hover:bg-subtle"
+                          >
+                            {item.status === 'skipped' ? 'Vẫn tải' : 'Bỏ qua'}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setQueue((prev) => prev.filter((q) => q.id !== item.id))}
+                          aria-label={`Xoá ${item.title} khỏi hàng đợi`}
+                          className="rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-subtle hover:text-ink"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-canvas/60 px-5 py-3.5">
+          <div>
+            {!uploading && errorCount > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setQueue((prev) =>
+                    prev.map((item) =>
+                      item.status === 'error' ? { ...item, status: 'queued', errorMessage: undefined } : item,
+                    ),
+                  )
+                }
+                className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-xs font-medium text-ink transition-colors hover:border-line-strong hover:bg-subtle"
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Thử lại {errorCount} tệp lỗi
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {uploading ? (
+              <button
+                type="button"
+                disabled={stopRequested}
+                onClick={() => {
+                  stopRequestedRef.current = true;
+                  setStopRequested(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-subtle disabled:opacity-50"
+              >
+                <Square className="h-3.5 w-3.5" />
+                {stopRequested ? 'Đang dừng sau tệp này...' : 'Dừng tải lên'}
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-xl border border-line bg-surface px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink"
+                >
+                  Đóng
+                </button>
+                <button
+                  type="button"
+                  disabled={queuedItems.length === 0}
+                  onClick={() => void handleStartUpload()}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover disabled:opacity-45 dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
+                >
+                  <Upload className="h-4 w-4" />
+                  Tải lên {queuedItems.length > 0 ? `(${queuedItems.length})` : ''}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
