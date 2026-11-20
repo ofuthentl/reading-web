@@ -1,6 +1,6 @@
 # Kế hoạch Refactor — Code-Splitting, Tách `parsers.ts`, Bảo mật HTML & D-008
 
-> **Trạng thái:** Đã chốt quyết định review 2026-11-21 — chờ người dùng duyệt bản sửa cuối (chưa sửa code).
+> **Trạng thái:** Đã hoàn tất triển khai Phase 1 → 4 — chờ kiểm thử thủ công Mục 5C và xác nhận mở PR vào `main`.
 > **Nhánh triển khai:** `refactor/code-splitting` (tách mới từ `origin/main` sau khi Phase 3 đã merge qua PR #1; đã bỏ upstream tracking `origin/main`).
 > **Ràng buộc liên quan:** `AGENTS.md` (mọi file ≤ 500 dòng hiệu dụng, không sửa trực tiếp trên `main`, tra "Công cụ đã có" trước khi tạo helper mới, cập nhật `ARCHITECTURE.md` ở mọi commit đổi cấu trúc và `HANDOFF.md` ở mọi commit), `docs/DECISIONS.md` (`D-001` → `D-008`).
 
@@ -176,22 +176,26 @@
 ## 5. Checklist kiểm thử (bắt buộc qua hết trước khi kết thúc)
 
 ### A. Kiểm định tự động (CI cục bộ)
-- [ ] `npm run typecheck` — 0 lỗi.
-- [ ] `npm run lint` — 0 lỗi, 0 cảnh báo (mọi file `.ts`/`.tsx` đều ≤ 500 dòng hiệu dụng).
-- [ ] `npm run build` — 0 lỗi; `index-*.js` < 350 kB (gzip < 115 kB); nếu còn cảnh báo `> 500 kB` thì **chỉ** đến từ chunk PDF tải lười (không tăng `chunkSizeWarningLimit`).
+- [x] `npm run typecheck` — 0 lỗi.
+- [x] `npm run lint` — 0 lỗi, 0 cảnh báo (mọi file `.ts`/`.tsx` đều ≤ 500 dòng hiệu dụng).
+- [x] `npm run build` — 0 lỗi; `index-*.js` = **259.00 kB** (gzip **76.61 kB**), **0 cảnh báo** `> 500 kB` (không thay đổi `chunkSizeWarningLimit`).
+- [x] `cd workers/r2-storage && npx tsc --noEmit` — 0 lỗi.
 
 ### B. So sánh dung lượng chunk JS trong `dist/assets/` (Trước vs Sau)
 
 | Chunk / Asset | Trước refactor (Baseline) | Sau refactor (Số đo thực tế) | Mục tiêu kỳ vọng |
 |---|---:|---:|---|
-| `index-*.js` (entry chính) | **918.12 kB** (gzip **277.95 kB**) | *_(điền ở Phase 4)_* | **< 350 kB** (gzip **< 115 kB**), không chứa `dompurify`/parser |
-| Chunk `parsers-*.js` *(gồm `sanitizeHtml` + `dompurify` + `epubChapters`)* | _(gộp trong `index`)_ | *_(điền ở Phase 4)_* | Tách riêng (~35–55 kB raw, ~12–20 kB gzip) |
-| Chunk `jszip-*.js` | _(gộp trong `index`)_ | *_(điền ở Phase 4)_* | Tách riêng (~95–105 kB) |
-| Chunk `mobi-parser` | _(gộp trong `index`)_ | *_(điền ở Phase 4)_* | Tách riêng (~120–170 kB) |
-| Chunk `PdfReader-*.js` | _(gộp trong `index`)_ | *_(điền ở Phase 4)_* | Tách riêng (~10–20 kB) |
-| Chunk `pdfjs-dist` (tải lười) | _(gộp trong `index`)_ | *_(điền ở Phase 4)_* | Tách riêng; có thể sát/vượt 500 kB raw — chấp nhận theo QĐ-7, không tăng `chunkSizeWarningLimit` |
-| `pdf.worker.min-*.mjs` | 1,265.41 kB | *_(điền ở Phase 4)_* | Vẫn emit đầy đủ |
-| `three` / `@react-three/*` | 0 kB (chưa import) | **0 kB** | Xác nhận không bị kéo vào bundle |
+| `index-*.js` (entry chính) | **918.12 kB** (gzip **277.95 kB**) | **259.00 kB** (gzip **76.61 kB**) | **< 350 kB** (gzip **< 115 kB**), không chứa `dompurify`/parser ✅ |
+| Chunk `parsers-*.js` *(gồm `sanitizeHtml` + `dompurify` + `epubChapters`)* | _(gộp trong `index`)_ | **44.49 kB** (gzip **17.15 kB**) | Tách riêng (~35–55 kB raw, ~12–20 kB gzip) ✅ |
+| Chunk `jszip.min-*.js` | _(gộp trong `index`)_ | **97.58 kB** (gzip **30.34 kB**) | Tách riêng (~95–105 kB) ✅ |
+| Chunk `index.browser-*.js` (`@lingo-reader/mobi-parser`) | _(gộp trong `index`)_ | **66.81 kB** (gzip **23.53 kB**) | Tách riêng ✅ |
+| Chunk `PdfReader-*.js` | _(gộp trong `index`)_ | **8.42 kB** (gzip **2.87 kB**) | Tách riêng (~10–20 kB) ✅ |
+| Chunk `pdf-*.js` (`pdfjs-dist` tải lười) | _(gộp trong `index`)_ | **483.23 kB** (gzip **144.28 kB**) | Tách riêng; dưới 500 kB raw (0 cảnh báo) ✅ |
+| Chunk `pdfjsLoader-*.js` | _(gộp trong `index`)_ | **0.33 kB** (gzip **0.27 kB**) | Tách riêng ✅ |
+| Chunk `_commonjsHelpers-*.js` | _(gộp trong `index`)_ | **0.69 kB** (gzip **0.38 kB**) | Helper dùng chung cho chunk động ✅ |
+| `pdf.worker.min-*.mjs` | 1,265.41 kB | **1,265.41 kB** | Vẫn emit đầy đủ ✅ |
+| `index-*.css` | 41.70 kB (gzip 8.32 kB) | **41.72 kB** (gzip **8.32 kB**) | Ổn định ✅ |
+| `three` / `@react-three/*` | 0 kB (chưa import) | **0 kB** | Xác nhận không bị kéo vào bundle ✅ |
 
 ### C. Kiểm thử chức năng, Bảo mật & Network trên trình duyệt
 Chạy bản build production cục bộ bằng lệnh chuẩn:

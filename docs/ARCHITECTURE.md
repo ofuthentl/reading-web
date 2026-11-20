@@ -5,8 +5,10 @@
 ```mermaid
 flowchart LR
   Browser["Browser (React + Vite + TS)"]
+  Meta["bookMetadata.ts / coverImage.ts"]
   API["src/lib/api.ts"]
-  Parsers["src/lib/parsers.ts"]
+  Parsers["src/lib/parsers.ts\n(lazy: jszip, mobi, dompurify)"]
+  PdfLazy["PdfReader.tsx + pdfjsLoader.ts\n(React.lazy + pdfjs-dist)"]
   Cache["src/lib/cache.ts"]
   IDB[("IndexedDB\n(blobs, covers, local state)")]
   Worker["Cloudflare Worker\nworkers/r2-storage/src/index.ts"]
@@ -14,7 +16,11 @@ flowchart LR
   R2[("Cloudflare R2\n(books/*, covers/*)")]
 
   Browser --> API
-  Browser --> Parsers
+  API --> Meta
+  Browser -. "dynamic import()" .-> Parsers
+  API -. "dynamic import()" .-> Parsers
+  Browser -. "React.lazy" .-> PdfLazy
+  Parsers -. "pdfjsLoader" .-> PdfLazy
   API --> Cache
   Cache <--> IDB
   API -- "HTTPS + Bearer HMAC token" --> Worker
@@ -145,5 +151,10 @@ flowchart LR
 
 ## 7. Trạng thái hiện tại
 
-- **Sub-phase 3.4 đã hoàn tất**: tách gọn `ReaderView.tsx` (`ReaderSettingsPopover`, `ReaderTocDrawer`, `readerConfig.ts`), dọn sạch CSS `.pdf-*` lỗi thời và thêm `.font-reader-*` trong `src/index.css`, nối hoàn chỉnh trình đọc vào `App.tsx` (< 200 dòng) qua `useBookReader` kèm `dispose()` an toàn.
-- **Kiểm định toàn repo XANH 100%**: `npm run typecheck`, `npm run lint` (`eslint .` — mọi file frontend & Worker đều ≤ 500 dòng hiệu dụng), `npm run build`, và `workers/r2-storage` `npm run typecheck` đều **0 lỗi, 0 cảnh báo**. Sẵn sàng sang Sub-phase 3.5 (kiểm thử checklist thực tế & cấu hình GitHub Secret `VITE_API_URL`) → 3.6 (mở PR merge vào `main`).
+- **Phase 3 (2D + Cloudflare Worker/D1/R2)** đã merge vào `main` qua PR #1; Worker live tại `https://arcane-library-api.novel-check-d467614e.workers.dev`.
+- **Nhánh `refactor/code-splitting` đã hoàn tất Phase 1 → 4**:
+  - Ghi quyết định **D-008** (điều kiện bật Thư viện 3D Desktop-only & chặn mobile tải Three.js) trong `docs/DECISIONS.md`.
+  - Tách `src/lib/parsers.ts` đúng trách nhiệm (`bookMetadata.ts`, `coverImage.ts`, `pdfjsLoader.ts`, `sanitizeHtml.ts` dùng `dompurify` v3, `chunkReload.ts`), chuyển `parsers.ts`, `jszip`, `@lingo-reader/mobi-parser`, `pdfjs-dist` và `PdfReader.tsx` sang nạp lười (`import()` / `React.lazy`).
+  - Mở rộng `ErrorBoundary.tsx` (prop `fallback` & tự reload đúng 1 lần khi lỗi chunk cũ) và bọc `<ErrorBoundary fallback={...}>` cục bộ quanh `LazyPdfReader`.
+  - Entry bundle `dist/assets/index-*.js` giảm từ **918.12 kB** (gzip **277.95 kB**) xuống **259.00 kB** (gzip **76.61 kB**), không còn cảnh báo chunk > 500 kB.
+- **Kiểm định tự động XANH 100%**: `npm run typecheck`, `npm run lint`, `npm run build` và `cd workers/r2-storage && npx tsc --noEmit` đều **0 lỗi, 0 cảnh báo**. Chờ hoàn tất kiểm thử thủ công Checklist Mục 5C trước khi mở PR vào `main`.
