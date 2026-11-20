@@ -32,6 +32,8 @@ interface ProgressRow {
   book_id: string;
   chapter_id: string;
   chapter_index: number;
+  chapter_title: string | null;
+  total_chapters: number | null;
   scroll_ratio: number;
   scroll_top: number;
   completed: number;
@@ -174,6 +176,8 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     const progressMap: Record<string, {
       chapterId: string;
       chapterIndex: number;
+      chapterTitle?: string;
+      totalChapters?: number;
       scrollRatio: number;
       scrollTop: number;
       completed: boolean;
@@ -183,6 +187,10 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
       progressMap[row.book_id] = {
         chapterId: row.chapter_id,
         chapterIndex: row.chapter_index,
+        ...(row.chapter_title ? { chapterTitle: row.chapter_title } : {}),
+        ...(typeof row.total_chapters === 'number' && row.total_chapters > 0
+          ? { totalChapters: row.total_chapters }
+          : {}),
         scrollRatio: row.scroll_ratio,
         scrollTop: row.scroll_top,
         completed: row.completed === 1,
@@ -419,6 +427,8 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     const body = (await request.json().catch(() => null)) as {
       chapterId?: string;
       chapterIndex?: number;
+      chapterTitle?: string;
+      totalChapters?: number;
       scrollRatio?: number;
       scrollTop?: number;
       completed?: boolean;
@@ -427,12 +437,23 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     if (!body?.chapterId) throw new HttpError('Thiếu thông tin chương đang đọc.', 400);
 
     const updatedAt = typeof body.updatedAt === 'number' ? body.updatedAt : Date.now();
+    const chapterTitle =
+      typeof body.chapterTitle === 'string' && body.chapterTitle.trim()
+        ? body.chapterTitle.trim().slice(0, 200)
+        : null;
+    const totalChapters =
+      typeof body.totalChapters === 'number' && Number.isFinite(body.totalChapters) && body.totalChapters > 0
+        ? Math.floor(body.totalChapters)
+        : null;
+
     await env.DB.prepare(
-      `INSERT INTO reading_progress (book_id, chapter_id, chapter_index, scroll_ratio, scroll_top, completed, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO reading_progress (book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(book_id) DO UPDATE SET
          chapter_id = excluded.chapter_id,
          chapter_index = excluded.chapter_index,
+         chapter_title = COALESCE(excluded.chapter_title, reading_progress.chapter_title),
+         total_chapters = COALESCE(excluded.total_chapters, reading_progress.total_chapters),
          scroll_ratio = excluded.scroll_ratio,
          scroll_top = excluded.scroll_top,
          completed = excluded.completed,
@@ -442,6 +463,8 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
         bookId,
         body.chapterId,
         Number(body.chapterIndex ?? 0),
+        chapterTitle,
+        totalChapters,
         Number(body.scrollRatio ?? 0),
         Number(body.scrollTop ?? 0),
         body.completed ? 1 : 0,

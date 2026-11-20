@@ -1,16 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Book, ParsedBook, ReaderSettings, ReadingProgress } from '@/types';
+import type { AppTheme } from '@/hooks/useTheme';
 import { fetchBookBlobCached, isAuthError, saveReadingProgress } from '@/lib/api';
 import { parseBookBlob } from '@/lib/parsers';
-import { loadReaderSettings, saveReaderSettings } from '@/lib/readerConfig';
+import {
+  appThemeToReaderTheme,
+  loadReaderSettings,
+  saveReaderSettings,
+} from '@/lib/readerConfig';
 
 interface UseBookReaderOptions {
+  appTheme: AppTheme;
   onProgressUpdated: (bookId: string, progress: ReadingProgress) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
 }
 
-export function useBookReader({ onProgressUpdated, onApiError }: UseBookReaderOptions) {
-  const [settings, setSettings] = useState<ReaderSettings>(() => loadReaderSettings());
+export function useBookReader({ appTheme, onProgressUpdated, onApiError }: UseBookReaderOptions) {
+  const [settings, setSettings] = useState<ReaderSettings>(() => ({
+    ...loadReaderSettings(),
+    theme: appThemeToReaderTheme(appTheme),
+  }));
   const [activeBook, setActiveBook] = useState<Book | null>(null);
   const [openingBook, setOpeningBook] = useState<Book | null>(null);
   const [parsedBook, setParsedBook] = useState<ParsedBook | null>(null);
@@ -18,6 +27,16 @@ export function useBookReader({ onProgressUpdated, onApiError }: UseBookReaderOp
 
   const requestIdRef = useRef(0);
   const parsedBookRef = useRef<ParsedBook | null>(null);
+
+  useEffect(() => {
+    const syncedTheme = appThemeToReaderTheme(appTheme);
+    setSettings((prev) => {
+      if (prev.theme === syncedTheme) return prev;
+      const next = { ...prev, theme: syncedTheme };
+      saveReaderSettings(next);
+      return next;
+    });
+  }, [appTheme]);
 
   const disposeCurrent = useCallback(() => {
     if (parsedBookRef.current) {
@@ -54,6 +73,13 @@ export function useBookReader({ onProgressUpdated, onApiError }: UseBookReaderOp
     async (book: Book) => {
       const requestId = requestIdRef.current + 1;
       requestIdRef.current = requestId;
+      const syncedTheme = appThemeToReaderTheme(appTheme);
+      setSettings((prev) => {
+        if (prev.theme === syncedTheme) return prev;
+        const next = { ...prev, theme: syncedTheme };
+        saveReaderSettings(next);
+        return next;
+      });
       setOpeningBook(book);
 
       try {
@@ -78,7 +104,7 @@ export function useBookReader({ onProgressUpdated, onApiError }: UseBookReaderOp
         onApiError(err, `Không thể mở "${book.title}".`);
       }
     },
-    [disposeCurrent, onApiError],
+    [appTheme, disposeCurrent, onApiError],
   );
 
   const handleSaveProgress = useCallback(

@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS reading_progress (
   book_id TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
   chapter_id TEXT NOT NULL,
   chapter_index INTEGER NOT NULL DEFAULT 0,
+  chapter_title TEXT,
+  total_chapters INTEGER,
   scroll_ratio REAL NOT NULL DEFAULT 0,
   scroll_top REAL NOT NULL DEFAULT 0,
   completed INTEGER NOT NULL DEFAULT 0,

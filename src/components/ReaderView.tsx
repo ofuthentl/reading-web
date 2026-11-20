@@ -114,6 +114,8 @@ export function ReaderView({
         {
           chapterId: target.id,
           chapterIndex: clamped,
+          chapterTitle: target.title,
+          totalChapters: chapters.length,
           scrollRatio: pdfRatio,
           scrollTop: 0,
           completed: isCompleted,
@@ -174,6 +176,8 @@ export function ReaderView({
       {
         chapterId: currentChapter.id,
         chapterIndex,
+        chapterTitle: currentChapter.title,
+        totalChapters: chapters.length,
         scrollRatio: ratio,
         scrollTop: el.scrollTop,
         completed: completedRef.current,
@@ -403,6 +407,8 @@ export function ReaderView({
                         {
                           chapterId: currentChapter.id,
                           chapterIndex,
+                          chapterTitle: currentChapter.title,
+                          totalChapters: chapters.length,
                           scrollRatio: 1,
                           scrollTop: scrollContainerRef.current?.scrollTop || 0,
                           completed: true,

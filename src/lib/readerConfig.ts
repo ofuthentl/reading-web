@@ -1,6 +1,13 @@
 import type { ReaderFont, ReaderSettings, ReaderTheme, ReaderWidth } from '@/types';
+import type { AppTheme } from '@/hooks/useTheme';
 
 const READER_SETTINGS_KEY = 'ofu-library-reader-settings';
+
+export function appThemeToReaderTheme(appTheme: AppTheme): ReaderTheme {
+  if (appTheme === 'dim') return 'dark';
+  if (appTheme === 'midnight') return 'midnight';
+  return 'sepia';
+}
 
 export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   theme: 'sepia',

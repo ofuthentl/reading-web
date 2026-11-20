@@ -36,6 +36,8 @@ export type ParsedBook = {
 export type ReadingProgress = {
   chapterId: string;
   chapterIndex: number;
+  chapterTitle?: string;
+  totalChapters?: number;
   scrollRatio: number;
   scrollTop: number;
   completed: boolean;

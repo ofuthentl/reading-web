@@ -22,11 +22,27 @@ function pickClothCoverColor(seed: string): string {
   return CLOTH_COVER_PALETTE[hash % CLOTH_COVER_PALETTE.length];
 }
 
-function getProgressPercent(progress?: ReadingProgress): number | null {
+function getProgressPercent(book: Book, progress?: ReadingProgress): number | null {
   if (!progress) return null;
   if (progress.completed) return 100;
   const clamped = Math.min(1, Math.max(0, progress.scrollRatio || 0));
+  if (progress.totalChapters && progress.totalChapters > 0) {
+    if (book.file_type === 'pdf') {
+      return Math.min(100, Math.round(((progress.chapterIndex + 1) / progress.totalChapters) * 100));
+    }
+    return Math.min(
+      100,
+      Math.round(((progress.chapterIndex + clamped) / progress.totalChapters) * 100),
+    );
+  }
   return Math.round(clamped * 100);
+}
+
+function getProgressChapterLabel(book: Book, progress?: ReadingProgress): string {
+  if (!progress) return '';
+  if (progress.chapterTitle?.trim()) return progress.chapterTitle.trim();
+  const num = (progress.chapterIndex ?? 0) + 1;
+  return book.file_type === 'pdf' ? `Trang ${num}` : `Phần ${num}`;
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -95,7 +111,8 @@ export function BookCard({
   const coverUrl = useCoverUrl(book.cover_key, isNearViewport);
   const showImage = Boolean(coverUrl && !imgFailed);
   const clothColor = pickClothCoverColor(`${book.id}-${book.title}`);
-  const percent = getProgressPercent(progress);
+  const percent = getProgressPercent(book, progress);
+  const chapterLabel = getProgressChapterLabel(book, progress);
   const isCompleted = Boolean(progress?.completed);
 
   const handleActivate = () => {
@@ -238,17 +255,20 @@ export function BookCard({
           {progress && (
             <div className="mt-2.5 space-y-1.5">
               <div className="flex items-center justify-between gap-2 text-[11px]">
-                <span className="inline-flex items-center gap-1 font-medium text-accent">
+                <span className="inline-flex min-w-0 items-center gap-1 font-medium text-accent">
                   {isCompleted ? (
                     <>
-                      <CheckCircle2 className="h-3 w-3" />
-                      Hoàn thành
+                      <CheckCircle2 className="h-3 w-3 shrink-0" />
+                      <span className="truncate">Hoàn thành</span>
                     </>
                   ) : (
-                    `Chương ${progress.chapterIndex + 1} · ${percent ?? 0}%`
+                    <>
+                      <span className="truncate">{chapterLabel}</span>
+                      <span className="shrink-0">· {percent ?? 0}%</span>
+                    </>
                   )}
                 </span>
-                <span className="truncate text-ink-faint">
+                <span className="shrink-0 text-ink-faint">
                   {formatRelativeTime(progress.updatedAt)}
                 </span>
               </div>
@@ -288,9 +308,9 @@ export function BookCard({
         </h3>
         <p className="truncate text-xs text-ink-muted">{book.author}</p>
         {percent !== null && (
-          <div className="flex items-center justify-between pt-0.5 text-[11px] font-medium text-accent">
-            <span>{isCompleted ? 'Đã đọc xong' : `Ch. ${(progress?.chapterIndex ?? 0) + 1}`}</span>
-            <span>{percent}%</span>
+          <div className="flex items-center justify-between gap-1.5 pt-0.5 text-[11px] font-medium text-accent">
+            <span className="truncate">{isCompleted ? 'Đã đọc xong' : chapterLabel}</span>
+            <span className="shrink-0">{percent}%</span>
           </div>
         )}
       </div>

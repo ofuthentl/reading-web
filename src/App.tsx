@@ -55,6 +55,7 @@ export default function App() {
   }, []);
 
   const reader = useBookReader({
+    appTheme: theme,
     onProgressUpdated: handleProgressUpdated,
     onApiError: handleApiError,
   });
