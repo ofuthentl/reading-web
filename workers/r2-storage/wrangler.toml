@@ -1,0 +1,20 @@
+name = "arcane-library-api"
+main = "src/index.ts"
+compatibility_date = "2026-10-30"
+workers_dev = true
+
+[vars]
+APP_ORIGINS = "https://ofu.lol,http://localhost:5173,http://127.0.0.1:5173"
+# Chốt chặn cứng 9.0 GiB (chừa 1 GB dự phòng dưới hạn mức 10 GB Free Tier của R2)
+STORAGE_LIMIT_BYTES = "9663676416"
+
+# Binding trực tiếp R2 bucket (không cần AWS SDK hay S3 Access Keys)
+[[r2_buckets]]
+binding = "BOOKS_BUCKET"
+bucket_name = "arcane-library-books"
+
+# Binding D1 database
+[[d1_databases]]
+binding = "DB"
+database_name = "library-db"
+database_id = "1718c115-0bad-4fd2-b1eb-43a2b63b4ce9"

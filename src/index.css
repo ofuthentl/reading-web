@@ -3,22 +3,153 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* Warm Parchment — Chế độ Sáng */
+    --color-canvas: 246 241 231; /* #f6f1e7 */
+    --color-surface: 253 250 244; /* #fdfaf4 */
+    --color-subtle: 239 232 218; /* #efe8da */
+    --color-line: 229 220 203; /* #e5dccb */
+    --color-line-strong: 203 188 163; /* #cbbca3 */
+    --color-ink: 43 36 29; /* #2b241d */
+    --color-ink-muted: 109 97 84; /* #6d6154 */
+    --color-ink-faint: 149 135 119; /* #958777 */
+    --color-accent: 140 94 53; /* #8c5e35 */
+    --color-accent-hover: 115 75 40; /* #734b28 */
+    --color-accent-fg: 253 250 244; /* #fdfaf4 */
+    color-scheme: light;
+  }
+
+  /* Mode 2: Chiều tối (Đêm mực dịu + gradient sương nhẹ, chữ & nút trắng) */
+  [data-theme='dim'],
+  .dark {
+    --color-canvas: 13 17 23; /* #0d1117 */
+    --color-surface: 20 26 35; /* #141a23 */
+    --color-subtle: 29 37 49; /* #1d2531 */
+    --color-line: 37 46 60; /* #252e3c */
+    --color-line-strong: 59 71 90; /* #3b475a */
+    --color-ink: 230 235 240; /* #e6ebf0 */
+    --color-ink-muted: 139 150 168; /* #8b96a8 */
+    --color-ink-faint: 95 106 125; /* #5f6a7d */
+    --color-accent: 238 242 246; /* #eef2f6 */
+    --color-accent-hover: 214 221 229; /* #d6dde5 */
+    --color-accent-fg: 13 17 23; /* #0d1117 */
+    color-scheme: dark;
+  }
+
+  /* Mode 3: Đêm khuya (Đen tuyền sâu nhất — Pitch Obsidian) */
+  [data-theme='midnight'] {
+    --color-canvas: 6 6 8; /* #060608 */
+    --color-surface: 14 14 17; /* #0e0e11 */
+    --color-subtle: 22 22 26; /* #16161a */
+    --color-line: 31 31 37; /* #1f1f25 */
+    --color-line-strong: 52 52 60; /* #34343c */
+    --color-ink: 238 238 240; /* #eeeef0 */
+    --color-ink-muted: 154 154 163; /* #9a9aa3 */
+    --color-ink-faint: 102 102 110; /* #66666e */
+    --color-accent: 242 242 244; /* #f2f2f4 */
+    --color-accent-hover: 218 218 222; /* #dadade */
+    --color-accent-fg: 6 6 8; /* #060608 */
+    color-scheme: dark;
+  }
+
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   body {
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    background: #f8f9fa;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background-color: rgb(var(--color-canvas));
+    color: rgb(var(--color-ink));
+    transition: background-color 220ms ease, color 220ms ease;
+  }
+
+  .theme-canvas {
+    background-color: rgb(var(--color-canvas));
+  }
+
+  [data-theme='dim'] .theme-canvas {
+    background-color: rgb(var(--color-canvas));
+    background-image:
+      radial-gradient(ellipse 68% 42% at 50% -12%, rgba(206, 222, 245, 0.085), transparent 68%),
+      radial-gradient(ellipse 46% 36% at 88% 12%, rgba(124, 152, 198, 0.06), transparent 64%);
+    background-attachment: fixed;
+  }
+
+  [data-theme='midnight'] .theme-canvas {
+    background-color: rgb(var(--color-canvas));
+    background-image: radial-gradient(
+      ellipse 58% 32% at 50% -14%,
+      rgba(242, 242, 244, 0.032),
+      transparent 66%
+    );
+    background-attachment: fixed;
+  }
+
+  .dark .moonlit-card {
+    box-shadow:
+      inset 0 1px 0 rgba(244, 244, 245, 0.06),
+      0 16px 38px -18px rgba(0, 0, 0, 0.85);
+  }
+
+  [data-theme='midnight'] .moonlit-card {
+    box-shadow:
+      inset 0 1px 0 rgba(244, 244, 245, 0.05),
+      0 20px 44px -20px rgba(0, 0, 0, 0.96);
+  }
+
+  @keyframes themeIconSpin {
+    from {
+      opacity: 0.4;
+      transform: rotate(-90deg) scale(0.65);
+    }
+    to {
+      opacity: 1;
+      transform: rotate(0deg) scale(1);
+    }
+  }
+
+  .theme-icon-spin {
+    animation: themeIconSpin 360ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  :root[data-theme-switch]::view-transition-old(root),
+  :root[data-theme-switch]::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+  }
+
+  :root[data-theme-switch]::view-transition-new(root) {
+    animation: themeReveal 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @keyframes themeReveal {
+    from {
+      clip-path: circle(0px at var(--theme-reveal-x, 90%) var(--theme-reveal-y, 32px));
+    }
+    to {
+      clip-path: circle(var(--theme-reveal-r, 150vmax) at var(--theme-reveal-x, 90%) var(--theme-reveal-y, 32px));
+    }
   }
 }
 
 @layer utilities {
+  .font-reader-serif {
+    font-family: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, Cambria, serif;
+  }
+
+  .font-reader-sans {
+    font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  .font-reader-mono {
+    font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, ui-monospace, monospace;
+  }
+
   .reading-content {
+    width: 100%;
     line-height: 1.9;
     font-size: 1.125rem;
-    max-width: 52rem;
     margin: 0 auto;
   }
 
@@ -53,204 +184,6 @@
     max-width: 100%;
     height: auto;
     margin: 1.5rem auto;
-  }
-
-  .reading-content .pdf-page-image {
-    display: block;
-    width: min(100%, 52rem);
-    height: auto;
-    margin: 0 auto;
-    background: white;
-    box-shadow: 0 1px 8px rgba(0, 0, 0, 0.12);
-  }
-
-  .pdf-reader {
-    min-height: calc(100vh - 3rem);
-    margin: 0;
-    background: #eef2ff;
-    color: #242424;
-  }
-
-  .pdf-reader-dark {
-    background: #202124;
-    color: #f3f4f6;
-  }
-
-  .pdf-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    min-height: 3.5rem;
-    padding: 0.45rem 0.75rem;
-    background: #383838;
-    color: #f3f3f3;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
-  }
-
-  .pdf-file-name {
-    min-width: 8rem;
-    max-width: 20rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.85rem;
-  }
-
-  .pdf-toolbar-group {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-
-  .pdf-toolbar button,
-  .pdf-toolbar a {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    border: 0;
-    border-radius: 0.2rem;
-    color: inherit;
-    background: transparent;
-    cursor: pointer;
-  }
-
-  .pdf-toolbar button:hover,
-  .pdf-toolbar a:hover {
-    background: rgba(255, 255, 255, 0.14);
-  }
-
-  .pdf-toolbar button:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-  }
-
-  .pdf-toolbar svg {
-    width: 1.15rem;
-    height: 1.15rem;
-  }
-
-  .pdf-page-counter,
-  .pdf-zoom-label {
-    min-width: 4.5rem;
-    text-align: center;
-    font-size: 0.85rem;
-  }
-
-  .pdf-reader-body {
-    display: flex;
-    height: calc(100vh - 3rem);
-    min-height: 32rem;
-  }
-
-  .pdf-thumbnails {
-    width: 9rem;
-    flex: 0 0 9rem;
-    padding: 1rem 0.75rem;
-    overflow-y: auto;
-    background: #292929;
-  }
-
-  .pdf-thumbnails button {
-    display: block;
-    width: 100%;
-    margin-bottom: 1rem;
-    padding: 0.35rem;
-    border: 2px solid transparent;
-    background: transparent;
-    color: #ddd;
-    cursor: pointer;
-  }
-
-  .pdf-thumbnails button:hover,
-  .pdf-thumbnails .pdf-thumbnail-active {
-    border-color: #8ab4f8;
-  }
-
-  .pdf-thumbnails canvas {
-    display: block;
-    width: 100%;
-    height: auto;
-    background: white;
-  }
-
-  .pdf-thumbnails span {
-    display: block;
-    padding-top: 0.25rem;
-    font-size: 0.75rem;
-  }
-
-  .pdf-thumbnails p {
-    color: #aaa;
-    font-size: 0.75rem;
-    text-align: center;
-  }
-
-  .pdf-page-stage {
-    position: relative;
-    flex: 1;
-    overflow: auto;
-    padding: 2rem;
-    text-align: center;
-    background: #eef2ff;
-  }
-
-  .pdf-reader-dark .pdf-page-stage {
-    background: #202124;
-  }
-
-  .pdf-page-click-zone {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    z-index: 2;
-    width: 24%;
-    border: 0;
-    background: transparent;
-    cursor: pointer;
-  }
-
-  .pdf-page-click-zone:hover {
-    background: rgba(0, 0, 0, 0.035);
-  }
-
-  .pdf-page-click-zone:disabled {
-    cursor: default;
-  }
-
-  .pdf-page-click-zone-left {
-    left: 0;
-  }
-
-  .pdf-page-click-zone-right {
-    right: 0;
-  }
-
-  .pdf-page-stage canvas {
-    display: inline-block;
-    width: auto;
-    max-width: min(100%, 64rem);
-    height: auto;
-    background: white;
-    box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25);
-  }
-
-  @media (max-width: 640px) {
-    .pdf-file-name {
-      display: none;
-    }
-
-    .pdf-thumbnails {
-      width: 5.5rem;
-      flex-basis: 5.5rem;
-      padding: 0.5rem 0.35rem;
-    }
-
-    .pdf-page-stage {
-      padding: 1rem 0.5rem;
-    }
   }
 
   .reading-content svg,
@@ -325,19 +258,19 @@
   }
 
   .scrollbar-hover-dark {
-    scrollbar-color: transparent #202020;
+    scrollbar-color: transparent #17181c;
   }
 
   .scrollbar-hover-dark:hover {
-    scrollbar-color: #a3a3a3 #202020;
+    scrollbar-color: #464650 #17181c;
   }
 
   .scrollbar-hover-dark::-webkit-scrollbar-track {
-    background: #202020;
+    background: #17181c;
   }
 
   .scrollbar-hover-dark:hover::-webkit-scrollbar-thumb {
-    background-color: #a3a3a3;
+    background-color: #464650;
   }
 
   .fade-in {
