@@ -1,20 +1,19 @@
 # HANDOFF
-Cập nhật: 2026-11-21 02:51 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 275.72 kB / 81.04 kB gzip) · 🟢 Worker · 🟢 ESLint 100%
-Nhiệm vụ hiện tại: Rebase `feat/library-3d` lên `origin/main` (sau PR #4 `D-009`), chuẩn bị chốt `D-010` → `D-014` và triển khai Sub-phase 4A.1
+Cập nhật: 2026-11-21 02:55 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 275.72 kB / 81.04 kB gzip) · 🟢 Worker · 🟢 ESLint 100%
+Nhiệm vụ hiện tại: Đã chốt `D-010` → `D-014` & cập nhật `docs/plans/phase-4-3d.md`; chuẩn bị triển khai **Sub-phase 4A.1**
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/phase-4-3d.md
 
 ## Đang làm dở
-- Nhánh `feat/library-3d` đã rebase sạch lên `origin/main` (gồm PR #4 `feat/docx-drop-mobi-cbz`: chỉ còn 3 định dạng `epub`, `pdf`, `docx`).
-- Chuẩn bị cập nhật `docs/DECISIONS.md` (`D-010` → `D-014`), hiệu chỉnh `docs/plans/phase-4-3d.md` theo `D-009` + 3 chốt kỹ thuật, rồi triển khai Sub-phase 4A.1.
+- Đã ghi `D-010` → `D-014` vào `docs/DECISIONS.md` và cập nhật `docs/plans/phase-4-3d.md` theo `D-009` (`epub`, `pdf`, `docx`), baseline `275.72 kB / 81.04 kB gzip` (trần `<= 86.04 kB gzip`) và 3 chốt kỹ thuật (`CoverPlane <= 20–24`, z-index `z-20/z-30` dưới modal `z-40`/toast `z-50`, track `overflow-hidden` cho `BookSpreadReader`).
+- Bắt đầu triển khai Sub-phase 4A.1 (`useCanUse3D`, `useLibraryViewState`, `ViewModeToggle`, `Library3DHost`, vỏ tạm `FantasyLibrary3D`, nối `LibraryHeader`, `Library2DView`, `App.tsx`).
 
 ## Bước tiếp theo
-1. Ghi `D-010` → `D-014` vào `docs/DECISIONS.md` và cập nhật `docs/plans/phase-4-3d.md`.
-2. Triển khai Sub-phase 4A.1 (`useCanUse3D`, `useLibraryViewState`, `ViewModeToggle`, `Library3DHost`, vỏ tạm `FantasyLibrary3D`, nối `LibraryHeader`, `Library2DView`, `App.tsx`).
-3. Kiểm định sạch `typecheck`, `lint`, `build`, cập nhật `HANDOFF.md` & `docs/ARCHITECTURE.md` và báo người dùng test nhanh 4A.1.
+1. Triển khai Sub-phase 4A.1 trên `feat/library-3d`, kiểm định sạch `typecheck`, `lint`, `build`, cập nhật `docs/ARCHITECTURE.md` & `HANDOFF.md`.
+2. Dừng báo tóm tắt + hướng dẫn người dùng test nhanh Sub-phase 4A.1 trước khi sang Sub-phase 4A.2.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **Rebase `feat/library-3d` lên `origin/main`:** nhận trọn bộ PR #4 (`D-009`: bỏ MOBI/CBZ, thêm DOCX, baseline entry `275.72 kB / 81.04 kB gzip`).
-- **PR #4 (`feat/docx-drop-mobi-cbz`):** đã merge vào `origin/main` và deploy lên `ofu.lol`.
+- **Chốt ADR Phase 4 (`D-010` → `D-014`) & đồng bộ `docs/plans/phase-4-3d.md`:** cập nhật sau khi PR #4 (`D-009`) merge vào `origin/main`.
+- **Rebase `feat/library-3d` lên `origin/main`:** hoàn tất sạch.
