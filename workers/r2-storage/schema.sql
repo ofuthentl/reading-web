@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS books (
   cover_color TEXT NOT NULL DEFAULT '#4f46e5',
   cover_key TEXT,
   file_key TEXT NOT NULL,
-  file_type TEXT NOT NULL CHECK (file_type IN ('epub', 'mobi', 'pdf', 'cbz')),
+  file_type TEXT NOT NULL CHECK (file_type IN ('epub', 'pdf', 'docx')),
   file_size INTEGER NOT NULL DEFAULT 0,
   cover_size INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL

@@ -70,7 +70,7 @@ flowchart LR
 | `src/App.tsx` | Vỏ điều phối mỏng (~225 dòng): quản lý theme 3 chế độ, auth state, xử lý `401` tập trung, tải thư viện, tải trước nền `preloadCoreReaders()` khi trình duyệt rảnh sau lần tải thư viện đầu tiên, điều phối `AuthGate` ↔ `Library2DView` (+ 5 modal) ↔ `ReaderView` / `ToastContainer` | `default App` | `src/types.ts`, `src/lib/api.ts`, `src/lib/parsers.ts` (dynamic idle preload), `src/components/*`, `src/hooks/{useBookReader,useTheme,useToast}.ts` |
 | `src/main.tsx` | Điểm khởi chạy React, bọc `<ErrorBoundary>` quanh `<App />` và lắng nghe `vite:preloadError` xử lý chunk cũ sau deploy | — | `src/components/ErrorBoundary.tsx`, `src/lib/chunkReload.ts`, `src/App.tsx` |
 | `workers/r2-storage/src/auth.ts` | Xác thực fail-closed cho Worker: so sánh timing-safe, ký & kiểm tra token HMAC-SHA256 30 ngày, `HttpError` | `HttpError`, `AuthEnv`, `isInsecureDevAuthDisabled`, `isAuthRequired`, `timingSafeEqual`, `signPayload`, `createAuthToken`, `authenticatePasscode`, `verifyAuth` | Web Crypto API (`crypto.subtle`) |
-| `workers/r2-storage/src/booksDb.ts` | Các hàm truy vấn D1/R2 & kiểm soát hạn mức 9.0 GiB cho Worker (chia lô `<= 50` ID mỗi câu SQL trong `env.DB.batch` cho xoá/chuyển kệ hàng loạt) | `Env`, `BookRow`, `ProgressRow`, `getLimitBytes`, `getStorageStats`, `assertQuota`, `isValidId`, `safeDecodeHeader`, `listBooksAndProgress`, `deleteSingleBook`, `bulkDeleteBooks`, `bulkUpdateBooksShelf`, `upsertReadingProgress` | Cloudflare Workers Runtime (`D1Database`, `R2Bucket`), `workers/r2-storage/src/auth.ts` |
+| `workers/r2-storage/src/booksDb.ts` | Các hàm truy vấn D1/R2 & kiểm soát hạn mức 9.0 GiB cho Worker (chia lô `<= 50` ID mỗi câu SQL trong `env.DB.batch` cho xoá/chuyển kệ/đổi tên kệ hàng loạt) | `Env`, `BookRow`, `ProgressRow`, `getLimitBytes`, `getStorageStats`, `assertQuota`, `isValidId`, `safeDecodeHeader`, `listBooksAndProgress`, `deleteSingleBook`, `bulkDeleteBooks`, `bulkUpdateBooksShelf`, `renameShelfCaseInsensitive`, `upsertReadingProgress` | Cloudflare Workers Runtime (`D1Database`, `R2Bucket`), `workers/r2-storage/src/auth.ts` |
 | `workers/r2-storage/src/index.ts` | Cloudflare Worker HTTP Router: CORS, định tuyến REST API sách/kệ/tiến độ, stream upload/download R2 (hỗ trợ HTTP Range) | `default { fetch }` | Cloudflare Workers Runtime (`D1Database`, `R2Bucket`), `workers/r2-storage/src/auth.ts`, `workers/r2-storage/src/booksDb.ts` |
 
 ## 3. API của Cloudflare Worker
@@ -90,7 +90,7 @@ flowchart LR
 | `DELETE` | `/api/books/:id` | Có* | Xoá 1 sách: xoá object file + cover trên R2 và xoá dòng ở `reading_progress`, `books` |
 | `POST` | `/api/books/bulk-delete` | Có* | Xoá hàng loạt sách theo `ids` trên cả R2 và D1 (chia lô `<= 50` ID trong `DB.batch`) |
 | `POST` | `/api/books/bulk-shelf` | Có* | Chuyển kệ hàng loạt theo `{ ids, shelf }` (`shelf <= 120` ký tự, chia lô `<= 50` ID mỗi câu `UPDATE` trong `DB.batch`, trả `{ updatedIds, shelf }`) |
-| `POST` | `/api/shelves/rename` | Có* | Đổi tên kệ hàng loạt (`oldName` → `newName`) |
+| `POST` | `/api/shelves/rename` | Có* | Đổi tên kệ hàng loạt không phân biệt hoa/thường tiếng Việt (`oldName` → `newName`) |
 | `PUT` | `/api/progress/:bookId` | Có* | Upsert tiến độ đọc (`chapterId`, `chapterIndex`, `scrollRatio`, `scrollTop`, `completed`, `updatedAt`) |
 | `DELETE` | `/api/progress/:bookId` | Có* | Xoá tiến độ đọc của 1 sách |
 | `GET` / `HEAD` | `/api/files/:key` | Có* | Stream object `books/*` hoặc `covers/*` từ R2; hỗ trợ `Range` (`206`), `ETag`, `Cache-Control: private, max-age=31536000, immutable` |
@@ -101,7 +101,7 @@ flowchart LR
   - `id TEXT PRIMARY KEY`
   - `title TEXT NOT NULL`, `author TEXT NOT NULL DEFAULT 'Không rõ tác giả'`, `shelf TEXT NOT NULL DEFAULT 'Kho chưa phân loại'`, `description TEXT`
   - `cover_color TEXT NOT NULL DEFAULT '#4f46e5'`, `cover_key TEXT`, `file_key TEXT NOT NULL`
-  - `file_type TEXT NOT NULL CHECK (file_type IN ('epub', 'mobi', 'pdf', 'cbz'))`
+  - `file_type TEXT NOT NULL CHECK (file_type IN ('epub', 'pdf', 'docx'))`
   - `file_size INTEGER NOT NULL DEFAULT 0`, `cover_size INTEGER NOT NULL DEFAULT 0`, `created_at TEXT NOT NULL`
 - **`reading_progress`**:
   - `book_id TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE`

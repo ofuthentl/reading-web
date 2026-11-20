@@ -16,7 +16,7 @@ export interface BookRow {
   cover_color: string;
   cover_key: string | null;
   file_key: string;
-  file_type: 'epub' | 'mobi' | 'pdf' | 'cbz';
+  file_type: 'epub' | 'pdf' | 'docx';
   file_size: number;
   cover_size: number;
   created_at: string;
@@ -38,14 +38,15 @@ export const DEFAULT_HARD_LIMIT_BYTES = 9 * 1024 * 1024 * 1024; // 9.0 GiB safet
 export const MAX_SINGLE_FILE_BYTES = 350 * 1024 * 1024; // 350 MiB
 export const MAX_COVER_BYTES = 5 * 1024 * 1024; // 5 MiB
 export const MAX_SHELF_NAME_LENGTH = 120;
+export const MAX_TEXT_FIELD_LENGTH = 300;
+export const MAX_DESCRIPTION_LENGTH = 5000;
 export const BULK_D1_CHUNK_SIZE = 50;
 
-export const ACCEPTED_FILE_TYPES = new Set(['epub', 'mobi', 'pdf', 'cbz']);
+export const ACCEPTED_FILE_TYPES = new Set(['epub', 'pdf', 'docx']);
 export const CONTENT_TYPES: Record<string, string> = {
   epub: 'application/epub+zip',
-  mobi: 'application/x-mobipocket-ebook',
   pdf: 'application/pdf',
-  cbz: 'application/vnd.comicbook+zip',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 };
 
 export function getLimitBytes(env: Env): number {
@@ -221,6 +222,38 @@ export async function bulkUpdateBooksShelf(env: Env, rawIds: unknown, rawShelf: 
   await env.DB.batch(statements);
 
   return { updatedIds: ids, shelf };
+}
+
+export async function renameShelfCaseInsensitive(env: Env, rawOldName: unknown, rawNewName: unknown) {
+  const oldName = typeof rawOldName === 'string' ? rawOldName.trim() : '';
+  const newName = typeof rawNewName === 'string' ? rawNewName.trim() : '';
+  if (!oldName || !newName || newName.length > MAX_SHELF_NAME_LENGTH) {
+    throw new HttpError('Tên kệ sách không hợp lệ.', 400);
+  }
+
+  const targetKey = oldName.toLocaleLowerCase('vi');
+  const rows = await env.DB.prepare('SELECT DISTINCT shelf FROM books').all<{ shelf: string }>();
+  const matchedShelves = (rows.results || [])
+    .map((r) => r.shelf)
+    .filter((s) => typeof s === 'string' && s.trim().toLocaleLowerCase('vi') === targetKey);
+
+  if (matchedShelves.length === 0) {
+    await env.DB.prepare('UPDATE books SET shelf = ? WHERE shelf = ?').bind(newName, oldName).run();
+    return { ok: true };
+  }
+
+  const statements: D1PreparedStatement[] = [];
+  for (const chunk of chunkArray(matchedShelves, BULK_D1_CHUNK_SIZE)) {
+    const placeholders = chunk.map(() => '?').join(', ');
+    statements.push(
+      env.DB.prepare(`UPDATE books SET shelf = ? WHERE shelf IN (${placeholders})`).bind(
+        newName,
+        ...chunk,
+      ),
+    );
+  }
+  await env.DB.batch(statements);
+  return { ok: true };
 }
 
 export async function upsertReadingProgress(

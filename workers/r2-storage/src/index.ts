@@ -10,8 +10,10 @@ import {
   CONTENT_TYPES,
   type Env,
   MAX_COVER_BYTES,
+  MAX_DESCRIPTION_LENGTH,
   MAX_SHELF_NAME_LENGTH,
   MAX_SINGLE_FILE_BYTES,
+  MAX_TEXT_FIELD_LENGTH,
   assertQuota,
   bulkDeleteBooks,
   bulkUpdateBooksShelf,
@@ -20,6 +22,7 @@ import {
   getStorageStats,
   isValidId,
   listBooksAndProgress,
+  renameShelfCaseInsensitive,
   safeDecodeHeader,
   upsertReadingProgress,
 } from './booksDb';
@@ -107,7 +110,14 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
 
     const fileType = (request.headers.get('X-File-Type') || '').toLowerCase();
     if (!ACCEPTED_FILE_TYPES.has(fileType)) {
-      throw new HttpError('Chỉ hỗ trợ định dạng EPUB, MOBI, PDF hoặc CBZ.', 400);
+      throw new HttpError('Chỉ hỗ trợ định dạng EPUB, PDF hoặc DOCX.', 400);
+    }
+
+    const existingBook = await env.DB.prepare('SELECT id FROM books WHERE id = ?')
+      .bind(bookId)
+      .first<{ id: string }>();
+    if (existingBook) {
+      throw new HttpError('Sách với ID này đã tồn tại.', 409);
     }
 
     const declaredSize = Number(
@@ -121,13 +131,19 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     const storage = await getStorageStats(env);
     assertQuota(storage.usedBytes, declaredSize, storage.limitBytes);
 
-    const title = safeDecodeHeader(request.headers.get('X-Book-Title'), 'Sách chưa đặt tên');
-    const author = safeDecodeHeader(request.headers.get('X-Book-Author'), 'Không rõ tác giả');
+    const title = safeDecodeHeader(
+      request.headers.get('X-Book-Title'),
+      'Sách chưa đặt tên',
+    ).slice(0, MAX_TEXT_FIELD_LENGTH);
+    const author = safeDecodeHeader(
+      request.headers.get('X-Book-Author'),
+      'Không rõ tác giả',
+    ).slice(0, MAX_TEXT_FIELD_LENGTH);
     const shelf = safeDecodeHeader(
       request.headers.get('X-Book-Shelf'),
       'Kho chưa phân loại',
     ).slice(0, MAX_SHELF_NAME_LENGTH);
-    const coverColor = safeDecodeHeader(request.headers.get('X-Cover-Color'), '#4f46e5');
+    const coverColor = safeDecodeHeader(request.headers.get('X-Cover-Color'), '#4f46e5').slice(0, 32);
     const fileKey = `books/${bookId}.${fileType}`;
     const contentType = CONTENT_TYPES[fileType] || 'application/octet-stream';
 
@@ -152,7 +168,13 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
         .bind(bookId, title, author, shelf, coverColor, fileKey, fileType, putResult.size, createdAt)
         .run();
     } catch (dbErr) {
-      await env.BOOKS_BUCKET.delete(fileKey);
+      const committed = await env.DB.prepare('SELECT id FROM books WHERE id = ?')
+        .bind(bookId)
+        .first<{ id: string }>()
+        .catch(() => null);
+      if (!committed) {
+        await env.BOOKS_BUCKET.delete(fileKey);
+      }
       throw dbErr;
     }
 
@@ -191,13 +213,30 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     });
     if (!putResult) throw new HttpError('Không thể lưu ảnh bìa vào R2.', 500);
 
-    if (existing.cover_key && existing.cover_key !== coverKey) {
-      await env.BOOKS_BUCKET.delete(existing.cover_key);
+    const freshStorage = await getStorageStats(env);
+    if (
+      putResult.size > MAX_COVER_BYTES ||
+      freshStorage.usedBytes - existing.cover_size + putResult.size > freshStorage.limitBytes
+    ) {
+      await env.BOOKS_BUCKET.delete(coverKey);
+      if (putResult.size > MAX_COVER_BYTES) {
+        throw new HttpError('Ảnh bìa phải nhỏ hơn 5 MB.', 400);
+      }
+      assertQuota(freshStorage.usedBytes - existing.cover_size, putResult.size, freshStorage.limitBytes);
     }
 
-    await env.DB.prepare('UPDATE books SET cover_key = ?, cover_size = ? WHERE id = ?')
-      .bind(coverKey, putResult.size, bookId)
-      .run();
+    try {
+      await env.DB.prepare('UPDATE books SET cover_key = ?, cover_size = ? WHERE id = ?')
+        .bind(coverKey, putResult.size, bookId)
+        .run();
+    } catch (dbErr) {
+      await env.BOOKS_BUCKET.delete(coverKey);
+      throw dbErr;
+    }
+
+    if (existing.cover_key && existing.cover_key !== coverKey) {
+      await env.BOOKS_BUCKET.delete(existing.cover_key).catch(() => undefined);
+    }
 
     const updatedBook = await env.DB.prepare('SELECT * FROM books WHERE id = ?')
       .bind(bookId)
@@ -225,23 +264,30 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     const values: unknown[] = [];
     if (typeof body.title === 'string' && body.title.trim()) {
       fields.push('title = ?');
-      values.push(body.title.trim());
+      values.push(body.title.trim().slice(0, MAX_TEXT_FIELD_LENGTH));
     }
     if (typeof body.author === 'string' && body.author.trim()) {
       fields.push('author = ?');
-      values.push(body.author.trim());
+      values.push(body.author.trim().slice(0, MAX_TEXT_FIELD_LENGTH));
     }
     if (typeof body.shelf === 'string' && body.shelf.trim()) {
       fields.push('shelf = ?');
       values.push(body.shelf.trim().slice(0, MAX_SHELF_NAME_LENGTH));
     }
     if (body.description !== undefined) {
+      if (body.description !== null && typeof body.description !== 'string') {
+        throw new HttpError('Mô tả sách không hợp lệ.', 400);
+      }
+      const normalizedDescription =
+        typeof body.description === 'string'
+          ? body.description.trim().slice(0, MAX_DESCRIPTION_LENGTH) || null
+          : null;
       fields.push('description = ?');
-      values.push(body.description);
+      values.push(normalizedDescription);
     }
     if (typeof body.cover_color === 'string' && body.cover_color.trim()) {
       fields.push('cover_color = ?');
-      values.push(body.cover_color.trim());
+      values.push(body.cover_color.trim().slice(0, 32));
     }
     if (fields.length === 0) throw new HttpError('Không có trường nào cần cập nhật.', 400);
 
@@ -279,20 +325,14 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     return jsonResponse(result, 200, origin);
   }
 
-  // Bulk rename shelf
+  // Bulk rename shelf (case-insensitive matching for Vietnamese shelf names)
   if (pathname === '/api/shelves/rename' && request.method === 'POST') {
     const body = (await request.json().catch(() => null)) as {
       oldName?: unknown;
       newName?: unknown;
     } | null;
-    const oldName = typeof body?.oldName === 'string' ? body.oldName.trim() : '';
-    const newName = typeof body?.newName === 'string' ? body.newName.trim() : '';
-    if (!oldName || !newName || newName.length > MAX_SHELF_NAME_LENGTH) {
-      throw new HttpError('Tên kệ sách không hợp lệ.', 400);
-    }
-
-    await env.DB.prepare('UPDATE books SET shelf = ? WHERE shelf = ?').bind(newName, oldName).run();
-    return jsonResponse({ ok: true }, 200, origin);
+    const result = await renameShelfCaseInsensitive(env, body?.oldName, body?.newName);
+    return jsonResponse(result, 200, origin);
   }
 
   // Upsert / delete reading progress
@@ -314,7 +354,12 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
 
   // Stream R2 file or cover with HTTP Range support
   if (pathname.startsWith('/api/files/') && (request.method === 'GET' || request.method === 'HEAD')) {
-    const key = decodeURIComponent(pathname.slice('/api/files/'.length));
+    let key = '';
+    try {
+      key = decodeURIComponent(pathname.slice('/api/files/'.length));
+    } catch {
+      throw new HttpError('Đường dẫn tệp không hợp lệ.', 400);
+    }
     if (!key || key.includes('..') || (!key.startsWith('books/') && !key.startsWith('covers/'))) {
       throw new HttpError('Đường dẫn tệp không hợp lệ.', 400);
     }
@@ -337,13 +382,22 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
       return new Response(null, { status: 304, headers });
     }
 
-    if (rangeHeader && object.range && 'offset' in object.range && 'length' in object.range) {
-      const start = object.range.offset ?? 0;
-      const length = object.range.length ?? object.size;
-      const end = start + length - 1;
-      headers.set('Content-Range', `bytes ${start}-${end}/${object.size}`);
-      headers.set('Content-Length', String(length));
-      return new Response(request.method === 'HEAD' ? null : object.body, { status: 206, headers });
+    if (rangeHeader && object.range) {
+      let start: number | null = null;
+      let length: number | null = null;
+      if ('suffix' in object.range && typeof object.range.suffix === 'number') {
+        length = Math.min(object.range.suffix, object.size);
+        start = Math.max(0, object.size - length);
+      } else if ('offset' in object.range || 'length' in object.range) {
+        start = object.range.offset ?? 0;
+        length = object.range.length ?? Math.max(0, object.size - start);
+      }
+      if (start !== null && length !== null && length > 0) {
+        const end = start + length - 1;
+        headers.set('Content-Range', `bytes ${start}-${end}/${object.size}`);
+        headers.set('Content-Length', String(length));
+        return new Response(request.method === 'HEAD' ? null : object.body, { status: 206, headers });
+      }
     }
 
     headers.set('Content-Length', String(object.size));
