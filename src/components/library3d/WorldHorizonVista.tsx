@@ -356,18 +356,18 @@ export function WorldHorizonVista({
   const mats = useMemo(() => {
     const isNight = theme === 'midnight';
     const isDusk = theme === 'dim';
-    const mountainColor = isNight ? '#161f3d' : isDusk ? '#4c385c' : '#7b9bbf';
-    const rockColor = isNight ? '#212948' : isDusk ? '#55415e' : '#6c7a8c';
+    const mountainColor = isNight ? '#151c36' : isDusk ? '#5e4c5c' : '#8da9c7';
+    const rockColor = isNight ? '#1f2640' : isDusk ? '#5c4b57' : '#748292';
     const capColor =
       biomeId === 'sakura_shrine'
         ? palette.foliagePrimary
         : biomeId === 'starlight_ruins'
           ? isNight
-            ? '#333b66'
-            : '#4d5885'
+            ? '#2c3459'
+            : '#4a557c'
           : palette.foliagePrimary;
-    const structColor = isNight ? '#2c355c' : isDusk ? '#6b5369' : '#9ca5b3';
-    const cloudTint = isNight ? '#3c4e7c' : isDusk ? '#f0a686' : '#f4f8ff';
+    const structColor = isNight ? '#283152' : isDusk ? '#6b5b63' : '#96a0ad';
+    const cloudTint = isNight ? '#3a4a73' : isDusk ? '#e3a68c' : '#eef5ff';
 
     return {
       farMountains: new THREE.MeshBasicMaterial({

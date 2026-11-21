@@ -172,26 +172,6 @@ function buildRotatedBookcases(
   }
 }
 
-function addSteppedRamp(
-  target: THREE.BufferGeometry[],
-  zone: Extract<SurfaceZone3D, { kind: 'ramp' }>,
-  steps: number,
-  uvDensity = 0.45,
-): void {
-  const width = zone.maxX - zone.minX;
-  const centerX = (zone.minX + zone.maxX) * 0.5;
-  const spanZ = zone.endZ - zone.startZ;
-  const stepDepth = Math.abs(spanZ) / steps + 0.04;
-
-  for (let i = 0; i < steps; i += 1) {
-    const t = (i + 0.5) / steps;
-    const z = zone.startZ + spanZ * t;
-    const topY = zone.startY + (zone.endY - zone.startY) * ((i + 1) / steps);
-    const h = Math.max(0.14, topY);
-    target.push(createScaledBox(width, h, stepDepth, centerX, h * 0.5, z, uvDensity));
-  }
-}
-
 function addArchBridge(
   woodParts: THREE.BufferGeometry[],
   redParts: THREE.BufferGeometry[],
@@ -231,11 +211,11 @@ function buildSakuraTerrain(
   bridgeRed: THREE.BufferGeometry[],
   water: THREE.BufferGeometry[],
 ): void {
-  // South grass bank (Z: 4.8..24) & North shrine grass bank (Z: -20..-4.8)
+  // South grass bank (Z: 4.8..24), North shrine bank (Z: -20..-4.8) & Summit hill (stops flush at Z = -22.5, never cuts mountain-stairs.glb!)
   ground.push(
     createScaledBox(56, 0.8, 21, 0, -0.4, 15.3, 0.08),
     createScaledBox(56, 0.8, 17, 0, -0.4, -13.3, 0.08),
-    createScaledBox(56, 2.8, 14, 0, 1.0, -28.0, 0.08),
+    createScaledBox(56, 2.8, 14, 0, 1.0, -29.5, 0.08),
   );
   // Stepping-stone south walkway, north shrine courtyard & summit terrace (Y = 2.4)
   plaza.push(
@@ -264,34 +244,27 @@ function buildSakuraTerrain(
 }
 
 function buildStarfieldTerrain(
-  floor: FloorWorldLayout3D,
   ground: THREE.BufferGeometry[],
   plaza: THREE.BufferGeometry[],
   stone: THREE.BufferGeometry[],
-  glass: THREE.BufferGeometry[],
   brass: THREE.BufferGeometry[],
 ): void {
-  // Polished marble octagonal atrium floor & upper terrace (Y = 1.8)
-  ground.push(createScaledBox(42, 0.3, 47, 0, -0.16, -2.0, 0.1));
-  const medallion = new THREE.CylinderGeometry(11.5, 11.5, 0.05, 36);
-  medallion.translate(0, -0.005, 0);
+  // Polished marble Grand Library floor & full-width upper terrace (Y = 1.8)
+  // (Perimeter walls, 2-story Victorian bookcases, real library staircase & vaulted ceiling
+  // are rendered by `GrandLibraryHallMesh.tsx` using real PBR GLBs, `D-023`.)
+  ground.push(createScaledBox(40.2, 0.3, 45.4, 0, -0.16, -2.2, 0.1));
+  const medallion = new THREE.CylinderGeometry(11.5, 11.5, 0.04, 36);
+  medallion.translate(0, -0.008, 0);
   plaza.push(medallion);
-  plaza.push(createScaledBox(15.0, 1.8, 6.5, 0, 0.9, -20.75, 0.16));
+  plaza.push(createScaledBox(38.8, 1.8, 6.8, 0, 0.9, -20.9, 0.16));
 
-  // Translucent glass staircase steps + upper terrace ledges & brass stair handrails
-  // (Perimeter two-story bookshelves, mezzanine balconies, stained-glass windows & vaulted ribs
-  // are rendered by `GrandLibraryHallMesh.tsx` so Floor 3 always feels like a true Grand Library.)
-  const ramp = floor.surfaces.find((s) => s.kind === 'ramp');
-  if (ramp && ramp.kind === 'ramp') addSteppedRamp(glass, ramp, 12, 0.35);
   stone.push(
-    createScaledBox(4.5, 1.85, 0.45, -5.25, 0.92, -17.5, 0.35),
-    createScaledBox(4.5, 1.85, 0.45, 5.25, 0.92, -17.5, 0.35),
+    createScaledBox(16.4, 1.85, 0.48, -11.2, 0.92, -17.5, 0.35),
+    createScaledBox(16.4, 1.85, 0.48, 11.2, 0.92, -17.5, 0.35),
   );
   brass.push(
-    createScaledBox(0.14, 0.9, 5.6, -3.15, 1.35, -14.75, 0.5),
-    createScaledBox(0.14, 0.9, 5.6, 3.15, 1.35, -14.75, 0.5),
-    createScaledBox(0.14, 0.95, 6.5, -7.55, 2.28, -20.75, 0.5),
-    createScaledBox(0.14, 0.95, 6.5, 7.55, 2.28, -20.75, 0.5),
+    createScaledBox(0.12, 0.92, 6.6, -7.55, 2.26, -20.8, 0.5),
+    createScaledBox(0.12, 0.92, 6.6, 7.55, 2.26, -20.8, 0.5),
   );
 }
 
@@ -346,7 +319,7 @@ export function buildWorldArchitectureGeometries(
   if (floor.biomeId === 'sakura_shrine') {
     buildSakuraTerrain(floor, ground, plaza, stone, bridgeWood, bridgeRed, water);
   } else if (floor.biomeId === 'starfield_atrium') {
-    buildStarfieldTerrain(floor, ground, plaza, stone, glassDome, brass);
+    buildStarfieldTerrain(ground, plaza, stone, brass);
   } else if (floor.biomeId === 'starlight_ruins') {
     buildStarlightRuinsTerrain(ground, plaza, stone, water);
   }

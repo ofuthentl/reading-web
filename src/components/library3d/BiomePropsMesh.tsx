@@ -17,6 +17,7 @@ import {
   MountainStairsGlb,
   ToriiGateGlb,
 } from './WorldGlbActors';
+import { WorldFurnitureGlbs } from './WorldFurnitureGlbs';
 
 export interface BiomePropsMeshProps {
   floor: FloorWorldLayout3D;
@@ -104,11 +105,6 @@ function buildPropBatch(floor: FloorWorldLayout3D): BatchedPropGeometries {
       addRotatedPart(stone, createScaledBox(0.28, 1.05, 0.28, 0, 0.8, 0), x, y, z, p.rotationY, s);
       addRotatedPart(stone, createScaledBox(0.76, 0.22, 0.76, 0, 1.85, 0), x, y, z, p.rotationY, s);
       addRotatedPart(lampGlow, createScaledBox(0.32, 0.36, 0.32, 0, 1.52, 0), x, y, z, p.rotationY, s);
-    } else if (p.kind === 'bench') {
-      addRotatedPart(wood, createScaledBox(1.85, 0.1, 0.56, 0, 0.46, 0), x, y, z, p.rotationY, s);
-      addRotatedPart(wood, createScaledBox(1.85, 0.46, 0.08, 0, 0.72, -0.24), x, y, z, p.rotationY, s);
-      addRotatedPart(brass, createScaledBox(0.1, 0.45, 0.52, -0.75, 0.225, 0), x, y, z, p.rotationY, s);
-      addRotatedPart(brass, createScaledBox(0.1, 0.45, 0.52, 0.75, 0.225, 0), x, y, z, p.rotationY, s);
     } else if (p.kind === 'fountain') {
       const basin = new THREE.CylinderGeometry(2.25, 2.38, 0.62, 24);
       basin.translate(0, 0.31, 0);
@@ -122,8 +118,18 @@ function buildPropBatch(floor: FloorWorldLayout3D): BatchedPropGeometries {
       const pool = new THREE.CylinderGeometry(2.02, 2.02, 0.08, 24);
       pool.translate(0, 0.56, 0);
       addRotatedPart(fountainWater, pool, x, y, z, 0, s);
-    } else if (p.kind === 'atrium_column' || p.kind === 'ruin_column') {
-      const colH = p.kind === 'atrium_column' ? 9.4 : 4.2;
+    } else if (p.kind === 'atrium_column') {
+      // Classical dark-walnut & bronze cathedral pillar (never stretched cobblestone!)
+      const colH = 9.45;
+      const shaft = new THREE.CylinderGeometry(0.36, 0.42, colH - 0.8, 16);
+      shaft.translate(0, colH * 0.5, 0);
+      addRotatedPart(wood, shaft, x, y, z, p.rotationY, s);
+      addRotatedPart(wood, createScaledBox(1.06, 0.42, 1.06, 0, 0.21, 0), x, y, z, p.rotationY, s);
+      addRotatedPart(brass, createScaledBox(1.12, 0.14, 1.12, 0, 0.46, 0), x, y, z, p.rotationY, s);
+      addRotatedPart(brass, createScaledBox(1.14, 0.18, 1.14, 0, colH - 0.26, 0), x, y, z, p.rotationY, s);
+      addRotatedPart(wood, createScaledBox(1.24, 0.24, 1.24, 0, colH - 0.12, 0), x, y, z, p.rotationY, s);
+    } else if (p.kind === 'ruin_column') {
+      const colH = 4.2;
       const shaft = new THREE.CylinderGeometry(0.42, 0.52, colH, 12);
       shaft.translate(0, colH * 0.5, 0);
       addRotatedPart(stone, shaft, x, y, z, p.rotationY, s);
@@ -145,16 +151,12 @@ function buildPropBatch(floor: FloorWorldLayout3D): BatchedPropGeometries {
     }
   }
 
-  // Interactive stations (Reading Table, Librarian Desk, Weather Shrine, Portal Gate Archways)
+  // Interactive stations (Weather Shrine & Portal Gate Archways; Reading Tables, Librarian Desks,
+  // Benches/Chairs, and Carved Dragon Boss Doors are now rendered as real PBR GLBs in WorldFurnitureGlbs)
   for (let i = 0; i < floor.stations.length; i += 1) {
     const st = floor.stations[i];
     const [x, y, z] = st.position;
-    if (st.kind === 'reading_table' || st.kind === 'librarian_desk') {
-      const topY = st.kind === 'librarian_desk' ? 0.96 : 0.78;
-      addRotatedPart(wood, createScaledBox(1.8, 0.1, 1.0, 0, topY, 0), x, y, z, st.facingYaw);
-      addRotatedPart(wood, createScaledBox(1.5, topY, 0.78, 0, topY * 0.5, 0), x, y, z, st.facingYaw);
-      addRotatedPart(lampGlow, createScaledBox(0.42, 0.06, 0.3, 0, topY + 0.08, 0), x, y, z, st.facingYaw);
-    } else if (st.kind === 'weather_shrine') {
+    if (st.kind === 'weather_shrine') {
       addRotatedPart(stone, createScaledBox(0.9, 0.45, 0.9, 0, 0.225, 0), x, y, z, st.facingYaw);
       addRotatedPart(stone, createScaledBox(0.44, 1.35, 0.44, 0, 1.12, 0), x, y, z, st.facingYaw);
       const orb = new THREE.OctahedronGeometry(0.32, 1);
@@ -170,17 +172,6 @@ function buildPropBatch(floor: FloorWorldLayout3D): BatchedPropGeometries {
       const curtain = new THREE.PlaneGeometry(gateW - 0.55, gateH - 0.35);
       curtain.translate(0, (gateH - 0.2) * 0.5, 0);
       addRotatedPart(portalGlow, curtain, x, y, z, st.facingYaw);
-    } else if (st.kind === 'boss_door') {
-      // Iconic SAO Heavy Double Boss Door frame & twin wooden-iron leaves (seal rendered dynamically below)
-      const doorW = 3.2;
-      const doorH = 4.3;
-      addRotatedPart(stone, createScaledBox(0.62, doorH + 0.3, 0.72, -doorW * 0.5, (doorH + 0.3) * 0.5, 0), x, y, z, st.facingYaw);
-      addRotatedPart(stone, createScaledBox(0.62, doorH + 0.3, 0.72, doorW * 0.5, (doorH + 0.3) * 0.5, 0), x, y, z, st.facingYaw);
-      addRotatedPart(stone, createScaledBox(doorW + 1.1, 0.65, 0.85, 0, doorH + 0.35, 0), x, y, z, st.facingYaw);
-      addRotatedPart(wood, createScaledBox(doorW * 0.44, doorH - 0.15, 0.22, -doorW * 0.23, (doorH - 0.15) * 0.5, 0), x, y, z, st.facingYaw);
-      addRotatedPart(wood, createScaledBox(doorW * 0.44, doorH - 0.15, 0.22, doorW * 0.23, (doorH - 0.15) * 0.5, 0), x, y, z, st.facingYaw);
-      addRotatedPart(brass, createScaledBox(doorW - 0.4, 0.12, 0.28, 0, doorH * 0.72, 0), x, y, z, st.facingYaw);
-      addRotatedPart(brass, createScaledBox(doorW - 0.4, 0.12, 0.28, 0, doorH * 0.26, 0), x, y, z, st.facingYaw);
     }
   }
 
@@ -336,10 +327,6 @@ export function BiomePropsMesh({
     () => floor.props.filter((p) => p.kind === 'mossy_stairs_glb'),
     [floor.props],
   );
-  const bossDoorStation = useMemo(
-    () => floor.stations.find((s) => s.kind === 'boss_door') ?? null,
-    [floor.stations],
-  );
 
   const wm = worldMaterials.materials;
   const lm = libraryMaterials.materials;
@@ -402,40 +389,15 @@ export function BiomePropsMesh({
         <MossyStairsGlb key={p.id} prop={p} requestRender={requestRender} />
       ))}
 
-      {/* Glowing Lock / Unlock Crest on the Sealed Boss Room Door (Bosses stay strictly inside Boss Room) */}
-      {bossDoorStation && (
-        <group
-          position={bossDoorStation.position}
-          rotation={[0, bossDoorStation.facingYaw, 0]}
-        >
-          <mesh position={[0, 2.2, 0.16]}>
-            <octahedronGeometry args={[0.42, 0]} />
-            <meshStandardMaterial
-              color={bossDoorUnlocked ? '#22d3ee' : '#ef4444'}
-              emissive={bossDoorUnlocked ? '#10b981' : '#f59e0b'}
-              emissiveIntensity={bossDoorUnlocked ? 2.4 : 1.9}
-              roughness={0.2}
-              metalness={0.25}
-            />
-          </mesh>
-          <mesh position={[0, 2.2, 0.14]}>
-            <ringGeometry args={[0.56, 0.72, 24]} />
-            <meshStandardMaterial
-              color={bossDoorUnlocked ? '#34d399' : '#f59e0b'}
-              emissive={bossDoorUnlocked ? '#22d3ee' : '#ef4444'}
-              emissiveIntensity={1.8}
-              side={THREE.DoubleSide}
-            />
-          </mesh>
-          <pointLight
-            color={bossDoorUnlocked ? '#22d3ee' : '#f97316'}
-            intensity={bossDoorUnlocked ? 3.8 : 2.6}
-            distance={10}
-            decay={1.8}
-            position={[0, 2.4, 1.2]}
-          />
-        </group>
-      )}
+      {/* Real PBR Furniture, Carved Dragon Boss Doors, Stone Well & Summit Platforms (`D-023`) */}
+      <WorldFurnitureGlbs
+        floor={floor}
+        theme={theme}
+        bossDoorUnlocked={bossDoorUnlocked}
+        paused={paused}
+        prefersReducedMotion={prefersReducedMotion}
+        requestRender={requestRender}
+      />
 
       <BiomeParticles
         floor={floor}

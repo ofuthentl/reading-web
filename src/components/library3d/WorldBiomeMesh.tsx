@@ -213,12 +213,13 @@ export function WorldBiomeMesh({
         />
       )}
 
-      {/* Floor 3 Two-Story Cathedral Grand Library (`D-022`) */}
+      {/* Floor 3 Two-Story Cathedral Grand Library with Real PBR GLBs (`D-023`) */}
       {floor.biomeId === 'starfield_atrium' && (
         <GrandLibraryHallMesh
           theme={theme}
           libraryMaterials={libraryMaterials}
           worldMaterials={worldBundle}
+          requestRender={requestRender}
         />
       )}
 

@@ -160,25 +160,26 @@ function drawAnimeClouds(
   rand: () => number,
 ): void {
   const isDusk = theme === 'dim';
-  const topColor = isDusk ? 'rgba(255, 224, 182, 0.42)' : 'rgba(255, 255, 255, 0.62)';
-  const baseColor = isDusk ? 'rgba(134, 78, 108, 0.34)' : 'rgba(186, 214, 240, 0.36)';
 
-  // Multi-puff cumulus cloud banks wrapping seamlessly around the horizon
-  for (let i = 0; i < 34; i += 1) {
+  // Soft feathered multi-puff painterly cloud wisps wrapping seamlessly around the horizon
+  for (let i = 0; i < 32; i += 1) {
     const cx = rand() * w;
-    const cy = h * (0.24 + rand() * 0.22);
-    const span = 55 + rand() * 115;
+    const cy = h * (0.24 + rand() * 0.21);
+    const span = 65 + rand() * 125;
     const puffH = 14 + rand() * 24;
 
-    ctx.fillStyle = baseColor;
-    drawWrappedEllipse(ctx, w, cx, cy + puffH * 0.38, span * 0.92, puffH * 0.65);
-
-    ctx.fillStyle = topColor;
-    const puffs = 3 + Math.floor(rand() * 4);
+    const puffs = 4 + Math.floor(rand() * 4);
     for (let p = 0; p < puffs; p += 1) {
-      const px = cx + (p / Math.max(1, puffs - 1) - 0.5) * span * 1.1;
-      const py = cy - Math.sin((p / Math.max(1, puffs - 1)) * Math.PI) * puffH * 0.55;
-      drawWrappedEllipse(ctx, w, px, py, span * (0.24 + rand() * 0.16), puffH * (0.55 + rand() * 0.35));
+      const px = cx + (p / Math.max(1, puffs - 1) - 0.5) * span * 1.15;
+      const py = cy - Math.sin((p / Math.max(1, puffs - 1)) * Math.PI) * puffH * 0.45;
+      const rx = span * (0.28 + rand() * 0.16);
+      const ry = puffH * (0.62 + rand() * 0.35);
+      const grad = ctx.createRadialGradient(px, py - ry * 0.2, rx * 0.1, px, py, rx);
+      grad.addColorStop(0, isDusk ? 'rgba(255, 226, 194, 0.26)' : 'rgba(255, 255, 255, 0.34)');
+      grad.addColorStop(0.55, isDusk ? 'rgba(176, 126, 146, 0.14)' : 'rgba(220, 236, 250, 0.16)');
+      grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = grad;
+      drawWrappedEllipse(ctx, w, px, py, rx, ry);
     }
   }
 }
