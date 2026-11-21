@@ -31,6 +31,15 @@ import {
   upsertShelfCover,
   upsertShelfFavorite,
 } from './booksDb';
+import {
+  getGuestBookToc,
+  getGuestEncryptedChapter,
+  getGuestEncryptedMediaResponse,
+  listDiscordGuests,
+  runAdminForensicCheck,
+  setDiscordGuestBan,
+  uploadBookGuestPack,
+} from './guestPack';
 
 function resolveAllowedOrigin(request: Request, env: Env): string | null {
   const origin = request.headers.get('Origin');
@@ -51,16 +60,27 @@ function applyCors(headers: Headers, origin: string | null) {
     'Access-Control-Allow-Headers',
     'Authorization, Content-Type, Range, X-Book-Title, X-Book-Author, X-Book-Shelf, X-Cover-Color, X-File-Type, X-File-Size',
   );
-  headers.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, ETag');
+  headers.set(
+    'Access-Control-Expose-Headers',
+    'Content-Length, Content-Range, Accept-Ranges, ETag, X-Guest-Iv, X-Guest-Nonce, X-Guest-Mime, Retry-After',
+  );
   headers.set('Access-Control-Max-Age', '86400');
   headers.set('Vary', 'Origin');
 }
 
-function jsonResponse(body: unknown, status: number, origin: string | null) {
+function jsonResponse(
+  body: unknown,
+  status: number,
+  origin: string | null,
+  extraHeaders?: Record<string, string>,
+) {
   const headers = new Headers({
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
   });
+  if (extraHeaders) {
+    for (const [k, v] of Object.entries(extraHeaders)) headers.set(k, v);
+  }
   applyCors(headers, origin);
   return new Response(JSON.stringify(body), { status, headers });
 }
@@ -100,7 +120,8 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   if (pathname === '/api/auth/login' && request.method === 'POST') {
     const body = (await request.json().catch(() => null)) as { passcode?: unknown } | null;
     const passcode = typeof body?.passcode === 'string' ? body.passcode : '';
-    const session = await authenticatePasscodeOrKey(passcode, env, env.DB);
+    const userAgent = request.headers.get('User-Agent') || '';
+    const session = await authenticatePasscodeOrKey(passcode, env, env.DB, userAgent);
     return jsonResponse(session, 200, origin);
   }
 
@@ -108,7 +129,16 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   const auth = await verifyAuth(request, env, env.DB);
 
   if (pathname === '/api/auth/session' && request.method === 'GET') {
-    return jsonResponse({ ok: true, role: auth.role, expiresAt: auth.expiresAt }, 200, origin);
+    return jsonResponse(
+      {
+        ok: true,
+        role: auth.role,
+        expiresAt: auth.expiresAt,
+        ...(auth.watermarkLabel ? { watermarkLabel: auth.watermarkLabel } : {}),
+      },
+      200,
+      origin,
+    );
   }
 
   // Storage usage (Owner only)
@@ -122,6 +152,76 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   if (pathname === '/api/books' && request.method === 'GET') {
     const state = await listBooksAndProgress(env, auth);
     return jsonResponse(state, 200, origin);
+  }
+
+  // Upload indexed Guest Chapter Pack for EPUB/DOCX (Owner only, D-028)
+  const guestPackUploadMatch = pathname.match(/^\/api\/books\/([^/]+)\/guest-pack$/);
+  if (guestPackUploadMatch && request.method === 'PUT') {
+    requireOwner(auth);
+    const result = await uploadBookGuestPack(request, env, guestPackUploadMatch[1]);
+    return jsonResponse(result, 200, origin);
+  }
+
+  // Guest-safe TOC, per-chapter AES-GCM encrypted payload & sliced R2 media (D-028)
+  const guestTocMatch = pathname.match(/^\/api\/guest\/books\/([^/]+)\/toc$/);
+  if (guestTocMatch && request.method === 'GET') {
+    const toc = await getGuestBookToc(env, auth, guestTocMatch[1]);
+    return jsonResponse(toc, 200, origin);
+  }
+
+  const guestChapterMatch = pathname.match(/^\/api\/guest\/books\/([^/]+)\/chapters\/(\d+)$/);
+  if (guestChapterMatch && request.method === 'GET') {
+    const chapter = await getGuestEncryptedChapter(
+      env,
+      auth,
+      guestChapterMatch[1],
+      Number(guestChapterMatch[2]),
+    );
+    return jsonResponse(chapter, 200, origin);
+  }
+
+  const guestMediaMatch = pathname.match(/^\/api\/guest\/books\/([^/]+)\/media\/(\d+)$/);
+  if (guestMediaMatch && request.method === 'GET') {
+    return getGuestEncryptedMediaResponse(
+      env,
+      auth,
+      guestMediaMatch[1],
+      Number(guestMediaMatch[2]),
+      (h) => applyCors(h, origin),
+    );
+  }
+
+  // Admin Discord Guest Management & Forensic Watermark Leak Check (Owner only, D-028)
+  if (pathname === '/api/admin/discord-guests' && request.method === 'GET') {
+    requireOwner(auth);
+    const list = await listDiscordGuests(env.DB);
+    return jsonResponse(list, 200, origin);
+  }
+
+  const adminBanMatch = pathname.match(/^\/api\/admin\/discord-guests\/(\d+)\/ban$/);
+  if (adminBanMatch && request.method === 'POST') {
+    requireOwner(auth);
+    const body = (await request.json().catch(() => null)) as {
+      banned?: unknown;
+      reason?: unknown;
+    } | null;
+    if (typeof body?.banned !== 'boolean') {
+      throw new HttpError('Trạng thái khoá không hợp lệ.', 400);
+    }
+    const res = await setDiscordGuestBan(
+      env.DB,
+      adminBanMatch[1],
+      body.banned,
+      typeof body.reason === 'string' ? body.reason : null,
+    );
+    return jsonResponse(res, 200, origin);
+  }
+
+  if (pathname === '/api/admin/forensic-check' && request.method === 'POST') {
+    requireOwner(auth);
+    const body = (await request.json().catch(() => null)) as { text?: unknown } | null;
+    const report = await runAdminForensicCheck(env, body?.text);
+    return jsonResponse(report, 200, origin);
   }
 
   // Stream upload a book file directly into R2 with 9.0 GB hard limit guard (Owner only)
@@ -175,7 +275,6 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     });
     if (!putResult) throw new HttpError('Không thể ghi tệp vào R2.', 500);
 
-    // Double-check actual stored size against hard limit (blocks spoofed headers)
     const freshStorage = await getStorageStats(env);
     if (freshStorage.usedBytes + putResult.size > freshStorage.limitBytes) {
       await env.BOOKS_BUCKET.delete(fileKey);
@@ -269,7 +368,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     return jsonResponse({ book: updatedBook, storage: updatedStorage }, 200, origin);
   }
 
-  // Update book metadata (rename, change author/shelf/description — Owner only)
+  // Update book metadata (Owner only)
   const bookItemMatch = pathname.match(/^\/api\/books\/([^/]+)$/);
   if (bookItemMatch && request.method === 'PATCH') {
     requireOwner(auth);
@@ -327,7 +426,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     return jsonResponse({ book: updatedBook }, 200, origin);
   }
 
-  // Delete a single book + cleanly delete R2 file & cover (Owner only)
+  // Delete a single book + cleanly delete R2 file, cover & guest-pack (Owner only)
   if (bookItemMatch && request.method === 'DELETE') {
     requireOwner(auth);
     const result = await deleteSingleBook(env, bookItemMatch[1]);
@@ -401,7 +500,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     return jsonResponse(result, 200, origin);
   }
 
-  // Stream R2 file or cover with HTTP Range support
+  // Stream R2 file (Owner ONLY, D-028) or cover thumbnail (Owner + Guest)
   if (pathname.startsWith('/api/files/') && (request.method === 'GET' || request.method === 'HEAD')) {
     let key = '';
     try {
@@ -411,6 +510,10 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     }
     if (!key || key.includes('..') || (!key.startsWith('books/') && !key.startsWith('covers/'))) {
       throw new HttpError('Đường dẫn tệp không hợp lệ.', 400);
+    }
+    // Chốt chặn cứng D-028: Khách tuyệt đối không bao giờ tải được file sách gốc (.epub/.pdf/.docx)
+    if (key.startsWith('books/')) {
+      requireOwner(auth);
     }
 
     const rangeHeader = request.headers.get('Range');
@@ -463,7 +566,7 @@ export default {
       return await handleApi(request, env, origin);
     } catch (error) {
       if (error instanceof HttpError) {
-        return jsonResponse({ error: error.message }, error.status, origin);
+        return jsonResponse({ error: error.message }, error.status, origin, error.extraHeaders);
       }
       console.error('Arcane Library Worker error:', error);
       return jsonResponse({ error: 'Máy chủ thư viện gặp sự cố. Vui lòng thử lại sau.' }, 500, origin);

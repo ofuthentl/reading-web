@@ -16,13 +16,17 @@ export interface AuthContext {
   role: AuthRole;
   userId: string;
   expiresAt: number;
+  tokenSignature: string;
   sessionId?: string;
+  discordUsername?: string;
+  watermarkLabel?: string;
 }
 
 export interface LoginSessionResult {
   token: string;
   role: AuthRole;
   expiresAt: number;
+  watermarkLabel?: string;
 }
 
 interface TokenClaims {
@@ -34,20 +38,26 @@ interface TokenClaims {
 
 interface DiscordAccessRow {
   discord_user_id: string;
+  discord_username: string;
   key_expires_at: number | null;
   active_session_id: string | null;
   session_expires_at: number | null;
+  ua_hash: string | null;
+  is_banned: number | null;
 }
 
 export class HttpError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly extraHeaders?: Record<string, string>,
   ) {
     super(message);
     this.name = 'HttpError';
   }
 }
+
+const upgradedDbs = new WeakSet<D1Database>();
 
 export function isInsecureDevAuthDisabled(env: AuthEnv): boolean {
   return env.ALLOW_INSECURE_DEV_NO_AUTH === 'true' && !env.ACCESS_PASSCODE?.trim();
@@ -73,11 +83,12 @@ function fromBase64Url(input: string): string {
   return atob(padded);
 }
 
-function resolveSigningSecret(env: AuthEnv): string {
+export function resolveSigningSecret(env: AuthEnv): string {
   const authSecret = env.AUTH_SECRET?.trim();
   if (authSecret) return authSecret;
   const passcode = env.ACCESS_PASSCODE?.trim();
   if (passcode) return passcode;
+  if (isInsecureDevAuthDisabled(env)) return 'insecure-local-dev-secret';
   throw new HttpError('Máy chủ chưa cấu hình ACCESS_PASSCODE.', 503);
 }
 
@@ -100,6 +111,19 @@ export async function sha256Hex(input: string): Promise<string> {
     .join('');
 }
 
+export async function computeUserAgentHash(userAgent: string): Promise<string> {
+  const normalized = userAgent.trim();
+  if (!normalized) return '';
+  const digest = await sha256Hex(`ua-v1:${normalized}`);
+  return digest.slice(0, 24);
+}
+
+export function formatGuestWatermarkLabel(username: string, discordUserId: string): string {
+  const clean = username.replace(/\s+/g, ' ').trim().slice(0, 28) || 'Guest';
+  const tail = discordUserId.slice(-4).padStart(4, '0');
+  return `${clean} · #${tail}`;
+}
+
 export function normalizeDiscordAccessKey(raw: string): string | null {
   const cleaned = raw.trim().replace(/[\s-]+/g, '').toUpperCase();
   return /^[A-HJ-NP-Z2-9]{12}$/.test(cleaned) ? cleaned : null;
@@ -116,6 +140,8 @@ export function generateDiscordAccessKey(): string {
 }
 
 export async function ensureDiscordAccessTable(db: D1Database): Promise<void> {
+  if (upgradedDbs.has(db)) return;
+
   await db.batch([
     db.prepare(
       `CREATE TABLE IF NOT EXISTS discord_access (
@@ -126,6 +152,12 @@ export async function ensureDiscordAccessTable(db: D1Database): Promise<void> {
          key_expires_at INTEGER,
          active_session_id TEXT,
          session_expires_at INTEGER,
+         ua_hash TEXT,
+         rl_tokens REAL NOT NULL DEFAULT 10,
+         rl_updated_at INTEGER NOT NULL DEFAULT 0,
+         rl_strikes INTEGER NOT NULL DEFAULT 0,
+         is_banned INTEGER NOT NULL DEFAULT 0,
+         ban_reason TEXT,
          updated_at INTEGER NOT NULL
        )`,
     ),
@@ -134,7 +166,57 @@ export async function ensureDiscordAccessTable(db: D1Database): Promise<void> {
        ON discord_access(key_hash)
        WHERE key_hash IS NOT NULL`,
     ),
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS book_guest_packs (
+         book_id TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+         pack_key TEXT NOT NULL,
+         pack_size INTEGER NOT NULL DEFAULT 0,
+         chapter_count INTEGER NOT NULL DEFAULT 0,
+         manifest_json TEXT NOT NULL,
+         updated_at INTEGER NOT NULL
+       )`,
+    ),
   ]);
+
+  // Tự động bổ sung cột mới cho bảng discord_access cũ tạo từ migration 0003
+  const info = await db
+    .prepare('PRAGMA table_info(discord_access)')
+    .all<{ name: string }>()
+    .catch(() => ({ results: [] as Array<{ name: string }> }));
+  const cols = new Set((info.results || []).map((c) => c.name));
+  const alters: D1PreparedStatement[] = [];
+  if (cols.size > 0) {
+    if (!cols.has('ua_hash')) {
+      alters.push(db.prepare('ALTER TABLE discord_access ADD COLUMN ua_hash TEXT'));
+    }
+    if (!cols.has('rl_tokens')) {
+      alters.push(
+        db.prepare('ALTER TABLE discord_access ADD COLUMN rl_tokens REAL NOT NULL DEFAULT 10'),
+      );
+    }
+    if (!cols.has('rl_updated_at')) {
+      alters.push(
+        db.prepare('ALTER TABLE discord_access ADD COLUMN rl_updated_at INTEGER NOT NULL DEFAULT 0'),
+      );
+    }
+    if (!cols.has('rl_strikes')) {
+      alters.push(
+        db.prepare('ALTER TABLE discord_access ADD COLUMN rl_strikes INTEGER NOT NULL DEFAULT 0'),
+      );
+    }
+    if (!cols.has('is_banned')) {
+      alters.push(
+        db.prepare('ALTER TABLE discord_access ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0'),
+      );
+    }
+    if (!cols.has('ban_reason')) {
+      alters.push(db.prepare('ALTER TABLE discord_access ADD COLUMN ban_reason TEXT'));
+    }
+  }
+  if (alters.length > 0) {
+    await db.batch(alters).catch(() => undefined);
+  }
+  upgradedDbs.add(db);
 }
 
 export async function signPayload(payload: string, secret: string): Promise<string> {
@@ -173,6 +255,7 @@ export async function authenticatePasscodeOrKey(
   rawInput: string,
   env: AuthEnv,
   db: D1Database,
+  userAgent = '',
 ): Promise<LoginSessionResult> {
   const expectedPasscode = env.ACCESS_PASSCODE?.trim();
   if (!expectedPasscode) {
@@ -199,13 +282,18 @@ export async function authenticatePasscodeOrKey(
   const keyHash = await sha256Hex(normalizedKey);
   const row = await db
     .prepare(
-      'SELECT discord_user_id, key_expires_at FROM discord_access WHERE key_hash = ?',
+      'SELECT discord_user_id, discord_username, key_expires_at, is_banned FROM discord_access WHERE key_hash = ?',
     )
     .bind(keyHash)
-    .first<Pick<DiscordAccessRow, 'discord_user_id' | 'key_expires_at'>>();
+    .first<
+      Pick<DiscordAccessRow, 'discord_user_id' | 'discord_username' | 'key_expires_at' | 'is_banned'>
+    >();
 
   if (!row) {
     throw new HttpError('Chìa khoá truy cập không đúng hoặc đã được sử dụng.', 401);
+  }
+  if (row.is_banned === 1) {
+    throw new HttpError('Tài khoản Discord của bạn đã bị ngưng quyền truy cập thư viện.', 403);
   }
 
   const now = Date.now();
@@ -224,6 +312,7 @@ export async function authenticatePasscodeOrKey(
 
   const sessionId = crypto.randomUUID().replace(/-/g, '');
   const sessionExpiresAt = now + GUEST_SESSION_TTL_MS;
+  const uaHash = await computeUserAgentHash(userAgent);
   const updateRes = await db
     .prepare(
       `UPDATE discord_access
@@ -231,10 +320,23 @@ export async function authenticatePasscodeOrKey(
            key_expires_at = NULL,
            active_session_id = ?,
            session_expires_at = ?,
+           ua_hash = ?,
+           rl_tokens = 10,
+           rl_updated_at = ?,
+           rl_strikes = 0,
            updated_at = ?
-       WHERE discord_user_id = ? AND key_hash = ? AND key_expires_at >= ?`,
+       WHERE discord_user_id = ? AND key_hash = ? AND key_expires_at >= ? AND COALESCE(is_banned, 0) = 0`,
     )
-    .bind(sessionId, sessionExpiresAt, now, row.discord_user_id, keyHash, now)
+    .bind(
+      sessionId,
+      sessionExpiresAt,
+      uaHash || null,
+      now,
+      now,
+      row.discord_user_id,
+      keyHash,
+      now,
+    )
     .run();
 
   if ((updateRes.meta?.changes ?? 0) !== 1) {
@@ -248,7 +350,12 @@ export async function authenticatePasscodeOrKey(
     exp: sessionExpiresAt,
   });
 
-  return { token, role: 'guest', expiresAt: sessionExpiresAt };
+  return {
+    token,
+    role: 'guest',
+    expiresAt: sessionExpiresAt,
+    watermarkLabel: formatGuestWatermarkLabel(row.discord_username, row.discord_user_id),
+  };
 }
 
 export async function verifyAuth(
@@ -261,6 +368,7 @@ export async function verifyAuth(
       role: 'owner',
       userId: 'owner',
       expiresAt: Date.now() + OWNER_TOKEN_TTL_MS,
+      tokenSignature: 'dev-local',
     };
   }
 
@@ -306,7 +414,12 @@ export async function verifyAuth(
 
   // Backward-compatible with existing owner tokens ({ sub: 'owner', exp })
   if (decoded.sub === 'owner' && (!decoded.role || decoded.role === 'owner')) {
-    return { role: 'owner', userId: 'owner', expiresAt: decoded.exp };
+    return {
+      role: 'owner',
+      userId: 'owner',
+      expiresAt: decoded.exp,
+      tokenSignature: signature,
+    };
   }
 
   if (
@@ -321,17 +434,30 @@ export async function verifyAuth(
       throw new HttpError('Phiên truy cập không hợp lệ.', 401);
     }
 
+    await ensureDiscordAccessTable(db);
     const row = await db
       .prepare(
-        'SELECT active_session_id, session_expires_at FROM discord_access WHERE discord_user_id = ?',
+        'SELECT discord_username, active_session_id, session_expires_at, ua_hash, is_banned FROM discord_access WHERE discord_user_id = ?',
       )
       .bind(discordUserId)
-      .first<Pick<DiscordAccessRow, 'active_session_id' | 'session_expires_at'>>()
+      .first<
+        Pick<
+          DiscordAccessRow,
+          | 'discord_username'
+          | 'active_session_id'
+          | 'session_expires_at'
+          | 'ua_hash'
+          | 'is_banned'
+        >
+      >()
       .catch(() => null);
 
+    if (row?.is_banned === 1) {
+      throw new HttpError('Tài khoản Discord của bạn đã bị ngưng quyền truy cập thư viện.', 403);
+    }
     if (!row?.active_session_id || !timingSafeEqual(row.active_session_id, decoded.sid)) {
       throw new HttpError(
-        'Phiên truy cập này đã đóng do tài khoản Discord của bạn vừa mở cửa ở nơi khác.',
+        'Phiên truy cập này đã đóng do tài khoản Discord của bạn vừa mở cửa ở nơi khác hoặc bị ngắt phiên.',
         401,
       );
     }
@@ -341,12 +467,24 @@ export async function verifyAuth(
         401,
       );
     }
+    if (row.ua_hash) {
+      const currentUaHash = await computeUserAgentHash(request.headers.get('User-Agent') || '');
+      if (!currentUaHash || !timingSafeEqual(row.ua_hash, currentUaHash)) {
+        throw new HttpError(
+          'Phiên truy cập không khớp trình duyệt đã mở khoá. Hãy lấy chìa khoá mới trên trình duyệt này.',
+          401,
+        );
+      }
+    }
 
     return {
       role: 'guest',
       userId: discordUserId,
       expiresAt: Math.min(decoded.exp, row.session_expires_at),
+      tokenSignature: signature,
       sessionId: decoded.sid,
+      discordUsername: row.discord_username,
+      watermarkLabel: formatGuestWatermarkLabel(row.discord_username, discordUserId),
     };
   }
 
