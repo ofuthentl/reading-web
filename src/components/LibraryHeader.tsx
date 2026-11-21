@@ -8,6 +8,7 @@ import {
   Library,
   LogOut,
   RefreshCw,
+  Shield,
   Upload,
 } from 'lucide-react';
 import type { AuthRole, LibraryTab, StorageStats, ViewMode } from '@/types';
@@ -34,6 +35,8 @@ interface LibraryHeaderProps {
   onChangeViewMode?: (mode: ViewMode) => void;
   onCycleTheme: (origin?: { x: number; y: number }) => void;
   onUploadClick?: () => void;
+  onProtectionClick?: () => void;
+  unprotectedBookCount?: number;
   onToggleSelectionMode: () => void;
   onRefresh: () => void;
   onLogout: () => void;
@@ -61,6 +64,8 @@ export function LibraryHeader({
   onChangeViewMode,
   onCycleTheme,
   onUploadClick,
+  onProtectionClick,
+  unprotectedBookCount = 0,
   onToggleSelectionMode,
   onRefresh,
   onLogout,
@@ -195,6 +200,27 @@ export function LibraryHeader({
             >
               <Upload className="h-4 w-4" />
               <span className="hidden sm:inline">Tải sách</span>
+            </button>
+          )}
+
+          {isOwner && isCloudMode && onProtectionClick && (
+            <button
+              type="button"
+              onClick={onProtectionClick}
+              aria-label="Bảo mật chế độ khách và truy vết rò rỉ"
+              title={
+                unprotectedBookCount > 0
+                  ? `Còn ${unprotectedBookCount} sách EPUB/DOCX chưa đồng bộ gói bảo mật khách`
+                  : 'Bảo mật chế độ khách & Truy vết rò rỉ'
+              }
+              className="relative inline-flex items-center gap-1.5 rounded-xl border border-line bg-canvas px-2.5 py-2 text-sm font-medium text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink"
+            >
+              <Shield className="h-4 w-4 text-accent" />
+              {unprotectedBookCount > 0 && (
+                <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-300">
+                  {unprotectedBookCount}
+                </span>
+              )}
             </button>
           )}
 

@@ -13,13 +13,10 @@ import {
   renameShelfPrefs,
   setShelfFavorite,
 } from '@/lib/shelfPrefs';
+import type { LibraryModalState } from '@/components/AdminModalsHost';
 import { AuthGate } from '@/components/AuthGate';
-import { BookEditModal } from '@/components/BookEditModal';
-import { BulkShelfModal } from '@/components/BulkShelfModal';
-import { DeleteConfirmModal } from '@/components/DeleteConfirmModal';
 import { Library2DView } from '@/components/Library2DView';
 import { Library3DHost } from '@/components/Library3DHost';
-import { ShelfRenameModal } from '@/components/ShelfRenameModal';
 import { ToastContainer } from '@/components/ToastContainer';
 import { useBookReader } from '@/hooks/useBookReader';
 import { useCanUse3D } from '@/hooks/useCanUse3D';
@@ -27,8 +24,8 @@ import { useLibraryViewState } from '@/hooks/useLibraryViewState';
 import { useTheme } from '@/hooks/useTheme';
 import { useToast } from '@/hooks/useToast';
 
-const LazyUploadDropzone = lazy(() =>
-  import('@/components/UploadDropzone').then((mod) => ({ default: mod.UploadDropzone })),
+const LazyAdminModalsHost = lazy(() =>
+  import('@/components/AdminModalsHost').then((mod) => ({ default: mod.AdminModalsHost })),
 );
 
 const LazyReaderView = lazy(() =>
@@ -46,14 +43,6 @@ function canPreloadOnIdle(): boolean {
   const nav = typeof navigator !== 'undefined' ? (navigator as NetworkNavigator) : undefined;
   return nav?.onLine !== false && nav?.connection?.saveData !== true;
 }
-
-type LibraryModalState =
-  | { kind: 'none' }
-  | { kind: 'upload' }
-  | { kind: 'edit'; book: Book }
-  | { kind: 'rename-shelf'; shelfName: string }
-  | { kind: 'bulk-shelf'; books: Book[] }
-  | { kind: 'delete'; books: Book[] };
 
 export default function App() {
   const { theme, cycleTheme } = useTheme();
@@ -142,7 +131,7 @@ export default function App() {
         setSelectionResetKey((prev) => prev + 1);
       }
 
-      if (!coreReadersPreloadedRef.current && canPreloadOnIdle()) {
+      if (!coreReadersPreloadedRef.current && canPreloadOnIdle() && state.session.role === 'owner') {
         coreReadersPreloadedRef.current = true;
         const schedule =
           (window as IdleWindow).requestIdleCallback ??
@@ -195,7 +184,6 @@ export default function App() {
       return;
     }
 
-    // Clamp timeout <= ~24.8 ngày để an toàn với giới hạn signed 32-bit int của setTimeout
     const MAX_TIMEOUT_MS = 2_147_483_647;
     if (remainingMs > MAX_TIMEOUT_MS) return;
 
@@ -206,6 +194,13 @@ export default function App() {
   const existingShelves = useMemo(
     () => libraryViewState.allShelves.map((shelf) => shelf.name),
     [libraryViewState.allShelves],
+  );
+
+  const unprotectedBookCount = useMemo(
+    () =>
+      books.filter((b) => (b.file_type === 'epub' || b.file_type === 'docx') && !b.guest_ready)
+        .length,
+    [books],
   );
 
   const handleLogout = useCallback(() => {
@@ -230,6 +225,13 @@ export default function App() {
   const handleBookUpdated = useCallback((updatedBook: Book, nextStorage?: StorageStats) => {
     setBooks((prev) =>
       sortBooksByTitle(prev.map((item) => (item.id === updatedBook.id ? updatedBook : item))),
+    );
+    if (nextStorage) setStorage(nextStorage);
+  }, []);
+
+  const handleBookPackSynced = useCallback((bookId: string, nextStorage?: StorageStats) => {
+    setBooks((prev) =>
+      prev.map((item) => (item.id === bookId ? { ...item, guest_ready: true } : item)),
     );
     if (nextStorage) setStorage(nextStorage);
   }, []);
@@ -377,6 +379,8 @@ export default function App() {
             onLogout={handleLogout}
             onOpenBook={(book: Book) => void reader.openBook(book)}
             onUploadClick={isOwner ? () => setModal({ kind: 'upload' }) : undefined}
+            onProtectionClick={isOwner ? () => setModal({ kind: 'protection' }) : undefined}
+            unprotectedBookCount={isOwner ? unprotectedBookCount : 0}
             onEditBook={isOwner ? (book: Book) => setModal({ kind: 'edit', book }) : undefined}
             onRenameShelf={
               isOwner ? (shelfName: string) => setModal({ kind: 'rename-shelf', shelfName }) : undefined
@@ -437,56 +441,27 @@ export default function App() {
           </Suspense>
         </div>
       )}
-      {isOwner && modal.kind === 'upload' && (
+      {isOwner && modal.kind !== 'none' && (
         <Suspense fallback={null}>
-          <LazyUploadDropzone
-            open
+          <LazyAdminModalsHost
+            modal={modal}
             books={books}
             storage={storage}
+            existingShelves={existingShelves}
+            renamingShelfName={renamingShelfName}
+            renamingShelfCount={renamingShelfCount}
             onClose={closeModal}
+            onRequestDelete={(book) => setModal({ kind: 'delete', books: [book] })}
             onBookUploaded={handleBookUploaded}
             onBookUpdated={handleBookUpdated}
+            onBookPackSynced={handleBookPackSynced}
+            onShelfRenamed={handleShelfRenamed}
+            onBooksShelfMoved={handleBooksShelfMoved}
+            onBooksDeleted={handleBooksDeleted}
             onApiError={handleApiError}
             onNotify={addToast}
           />
         </Suspense>
-      )}
-      {isOwner && (
-        <>
-          <BookEditModal
-            book={modal.kind === 'edit' ? modal.book : null}
-            existingShelves={existingShelves}
-            onClose={closeModal}
-            onUpdated={handleBookUpdated}
-            onRequestDelete={(book) => setModal({ kind: 'delete', books: [book] })}
-            onApiError={handleApiError}
-            onNotify={addToast}
-          />
-          <ShelfRenameModal
-            shelfName={renamingShelfName}
-            bookCount={renamingShelfCount}
-            existingShelves={existingShelves}
-            onClose={closeModal}
-            onRenamed={handleShelfRenamed}
-            onApiError={handleApiError}
-            onNotify={addToast}
-          />
-          <BulkShelfModal
-            books={modal.kind === 'bulk-shelf' ? modal.books : []}
-            existingShelves={existingShelves}
-            onClose={closeModal}
-            onMoved={handleBooksShelfMoved}
-            onApiError={handleApiError}
-            onNotify={addToast}
-          />
-          <DeleteConfirmModal
-            books={modal.kind === 'delete' ? modal.books : []}
-            onClose={closeModal}
-            onDeleted={handleBooksDeleted}
-            onApiError={handleApiError}
-            onNotify={addToast}
-          />
-        </>
       )}
       {reader.openingBook && (
         <div

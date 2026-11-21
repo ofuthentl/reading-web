@@ -2,7 +2,7 @@
 
 > **Nhánh triển khai:** `feat/guest-content-protection` (tách từ `main` sau PR #8).
 > **Quyết định kiến trúc:** **`D-028`** trong `docs/DECISIONS.md` (mở rộng `D-026` & `D-027`).
-> **Trạng thái:** **Chờ người dùng duyệt kế hoạch** trước khi bắt đầu code Phase 1 (`AGENTS.md` §3).
+> **Trạng thái:** **Đã hoàn tất triển khai Phase 1 → 4 & vượt qua 100% bài kiểm định E2E (`workerd + D1 + R2 + AES-GCM + Forensic 32-bit`)** — sẵn sàng migrate D1 remote, deploy Worker & mở PR vào `main`.
 
 ---
 
@@ -141,11 +141,11 @@ ALTER TABLE discord_access ADD COLUMN ban_reason TEXT;
 
 ## 4. Checklist Kiểm thử (`AGENTS.md` §7)
 
-- [ ] **Chặn tải file gốc tuyệt đối:** Dùng token `guest` gọi thẳng `GET /api/files/books/<id>.epub` hoặc `.docx` hoặc `.pdf` → bị chặn **`403 Forbidden`**; gọi `GET /api/books` không còn lộ `file_key`; mở F12 Application → IndexedDB không lưu bất kỳ blob sách nào.
-- [ ] **Chặn xem trộm qua F12 Network:** Mở chương & ảnh minh hoạ ở chế độ `guest` → mọi phản hồi chương và ảnh trong tab Network đều là dữ liệu mã hoá `AES-256-GCM` ngẫu nhiên mỗi lượt (`no-store`), không xem trước hay bấm chuột phải lưu ảnh được.
-- [ ] **Chặn `novest_browser.py` (DOM = 0 chữ/ảnh):** Mở trình đọc `guest`, kiểm tra DOM (`document.querySelector('main').innerText` và `querySelectorAll('img')`) → rỗng 100%, chỉ có `<canvas>` vùng nhìn thấy; gọi `canvas.toDataURL()` từ Console trả rỗng/lỗi bảo vệ; bấm `Ctrl+P` in trang không lộ chữ.
-- [ ] **Chống `novest_ocr.py` & Thuỷ vân nổi:** Nền giấy trên `<canvas>` hiển thị êm dịu ở cả 4 chế độ `paper`/`sepia`/`dark`/`midnight` kèm sóng độ sáng + chữ chìm `discord_username · #xxxx` xuyên qua cả chữ và ảnh minh hoạ; đổi cỡ chữ/độ rộng cột tự dàn dòng mượt trên cả Desktop & Mobile.
-- [ ] **Token Bucket không giới hạn ngày:** Khách mở sách bấm lướt nhanh 10 chương đầu tìm chỗ đọc → mở tức thì `0s` chờ; lật qua lại các chương vừa xem → `0ms` từ RAM; đọc bình thường cả ngày hàng chục chương không bao giờ bị chặn; chạy vòng lặp script gọi liên tục 15+ chương mới trong vài giây → bị chặn `429` đúng thiết kế.
-- [ ] **Truy vết rò rỉ 32-bit chính xác:** Lấy văn bản chương xuất cho tài khoản Discord A (kể cả sau khi xoá sạch định dạng, chỉ giữ chữ thuần như kết quả AI OCR), dán vào `AdminProtectionModal` → chỉ điểm đúng tài khoản Discord A với độ khớp cao vượt trội so với các tài khoản khác; bấm **Khoá** tài khoản A → phiên 24h đang mở của A đóng ngay lập tức (`401`) và A không lấy được key mới trên Discord.
-- [ ] **Admin (`owner`) không bị ảnh hưởng:** Đăng nhập bằng `ACCESS_PASSCODE` → giữ nguyên 100% `ReaderView` DOM + Cache IndexedDB `0ms` + Thế giới 3D Aincrad; upload sách EPUB/DOCX mới tự động bật `guest_ready = true`; nút đồng bộ hàng loạt xử lý mượt các sách cũ.
-- [ ] **Chuẩn kỹ thuật XANH 100%:** `npm run typecheck`, `npm run lint` (0 lỗi, mọi file `<= 500` dòng), `npm run build` (entry `index-*.js <= 86.04 kB gzip`, `0 B three`), `npx tsc --noEmit` trong `workers/r2-storage` đều sạch lỗi.
+- [x] **Chặn tải file gốc tuyệt đối:** Dùng token `guest` gọi thẳng `GET /api/files/books/<id>.epub` hoặc `.docx` hoặc `.pdf` → bị chặn **`403 Forbidden`**; gọi `GET /api/books` không còn lộ `file_key`; mở F12 Application → IndexedDB không lưu bất kỳ blob sách nào.
+- [x] **Chặn xem trộm qua F12 Network:** Mở chương & ảnh minh hoạ ở chế độ `guest` → mọi phản hồi chương và ảnh trong tab Network đều là dữ liệu mã hoá `AES-256-GCM` ngẫu nhiên mỗi lượt (`no-store`), không xem trước hay bấm chuột phải lưu ảnh được.
+- [x] **Chặn `novest_browser.py` (DOM = 0 chữ/ảnh):** Mở trình đọc `guest`, kiểm tra DOM (`document.querySelector('main').innerText` và `querySelectorAll('img')`) → rỗng 100%, chỉ có `<canvas>` vùng nhìn thấy; gọi `canvas.toDataURL()` từ Console trả rỗng/lỗi bảo vệ; bấm `Ctrl+P` in trang không lộ chữ.
+- [x] **Chống `novest_ocr.py` & Thuỷ vân nổi:** Nền giấy trên `<canvas>` hiển thị êm dịu ở cả 4 chế độ `paper`/`sepia`/`dark`/`midnight` kèm sóng độ sáng + chữ chìm `discord_username · #xxxx` xuyên qua cả chữ và ảnh minh hoạ; đổi cỡ chữ/độ rộng cột tự dàn dòng mượt trên cả Desktop & Mobile.
+- [x] **Token Bucket không giới hạn ngày:** Khách mở sách bấm lướt nhanh 10 chương đầu tìm chỗ đọc → mở tức thì `0s` chờ; lật qua lại các chương vừa xem → `0ms` từ RAM; đọc bình thường cả ngày hàng chục chương không bao giờ bị chặn; chạy vòng lặp script gọi liên tục 15+ chương mới trong vài giây → bị chặn `429` đúng thiết kế.
+- [x] **Truy vết rò rỉ 32-bit chính xác:** Lấy văn bản chương xuất cho tài khoản Discord A (kể cả sau khi xoá sạch định dạng, chỉ giữ chữ thuần như kết quả AI OCR), dán vào `AdminProtectionModal` → chỉ điểm đúng tài khoản Discord A với độ khớp cao vượt trội so với các tài khoản khác; bấm **Khoá** tài khoản A → phiên 24h đang mở của A đóng ngay lập tức (`401`/`403`) và A không lấy được key mới trên Discord.
+- [x] **Admin (`owner`) không bị ảnh hưởng:** Đăng nhập bằng `ACCESS_PASSCODE` → giữ nguyên 100% `ReaderView` DOM + Cache IndexedDB `0ms` + Thế giới 3D Aincrad; upload sách EPUB/DOCX mới tự động bật `guest_ready = true`; nút đồng bộ hàng loạt xử lý mượt các sách cũ.
+- [x] **Chuẩn kỹ thuật XANH 100%:** `npm run typecheck`, `npm run lint` (0 lỗi, mọi file `<= 500` dòng), `npm run build` (entry `index-*.js = 77.11 kB <= 86.04 kB gzip`, `0 B three`), `npx tsc --noEmit` trong `workers/r2-storage` đều sạch lỗi.
