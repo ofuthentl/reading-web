@@ -1,19 +1,19 @@
 # HANDOFF
-Cập nhật: 2026-11-22 00:45 | Nhánh: fix/native-gate-ui | Build: 🟢 frontend (entry <= 86.04 kB gzip, 0 B three) · 🟢 worker (live) · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: **Khôi phục giao diện gốc của Ofu's Library cho `/entrance` & `/locked` (`fix/native-gate-ui`, `D-027`)** — gỡ toàn bộ chi tiết clone UI của TMW, giữ nguyên cơ chế tách đường dẫn.
+Cập nhật: 2026-11-22 00:51 | Nhánh: fix/native-gate-ui | Build: 🟢 frontend (entry <= 86.04 kB gzip, 0 B three) · 🟢 worker (live) · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: **Thiết kế Cổng không gian mở nguyên bản của Ofu's Library cho `/entrance` & `/locked` (`fix/native-gate-ui`, `D-027`)** — sẵn sàng duyệt trên trình duyệt & merge PR vào `main`.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/entrance-and-locked-routes.md
 
 ## Đang làm dở
-- Đã đồng bộ `main` (sau PR #8) và tạo nhánh `fix/native-gate-ui`:
-  - Gỡ bỏ hoàn toàn các chi tiết bê từ UI của TMW (con dấu đỏ `書庫`, chữ Hán chìm, nền kẻ sọc dọc, chữ nghiêng chấm cam, câu chữ tiếng Anh của TMW).
-  - Đưa `src/components/AuthGate.tsx` về đúng 100% khung thẻ `moonlit-card`, icon `BookOpen` / `Lock`, font & nút bấm vốn có của **Ofu's Library**, giữ nguyên luồng `/entrance` (*`Ofu's Library Entrance`*) và `/locked` (*`Ofu's Library Closed`*).
+- Trên nhánh `fix/native-gate-ui` (hoặc tạo nhánh mới nếu PR trước đã merge):
+  - Bỏ khung hộp form đăng nhập nhỏ đơn điệu ở giữa màn hình; dùng **bố cục không gian mở căn trái thoáng đãng** (lấy cảm hứng độ thoáng của TMW nhưng **không clone bất kỳ chữ Hán `書庫`, con dấu đỏ, font nghiêng chấm đỏ hay câu chữ tiếng Anh nào của TMW**).
+  - Thêm `src/components/GateBackdropArt.tsx`: lưới bản vẽ mảnh + hình vẽ nét mảnh **Cổng Vòm Thư Viện & La Bàn Ổ Khoá Ánh Sao** nguyên bản của Ofu's Library (đổi trạng thái mở khoá ở `/entrance` vs niêm phong ở `/locked`).
+  - Dải nhập mã trên `/entrance` chia thành **3 cụm × 4 ô bo góc (`XXXX · XXXX · XXXX`)** dễ đọc (tự gộp mượt thành 1 thanh khi gõ mật mã Admin dài `> 12` ký tự), đồng bộ đủ 3 chế độ Sáng/Chiều/Đêm.
 
 ## Bước tiếp theo
-1. Mở & merge Pull Request `fix/native-gate-ui` → `main` (hoặc chỉnh thêm nếu người dùng có điểm góp ý tiếp theo).
+1. Xem thử giao diện mới của `/entrance` và `/locked`, sau đó merge PR vào `main`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **`fix/native-gate-ui` (`D-027`):** đưa `/entrance` & `/locked` về đúng thiết kế gốc của Ofu's Library.
-- **PR #8 (`feat/entrance-and-locked-routes`) & PR #7 (`feat/discord-key-access`):** đã merge vào `main`.
+- **`fix/native-gate-ui` (`D-027`):** cổng không gian mở nguyên bản cho `Ofu's Library Entrance` & `Ofu's Library Closed`.
