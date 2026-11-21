@@ -1,24 +1,23 @@
 # HANDOFF
-Cập nhật: 2026-11-21 04:08 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 83.74 kB gzip, 0 B three · chunk 3D lazy 239.94 kB gzip) · 🟢 ESLint 100%
-Nhiệm vụ hiện tại: Hoàn tất toàn bộ **PR 4A (`Sub-phase 4A.1` → `4A.4`)** — sẵn sàng kiểm thử trình duyệt cuối cùng & mở PR merge vào `main`
-Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/phase-4-3d.md
+Cập nhật: 2026-11-21 10:22 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 83.74 kB gzip, 0 B three) · 🟢 ESLint 100%
+Nhiệm vụ hiện tại: Triển khai **PR 4A — Aincrad Reading Tower** (`Sub-phase 4A-T1` → `4A-T5`) theo [phase-4-aincrad-tower.md](docs/plans/phase-4-aincrad-tower.md)
+Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/phase-4-aincrad-tower.md
 
 ## Đang làm dở
-- **Sub-phase 4A.4 xong & kiểm định tự động PR 4A XANH 100%:**
-  - `BookInspectCard.tsx`: thẻ xem nhanh sách đang chọn/hover với ảnh bìa gốc qua `useCoverUrl`, metadata, badge định dạng, dung lượng, thanh tiến độ %, nút **"Đọc sách / Đọc tiếp"**, **"Chọn / Đã chọn"** (khi bật chọn nhiều), **"Sửa"** (`BookEditModal`) và đóng thẻ (`Esc`).
-  - `Library3DOverlay.tsx`: HTML overlay hoàn chỉnh (`Header z-30`, HUD `<= z-20`, vùng trống `pointer-events-none`) dùng chung state `App.tsx`: tìm kiếm không dấu, chips lọc & bay camera tới kệ, nút bước kệ `←`/`→`, **"Đổi tên kệ"** (`ShelfRenameModal`), thanh chọn nhiều (`Chọn tất cả`, `Chuyển kệ (N)` → `BulkShelfModal`, `Xoá đã chọn (N)` → `DeleteConfirmModal`, `Xong`), ngăn **"Tiếp tục đọc"** thu gọn góc dưới-trái, trạng thái trống/không khớp lọc.
-  - `geometryUtils.ts`: thay `BufferGeometryUtils` nặng bằng `mergeSimpleGeometries` nội bộ, giữ chunk 3D lazy **`239.94 kB gzip <= 240 kB gzip`** và entry **`83.74 kB gzip <= 86.04 kB gzip`**.
-  - Đã điền bảng số đo bundle PR 4A và tick Mục 7A trong `docs/plans/phase-4-3d.md`.
-- Thư mục ảnh tham khảo local `library_sample/` vẫn giữ untracked (không commit).
+- **Đã chốt kế hoạch Aincrad Reading Tower (`PR 4A → 4B → 4C`)** & kiểm định 3 model trong `glb/` (đã thêm `glb/` vào `.gitignore`; giữ nguyên `library_sample/`, `image.png` untracked):
+  - `Stone_Golem.glb` (9.51 MB, 8.5k tris, 20 xương, `Idle`/`Walk`/`Attack`, cao 3.04 m) → Boss Đài Cổng Tầng.
+  - `pixellabs-stairs-3764.glb` (45.48 MB, 50k tris, 3× PNG 4K) → Bậc đá núi lên Đài Cổng (Tầng 2/4, scale ~5.5–6.5× + ramp vật lý).
+  - `wings_of_freedom-child-3741.glb` (27.30 MB, 499k tris, tĩnh) → Tượng Linh vật / Trophy (cần simplify mạnh).
+- **Chuyển ngay sang `Sub-phase 4A-T1`**: dựng `floorWorldLayout3d.ts`, `worldPhysics3d.ts`, giữ tương thích `layout3d.ts` và test tuyến đi bộ qua cả 4 biome.
 
 ## Bước tiếp theo
-1. Người dùng test checklist PR 4A (Mục 7B–7D trong `docs/plans/phase-4-3d.md`) trên trình duyệt (`npm run build && npm run preview -- --port 5173 --strictPort`).
-2. Push nhánh `feat/library-3d`, mở **PR 4A → `main`**, chờ CI xanh và merge vào `main`.
-3. Sau khi PR 4A merge, tách nhánh mới `feat/book-spread-reader` từ `origin/main` để bắt đầu **Phần B (PR 4B — `BookSpreadReader` mở đôi 2 trang)**.
+1. Hoàn tất **Sub-phase 4A-T1** (`floorWorldLayout3d.ts`, `worldPhysics3d.ts`, test tuyến đi bộ + typecheck/lint/build).
+2. **Sub-phase 4A-T2**: nén GLB (`WebP 1024 + Simplify + Quantize/Meshopt` dùng `meshopt_decoder.module.js` local từ `three`, 0 CDN `gstatic.com`), kiểm tra mesh/UV đưa vào `public/models/`, dựng 4 World Biomes (`WorldBiomeMesh.tsx`, `BiomePropsMesh.tsx`, `proceduralMaterials.ts`, `InstancedBooksMesh.tsx`).
+3. **Sub-phase 4A-T3 → 4A-T5**: `KiritoAvatar.tsx`, `AmbientNpcs.tsx`, `PlayerRig.tsx`, `CozyGameHud.tsx`, `MinimapWidget.tsx`, `ambientAudio.ts`, `InteractiveStations.tsx` → kiểm thử & mở PR 4A vào `main`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **Sub-phase 4A.4 (`feat/library-3d`):** hoàn thiện `BookInspectCard.tsx`, `Library3DOverlay.tsx`, `geometryUtils.ts`, nối trọn vẹn 5 modal `z-40` + `ToastContainer z-50` vào `FantasyLibrary3D.tsx`, cập nhật `ARCHITECTURE.md` & `phase-4-3d.md`.
-- **Sub-phase 4A.1 → 4A.3 (`feat/library-3d`):** ranh giới D-008, 3 module lõi 3D thuần, cảnh Đại sảnh cổ điển 2 tầng `frameloop="demand"`, 3 `InstancedMesh` + `<= 20–24` `CoverPlane`, vá tương phản HUD `bg-surface/95`.
+- **Chốt kiến trúc Aincrad Reading Tower (`feat/library-3d`):** cập nhật `docs/DECISIONS.md` (`D-010`, `D-013`, `D-015`, `D-016`, `D-017`), viết `docs/plans/phase-4-aincrad-tower.md`, phân tích kỹ thuật 3 model trong `glb/` và thêm `glb/` vào `.gitignore`.
+- **Nền tảng 3D cũ (`Sub-phase 4A.1` → `4A.4`):** giữ nguyên lõi tái sử dụng (`useCanUse3D`, `useLibraryViewState`, `Library3DHost`, `coverTextureCache`, `geometryUtils`, `BookInspectCard`, `InstancedBooksMesh`).
