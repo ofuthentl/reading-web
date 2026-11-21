@@ -148,6 +148,8 @@ export interface BiomePropPlacement3D {
   position: [number, number, number];
   rotationY: number;
   scale: number;
+  /** Optional non-uniform `[sx, sy, sz]` scale (used to align real GLB bbox to terrain ramps) */
+  scaleVec?: [number, number, number];
 }
 
 export interface BookcaseAnchor3D {

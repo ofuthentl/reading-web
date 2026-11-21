@@ -8,16 +8,26 @@ export function mergeSimpleGeometries(parts: THREE.BufferGeometry[]): THREE.Buff
   if (parts.length === 0) return new THREE.BufferGeometry();
   if (parts.length === 1) return parts[0];
 
-  const hasIndex = parts[0].index !== null;
+  const allIndexed = parts.every((part) => part.index !== null);
+  const normalized: THREE.BufferGeometry[] = allIndexed
+    ? parts
+    : parts.map((part) => {
+        if (part.index === null) return part;
+        const expanded = part.toNonIndexed();
+        part.dispose();
+        return expanded;
+      });
+
+  const hasIndex = allIndexed;
   let totalVerts = 0;
   let totalIndices = 0;
 
-  for (let i = 0; i < parts.length; i += 1) {
-    const pos = parts[i].attributes.position;
+  for (let i = 0; i < normalized.length; i += 1) {
+    const pos = normalized[i].attributes.position;
     if (!pos) continue;
     totalVerts += pos.count;
-    if (hasIndex && parts[i].index) {
-      totalIndices += parts[i].index!.count;
+    if (hasIndex && normalized[i].index) {
+      totalIndices += normalized[i].index!.count;
     }
   }
 
@@ -33,8 +43,8 @@ export function mergeSimpleGeometries(parts: THREE.BufferGeometry[]): THREE.Buff
   let vertOffset = 0;
   let idxOffset = 0;
 
-  for (let i = 0; i < parts.length; i += 1) {
-    const geom = parts[i];
+  for (let i = 0; i < normalized.length; i += 1) {
+    const geom = normalized[i];
     const pos = geom.attributes.position as THREE.BufferAttribute | undefined;
     const norm = geom.attributes.normal as THREE.BufferAttribute | undefined;
     const uv = geom.attributes.uv as THREE.BufferAttribute | undefined;

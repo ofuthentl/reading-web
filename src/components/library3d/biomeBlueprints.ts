@@ -117,9 +117,22 @@ function prop(
   position: [number, number, number],
   rotationY = 0,
   scale = 1,
+  scaleVec?: [number, number, number],
 ): BiomePropPlacement3D {
-  return { id, kind, position, rotationY, scale };
+  return scaleVec
+    ? { id, kind, position, rotationY, scale, scaleVec }
+    : { id, kind, position, rotationY, scale };
 }
+
+/**
+ * Exact non-uniform scale derived from measured decoded bbox & tread elevation map of
+ * `public/models/mountain-stairs.glb`:
+ * - Tread slope spans local Z `+0.48 -> -0.36` (0.84 m) and climbs local Y `0 -> 0.415 m`.
+ * - Tread valley center sits at local X `-0.065 m` (shifted `+0.55 m` in world X at `sx = 8.4`).
+ * - Matches `5.30 m` Z length & `2.40 m` Y rise of `sakura-mountain-stairs` / `ruins-ancient-stairs`.
+ */
+const MOUNTAIN_STAIRS_SCALE_VEC: [number, number, number] = [8.4, 5.783, 6.31];
+const MOUNTAIN_STAIRS_OFFSET_X = 0.55;
 
 function npc(
   id: string,
@@ -237,14 +250,14 @@ function buildSakuraBlueprint(): BiomeBlueprint3D {
     ],
     surfaces: [
       { kind: 'arch', id: 'sakura-bridge', minX: -2.8, maxX: 2.8, startZ: 5.0, endZ: -5.0, baseY: 0, peakY: 0.9 },
-      { kind: 'ramp', id: 'sakura-mountain-stairs', minX: -2.2, maxX: 2.2, startZ: -17.2, endZ: -22.5, startY: 0, endY: 2.4 },
+      { kind: 'ramp', id: 'sakura-mountain-stairs', minX: -1.75, maxX: 1.75, startZ: -17.2, endZ: -22.5, startY: 0, endY: 2.4 },
       { kind: 'flat', id: 'sakura-summit', minX: -8.5, maxX: 8.5, minZ: -28.5, maxZ: -22.5, y: 2.4 },
     ],
     colliders: [
       box('sakura-lake-w', 'water', -21, -2.8, -4.8, 4.8, -1, 2.5, false),
       box('sakura-lake-e', 'water', 2.8, 21, -4.8, 4.8, -1, 2.5, false),
-      box('sakura-cliff-w', 'cliff', -21, -2.2, -22.5, -17.2, 0, 5.6, true),
-      box('sakura-cliff-e', 'cliff', 2.2, 21, -22.5, -17.2, 0, 5.6, true),
+      box('sakura-cliff-w', 'cliff', -21, -1.75, -22.5, -17.2, 0, 5.6, true),
+      box('sakura-cliff-e', 'cliff', 1.75, 21, -22.5, -17.2, 0, 5.6, true),
       box('sakura-summit-edge-w', 'railing', -21, -8.5, -29.0, -22.5, 0, 4.5, false),
       box('sakura-summit-edge-e', 'railing', 8.5, 21, -29.0, -22.5, 0, 4.5, false),
       box('sakura-reading-table', 'station', -7.4, -5.6, 9.95, 11.05, 0, 0.9, false),
@@ -272,7 +285,7 @@ function buildSakuraBlueprint(): BiomeBlueprint3D {
       prop('p-lantern-3', 'stone_lantern', [-3.4, 0, -6.2]),
       prop('p-lantern-4', 'stone_lantern', [3.4, 0, -6.2]),
       prop('p-mascot', 'mascot_pedestal', [7.6, 0, -9.8], -Math.PI * 0.25),
-      prop('p-stairs-glb', 'mountain_stairs_glb', [0, 0, -19.85], 0, 5.5),
+      prop('p-stairs-glb', 'mountain_stairs_glb', [MOUNTAIN_STAIRS_OFFSET_X, 0, -20.23], 0, 1, MOUNTAIN_STAIRS_SCALE_VEC),
       prop('p-boss-pad', 'boss_pedestal', [0, 2.4, -24.2]),
     ],
     npcs: [
@@ -381,14 +394,14 @@ function buildStarlightRuinsBlueprint(): BiomeBlueprint3D {
       anchor('ruins-e2', 10.5, -8.5, -Math.PI / 2),
     ],
     surfaces: [
-      { kind: 'ramp', id: 'ruins-ancient-stairs', minX: -2.4, maxX: 2.4, startZ: -15.5, endZ: -20.8, startY: 0, endY: 2.4 },
+      { kind: 'ramp', id: 'ruins-ancient-stairs', minX: -1.75, maxX: 1.75, startZ: -15.5, endZ: -20.8, startY: 0, endY: 2.4 },
       { kind: 'flat', id: 'ruins-boss-arena', minX: -9.0, maxX: 9.0, minZ: -29.0, maxZ: -20.8, y: 2.4 },
     ],
     colliders: [
       box('ruins-lake-w', 'water', -20, -14.8, -15.5, 20, -1, 2.5, false),
       box('ruins-lake-e', 'water', 14.8, 20, -15.5, 20, -1, 2.5, false),
-      box('ruins-cliff-w', 'cliff', -20, -2.4, -20.8, -15.5, 0, 5.6, true),
-      box('ruins-cliff-e', 'cliff', 2.4, 20, -20.8, -15.5, 0, 5.6, true),
+      box('ruins-cliff-w', 'cliff', -20, -1.75, -20.8, -15.5, 0, 5.6, true),
+      box('ruins-cliff-e', 'cliff', 1.75, 20, -20.8, -15.5, 0, 5.6, true),
       box('ruins-arena-edge-w', 'railing', -20, -9.0, -29.5, -20.8, 0, 4.5, false),
       box('ruins-arena-edge-e', 'railing', 9.0, 20, -29.5, -20.8, 0, 4.5, false),
       box('ruins-reading-table', 'station', -6.3, -4.5, 8.65, 9.75, 0, 0.9, false),
@@ -413,7 +426,7 @@ function buildStarlightRuinsBlueprint(): BiomeBlueprint3D {
       prop('p-ruin-4', 'ruin_column', [13.2, 0, -13.0], 3.9, 1.05),
       prop('p-crystal-1', 'crystal_pillar', [-7.5, 2.4, -22.5], 0.2, 1.1),
       prop('p-crystal-2', 'crystal_pillar', [7.5, 2.4, -22.5], 1.4, 1.1),
-      prop('p-stairs-glb', 'mountain_stairs_glb', [0, 0, -18.15], 0, 5.5),
+      prop('p-stairs-glb', 'mountain_stairs_glb', [MOUNTAIN_STAIRS_OFFSET_X, 0, -18.53], 0, 1, MOUNTAIN_STAIRS_SCALE_VEC),
       prop('p-boss-pad', 'boss_pedestal', [0, 2.4, -24.0], 0, 1.2),
     ],
     npcs: [

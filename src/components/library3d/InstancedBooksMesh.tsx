@@ -29,6 +29,8 @@ interface InstancedBooksMeshProps {
   materialBundle: LibraryMaterialBundle;
   coverTextureCache: CoverTextureCache;
   cameraX: number;
+  cameraZ?: number;
+  activeFloorIndex?: number;
   visibleShelfKeys: ReadonlySet<string>;
   hoveredBookId: string | null;
   selectedBookId: string | null;
@@ -71,6 +73,8 @@ export function InstancedBooksMesh({
   materialBundle,
   coverTextureCache,
   cameraX,
+  cameraZ,
+  activeFloorIndex,
   visibleShelfKeys,
   hoveredBookId,
   selectedBookId,
@@ -138,9 +142,14 @@ export function InstancedBooksMesh({
     const trim = trimMeshRef.current;
     if (!body || !pages || !trim || slot.instanceIndex >= MAX_BOOK_INSTANCES) return;
 
-    const pullZ = pullRatio * LIBRARY_3D_CONSTANTS.BOOK_PULLOUT_Z;
+    const pullDist = pullRatio * LIBRARY_3D_CONSTANTS.BOOK_PULLOUT_Z;
+    const [dx, dy, dz] = slot.pullDirection;
     const dummy = dummyRef.current;
-    dummy.position.set(slot.position[0], slot.position[1], slot.position[2] + pullZ);
+    dummy.position.set(
+      slot.position[0] + dx * pullDist,
+      slot.position[1] + dy * pullDist,
+      slot.position[2] + dz * pullDist,
+    );
     dummy.rotation.set(slot.rotation[0], slot.rotation[1], slot.rotation[2]);
     dummy.scale.set(slot.dimensions.thickness, slot.dimensions.height, slot.dimensions.depth);
     dummy.updateMatrix();
@@ -152,9 +161,9 @@ export function InstancedBooksMesh({
     const coverMesh = coverMeshRefs.current.get(slot.bookId);
     if (coverMesh) {
       coverMesh.position.set(
-        slot.coverPlane.position[0],
-        slot.coverPlane.position[1],
-        slot.coverPlane.position[2] + pullZ,
+        slot.coverPlane.position[0] + dx * pullDist,
+        slot.coverPlane.position[1] + dy * pullDist,
+        slot.coverPlane.position[2] + dz * pullDist,
       );
     }
   }, []);
@@ -319,12 +328,14 @@ export function InstancedBooksMesh({
     () =>
       selectFeaturedCoverSlots(layout, {
         cameraX,
+        cameraZ,
+        activeFloorIndex,
         visibleShelfKeys,
         hoveredBookId,
         selectedBookId,
         maxSlots: DEFAULT_FEATURED_COVER_SLOTS,
       }),
-    [layout, cameraX, visibleShelfKeys, hoveredBookId, selectedBookId],
+    [layout, cameraX, cameraZ, activeFloorIndex, visibleShelfKeys, hoveredBookId, selectedBookId],
   );
 
   // Sync LRU pinned keys, cancel off-window loads, and subscribe to active CoverPlane textures
@@ -352,10 +363,12 @@ export function InstancedBooksMesh({
         continue;
       }
 
+      const dist =
+        cameraZ === undefined
+          ? Math.abs(slot.position[0] - cameraX)
+          : Math.hypot(slot.position[0] - cameraX, slot.position[2] - cameraZ);
       const priority =
-        slot.bookId === selectedBookId || slot.bookId === hoveredBookId
-          ? 0
-          : Math.abs(slot.position[0] - cameraX) + 1;
+        slot.bookId === selectedBookId || slot.bookId === hoveredBookId ? 0 : dist + 1;
 
       const cancel = coverTextureCache.request(coverKey, {
         shelfKey: slot.shelfKey,
@@ -402,6 +415,7 @@ export function InstancedBooksMesh({
     visibleShelfKeys,
     coverTextureCache,
     cameraX,
+    cameraZ,
     hoveredBookId,
     selectedBookId,
     requestRender,
@@ -489,16 +503,18 @@ export function InstancedBooksMesh({
         const texture = loadedCovers.get(coverKey);
         if (!texture) return null;
 
-        const pullZ = (pullValuesRef.current[slot.instanceIndex] ?? 0) * LIBRARY_3D_CONSTANTS.BOOK_PULLOUT_Z;
+        const pullDist =
+          (pullValuesRef.current[slot.instanceIndex] ?? 0) * LIBRARY_3D_CONSTANTS.BOOK_PULLOUT_Z;
+        const [pdx, pdy, pdz] = slot.pullDirection;
         return (
           <mesh
             key={slot.bookId}
             ref={(mesh) => setCoverMeshRef(slot.bookId, mesh)}
             geometry={geometries.coverPlane}
             position={[
-              slot.coverPlane.position[0],
-              slot.coverPlane.position[1],
-              slot.coverPlane.position[2] + pullZ,
+              slot.coverPlane.position[0] + pdx * pullDist,
+              slot.coverPlane.position[1] + pdy * pullDist,
+              slot.coverPlane.position[2] + pdz * pullDist,
             ]}
             rotation={slot.coverPlane.rotation}
             scale={[slot.coverPlane.width, slot.coverPlane.height, 1]}
