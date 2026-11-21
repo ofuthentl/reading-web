@@ -247,7 +247,7 @@ export function CozyGameHud({
               </div>
               <p className="text-[10px] leading-snug text-ink-muted">
                 {inBossRoom
-                  ? 'Đi tới Cửa Xanh phía sau để quay lại tầng.'
+                  ? 'Đi tới Cửa Xanh để quay lại tầng.'
                   : bossUnlock.unlocked
                     ? 'Phong ấn đã mở — lại gần Cửa Rồng bấm [E]!'
                     : `Đạt ${bossUnlock.requiredBooks} tập hoặc ${bossUnlock.requiredPages} trang bất kỳ.`}

@@ -1,24 +1,21 @@
 # HANDOFF
-Cập nhật: 2026-11-21 19:19 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 84.77 kB gzip, 0 B three) · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: Triển khai **PR 4A — Aincrad Reading Tower** (vừa sửa dứt điểm lỗi nền trong suốt HUD/Dropdown do opacity ngoài thang Tailwind v3 `/92`/`/98`/`/12` → đang chờ chốt có dùng `battle_boss.glb` hay giữ `boss-arena.glb` cho Phòng Boss)
+Cập nhật: 2026-11-21 19:34 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 84.77 kB gzip, 0 B three) · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: Triển khai **PR 4A — Aincrad Reading Tower** (vừa hoàn tất **Sub-phase 4A-T4** + sửa lỗi nền HUD trong suốt + triển khai **PA-2 Đấu trường Phòng Boss kép `D-024`** với `boss-battlefield.glb` cho Tầng 4 Stormterror → sẵn sàng sang **Sub-phase 4A-T5** kiểm thử tổng thể & mở PR vào `main`)
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/phase-4-aincrad-tower.md
 
 ## Đang làm dở
-- **Hoàn tất trọn Sub-phase 4A-T4 (PA-3: giữ 4 tầng mặc định cho PR 4A, UI/Minimap sẵn sàng 10–100+ tầng & mọi cỡ map — XANH 100%):**
-  - **`MinimapWidget.tsx`:** minimap radar tròn HiDPI tự co giãn theo `floor.bounds` (hỗ trợ Phòng Boss 360° + tự bám Kirito với bản đồ `> 76 m`), vẽ Kirito + vùng nhìn 360°, tủ sách xoay, trạm tương tác, Cửa Phòng Boss, Cổng tầng và vị trí live của NPC (Asuna đang đi dạo), kèm bảng chú thích thu gọn và dừng RAF hoàn toàn khi paused/ẩn tab/reduced-motion.
-  - **`CozyGameHud.tsx` + `WorldQuickBar.tsx` + `Library3DOverlay.tsx`:** HUD gọn thoáng góc màn hình (`<= z-20`, vùng giữa `pointer-events-none`), bộ chọn tầng dạng dropdown/popover chịu được 10–100+ tầng (tự hiện ô lọc khi `> 6` tầng), tìm sách xuyên tầng nhảy thẳng tới cuốn sách (`findJumpTargetForBook`), thanh `LV / HP / MP / XP` tính từ tiến độ đọc (`computeReaderRpgStats`) + mục tiêu mở khoá Phòng Boss thu gọn được, nút bật/tắt âm thanh môi trường, giữ nguyên `Thứ 3 / Thứ 1 (V)` và `BookInspectCard`.
-  - **`ambientAudio.ts`:** âm thanh môi trường Web Audio API thuần nội bộ (0 file ngoài, 0 CDN) theo `4 Biome × 3 Theme` + `Phòng Boss` kèm bước chân nhẹ; mặc định TẮT cho tới thao tác bật, tự suspend khi đọc sách/mở modal/ẩn tab và gọi `AudioContext.close()` sạch khi unmount.
-  - **`InteractiveStations.tsx`:** vòng sáng rune ma thuật 3D dịu dưới chân toàn bộ trạm tương tác (`Bàn đọc`, `Bục Thủ thư`, `Trụ Thời tiết`, `Cổng tầng`, `Cửa Phòng Boss`, `Cửa rời Phòng Boss`) tự nổi sáng & dâng màn sáng nhẹ khi Kirito lại gần trong tầm `[E]`, hỗ trợ click trực tiếp và `dispose()` sạch GPU.
-  - Kiểm định: `npm run typecheck`, `npm run lint` (0 lỗi, 0 cảnh báo, mọi file `<= 500` dòng hiệu dụng), `npm run build` (`index-*.js` `84.77 kB gzip`, `0 B three`, `0 CDN`), 5/5 unit test 4A-T4 (RPG stats, audio profiles/lifecycle, 4/10/100 floors & Boss Room).
+- **Hoàn tất trọn Sub-phase 4A-T4 + PA-2 Phòng Boss kép (`D-024`, XANH 100%):**
+  - **PA-2 Đấu trường Phòng Boss kép (`D-024`):** nén `glb/scene/battle_boss.glb` (`17.78 MB` → `public/models/boss-battlefield.glb` **`2.83 MB`**, WebP 1024 + Meshopt, 0 CDN, 0 lỗi UV/normal); Tầng 4 (`starlight_ruins` — Phong Long Stormterror) vào **Đấu trường Đảo Bay Trời Mở** (scale `4x`, mặt sàn đo raycast `[-14.8, 14.8] × [-4.8, 4.8]`, collider chắn mép đảo `blocksCamera: false` cho camera xoay 360° giữa bầu trời 2K + `WorldHorizonVista`, lá cây `alphaTest` sắc nét, Cửa Thoát lam cánh Tây); Tầng 1–3 giữ Colosseum kín 360° (`boss-arena.glb`).
+  - **Sửa nền HUD/Dropdown sắc nét:** thay toàn bộ opacity ngoài thang Tailwind v3 (`/92`, `/98`, `/12`) về `bg-surface` đặc cho dropdown/search và `bg-surface/95` cho thẻ `LV/HP/MP/XP` & `WorldQuickBar`.
+  - **Sub-phase 4A-T4 trọn bộ:** `MinimapWidget.tsx` tự co giãn theo `floor.bounds` (kể cả Phòng Boss Colosseum & Đảo Bay), `CozyGameHud.tsx`, `WorldQuickBar.tsx` (dropdown chịu 10–100+ tầng + tìm sách xuyên tầng), `ambientAudio.ts` (Web Audio nội bộ 0 CDN, mặc định TẮT, `close()` khi unmount), `InteractiveStations.tsx` (vòng sáng rune 3D nổi sáng trong tầm `[E]`).
 
 ## Bước tiếp theo
-1. Người dùng chạy `npm run dev` kiểm tra trực quan Sub-phase 4A-T4: Minimap live (kể cả trong Phòng Boss 360°), Dropdown chọn tầng, Cozy HUD (`LV/HP/MP/XP` + mục tiêu Boss thu gọn), bật/tắt âm thanh môi trường + bước chân, vòng sáng rune trạm tương tác sáng lên khi tới gần tầm `[E]`.
-2. **Sub-phase 4A-T5:** rà toàn bộ checklist mục 4 trong `docs/plans/phase-4-aincrad-tower.md` (desktop `>= 1024px`, mobile `< 1024px`, 5 modal, 0 FPS khi đọc sách/ẩn tab) → mở Pull Request `feat/library-3d` → `main`.
+1. Người dùng F5 `npm run dev` kiểm tra trực quan: nền HUD/dropdown rõ nét, vào Phòng Boss Tầng 4 (`starlight_ruins`) xem Đấu trường Đảo Bay `boss-battlefield.glb` + Phong Long Stormterror + bầu trời sao 360°, Tầng 1–3 vẫn là Colosseum kín 360°.
+2. **Sub-phase 4A-T5:** rà checklist mục 4 trong `docs/plans/phase-4-aincrad-tower.md` (desktop `>= 1024px`, mobile `< 1024px`, 5 modal, 0 FPS khi đọc sách/ẩn tab) → mở Pull Request `feat/library-3d` → `main`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **Sub-phase 4A-T4 (`feat/library-3d`):** `MinimapWidget.tsx`, `CozyGameHud.tsx`, `ambientAudio.ts`, `InteractiveStations.tsx`, nâng cấp `WorldQuickBar.tsx`, `Library3DOverlay.tsx`, `LibraryCanvas.tsx`, `PlayerRig.tsx`, `FantasyLibrary3D.tsx`.
-- **Lọc bỏ sách đã hoàn thành khỏi "Tiếp tục đọc" (`feat/library-3d`):** `selectContinueReadingBooks` trong `src/hooks/useLibraryViewState.ts`.
-- **12 Real PBR `.glb` Nội thất đa dạng theo tầng & sửa cầu thang Tầng 2/3 (`feat/library-3d`, D-023):** `WorldFurnitureGlbs.tsx`, `GrandLibraryHallMesh.tsx`, `prop-mossy-stairs.glb`, `pbr-wood-albedo.webp`.
+- **PA-2 Phòng Boss kép (`feat/library-3d`, D-024):** `public/models/boss-battlefield.glb` (`2.83 MB`), `bossRoomLayout3d.ts`, `BossArenaMesh.tsx`, `WorldBiomeMesh.tsx`, `InteractiveStations.tsx`.
+- **Sửa nền trong suốt HUD/Dropdown & trọn Sub-phase 4A-T4 (`feat/library-3d`):** `MinimapWidget.tsx`, `CozyGameHud.tsx`, `WorldQuickBar.tsx`, `ambientAudio.ts`, `InteractiveStations.tsx`.

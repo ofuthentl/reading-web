@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { AppTheme } from '@/hooks/useTheme';
+import { isSkyBattlefieldBossRoom } from './bossRoomLayout3d';
 import type {
   FloorWorldLayout3D,
   PlayerMotionState,
@@ -189,7 +190,8 @@ export function InteractiveStations({
   isDraggingRef,
   onInteractStation,
 }: InteractiveStationsProps) {
-  const isLight = theme === 'light' && !floor.isBossRoom;
+  const isLight =
+    theme === 'light' && (!floor.isBossRoom || isSkyBattlefieldBossRoom(floor.biomeId));
   const shared = useMemo(() => {
     const runeTexture = createMagicRuneTexture();
     const veilTexture = createAuraVeilTexture();

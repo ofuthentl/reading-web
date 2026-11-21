@@ -182,11 +182,13 @@ function wallBox(
   maxX: number,
   minZ: number,
   maxZ: number,
+  tag: BoxCollider3D['tag'] = 'wall',
+  blocksCamera = true,
 ): BoxCollider3D {
   return {
     kind: 'box',
     id,
-    tag: 'wall',
+    tag,
     centerX: (minX + maxX) * 0.5,
     centerZ: (minZ + maxZ) * 0.5,
     halfWidth: (maxX - minX) * 0.5,
@@ -194,17 +196,98 @@ function wallBox(
     yaw: 0,
     minY: 0,
     maxY: 8.5,
-    blocksCamera: true,
+    blocksCamera,
   };
 }
 
 /**
- * Generates a dedicated, 360° enclosed Colosseum Boss Arena layout (`19.6 m × 19.6 m`)
- * isolated from the main floor so bosses strictly live inside their sealed Boss Room.
+ * Returns `true` when this floor's Boss Room uses the open-air Floating Sky Battlefield
+ * (`public/models/boss-battlefield.glb`, Stormterror / `starlight_ruins`, `D-024`) instead
+ * of the 360° enclosed Colosseum chamber (`boss-arena.glb`).
+ */
+export function isSkyBattlefieldBossRoom(biomeId: BiomeId): boolean {
+  return biomeId === 'starlight_ruins';
+}
+
+/**
+ * Generates the dedicated Boss Arena layout isolated from the main library floor:
+ * - Floors with `starlight_ruins` (Floor 4 — Stormterror): Open-air Floating Sky Battlefield
+ *   (`boss-battlefield.glb` scaled 4x, flat deck `[-14.8, 14.8] × [-4.8, 4.8]`, open-sky camera).
+ * - Other floors (Floors 1–3 — Golem / Drago Knight): Enclosed 360° Colosseum chamber (`19.6 m²`).
  */
 export function buildBossRoomFloorLayout(sourceFloor: FloorWorldLayout3D): FloorWorldLayout3D {
   const bossName = getFloorBossName(sourceFloor.biomeId, sourceFloor.floorNumber);
-  const bossRadius = sourceFloor.biomeId === 'starlight_ruins' ? 3.1 : 2.15;
+
+  if (isSkyBattlefieldBossRoom(sourceFloor.biomeId)) {
+    return {
+      floorIndex: sourceFloor.floorIndex,
+      floorNumber: sourceFloor.floorNumber,
+      biomeId: sourceFloor.biomeId,
+      biomeVariant: sourceFloor.biomeVariant,
+      biomeMeta: sourceFloor.biomeMeta,
+      title: `Đấu trường Bầu Trời Tầng ${sourceFloor.floorNumber} — ${bossName}`,
+      // Generous open-sky bounds so the 3rd-person orbit camera flies freely outside the island rim
+      bounds: { minX: -18.5, maxX: 18.5, minZ: -12.5, maxZ: 12.5 },
+      spawnPoint: [0, 0, 3.6],
+      spawnYaw: Math.PI,
+      bossAnchor: [0, 0, -1.5],
+      bossYaw: 0,
+      bookcases: [],
+      bookcasesByShelfKey: new Map(),
+      shelfKeys: [],
+      books: [],
+      bookById: new Map(),
+      surfaces: [
+        { kind: 'flat', id: 'sky-battlefield-deck', minX: -14.8, maxX: 14.8, minZ: -4.8, maxZ: 4.8, y: 0 },
+      ],
+      colliders: [
+        // Invisible edge barriers aligned to the exact raycast-measured flat deck (`blocksCamera: false`)
+        wallBox('sky-edge-n', -18.5, 18.5, -12.5, -4.8, 'railing', false),
+        wallBox('sky-edge-s', -18.5, 18.5, 4.8, 12.5, 'railing', false),
+        wallBox('sky-edge-w', -18.5, -14.8, -12.5, 12.5, 'railing', false),
+        wallBox('sky-edge-e', 14.8, 18.5, -12.5, 12.5, 'railing', false),
+        // Stormterror personal-space cylinder (leaves clean clearance from North rim -4.8 & spawn +3.6)
+        {
+          kind: 'cylinder',
+          id: 'boss-body-guard',
+          tag: 'pillar',
+          centerX: 0,
+          centerZ: -1.5,
+          radius: 2.35,
+          minY: 0,
+          maxY: 6.5,
+          blocksCamera: false,
+        },
+      ],
+      stations: [
+        {
+          id: 'st-boss-exit',
+          kind: 'boss_exit',
+          label: 'Cửa rời Đấu trường Bầu Trời',
+          prompt: `Quay lại Tầng ${sourceFloor.floorNumber} — ${sourceFloor.biomeMeta.label}`,
+          position: [-12.4, 0, 0.2],
+          facingYaw: Math.PI / 2,
+          interactRadius: 2.8,
+          targetFloorIndex: sourceFloor.floorIndex,
+        },
+      ],
+      props: [],
+      npcs: [],
+      walkCheckpoints: [
+        [0, 3.6],
+        [6.5, 2.4],
+        [10.5, -1.8],
+        [-6.5, 2.4],
+        [-11.8, 0.2],
+      ],
+      hasPrevFloor: false,
+      hasNextFloor: false,
+      isBossRoom: true,
+      bossSourceFloorIndex: sourceFloor.floorIndex,
+    };
+  }
+
+  const bossRadius = 2.15;
 
   return {
     floorIndex: sourceFloor.floorIndex,

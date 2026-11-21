@@ -147,6 +147,8 @@ export function WorldBiomeMesh({
     return (
       <BossArenaMesh
         floor={floor}
+        theme={theme}
+        skyGeometry={skyGeometry}
         worldMaterials={worldBundle}
         paused={paused}
         prefersReducedMotion={prefersReducedMotion}
