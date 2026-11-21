@@ -1,4 +1,26 @@
-import type { Book, BookFileType, ReadingProgress, ShelfGroup, StorageStats } from '@/types';
+import type {
+  AuthRole,
+  AuthSessionInfo,
+  Book,
+  BookFileType,
+  ReadingProgress,
+  ShelfGroup,
+  StorageStats,
+} from '@/types';
+import {
+  DEFAULT_OWNER_SESSION,
+  apiFetch,
+  assertApiConfigured,
+  checkHealth,
+  getActiveAuthSession,
+  getAuthToken,
+  isAuthError,
+  isCloudMode,
+  isLocalDevMode,
+  isMissingProductionApi,
+  loginWithPasscode,
+  setAuthToken,
+} from '@/lib/authSession';
 import {
   deleteCachedBookBlob, deleteCachedCoverBlob, deleteLocalBook, deleteLocalProgress,
   getAllLocalProgress, getCachedBookBlob, getCachedCoverBlob, getLocalBooks,
@@ -15,39 +37,21 @@ import {
   writeLocalShelfPrefs,
 } from '@/lib/shelfPrefs';
 
-const API_BASE = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
-const TOKEN_STORAGE_KEY = 'arcane-library-auth-token';
+export {
+  apiFetch,
+  assertApiConfigured,
+  checkHealth,
+  getAuthToken,
+  isAuthError,
+  isCloudMode,
+  isLocalDevMode,
+  isMissingProductionApi,
+  loginWithPasscode,
+  setAuthToken,
+};
+
 export const HARD_LIMIT_BYTES = 9 * 1024 * 1024 * 1024; // 9.0 GiB
 export const MAX_SHELF_NAME_LENGTH = 120;
-
-export const isMissingProductionApi = !import.meta.env.DEV && !API_BASE;
-export const isLocalDevMode = import.meta.env.DEV && !API_BASE;
-export const isCloudMode = Boolean(API_BASE);
-
-export function assertApiConfigured() {
-  if (isMissingProductionApi) {
-    throw new Error(
-      'Thiếu cấu hình VITE_API_URL trên bản production. Vui lòng thiết lập secret VITE_API_URL trỏ về Cloudflare Worker và deploy lại.',
-    );
-  }
-}
-
-export function getAuthToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setAuthToken(token: string | null) {
-  try {
-    if (token) localStorage.setItem(TOKEN_STORAGE_KEY, token);
-    else localStorage.removeItem(TOKEN_STORAGE_KEY);
-  } catch {
-    // Ignore
-  }
-}
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
@@ -109,59 +113,12 @@ async function computeLocalStorageStats(books: Book[]): Promise<StorageStats> {
   };
 }
 
-class ApiAuthError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ApiAuthError';
-  }
-}
-
-export function isAuthError(err: unknown): boolean {
-  return err instanceof ApiAuthError;
-}
-
-export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const headers = new Headers(init.headers);
-  const token = getAuthToken();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-
-  const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
-  if (response.status === 401) {
-    setAuthToken(null);
-    const body = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new ApiAuthError(body.error || 'Vui lòng đăng nhập lại.');
-  }
-  return response;
-}
-
-export async function checkHealth(): Promise<{ ok: boolean; authRequired: boolean }> {
-  assertApiConfigured();
-  if (!isCloudMode) return { ok: true, authRequired: false };
-  const response = await fetch(`${API_BASE}/api/health`);
-  if (!response.ok) throw new Error('Không thể kết nối máy chủ Cloudflare Worker.');
-  return (await response.json()) as { ok: boolean; authRequired: boolean };
-}
-
-export async function loginWithPasscode(passcode: string): Promise<void> {
-  assertApiConfigured();
-  if (!isCloudMode) return;
-  const response = await fetch(`${API_BASE}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ passcode }),
-  });
-  const body = (await response.json().catch(() => ({}))) as { token?: string; error?: string };
-  if (!response.ok || !body.token) {
-    throw new Error(body.error || 'Đăng nhập thất bại.');
-  }
-  setAuthToken(body.token);
-}
-
 export async function fetchLibraryState(): Promise<{
   books: Book[];
   progress: Record<string, ReadingProgress>;
   shelfPrefs: ShelfPrefsState;
   storage: StorageStats;
+  session: AuthSessionInfo;
 }> {
   assertApiConfigured();
   const localPrefs = readLocalShelfPrefs();
@@ -169,7 +126,13 @@ export async function fetchLibraryState(): Promise<{
     const [books, progress] = await Promise.all([getLocalBooks(), getAllLocalProgress()]);
     const sorted = sortBooksByTitle(books);
     const storage = await computeLocalStorageStats(sorted);
-    return { books: sorted, progress, shelfPrefs: localPrefs, storage };
+    return {
+      books: sorted,
+      progress,
+      shelfPrefs: localPrefs,
+      storage,
+      session: DEFAULT_OWNER_SESSION,
+    };
   }
 
   const response = await apiFetch('/api/books');
@@ -179,16 +142,27 @@ export async function fetchLibraryState(): Promise<{
     shelfCovers?: Record<string, string>;
     favoriteShelves?: string[];
     storage?: StorageStats;
+    session?: { role?: AuthRole; expiresAt?: number | null };
     error?: string;
   };
   if (!response.ok) {
     throw new Error(data.error || 'Không thể tải dữ liệu thư viện.');
   }
+  const fallbackSession = getActiveAuthSession();
+  const resolvedSession: AuthSessionInfo = {
+    role: data.session?.role === 'guest' ? 'guest' : fallbackSession.role,
+    expiresAt:
+      typeof data.session?.expiresAt === 'number'
+        ? data.session.expiresAt
+        : fallbackSession.expiresAt,
+  };
   const nextPrefs: ShelfPrefsState = {
     covers: data.shelfCovers ?? localPrefs.covers,
     favorites: data.favoriteShelves ?? localPrefs.favorites,
   };
-  writeLocalShelfPrefs(nextPrefs);
+  if (resolvedSession.role === 'owner') {
+    writeLocalShelfPrefs(nextPrefs);
+  }
   return {
     books: sortBooksByTitle(data.books || []),
     progress: data.progress || {},
@@ -199,6 +173,7 @@ export async function fetchLibraryState(): Promise<{
       remainingBytes: HARD_LIMIT_BYTES,
       bookCount: 0,
     },
+    session: resolvedSession,
   };
 }
 
@@ -525,7 +500,9 @@ export async function saveReadingProgress(
   progress: ReadingProgress,
 ): Promise<void> {
   assertApiConfigured();
-  await putLocalProgress(bookId, progress);
+  if (!isCloudMode || getActiveAuthSession().role === 'owner') {
+    await putLocalProgress(bookId, progress);
+  }
   if (!isCloudMode) return;
 
   const res = await apiFetch(`/api/progress/${bookId}`, {
@@ -541,7 +518,9 @@ export async function saveReadingProgress(
 
 export async function clearReadingProgress(bookId: string): Promise<void> {
   assertApiConfigured();
-  await deleteLocalProgress(bookId);
+  if (!isCloudMode || getActiveAuthSession().role === 'owner') {
+    await deleteLocalProgress(bookId);
+  }
   if (!isCloudMode) return;
   const res = await apiFetch(`/api/progress/${bookId}`, { method: 'DELETE' });
   if (!res.ok) {

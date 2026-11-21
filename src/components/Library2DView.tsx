@@ -12,7 +12,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import type { Book, ReadingProgress, StorageStats, ViewMode } from '@/types';
+import type { AuthRole, Book, ReadingProgress, StorageStats, ViewMode } from '@/types';
 import { BookCard } from '@/components/BookCard';
 import { LibraryHeader } from '@/components/LibraryHeader';
 import type { LibraryViewState } from '@/hooks/useLibraryViewState';
@@ -34,6 +34,8 @@ interface Library2DViewProps {
   loading: boolean;
   theme: AppTheme;
   viewState: LibraryViewState;
+  sessionRole?: AuthRole;
+  sessionExpiresAt?: number | null;
   canUse3D?: boolean;
   viewMode?: ViewMode;
   onChangeViewMode?: (mode: ViewMode) => void;
@@ -41,7 +43,7 @@ interface Library2DViewProps {
   onRefresh: () => void;
   onLogout: () => void;
   onOpenBook: (book: Book) => void;
-  onUploadClick: () => void;
+  onUploadClick?: () => void;
   onEditBook?: (book: Book) => void;
   onRenameShelf?: (shelfName: string) => void;
   onShelfCoverChanged?: (shelfName: string, bookId: string | null) => void;
@@ -78,6 +80,8 @@ export function Library2DView({
   loading,
   theme,
   viewState,
+  sessionRole = 'owner',
+  sessionExpiresAt = null,
   canUse3D = false,
   viewMode = '2d',
   onChangeViewMode,
@@ -133,6 +137,8 @@ export function Library2DView({
         selectionMode={selectionMode}
         selectedCount={selectedIds.size}
         showSelectionToggle={!isLibraryGridMode}
+        sessionRole={sessionRole}
+        sessionExpiresAt={sessionExpiresAt}
         activeTab={activeTab}
         onChangeTab={setActiveTab}
         canUse3D={canUse3D}
@@ -156,20 +162,23 @@ export function Library2DView({
               <BookOpen className="h-7 w-7" />
             </div>
             <h2 className="font-display text-xl font-semibold text-ink">
-              Kệ sách của bạn còn trống
+              Kệ sách hiện còn trống
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-ink-muted">
-              Tải lên những cuốn EPUB, PDF hoặc DOCX yêu thích để bắt đầu xây dựng thư viện
-              đồng bộ của riêng bạn.
+              {onUploadClick
+                ? 'Tải lên những cuốn EPUB, PDF hoặc DOCX yêu thích để bắt đầu xây dựng thư viện đồng bộ của riêng bạn.'
+                : 'Thư viện hiện chưa có cuốn sách nào được đưa lên kệ.'}
             </p>
-            <button
-              type="button"
-              onClick={onUploadClick}
-              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
-            >
-              <Upload className="h-4 w-4" />
-              Tải sách đầu tiên
-            </button>
+            {onUploadClick && (
+              <button
+                type="button"
+                onClick={onUploadClick}
+                className="mt-6 inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
+              >
+                <Upload className="h-4 w-4" />
+                Tải sách đầu tiên
+              </button>
+            )}
           </section>
         ) : activeTab === 'library' ? (
           /* Tab Thư viện (nạp lười giữ nhẹ bundle khởi đầu) */

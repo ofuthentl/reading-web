@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import {
   BookOpen,
   CheckSquare,
+  Clock,
   HardDrive,
   Home,
   Library,
@@ -8,8 +10,9 @@ import {
   RefreshCw,
   Upload,
 } from 'lucide-react';
-import type { LibraryTab, StorageStats, ViewMode } from '@/types';
+import type { AuthRole, LibraryTab, StorageStats, ViewMode } from '@/types';
 import { HARD_LIMIT_BYTES, formatBytes, isCloudMode } from '@/lib/api';
+import { formatRemainingSessionTime } from '@/lib/authSession';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { ViewModeToggle } from '@/components/ViewModeToggle';
 import type { AppTheme } from '@/hooks/useTheme';
@@ -22,13 +25,15 @@ interface LibraryHeaderProps {
   selectionMode: boolean;
   selectedCount: number;
   showSelectionToggle?: boolean;
+  sessionRole?: AuthRole;
+  sessionExpiresAt?: number | null;
   activeTab?: LibraryTab;
   onChangeTab?: (tab: LibraryTab) => void;
   canUse3D?: boolean;
   viewMode?: ViewMode;
   onChangeViewMode?: (mode: ViewMode) => void;
   onCycleTheme: (origin?: { x: number; y: number }) => void;
-  onUploadClick: () => void;
+  onUploadClick?: () => void;
   onToggleSelectionMode: () => void;
   onRefresh: () => void;
   onLogout: () => void;
@@ -47,6 +52,8 @@ export function LibraryHeader({
   selectionMode,
   selectedCount,
   showSelectionToggle = true,
+  sessionRole = 'owner',
+  sessionExpiresAt = null,
   activeTab,
   onChangeTab,
   canUse3D = false,
@@ -58,6 +65,16 @@ export function LibraryHeader({
   onRefresh,
   onLogout,
 }: LibraryHeaderProps) {
+  const isOwner = sessionRole === 'owner';
+  const [nowTick, setNowTick] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (isOwner || sessionExpiresAt === null) return;
+    setNowTick(Date.now());
+    const id = window.setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, [isOwner, sessionExpiresAt]);
+
   const usedBytes = storage?.usedBytes ?? 0;
   const limitBytes = storage?.limitBytes || HARD_LIMIT_BYTES;
   const usagePercent = Math.min(100, Math.max(0, (usedBytes / limitBytes) * 100));
@@ -129,43 +146,59 @@ export function LibraryHeader({
           )}
         </div>
 
-        {/* Thanh dung lượng (Desktop) */}
-        <div
-          className={`hidden min-w-[160px] max-w-[240px] flex-1 flex-col gap-1.5 rounded-xl border border-line bg-canvas px-3 py-2 ${
-            showTabs ? 'xl:flex' : 'lg:flex'
-          }`}
-          title={`Đã dùng ${formatBytes(usedBytes)} / ${formatBytes(limitBytes)}`}
-        >
-          <div className="flex items-center justify-between gap-2 text-xs">
-            <span className="inline-flex items-center gap-1.5 text-ink-muted">
-              <HardDrive className="h-3.5 w-3.5 text-accent" />
-              Dung lượng
-            </span>
-            <span className="font-medium text-ink">
-              {formatBytes(usedBytes)}{' '}
-              <span className="font-normal text-ink-muted">/ {formatBytes(limitBytes)}</span>
-            </span>
+        {/* Thanh dung lượng (Desktop — chỉ hiển thị cho Admin/Owner) */}
+        {isOwner && (
+          <div
+            className={`hidden min-w-[160px] max-w-[240px] flex-1 flex-col gap-1.5 rounded-xl border border-line bg-canvas px-3 py-2 ${
+              showTabs ? 'xl:flex' : 'lg:flex'
+            }`}
+            title={`Đã dùng ${formatBytes(usedBytes)} / ${formatBytes(limitBytes)}`}
+          >
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 text-ink-muted">
+                <HardDrive className="h-3.5 w-3.5 text-accent" />
+                Dung lượng
+              </span>
+              <span className="font-medium text-ink">
+                {formatBytes(usedBytes)}{' '}
+                <span className="font-normal text-ink-muted">/ {formatBytes(limitBytes)}</span>
+              </span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-subtle">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${barToneClass}`}
+                style={{ width: `${usedBytes > 0 ? Math.max(usagePercent, 1.5) : 0}%` }}
+              />
+            </div>
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-subtle">
-            <div
-              className={`h-full rounded-full transition-all duration-300 ${barToneClass}`}
-              style={{ width: `${usedBytes > 0 ? Math.max(usagePercent, 1.5) : 0}%` }}
-            />
-          </div>
-        </div>
+        )}
 
         {/* Cụm nút hành động */}
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-          <button
-            type="button"
-            onClick={onUploadClick}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
-          >
-            <Upload className="h-4 w-4" />
-            <span className="hidden sm:inline">Tải sách</span>
-          </button>
+          {!isOwner && sessionExpiresAt !== null && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-canvas px-2.5 py-2 text-xs font-medium text-ink-muted"
+              title={`Quyền đọc hết hạn lúc ${new Date(sessionExpiresAt).toLocaleString('vi-VN')}`}
+            >
+              <Clock className="h-3.5 w-3.5 shrink-0 text-accent" />
+              <span className="whitespace-nowrap">
+                {formatRemainingSessionTime(sessionExpiresAt, nowTick)}
+              </span>
+            </span>
+          )}
 
-          {showSelectionToggle && (
+          {isOwner && onUploadClick && (
+            <button
+              type="button"
+              onClick={onUploadClick}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
+            >
+              <Upload className="h-4 w-4" />
+              <span className="hidden sm:inline">Tải sách</span>
+            </button>
+          )}
+
+          {isOwner && showSelectionToggle && (
             <button
               type="button"
               onClick={onToggleSelectionMode}
@@ -189,7 +222,7 @@ export function LibraryHeader({
             </button>
           )}
 
-          {canUse3D && onChangeViewMode && (
+          {isOwner && canUse3D && onChangeViewMode && (
             <ViewModeToggle
               canUse3D={canUse3D}
               viewMode={viewMode}
@@ -234,29 +267,31 @@ export function LibraryHeader({
         </nav>
       )}
 
-      {/* Thanh dung lượng gọn cho Mobile / Tablet */}
-      <div
-        className={`border-t border-line/70 bg-canvas/60 px-4 py-2 ${
-          showTabs ? 'xl:hidden' : 'lg:hidden'
-        }`}
-      >
-        <div className="mx-auto flex max-w-7xl items-center gap-3 text-xs">
-          <span className="inline-flex shrink-0 items-center gap-1.5 text-ink-muted">
-            <HardDrive className="h-3.5 w-3.5 text-accent" />
-            <span>{bookCount} sách</span>
-          </span>
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-subtle">
-            <div
-              className={`h-full rounded-full transition-all duration-300 ${barToneClass}`}
-              style={{ width: `${usedBytes > 0 ? Math.max(usagePercent, 1.5) : 0}%` }}
-            />
+      {/* Thanh dung lượng gọn cho Mobile / Tablet (chỉ hiển thị cho Admin/Owner) */}
+      {isOwner && (
+        <div
+          className={`border-t border-line/70 bg-canvas/60 px-4 py-2 ${
+            showTabs ? 'xl:hidden' : 'lg:hidden'
+          }`}
+        >
+          <div className="mx-auto flex max-w-7xl items-center gap-3 text-xs">
+            <span className="inline-flex shrink-0 items-center gap-1.5 text-ink-muted">
+              <HardDrive className="h-3.5 w-3.5 text-accent" />
+              <span>{bookCount} sách</span>
+            </span>
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-subtle">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${barToneClass}`}
+                style={{ width: `${usedBytes > 0 ? Math.max(usagePercent, 1.5) : 0}%` }}
+              />
+            </div>
+            <span className="shrink-0 font-medium text-ink">
+              {formatBytes(usedBytes)}{' '}
+              <span className="font-normal text-ink-muted">/ {formatBytes(limitBytes)}</span>
+            </span>
           </div>
-          <span className="shrink-0 font-medium text-ink">
-            {formatBytes(usedBytes)}{' '}
-            <span className="font-normal text-ink-muted">/ {formatBytes(limitBytes)}</span>
-          </span>
         </div>
-      </div>
+      )}
     </header>
   );
 }

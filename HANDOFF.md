@@ -1,22 +1,25 @@
 # HANDOFF
-Cập nhật: 2026-11-21 23:44 | Nhánh: feat/discord-key-access | Build: 🟢 frontend · 🟢 worker · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: **Chia sẻ thư viện qua Bot Discord (`feat/discord-key-access`, `D-026`)** — đã xong Phase 1 & Phase 2, chuyển sang Phase 3 (Frontend).
+Cập nhật: 2026-11-21 23:52 | Nhánh: feat/discord-key-access | Build: 🟢 frontend (entry 83.41 kB gzip <= 86.04 kB, 0 B three) · 🟢 worker · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: **Chia sẻ thư viện qua Bot Discord (`feat/discord-key-access`, `D-026`)** — đã xong Phase 1, 2, 3; đang chạy kiểm thử E2E & hoàn tất tài liệu Phase 4.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/discord-key-access.md
 
 ## Đang làm dở
 - **Phase 1 (XONG):** D1 schema `0003_discord_guest_access.sql`, auth `owner` (30d) vs `guest` (24h single-session từ key 5 phút), chặn `403` kho chung & cách ly `guest_reading_progress`.
-- **Phase 2 (XONG):**
-  - Tạo `workers/r2-storage/src/discord.ts`: xác thực `Ed25519` (`crypto.subtle`), xử lý `PING`, kiểm tra `DISCORD_GUILD_ID`, lệnh `/setup-bell` (Admin) đặt bảng chuông `🔔 Nhận chìa khoá`, lệnh `/key` & bấm nút cấp key ẩn 12 ký tự hạn 5 phút (cooldown `15s`).
-  - Nối `POST /api/discord/interactions` vào `index.ts` và thêm script `workers/r2-storage/scripts/register-discord-commands.mjs`.
-- **Đang làm (Phase 3):** cập nhật Frontend (`src/types.ts`, `src/lib/authSession.ts`, `src/lib/api.ts`, `AuthGate.tsx`, `App.tsx`, `LibraryHeader.tsx`, `Library2DView.tsx`, `LibraryCatalogView.tsx`) khoá `guest` Chỉ Đọc 2D & tự động thoát khi hết hạn 24 giờ.
+- **Phase 2 (XONG):** Discord HTTP Interactions (`Ed25519`, `/setup-bell`, `/key`, nút `🔔 Nhận chìa khoá`) + script đăng ký lệnh.
+- **Phase 3 (XONG):**
+  - Tách gọn `src/lib/authSession.ts` quản lý token/phiên & HTTP client (giữ `src/lib/api.ts` < 500 dòng).
+  - Giữ nguyên UI `AuthGate.tsx` nhận chung `ACCESS_PASSCODE` & Key Discord 12 ký tự.
+  - Khoá cứng `guest` ở **Chỉ Đọc 2D** trong `App.tsx`, `LibraryHeader.tsx`, `Library2DView.tsx`, `LibraryCatalogView.tsx` (không tải `three`, ẩn toàn bộ nút quản trị, hiện đếm ngược phiên 24 giờ & tự thoát khi hết giờ).
+- **Đang làm (Phase 4):** chạy kiểm thử E2E trên `workerd` + D1 thực tế & cập nhật `docs/ARCHITECTURE.md`.
 
 ## Bước tiếp theo
-1. Hoàn tất Phase 3 (Frontend UI giữ nguyên thiết kế hiện có, khoá cứng Guest Chỉ Đọc 2D, đếm ngược phiên 24 giờ).
-2. Triển khai Phase 4 (Unit/integration test toàn diện cho Worker/Auth/Discord + cập nhật `docs/ARCHITECTURE.md`).
+1. Chạy bộ kiểm thử E2E (`workerd` + D1 + `Ed25519`), kiểm tra đầy đủ checklist trong `docs/plans/discord-key-access.md`.
+2. Cập nhật `docs/ARCHITECTURE.md` + `docs/plans/discord-key-access.md` + `HANDOFF.md` và sẵn sàng deploy/mở PR.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **Phase 2 (`feat/discord-key-access`):** Discord HTTP Interactions webhook + `/setup-bell` + script đăng ký lệnh.
+- **Phase 3 (`feat/discord-key-access`):** Frontend nhận Key Discord, khoá `guest` Chỉ Đọc 2D & tự động thoát khi hết hạn 24 giờ.
+- **Phase 2 (`feat/discord-key-access`):** Discord HTTP Interactions webhook + `/setup-bell`.
 - **Phase 1 (`feat/discord-key-access`):** D1 schema + phân quyền `owner`/`guest` + cách ly tiến độ đọc.

@@ -88,6 +88,10 @@ export function LibraryCatalogView({
 
   const isFiltering = Boolean(searchQuery.trim());
 
+  const handleOpenCoverPicker = onShelfCoverChanged
+    ? (summary: ShelfSummary) => setPickingShelfKey(summary.shelf.key)
+    : undefined;
+
   return (
     <>
       {openedShelfSummary ? (
@@ -104,7 +108,7 @@ export function LibraryCatalogView({
           onToggleSelectionMode={onToggleSelectionMode}
           onEditBook={onEditBook}
           onRenameShelf={onRenameShelf}
-          onChangeShelfCover={(summary) => setPickingShelfKey(summary.shelf.key)}
+          onChangeShelfCover={handleOpenCoverPicker}
           onToggleFavorite={onToggleFavoriteShelf}
           onMoveSelectedToShelf={onMoveSelectedToShelf}
           onDeleteSelected={onDeleteSelected}
@@ -173,7 +177,7 @@ export function LibraryCatalogView({
                   summary={summary}
                   onOpenShelf={onOpenShelf}
                   onRenameShelf={onRenameShelf}
-                  onChangeShelfCover={(item) => setPickingShelfKey(item.shelf.key)}
+                  onChangeShelfCover={handleOpenCoverPicker}
                   onToggleFavorite={onToggleFavoriteShelf}
                 />
               ))}
@@ -182,14 +186,16 @@ export function LibraryCatalogView({
         </section>
       )}
 
-      <ShelfCoverPickerModal
-        shelf={pickingSummary?.shelf ?? null}
-        customCoverBookId={pickingSummary?.customCoverBookId ?? null}
-        onClose={() => setPickingShelfKey(null)}
-        onCoverChanged={onShelfCoverChanged}
-        onApiError={onApiError}
-        onNotify={onNotify}
-      />
+      {onShelfCoverChanged && (
+        <ShelfCoverPickerModal
+          shelf={pickingSummary?.shelf ?? null}
+          customCoverBookId={pickingSummary?.customCoverBookId ?? null}
+          onClose={() => setPickingShelfKey(null)}
+          onCoverChanged={onShelfCoverChanged}
+          onApiError={onApiError}
+          onNotify={onNotify}
+        />
+      )}
     </>
   );
 }

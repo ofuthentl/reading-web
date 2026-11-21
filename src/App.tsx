@@ -1,7 +1,8 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import type { Book, ReadingProgress, StorageStats } from '@/types';
+import type { AuthSessionInfo, Book, ReadingProgress, StorageStats } from '@/types';
 import { fetchLibraryState, isAuthError, setAuthToken, sortBooksByTitle } from '@/lib/api';
+import { DEFAULT_OWNER_SESSION, getActiveAuthSession } from '@/lib/authSession';
 import {
   type ShelfPrefsState,
   patchShelfCover,
@@ -58,6 +59,7 @@ export default function App() {
     mark3DFailed,
   } = useCanUse3D();
   const [authenticated, setAuthenticated] = useState(false);
+  const [session, setSession] = useState<AuthSessionInfo>(getActiveAuthSession);
   const [authReason, setAuthReason] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [books, setBooks] = useState<Book[]>([]);
@@ -124,6 +126,11 @@ export default function App() {
       setProgress(state.progress);
       setShelfPrefs(state.shelfPrefs);
       setStorage(state.storage);
+      setSession(state.session);
+      if (state.session.role !== 'owner') {
+        setModal({ kind: 'none' });
+        setSelectionResetKey((prev) => prev + 1);
+      }
 
       if (!coreReadersPreloadedRef.current && canPreloadOnIdle()) {
         coreReadersPreloadedRef.current = true;
@@ -148,6 +155,38 @@ export default function App() {
     else closeBook();
   }, [authenticated, closeBook, loadLibrary]);
 
+  // Tự động đóng cửa ngay khi chạm mốc hết hạn phiên (vd: hết 24 giờ của khách Discord)
+  useEffect(() => {
+    if (!authenticated || session.expiresAt === null) return;
+    const expireMessage =
+      session.role === 'guest'
+        ? 'Phiên truy cập 24 giờ đã hết hạn. Hãy bấm chuông trên Discord để lấy chìa khoá mới.'
+        : 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+
+    const closeExpiredDoor = () => {
+      setAuthToken(null);
+      closeBook();
+      setModal({ kind: 'none' });
+      setAuthenticated(false);
+      setSession(DEFAULT_OWNER_SESSION);
+      setAuthReason(expireMessage);
+      addToast(expireMessage, 'warning');
+    };
+
+    const remainingMs = session.expiresAt - Date.now();
+    if (remainingMs <= 0) {
+      closeExpiredDoor();
+      return;
+    }
+
+    // Clamp timeout <= ~24.8 ngày để an toàn với giới hạn signed 32-bit int của setTimeout
+    const MAX_TIMEOUT_MS = 2_147_483_647;
+    if (remainingMs > MAX_TIMEOUT_MS) return;
+
+    const timerId = window.setTimeout(closeExpiredDoor, remainingMs);
+    return () => window.clearTimeout(timerId);
+  }, [addToast, authenticated, closeBook, session.expiresAt, session.role]);
+
   const existingShelves = useMemo(
     () => libraryViewState.allShelves.map((shelf) => shelf.name),
     [libraryViewState.allShelves],
@@ -161,6 +200,7 @@ export default function App() {
     setProgress({});
     setStorage(null);
     setAuthenticated(false);
+    setSession(DEFAULT_OWNER_SESSION);
     setAuthReason(null);
     addToast('Đã đăng xuất khỏi thư viện.', 'info');
   }, [addToast, closeBook]);
@@ -237,7 +277,8 @@ export default function App() {
     return (
       <>
         <AuthGate
-          onAuthenticated={() => {
+          onAuthenticated={(nextSession) => {
+            setSession(nextSession);
             setAuthReason(null);
             setAuthenticated(true);
           }}
@@ -250,6 +291,9 @@ export default function App() {
     );
   }
 
+  const isOwner = session.role === 'owner';
+  const effectiveCanUse3D = isOwner && canUse3D;
+  const render3D = isOwner && effectiveMode === '3d';
   const isReaderOpen = Boolean(reader.activeBook && reader.parsedBook);
   const is3DPaused = Boolean(reader.openingBook || isReaderOpen || modal.kind !== 'none');
   const is3DDimmed = Boolean(reader.openingBook || isReaderOpen);
@@ -263,34 +307,32 @@ export default function App() {
       ).length
     : 0;
 
-  const sharedLibraryProps = {
-    books,
-    progress,
-    storage,
-    loading,
-    theme,
-    viewState: libraryViewState,
-    canUse3D,
-    viewMode: effectiveMode,
-    onChangeViewMode: setViewMode,
-    onCycleTheme: cycleTheme,
-    onRefresh: () => void loadLibrary(),
-    onLogout: handleLogout,
-    onOpenBook: (book: Book) => void reader.openBook(book),
-    onUploadClick: () => setModal({ kind: 'upload' }),
-    onEditBook: (book: Book) => setModal({ kind: 'edit', book }),
-    onRenameShelf: (shelfName: string) => setModal({ kind: 'rename-shelf', shelfName }),
-    onMoveSelectedToShelf: (selectedBooks: Book[]) =>
-      setModal({ kind: 'bulk-shelf', books: selectedBooks }),
-    onDeleteSelected: (selectedBooks: Book[]) =>
-      setModal({ kind: 'delete', books: selectedBooks }),
-  };
-
   return (
     <>
-      {effectiveMode === '3d' ? (
+      {render3D ? (
         <Library3DHost
-          {...sharedLibraryProps}
+          books={books}
+          progress={progress}
+          storage={storage}
+          loading={loading}
+          theme={theme}
+          viewState={libraryViewState}
+          canUse3D={effectiveCanUse3D}
+          viewMode={effectiveMode}
+          onChangeViewMode={setViewMode}
+          onCycleTheme={cycleTheme}
+          onRefresh={() => void loadLibrary()}
+          onLogout={handleLogout}
+          onOpenBook={(book: Book) => void reader.openBook(book)}
+          onUploadClick={() => setModal({ kind: 'upload' })}
+          onEditBook={(book: Book) => setModal({ kind: 'edit', book })}
+          onRenameShelf={(shelfName: string) => setModal({ kind: 'rename-shelf', shelfName })}
+          onMoveSelectedToShelf={(selectedBooks: Book[]) =>
+            setModal({ kind: 'bulk-shelf', books: selectedBooks })
+          }
+          onDeleteSelected={(selectedBooks: Book[]) =>
+            setModal({ kind: 'delete', books: selectedBooks })
+          }
           retryKey={retryKey}
           prefersReducedMotion={prefersReducedMotion}
           paused={is3DPaused}
@@ -300,11 +342,40 @@ export default function App() {
       ) : (
         !isReaderOpen && (
           <Library2DView
-            {...sharedLibraryProps}
+            books={books}
+            progress={progress}
+            storage={storage}
+            loading={loading}
+            theme={theme}
+            viewState={libraryViewState}
+            sessionRole={session.role}
+            sessionExpiresAt={session.expiresAt}
+            canUse3D={effectiveCanUse3D}
+            viewMode="2d"
+            onChangeViewMode={isOwner ? setViewMode : undefined}
+            onCycleTheme={cycleTheme}
+            onRefresh={() => void loadLibrary()}
+            onLogout={handleLogout}
+            onOpenBook={(book: Book) => void reader.openBook(book)}
+            onUploadClick={isOwner ? () => setModal({ kind: 'upload' }) : undefined}
+            onEditBook={isOwner ? (book: Book) => setModal({ kind: 'edit', book }) : undefined}
+            onRenameShelf={
+              isOwner ? (shelfName: string) => setModal({ kind: 'rename-shelf', shelfName }) : undefined
+            }
+            onMoveSelectedToShelf={
+              isOwner
+                ? (selectedBooks: Book[]) => setModal({ kind: 'bulk-shelf', books: selectedBooks })
+                : undefined
+            }
+            onDeleteSelected={
+              isOwner
+                ? (selectedBooks: Book[]) => setModal({ kind: 'delete', books: selectedBooks })
+                : undefined
+            }
             shelfCovers={shelfPrefs.covers}
             favoriteShelfKeys={favoriteShelfKeys}
-            onShelfCoverChanged={handleShelfCoverChanged}
-            onToggleFavoriteShelf={handleToggleFavoriteShelf}
+            onShelfCoverChanged={isOwner ? handleShelfCoverChanged : undefined}
+            onToggleFavoriteShelf={isOwner ? handleToggleFavoriteShelf : undefined}
             onApiError={handleApiError}
             onNotify={addToast}
           />
@@ -325,7 +396,7 @@ export default function App() {
           />
         </div>
       )}
-      {modal.kind === 'upload' && (
+      {isOwner && modal.kind === 'upload' && (
         <Suspense fallback={null}>
           <LazyUploadDropzone
             open
@@ -339,39 +410,43 @@ export default function App() {
           />
         </Suspense>
       )}
-      <BookEditModal
-        book={modal.kind === 'edit' ? modal.book : null}
-        existingShelves={existingShelves}
-        onClose={closeModal}
-        onUpdated={handleBookUpdated}
-        onRequestDelete={(book) => setModal({ kind: 'delete', books: [book] })}
-        onApiError={handleApiError}
-        onNotify={addToast}
-      />
-      <ShelfRenameModal
-        shelfName={renamingShelfName}
-        bookCount={renamingShelfCount}
-        existingShelves={existingShelves}
-        onClose={closeModal}
-        onRenamed={handleShelfRenamed}
-        onApiError={handleApiError}
-        onNotify={addToast}
-      />
-      <BulkShelfModal
-        books={modal.kind === 'bulk-shelf' ? modal.books : []}
-        existingShelves={existingShelves}
-        onClose={closeModal}
-        onMoved={handleBooksShelfMoved}
-        onApiError={handleApiError}
-        onNotify={addToast}
-      />
-      <DeleteConfirmModal
-        books={modal.kind === 'delete' ? modal.books : []}
-        onClose={closeModal}
-        onDeleted={handleBooksDeleted}
-        onApiError={handleApiError}
-        onNotify={addToast}
-      />
+      {isOwner && (
+        <>
+          <BookEditModal
+            book={modal.kind === 'edit' ? modal.book : null}
+            existingShelves={existingShelves}
+            onClose={closeModal}
+            onUpdated={handleBookUpdated}
+            onRequestDelete={(book) => setModal({ kind: 'delete', books: [book] })}
+            onApiError={handleApiError}
+            onNotify={addToast}
+          />
+          <ShelfRenameModal
+            shelfName={renamingShelfName}
+            bookCount={renamingShelfCount}
+            existingShelves={existingShelves}
+            onClose={closeModal}
+            onRenamed={handleShelfRenamed}
+            onApiError={handleApiError}
+            onNotify={addToast}
+          />
+          <BulkShelfModal
+            books={modal.kind === 'bulk-shelf' ? modal.books : []}
+            existingShelves={existingShelves}
+            onClose={closeModal}
+            onMoved={handleBooksShelfMoved}
+            onApiError={handleApiError}
+            onNotify={addToast}
+          />
+          <DeleteConfirmModal
+            books={modal.kind === 'delete' ? modal.books : []}
+            onClose={closeModal}
+            onDeleted={handleBooksDeleted}
+            onApiError={handleApiError}
+            onNotify={addToast}
+          />
+        </>
+      )}
       {reader.openingBook && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
