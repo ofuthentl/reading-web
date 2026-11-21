@@ -1,53 +1,35 @@
-import type { Book, ShelfGroup } from '@/types';
-import { pickCoverColor } from '@/lib/bookMetadata';
+import type { ShelfGroup } from '@/types';
+import {
+  buildCabinetBookSlots,
+  computeTierPlankYs,
+  DEFAULT_FEATURED_COVER_SLOTS,
+  LIBRARY_3D_CONSTANTS,
+  MAX_FEATURED_COVER_SLOTS,
+  packShelfGroupIntoRows,
+  type BookFacing,
+  type BookSlot3D,
+  type CoverPlaneTransform,
+} from './bookPacking3d';
 
-export type BookFacing = 'spine' | 'front';
-
-export interface CoverPlaneTransform {
-  /** World-space center of the cover plane slightly proud of the book cover face */
-  position: [number, number, number];
-  /** World-space Euler rotation [rx, ry, rz] (XYZ order) for a +Z facing PlaneGeometry */
-  rotation: [number, number, number];
-  /** Width of the cover quad (world units) */
-  width: number;
-  /** Height of the cover quad (world units) */
-  height: number;
-}
-
-export interface BookSlot3D {
-  book: Book;
-  bookId: string;
-  instanceIndex: number;
-  shelfKey: string;
-  shelfIndex: number;
-  bayIndex: number;
-  /** Tier index from bottom (0 = bottom tier, TIERS_PER_BAY - 1 = top tier) */
-  tierIndex: number;
-  slotInTier: number;
-  facing: BookFacing;
-  /** Local dimensions before rotation: X = spine thickness, Y = height, Z = cover width (depth) */
-  dimensions: {
-    thickness: number;
-    height: number;
-    depth: number;
-  };
-  /** World-space center of the book resting on its shelf plank */
-  position: [number, number, number];
-  /** World-space Euler rotation [rx, ry, rz] (XYZ order) */
-  rotation: [number, number, number];
-  /** Resolved hex binding color for InstancedMesh coloring */
-  colorHex: string;
-  /** Exact transform for mounting a CoverPlane onto this book's front cover */
-  coverPlane: CoverPlaneTransform;
-}
+export {
+  DEFAULT_FEATURED_COVER_SLOTS,
+  LIBRARY_3D_CONSTANTS,
+  MAX_FEATURED_COVER_SLOTS,
+  type BookFacing,
+  type BookSlot3D,
+  type CoverPlaneTransform,
+};
 
 export interface ShelfLayout3D {
   key: string;
   name: string;
   shelfIndex: number;
+  floorIndex: number;
   bookCount: number;
   bayCount: number;
   centerX: number;
+  centerZ: number;
+  facingYaw: number;
   minX: number;
   maxX: number;
   width: number;
@@ -84,8 +66,21 @@ export interface VisibleShelfWindow {
   keySet: Set<string>;
 }
 
+export interface VisibleShelfWindowOptions {
+  /** Player or camera Z coordinate for 2D `(x, z)` distance ranking */
+  cameraZ?: number;
+  /** Restrict window to shelves on the currently active tower floor (`D-017`) */
+  activeFloorIndex?: number;
+  /** Optional radial cutoff in world meters when ranking in 2D `(x, z)` */
+  maxDistance?: number;
+}
+
 export interface FeaturedCoverSelectionOptions {
   cameraX: number;
+  /** Optional player/camera Z coordinate for 2D `(x, z)` proximity scoring */
+  cameraZ?: number;
+  /** Restrict CoverPlanes to the active floor (`D-017`) */
+  activeFloorIndex?: number;
   visibleShelfKeys?: ReadonlySet<string>;
   hoveredBookId?: string | null;
   selectedBookId?: string | null;
@@ -95,265 +90,27 @@ export interface FeaturedCoverSelectionOptions {
   radius?: number;
 }
 
-export const DEFAULT_FEATURED_COVER_SLOTS = 20;
-export const MAX_FEATURED_COVER_SLOTS = 24;
-
-export const LIBRARY_3D_CONSTANTS = {
-  /** Number of horizontal book tiers inside each tall classical bay */
-  TIERS_PER_BAY: 5,
-  /** Inner clear width of a single wooden bookcase bay (world meters) */
-  BAY_INNER_WIDTH: 2.18,
-  /** Usable horizontal packing width inside a bay (leaves side breathing room) */
-  BAY_USABLE_WIDTH: 2.02,
-  /** Thickness of vertical cabinet pilasters & mullion dividers */
-  SIDE_PANEL_THICKNESS: 0.14,
-  /** Gap between separate ShelfLayout3D bookcases along the grand hall wall */
-  SHELF_GAP_X: 0.52,
-  /** Depth of wooden bookcase carcass (Z axis) */
-  SHELF_DEPTH: 0.42,
-  /** World Z coordinate of bookcase back panel (cabinets face +Z) */
-  SHELF_BACK_Z: -0.42,
-  /** Decorative stepped base plinth height */
-  PLINTH_HEIGHT: 0.28,
-  /** Shelf board thickness */
-  PLANK_THICKNESS: 0.048,
-  /** Clear vertical space per tier (books range 0.345..0.435m) */
-  TIER_CLEAR_HEIGHT: 0.50,
-  /** Top crown molding + classical nameplate frieze height */
-  CROWN_HEIGHT: 0.48,
-  /** Total bookcase height: plinth + 5*(plank + clear) + top plank + crown */
-  SHELF_TOTAL_HEIGHT: 0.28 + 5 * (0.50 + 0.048) + 0.048 + 0.48,
-  /** Comfortable camera eye level framing tall bookcases + 2nd-story mezzanine gallery */
-  EYE_LEVEL_Y: 2.22,
-  /** Default camera Z distance in front of bookcases */
-  CAMERA_Z: 5.55,
-  /** Second-story mezzanine balcony height for Grand Hall architecture */
-  MEZZANINE_Y: 4.15,
-  /** Grand Hall ceiling height */
-  HALL_CEILING_Y: 7.8,
-  /** Horizontal architectural margin past leftmost/rightmost shelves */
-  HALL_SIDE_MARGIN: 5.5,
-  /** Backward lean angle (radians) for face-out showcase books */
-  FRONT_BOOK_LEAN_X: -0.095,
-  /** Pull-out offset (world meters) along +Z when hovering/selecting a book */
-  BOOK_PULLOUT_Z: 0.095,
-} as const;
-
-const COVER_SURFACE_OFFSET = 0.004;
-const SPINE_GAP_X = 0.009;
-const FRONT_GAP_X = 0.036;
-const IDEAL_ROW_FILL_WIDTH = 1.38;
-const MAX_ROW_FILL_RATIO = 0.94;
-
-const TIER_PLACEMENT_ORDERS: Record<number, readonly number[]> = {
-  1: [2],
-  2: [3, 2],
-  3: [3, 2, 1],
-  4: [4, 3, 2, 1],
-  5: [4, 3, 2, 1, 0],
-};
-
-function hashString32(input: string): number {
-  let hash = 2166136261;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function unitFloat(seed: string): number {
-  return (hashString32(seed) % 10000) / 10000;
-}
-
-function computeTierPlankYs(): number[] {
-  const { PLINTH_HEIGHT, PLANK_THICKNESS, TIER_CLEAR_HEIGHT, TIERS_PER_BAY } = LIBRARY_3D_CONSTANTS;
-  const ys: number[] = [];
-  for (let tier = 0; tier < TIERS_PER_BAY; tier += 1) {
-    ys.push(PLINTH_HEIGHT + PLANK_THICKNESS + tier * (TIER_CLEAR_HEIGHT + PLANK_THICKNESS));
-  }
-  return ys;
-}
-
-function computeBookDimensions(book: Book): { thickness: number; height: number; depth: number } {
-  const heightJitter = unitFloat(`${book.id}:h`);
-  const thicknessJitter = unitFloat(`${book.id}:t`);
-  const formatBonus = book.file_type === 'pdf' ? 0.014 : 0;
-
-  const height = Number((0.345 + heightJitter * 0.072 + formatBonus).toFixed(4));
-  const sizeRatio = Math.min(1, Math.max(0, Math.log10(Math.max(1, book.file_size / 65536)) / 2.6));
-  const thickness = Number((0.050 + thicknessJitter * 0.018 + sizeRatio * 0.020).toFixed(4));
-  const depth = Number(Math.min(0.285, Math.max(0.228, height * 0.67)).toFixed(4));
-
-  return { thickness, height, depth };
-}
-
-/**
- * Selects rhythmic showcase book indices turned face-out (`facing: 'front'`) on a shelf,
- * strongly favoring books that have a real `cover_key` while interspersing them cleanly
- * among spine-out volumes.
- */
-function chooseShowcaseIndices(books: readonly Book[]): Set<number> {
-  const count = books.length;
-  const chosen = new Set<number>();
-  if (count === 0) return chosen;
-
-  const hasCover = (index: number) => Boolean(books[index]?.cover_key);
-  const pickNearestWithCover = (target: number, maxRadius: number): number => {
-    if (hasCover(target) && !chosen.has(target)) return target;
-    for (let offset = 1; offset <= maxRadius; offset += 1) {
-      const right = target + offset;
-      if (right < count && hasCover(right) && !chosen.has(right)) return right;
-      const left = target - offset;
-      if (left >= 0 && hasCover(left) && !chosen.has(left)) return left;
-    }
-    return target;
-  };
-
-  if (count <= 3) {
-    for (let i = 0; i < count; i += 1) {
-      chosen.add(i);
-    }
-    return chosen;
-  }
-
-  const targetCount =
-    count <= 8
-      ? Math.min(3, Math.max(2, Math.round(count / 3)))
-      : Math.max(3, Math.round(count / 6.2));
-
-  const stride = count / targetCount;
-  for (let k = 0; k < targetCount; k += 1) {
-    // Stagger showcase positions slightly across tiers so covers don't stack in one column
-    const stagger = ((k * 37) % 100) / 100;
-    const rawIndex = Math.min(count - 1, Math.floor((k + 0.25 + stagger * 0.45) * stride));
-    const resolved = pickNearestWithCover(rawIndex, Math.max(1, Math.floor(stride * 0.45)));
-    chosen.add(resolved);
-  }
-  return chosen;
-}
-
-interface PreparedBook {
-  book: Book;
-  facing: BookFacing;
-  dimensions: { thickness: number; height: number; depth: number };
-  footprintWidth: number;
-}
-
-function packBooksIntoRows(prepared: readonly PreparedBook[]): PreparedBook[][] {
-  if (prepared.length === 0) return [];
-  const maxRowWidth = LIBRARY_3D_CONSTANTS.BAY_USABLE_WIDTH * MAX_ROW_FILL_RATIO;
-  const totalWidth = prepared.reduce((sum, item) => sum + item.footprintWidth, 0);
-
-  const minRows = Math.max(1, Math.ceil(totalWidth / maxRowWidth));
-  const desiredRows =
-    totalWidth <= LIBRARY_3D_CONSTANTS.BAY_USABLE_WIDTH * 0.88
-      ? 1
-      : Math.max(minRows, Math.ceil(totalWidth / IDEAL_ROW_FILL_WIDTH));
-
-  const targetWidthPerRow = Math.min(maxRowWidth, (totalWidth / desiredRows) * 1.08);
-  const rows: PreparedBook[][] = [];
-  let currentRow: PreparedBook[] = [];
-  let currentWidth = 0;
-
-  for (let i = 0; i < prepared.length; i += 1) {
-    const item = prepared[i];
-    const wouldOverflowHard = currentRow.length > 0 && currentWidth + item.footprintWidth > maxRowWidth;
-    const wouldExceedBalanced =
-      currentRow.length > 0 &&
-      rows.length + 1 < desiredRows &&
-      currentWidth + item.footprintWidth * 0.5 > targetWidthPerRow;
-
-    if (wouldOverflowHard || wouldExceedBalanced) {
-      rows.push(currentRow);
-      currentRow = [];
-      currentWidth = 0;
-    }
-    currentRow.push(item);
-    currentWidth += item.footprintWidth;
-  }
-
-  if (currentRow.length > 0) {
-    rows.push(currentRow);
-  }
-  return rows;
-}
-
-function buildCoverPlaneTransform(
-  position: [number, number, number],
-  rotation: [number, number, number],
-  dimensions: { thickness: number; height: number; depth: number },
-  facing: BookFacing,
-): CoverPlaneTransform {
-  const coverWidth = dimensions.depth * 0.96;
-  const coverHeight = dimensions.height * 0.96;
-
-  if (facing === 'front') {
-    const leanAbs = Math.abs(rotation[0]);
-    const offsetDist = dimensions.thickness * 0.5 + COVER_SURFACE_OFFSET;
-    return {
-      position: [
-        position[0],
-        position[1] + Math.sin(leanAbs) * offsetDist,
-        position[2] + Math.cos(leanAbs) * offsetDist,
-      ],
-      rotation: [rotation[0], 0, 0],
-      width: coverWidth,
-      height: coverHeight,
-    };
-  }
-
-  // Spine-out books have their front cover on local +X face
-  const sideOffset = dimensions.thickness * 0.5 + COVER_SURFACE_OFFSET;
-  return {
-    position: [position[0] + sideOffset, position[1], position[2]],
-    rotation: [0, Math.PI / 2, rotation[2]],
-    width: coverWidth,
-    height: coverHeight,
-  };
-}
-
-function computeCabinetWidth(bayCount: number): number {
-  const { BAY_INNER_WIDTH, SIDE_PANEL_THICKNESS } = LIBRARY_3D_CONSTANTS;
-  return bayCount * BAY_INNER_WIDTH + (bayCount + 1) * SIDE_PANEL_THICKNESS;
-}
-
 /**
  * Pure deterministic layout engine turning grouped shelves into world-space 3D bookcase
- * cabinets and individual book transforms (spine-out + rhythmic face-out showcase books).
+ * cabinets along the legacy horizontal hall wall (kept compatible with PR 4A components
+ * while Aincrad floor biomes roll out across Sub-phase 4A-T1..T4).
  */
 export function buildLibraryLayout3D(shelfGroups: readonly ShelfGroup[]): LibraryLayout3D {
   const tierYs = computeTierPlankYs();
   const {
-    TIERS_PER_BAY,
-    BAY_INNER_WIDTH,
-    SIDE_PANEL_THICKNESS,
     SHELF_GAP_X,
     SHELF_DEPTH,
     SHELF_BACK_Z,
     SHELF_TOTAL_HEIGHT,
     CROWN_HEIGHT,
     HALL_SIDE_MARGIN,
-    FRONT_BOOK_LEAN_X,
   } = LIBRARY_3D_CONSTANTS;
 
   const frontZ = SHELF_BACK_Z + SHELF_DEPTH;
-  const preparedByShelf = shelfGroups.map((group) => {
-    const showcaseSet = chooseShowcaseIndices(group.books);
-    const prepared: PreparedBook[] = group.books.map((book, idx) => {
-      const facing: BookFacing = showcaseSet.has(idx) ? 'front' : 'spine';
-      const dimensions = computeBookDimensions(book);
-      const footprintWidth =
-        facing === 'front' ? dimensions.depth + FRONT_GAP_X : dimensions.thickness + SPINE_GAP_X;
-      return { book, facing, dimensions, footprintWidth };
-    });
-    const rows = packBooksIntoRows(prepared);
-    const bayCount = Math.max(1, Math.ceil(rows.length / TIERS_PER_BAY));
-    const width = computeCabinetWidth(bayCount);
-    return { group, rows, bayCount, width };
-  });
+  const centerZ = SHELF_BACK_Z + SHELF_DEPTH * 0.5;
+  const packedByShelf = shelfGroups.map((group) => packShelfGroupIntoRows(group));
 
-  if (preparedByShelf.length === 0) {
+  if (packedByShelf.length === 0) {
     return {
       shelves: [],
       books: [],
@@ -367,8 +124,8 @@ export function buildLibraryLayout3D(shelfGroups: readonly ShelfGroup[]): Librar
   }
 
   const totalRowWidth =
-    preparedByShelf.reduce((sum, item) => sum + item.width, 0) +
-    Math.max(0, preparedByShelf.length - 1) * SHELF_GAP_X;
+    packedByShelf.reduce((sum, item) => sum + item.width, 0) +
+    Math.max(0, packedByShelf.length - 1) * SHELF_GAP_X;
 
   let cursorX = -totalRowWidth * 0.5;
   const shelves: ShelfLayout3D[] = [];
@@ -376,94 +133,44 @@ export function buildLibraryLayout3D(shelfGroups: readonly ShelfGroup[]): Librar
   const bookById = new Map<string, BookSlot3D>();
   const shelfByKey = new Map<string, ShelfLayout3D>();
 
-  for (let shelfIndex = 0; shelfIndex < preparedByShelf.length; shelfIndex += 1) {
-    const { group, rows, bayCount, width } = preparedByShelf[shelfIndex];
+  for (let shelfIndex = 0; shelfIndex < packedByShelf.length; shelfIndex += 1) {
+    const { group, rows, bayCount, width } = packedByShelf[shelfIndex];
     const minX = cursorX;
     const maxX = cursorX + width;
     const centerX = (minX + maxX) * 0.5;
     cursorX = maxX + SHELF_GAP_X;
 
-    const shelfBooks: BookSlot3D[] = [];
+    const shelfBooks = buildCabinetBookSlots({
+      rows,
+      bayCount,
+      shelfKey: group.key,
+      shelfIndex,
+      floorIndex: 0,
+      startInstanceIndex: allBooks.length,
+      centerX,
+      baseY: 0,
+      centerZ,
+      facingYaw: 0,
+    });
+
     const shelfBookIndices: number[] = [];
-
-    for (let bayIndex = 0; bayIndex < bayCount; bayIndex += 1) {
-      const bayRows = rows.slice(bayIndex * TIERS_PER_BAY, (bayIndex + 1) * TIERS_PER_BAY);
-      if (bayRows.length === 0) continue;
-
-      const tierOrder = TIER_PLACEMENT_ORDERS[bayRows.length] ?? TIER_PLACEMENT_ORDERS[TIERS_PER_BAY];
-      const bayCenterX =
-        minX + SIDE_PANEL_THICKNESS + bayIndex * (BAY_INNER_WIDTH + SIDE_PANEL_THICKNESS) + BAY_INNER_WIDTH * 0.5;
-
-      for (let r = 0; r < bayRows.length; r += 1) {
-        const rowItems = bayRows[r];
-        const tierIndex = tierOrder[r];
-        const plankTopY = tierYs[tierIndex];
-
-        const rowSpan = rowItems.reduce((sum, item) => sum + item.footprintWidth, 0);
-        let itemCursorX = bayCenterX - rowSpan * 0.5;
-
-        for (let slotInTier = 0; slotInTier < rowItems.length; slotInTier += 1) {
-          const item = rowItems[slotInTier];
-          const { book, facing, dimensions, footprintWidth } = item;
-          const slotCenterX = itemCursorX + footprintWidth * 0.5;
-          itemCursorX += footprintWidth;
-
-          let posY: number;
-          let posZ: number;
-          let rotation: [number, number, number];
-
-          if (facing === 'front') {
-            const lean = FRONT_BOOK_LEAN_X;
-            const absLean = Math.abs(lean);
-            posY =
-              plankTopY +
-              dimensions.height * 0.5 * Math.cos(absLean) +
-              dimensions.thickness * 0.5 * Math.sin(absLean);
-            // Set showcase books proudly near the front edge of the plank
-            posZ = frontZ - dimensions.thickness * 0.5 - 0.055;
-            rotation = [lean, -Math.PI / 2, 0];
-          } else {
-            const depthJitter = (unitFloat(`${book.id}:z`) - 0.5) * 0.024;
-            const subtleTiltZ = (unitFloat(`${book.id}:rz`) - 0.5) * 0.022;
-            posY = plankTopY + dimensions.height * 0.5;
-            posZ = frontZ - dimensions.depth * 0.5 - 0.032 + depthJitter;
-            rotation = [0, 0, subtleTiltZ];
-          }
-
-          const position: [number, number, number] = [slotCenterX, posY, posZ];
-          const instanceIndex = allBooks.length;
-          const slot: BookSlot3D = {
-            book,
-            bookId: book.id,
-            instanceIndex,
-            shelfKey: group.key,
-            shelfIndex,
-            bayIndex,
-            tierIndex,
-            slotInTier,
-            facing,
-            dimensions,
-            position,
-            rotation,
-            colorHex: book.cover_color || pickCoverColor(book.id),
-            coverPlane: buildCoverPlaneTransform(position, rotation, dimensions, facing),
-          };
-
-          allBooks.push(slot);
-          shelfBooks.push(slot);
-          shelfBookIndices.push(instanceIndex);
-          bookById.set(book.id, slot);
-        }
-      }
+    for (let i = 0; i < shelfBooks.length; i += 1) {
+      const slot = shelfBooks[i];
+      allBooks.push(slot);
+      shelfBookIndices.push(slot.instanceIndex);
+      bookById.set(slot.bookId, slot);
     }
 
     const shelfLayout: ShelfLayout3D = {
       key: group.key,
       name: group.name,
       shelfIndex,
+      floorIndex: 0,
       bookCount: group.books.length,
       bayCount,
       centerX,
+      centerZ,
+      facingYaw: 0,
       minX,
       maxX,
       width,
@@ -496,13 +203,23 @@ export function buildLibraryLayout3D(shelfGroups: readonly ShelfGroup[]): Librar
   };
 }
 
-export function getNearestShelfIndex(cameraX: number, layouts: readonly ShelfLayout3D[]): number {
+export function getNearestShelfIndex(
+  cameraX: number,
+  layouts: readonly ShelfLayout3D[],
+  cameraZ?: number,
+): number {
   if (layouts.length === 0) return -1;
   let nearestIdx = 0;
-  let nearestDist = Math.abs(layouts[0].centerX - cameraX);
+  let nearestDist =
+    cameraZ === undefined
+      ? Math.abs(layouts[0].centerX - cameraX)
+      : Math.hypot(layouts[0].centerX - cameraX, layouts[0].centerZ - cameraZ);
 
   for (let i = 1; i < layouts.length; i += 1) {
-    const dist = Math.abs(layouts[i].centerX - cameraX);
+    const dist =
+      cameraZ === undefined
+        ? Math.abs(layouts[i].centerX - cameraX)
+        : Math.hypot(layouts[i].centerX - cameraX, layouts[i].centerZ - cameraZ);
     if (dist < nearestDist) {
       nearestDist = dist;
       nearestIdx = i;
@@ -512,30 +229,64 @@ export function getNearestShelfIndex(cameraX: number, layouts: readonly ShelfLay
 }
 
 /**
- * Computes the active window of shelves around the camera (`center ± radius`, default `radius = 2`)
- * for texture windowing & CoverPlane budgeting (D-013 / D-014).
+ * Computes the active window of shelves around the camera/player for texture windowing &
+ * CoverPlane budgeting (D-013 / D-014). Supports both legacy 1D corridor (`cameraX`) and
+ * active-floor 2D world proximity (`activeFloorIndex` + `cameraZ`).
  */
 export function getVisibleShelfWindow(
   cameraX: number,
   layouts: readonly ShelfLayout3D[],
   radius = 2,
+  options?: VisibleShelfWindowOptions,
 ): VisibleShelfWindow {
-  if (layouts.length === 0) {
+  const empty: VisibleShelfWindow = {
+    centerIndex: -1,
+    startIndex: 0,
+    endIndex: -1,
+    shelves: [],
+    keys: [],
+    keySet: new Set<string>(),
+  };
+  if (layouts.length === 0) return empty;
+
+  const activeFloorIndex = options?.activeFloorIndex;
+  const cameraZ = options?.cameraZ;
+  const safeRadius = Math.max(0, Math.floor(radius));
+
+  if (activeFloorIndex !== undefined || cameraZ !== undefined) {
+    const candidates: Array<{ shelf: ShelfLayout3D; originalIndex: number; dist: number }> = [];
+    for (let i = 0; i < layouts.length; i += 1) {
+      const shelf = layouts[i];
+      if (activeFloorIndex !== undefined && shelf.floorIndex !== activeFloorIndex) continue;
+      const dist =
+        cameraZ === undefined
+          ? Math.abs(shelf.centerX - cameraX)
+          : Math.hypot(shelf.centerX - cameraX, shelf.centerZ - cameraZ);
+      if (options?.maxDistance !== undefined && dist > options.maxDistance) continue;
+      candidates.push({ shelf, originalIndex: i, dist });
+    }
+    if (candidates.length === 0) return empty;
+
+    candidates.sort((a, b) => a.dist - b.dist || a.originalIndex - b.originalIndex);
+    const maxCount = Math.max(1, safeRadius * 2 + 1);
+    const chosen = candidates.slice(0, maxCount);
+    const visibleShelves = chosen.map((item) => item.shelf);
+    const keys = visibleShelves.map((shelf) => shelf.key);
+    const indices = chosen.map((item) => item.originalIndex);
+
     return {
-      centerIndex: -1,
-      startIndex: 0,
-      endIndex: -1,
-      shelves: [],
-      keys: [],
-      keySet: new Set<string>(),
+      centerIndex: chosen[0].originalIndex,
+      startIndex: Math.min(...indices),
+      endIndex: Math.max(...indices),
+      shelves: visibleShelves,
+      keys,
+      keySet: new Set(keys),
     };
   }
 
-  const safeRadius = Math.max(0, Math.floor(radius));
   const centerIndex = getNearestShelfIndex(cameraX, layouts);
   const startIndex = Math.max(0, centerIndex - safeRadius);
   const endIndex = Math.min(layouts.length - 1, centerIndex + safeRadius);
-
   const visibleShelves = layouts.slice(startIndex, endIndex + 1);
   const keys = visibleShelves.map((shelf) => shelf.key);
 
@@ -551,9 +302,9 @@ export function getVisibleShelfWindow(
 
 /**
  * Selects up to `<= 20–24` featured book slots to mount `CoverPlane` textures onto (D-013):
- * 1. Selected & hovered books with a cover key always get priority.
- * 2. Face-out showcase books inside the visible shelf window sorted by proximity to cameraX
- *    (with gentle eye-level preference) fill the remaining slots up to the hard cap.
+ * 1. Selected & hovered books on the active floor with a cover key always get priority.
+ * 2. Face-out showcase books inside the visible shelf window sorted by proximity to camera/player
+ *    (1D `cameraX` or 2D `(cameraX, cameraZ)` with gentle eye-level preference) fill up to cap.
  */
 export function selectFeaturedCoverSlots(
   layout: LibraryLayout3D,
@@ -561,6 +312,8 @@ export function selectFeaturedCoverSlots(
 ): BookSlot3D[] {
   const {
     cameraX,
+    cameraZ,
+    activeFloorIndex,
     visibleShelfKeys,
     hoveredBookId,
     selectedBookId,
@@ -578,31 +331,36 @@ export function selectFeaturedCoverSlots(
     if (!bookId || result.length >= limit || addedIds.has(bookId)) return;
     const slot = layout.bookById.get(bookId);
     if (!slot || !slot.book.cover_key) return;
+    if (activeFloorIndex !== undefined && slot.floorIndex !== activeFloorIndex) return;
     addedIds.add(bookId);
     result.push(slot);
   };
 
   tryAddPriorityBook(selectedBookId);
   tryAddPriorityBook(hoveredBookId);
-
   if (result.length >= limit) return result;
 
   const activeKeys =
-    visibleShelfKeys ?? getVisibleShelfWindow(cameraX, layout.shelves, radius).keySet;
+    visibleShelfKeys ??
+    getVisibleShelfWindow(cameraX, layout.shelves, radius, { cameraZ, activeFloorIndex }).keySet;
 
   const candidates: Array<{ slot: BookSlot3D; score: number }> = [];
   const eyeY = LIBRARY_3D_CONSTANTS.EYE_LEVEL_Y;
 
   for (let i = 0; i < layout.shelves.length; i += 1) {
     const shelf = layout.shelves[i];
+    if (activeFloorIndex !== undefined && shelf.floorIndex !== activeFloorIndex) continue;
     if (!activeKeys.has(shelf.key)) continue;
 
     for (let j = 0; j < shelf.books.length; j += 1) {
       const slot = shelf.books[j];
       if (slot.facing !== 'front' || !slot.book.cover_key || addedIds.has(slot.bookId)) continue;
-      const distX = Math.abs(slot.position[0] - cameraX);
+      const distXZ =
+        cameraZ === undefined
+          ? Math.abs(slot.position[0] - cameraX)
+          : Math.hypot(slot.position[0] - cameraX, slot.position[2] - cameraZ);
       const distY = Math.abs(slot.position[1] - eyeY);
-      candidates.push({ slot, score: distX + distY * 0.35 });
+      candidates.push({ slot, score: distXZ + distY * 0.35 });
     }
   }
 
