@@ -1,21 +1,21 @@
 # HANDOFF
-Cập nhật: 2026-11-22 00:11 | Nhánh: feat/discord-key-access | Build: 🟢 frontend (entry 83.40 kB gzip <= 86.04 kB, 0 B three) · 🟢 worker (live) · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: **Hoàn tất & Deploy Worker cho Bot Discord (`feat/discord-key-access`, `D-026`)** — chờ gắn `Interactions Endpoint URL` trên Discord Portal & mở PR vào `main`.
-Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/discord-key-access.md
+Cập nhật: 2026-11-22 00:31 | Nhánh: feat/entrance-and-locked-routes | Build: 🟢 frontend · 🟢 worker · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: **Triển khai cổng `/entrance` & `/locked` (`feat/entrance-and-locked-routes`, `D-027`)** — đã xong Phase 1, chuyển sang Phase 2 (UI `AuthGate` & `App`).
+Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/entrance-and-locked-routes.md
 
 ## Đang làm dở
-- Đã hoàn tất Phase 1 → 4 và **deploy live Cloudflare Worker** (`arcane-library-api`, `/api/health` trả `discordReady: true`):
-  - Vá `verifyDiscordSignature` khớp 1:1 SDK chuẩn của Discord (bỏ bộ lọc tuổi `timestamp` khiến bản tin test của Discord Portal bị chặn `401`) và chuẩn hoá đường dẫn `/api/discord/interactions` chịu được dấu `/` cuối.
-  - Đã tạo đủ bảng `shelf_prefs`, `discord_access`, `guest_reading_progress` trên D1 remote.
+- **Phase 1 (XONG):**
+  - Tạo `src/lib/gateRoutes.ts` đọc/đồng bộ đường dẫn `'root' | 'entrance' | 'locked'` (0 thư viện ngoài).
+  - Thêm plugin `staticGateRoutesPlugin` trong `vite.config.ts` xuất `dist/entrance/index.html`, `dist/locked/index.html`, `dist/404.html` (`200 OK` trên GitHub Pages).
+  - Cập nhật `workers/r2-storage/src/discord.ts` gắn link `${appUrl}/entrance` vào bảng chuông và tin nhắn trả key.
+- **Đang làm (Phase 2):** thiết kế giao diện tối giản `AuthGate.tsx` (`Ofu's Library Entrance.` / `Ofu's Library Closed.`) đồng bộ 3 theme & nối điều hướng trong `src/App.tsx`.
 
 ## Bước tiếp theo
-1. Trên Discord Developer Portal (*General Information* → *Interactions Endpoint URL*), dán đúng:
-   `https://arcane-library-api.novel-check-d467614e.workers.dev/api/discord/interactions` → bấm **Save Changes**.
-2. Chạy `npm run discord:register` trong `workers/r2-storage` rồi gõ `/setup-bell` trong kênh Discord.
-3. Push nhánh `feat/discord-key-access` lên GitHub và mở/merge Pull Request vào `main` để cập nhật giao diện trên `ofu.lol`.
+1. Hoàn tất Phase 2 (`AuthGate.tsx`, `App.tsx`, `docs/ARCHITECTURE.md`).
+2. Kiểm thử toàn bộ checklist, deploy Worker (cho link `/entrance` mới) và đẩy nhánh mở PR vào `main`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **`feat/discord-key-access` (`D-026`):** hoàn tất code Frontend + Worker, nạp đủ secret Discord, migrate D1 remote & deploy Worker live.
+- **Phase 1 (`feat/entrance-and-locked-routes`):** định tuyến tĩnh GitHub Pages & cập nhật link `/entrance` cho Bot Discord.
