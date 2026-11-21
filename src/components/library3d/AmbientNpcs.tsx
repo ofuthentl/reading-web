@@ -18,13 +18,23 @@ export interface AmbientNpcsProps {
 
 const BASE = import.meta.env.BASE_URL ?? '/';
 const PLAYER_GREET_RADIUS = 3.6;
+const NPC_WALK_SPEED = 1.05;
 
 const NPC_MODEL_META: Record<NpcModelKey, { url: string; targetHeight: number }> = {
+  asuna: { url: `${BASE}models/npc-asuna.glb`, targetHeight: 1.66 },
+  yui: { url: `${BASE}models/npc-yui.glb`, targetHeight: 1.24 },
   maid: { url: `${BASE}models/npc-maid.glb`, targetHeight: 1.62 },
   zhongli: { url: `${BASE}models/npc-zhongli.glb`, targetHeight: 1.82 },
   schoolgirl: { url: `${BASE}models/npc-schoolgirl.glb`, targetHeight: 1.6 },
   mint: { url: `${BASE}models/npc-mint.glb`, targetHeight: 1.64 },
 };
+
+interface NpcAnimController {
+  mixer: THREE.AnimationMixer;
+  idleAction: THREE.AnimationAction;
+  walkAction: THREE.AnimationAction | null;
+  active: 'idle' | 'walk';
+}
 
 const WORLD_X = new THREE.Vector3(1, 0, 0);
 const WORLD_Y = new THREE.Vector3(0, 1, 0);
@@ -201,7 +211,10 @@ function SingleAmbientNpc({
 
   const groupRef = useRef<THREE.Group | null>(null);
   const modelHolderRef = useRef<THREE.Group | null>(null);
-  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  const animRef = useRef<NpcAnimController | null>(null);
+  const posRef = useRef<[number, number, number]>([...spec.spawn]);
+  const wpIndexRef = useRef(0);
+  const pauseTimerRef = useRef(2.2);
   const yawRef = useRef(spec.facingYaw);
   const cycleRef = useRef(Math.random() * Math.PI * 2);
   const scratchQuats = useMemo(
@@ -251,17 +264,27 @@ function SingleAmbientNpc({
     invalidate();
     if (template.animations.length === 0) return undefined;
     const mixer = new THREE.AnimationMixer(prepared.instance);
-    const clip = template.animations[0];
-    if (clip) mixer.clipAction(clip).play();
-    mixerRef.current = mixer;
+    const idleClip =
+      template.animations.find((c) => /^idle$/i.test(c.name)) ?? template.animations[0];
+    const walkClip = template.animations.find((c) => /^walk$/i.test(c.name)) ?? null;
+    if (!idleClip) return undefined;
+    const idleAction = mixer.clipAction(idleClip);
+    idleAction.play();
+    const walkAction = walkClip ? mixer.clipAction(walkClip) : null;
+    // Advance one micro-step immediately so frame 0 renders Idle (never bind T-pose)
+    mixer.update(0.01);
+    animRef.current = { mixer, idleAction, walkAction, active: 'idle' };
     return () => {
       mixer.stopAllAction();
       mixer.uncacheRoot(prepared.instance);
-      mixerRef.current = null;
+      animRef.current = null;
     };
   }, [prepared, template, invalidate, scratchQuats]);
 
   useEffect(() => {
+    posRef.current = [...spec.spawn];
+    wpIndexRef.current = 0;
+    pauseTimerRef.current = 2.0;
     yawRef.current = spec.facingYaw;
     npcPositionsRef.current.set(spec.id, [...spec.spawn]);
   }, [spec, npcPositionsRef]);
@@ -272,27 +295,71 @@ function SingleAmbientNpc({
 
     const dt = Math.min(delta, 0.05);
     cycleRef.current += dt;
-    const [sx, sy, sz] = spec.spawn;
+    const pos = posRef.current;
     const playerPos = playerMotionRef.current.position;
-    const distToPlayer = Math.hypot(playerPos[0] - sx, playerPos[2] - sz);
+    const distToPlayer = Math.hypot(playerPos[0] - pos[0], playerPos[2] - pos[2]);
+    const anim = animRef.current;
+    const canPatrol =
+      !prefersReducedMotion &&
+      spec.role === 'stroller' &&
+      Boolean(anim?.walkAction) &&
+      spec.waypoints.length >= 2;
 
-    // Smooth turn to greet Kirito when nearby (ZERO stiff waypoint sliding!)
+    let wantWalk = false;
     if (!prefersReducedMotion) {
-      const targetYaw =
-        distToPlayer < PLAYER_GREET_RADIUS
-          ? Math.atan2(playerPos[0] - sx, playerPos[2] - sz)
-          : spec.facingYaw;
-      yawRef.current = lerpAngle(yawRef.current, targetYaw, Math.min(1, dt * 4.5));
+      if (distToPlayer < PLAYER_GREET_RADIUS) {
+        const greetYaw = Math.atan2(playerPos[0] - pos[0], playerPos[2] - pos[2]);
+        yawRef.current = lerpAngle(yawRef.current, greetYaw, Math.min(1, dt * 4.5));
+      } else if (canPatrol) {
+        if (pauseTimerRef.current > 0) {
+          pauseTimerRef.current -= dt;
+          const curWp = spec.waypoints[wpIndexRef.current];
+          if (curWp?.facingYaw !== undefined) {
+            yawRef.current = lerpAngle(yawRef.current, curWp.facingYaw, Math.min(1, dt * 3.0));
+          }
+        } else {
+          const nextIdx = (wpIndexRef.current + 1) % spec.waypoints.length;
+          const target = spec.waypoints[nextIdx];
+          const dx = target.x - pos[0];
+          const dz = target.z - pos[2];
+          const dist = Math.hypot(dx, dz);
+          if (dist < 0.14) {
+            pos[0] = target.x;
+            pos[1] = target.y;
+            pos[2] = target.z;
+            wpIndexRef.current = nextIdx;
+            pauseTimerRef.current = target.pauseSec ?? 3.5;
+          } else {
+            wantWalk = true;
+            const step = Math.min(dist, NPC_WALK_SPEED * dt);
+            pos[0] += (dx / dist) * step;
+            pos[1] += ((target.y - pos[1]) * step) / dist;
+            pos[2] += (dz / dist) * step;
+            const walkYaw = Math.atan2(dx, dz);
+            yawRef.current = lerpAngle(yawRef.current, walkYaw, Math.min(1, dt * 5.5));
+          }
+        }
+      } else {
+        yawRef.current = lerpAngle(yawRef.current, spec.facingYaw, Math.min(1, dt * 4.5));
+      }
     }
 
-    group.position.set(sx, sy, sz);
+    group.position.set(pos[0], pos[1], pos[2]);
     group.rotation.y = yawRef.current;
-    npcPositionsRef.current.set(spec.id, [sx, sy, sz]);
+    npcPositionsRef.current.set(spec.id, [pos[0], pos[1], pos[2]]);
 
     if (prefersReducedMotion || !prepared) return;
 
-    if (mixerRef.current) {
-      mixerRef.current.update(dt);
+    if (anim) {
+      const targetClip: 'idle' | 'walk' = wantWalk && anim.walkAction ? 'walk' : 'idle';
+      if (targetClip !== anim.active) {
+        const from = anim.active === 'walk' && anim.walkAction ? anim.walkAction : anim.idleAction;
+        const to = targetClip === 'walk' && anim.walkAction ? anim.walkAction : anim.idleAction;
+        to.reset().setEffectiveWeight(1).play();
+        from.crossFadeTo(to, 0.24, false);
+        anim.active = targetClip;
+      }
+      anim.mixer.update(dt);
     } else if (prepared.poseRig) {
       // Live skeletal breathing + subtle arm/head poise for rigged Zhongli & SchoolGirl
       const breath = Math.sin(cycleRef.current * 1.65);
@@ -374,9 +441,10 @@ function SingleAmbientNpc({
 }
 
 /**
- * Populates the active floor with naturally posed / skeletally animated anime `.glb` NPCs
- * (`mint` live 24s clip, `zhongli` & `schoolgirl` relaxed rigged Idle, `maid` naturally sculpted
- * standing pose — zero T-pose/A-pose and zero stiff sliding, `D-021`).
+ * Populates the active floor with skeletally animated / naturally posed anime `.glb` NPCs
+ * (`asuna` real Mixamo `Idle` + `Walk` patrol, `yui` Mixamo `Idle`, `mint` live 24s clip,
+ * `zhongli` & `schoolgirl` relaxed rigged Idle, `maid` naturally sculpted standing pose —
+ * zero T-pose/A-pose and zero stiff sliding, `D-021`).
  */
 export function AmbientNpcs({
   floor,
