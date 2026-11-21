@@ -2,7 +2,7 @@
 
 > **Nhánh triển khai:** `feat/entrance-and-locked-routes` (tách từ `main` sau PR #7).
 > **Quyết định kiến trúc:** **`D-027`** trong `docs/DECISIONS.md` (mở rộng `D-026`).
-> **Trạng thái:** Đang chờ người dùng duyệt kế hoạch trước khi viết code (`AGENTS.md` §3).
+> **Trạng thái:** **Đã hoàn tất Phase 1 & Phase 2, vượt 100% kiểm định & deploy Worker live** — sẵn sàng mở PR vào `main`.
 
 ---
 
@@ -50,9 +50,9 @@
 ---
 
 ## 3. Checklist Kiểm thử (`AGENTS.md` §7)
-- [ ] Chưa đăng nhập mở `/` → tự chuyển URL sang `/locked`, hiện **`Ofu's Library Closed.`**, không có ô nhập mã hay link sang `/entrance`.
-- [ ] Chưa đăng nhập mở `/entrance` → giữ nguyên `/entrance`, hiện **`Ofu's Library Entrance.`** + khung `ACCESS CODE` 12 ô.
-- [ ] Dán key Discord 12 ký tự hoặc nhập `ACCESS_PASSCODE` Admin (ngắn hoặc dài `> 12` ký tự) tại `/entrance` → đăng nhập thành công, URL tự chuyển sạch về `/`.
-- [ ] Đang đăng nhập sẵn bấm F5 tại `/` → giữ nguyên ở `/`, không bị đá nhầm sang `/locked`.
-- [ ] Bấm Đăng xuất hoặc hết hạn phiên 24 giờ → URL chuyển sang `/locked` kèm thông báo lý do gọn nhẹ.
-- [ ] Kiểm tra kết quả `npm run build`: có đủ `dist/entrance/index.html`, `dist/locked/index.html`, `dist/404.html`, entry `index-*.js <= 86.04 kB gzip`, `npm run typecheck`, `npm run lint`, Worker `tsc --noEmit` đều XANH.
+- [x] Chưa đăng nhập mở `/` → tự chuyển URL sang `/locked`, hiện **`Ofu's Library Closed.`**, không có ô nhập mã hay link sang `/entrance`.
+- [x] Chưa đăng nhập mở `/entrance` → giữ nguyên `/entrance`, hiện **`Ofu's Library Entrance.`** + khung `ACCESS CODE` 12 ô.
+- [x] Dán key Discord 12 ký tự hoặc nhập `ACCESS_PASSCODE` Admin (ngắn hoặc dài `> 12` ký tự) tại `/entrance` → đăng nhập thành công, URL tự chuyển sạch về `/`.
+- [x] Đang đăng nhập sẵn bấm F5 tại `/` → giữ nguyên ở `/`, không bị đá nhầm sang `/locked`.
+- [x] Bấm Đăng xuất hoặc hết hạn phiên 24 giờ → URL chuyển sang `/locked` kèm thông báo lý do gọn nhẹ.
+- [x] Kiểm tra kết quả `npm run build`: có đủ `dist/entrance/index.html`, `dist/locked/index.html`, `dist/404.html`, entry `index-*.js <= 86.04 kB gzip`, `npm run typecheck`, `npm run lint`, Worker `tsc --noEmit` đều XANH.

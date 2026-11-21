@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react';
 import type { AuthSessionInfo, Book, ReadingProgress, StorageStats } from '@/types';
 import { fetchLibraryState, isAuthError, setAuthToken, sortBooksByTitle } from '@/lib/api';
 import { DEFAULT_OWNER_SESSION, getActiveAuthSession } from '@/lib/authSession';
+import { replaceGateRoute, syncGateDocumentTitle } from '@/lib/gateRoutes';
 import {
   type ShelfPrefsState,
   patchShelfCover,
@@ -97,6 +98,7 @@ export default function App() {
       if (isAuthError(err)) {
         setAuthToken(null);
         setModal({ kind: 'none' });
+        replaceGateRoute('locked');
         setAuthenticated(false);
         setAuthReason(message);
         addToast(message, 'warning');
@@ -151,8 +153,13 @@ export default function App() {
   }, [handleApiError]);
 
   useEffect(() => {
-    if (authenticated) void loadLibrary();
-    else closeBook();
+    if (authenticated) {
+      replaceGateRoute('root');
+      syncGateDocumentTitle('root', true);
+      void loadLibrary();
+    } else {
+      closeBook();
+    }
   }, [authenticated, closeBook, loadLibrary]);
 
   // Tự động đóng cửa ngay khi chạm mốc hết hạn phiên (vd: hết 24 giờ của khách Discord)
@@ -160,13 +167,14 @@ export default function App() {
     if (!authenticated || session.expiresAt === null) return;
     const expireMessage =
       session.role === 'guest'
-        ? 'Phiên truy cập 24 giờ đã hết hạn. Hãy bấm chuông trên Discord để lấy chìa khoá mới.'
-        : 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+        ? 'Phiên truy cập 24 giờ đã hết hạn.'
+        : 'Phiên đăng nhập đã hết hạn.';
 
     const closeExpiredDoor = () => {
       setAuthToken(null);
       closeBook();
       setModal({ kind: 'none' });
+      replaceGateRoute('locked');
       setAuthenticated(false);
       setSession(DEFAULT_OWNER_SESSION);
       setAuthReason(expireMessage);
@@ -199,10 +207,11 @@ export default function App() {
     setBooks([]);
     setProgress({});
     setStorage(null);
+    replaceGateRoute('locked');
     setAuthenticated(false);
     setSession(DEFAULT_OWNER_SESSION);
     setAuthReason(null);
-    addToast('Đã đăng xuất khỏi thư viện.', 'info');
+    addToast('Đã đóng cửa thư viện.', 'info');
   }, [addToast, closeBook]);
 
   const handleBookUploaded = useCallback((book: Book, nextStorage: StorageStats) => {
