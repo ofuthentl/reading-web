@@ -3,7 +3,6 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { AppTheme } from '@/hooks/useTheme';
 import { mergeSimpleGeometries } from './geometryUtils';
-import { cloneGlbTemplate, useLocalGlb } from './gltfLoader';
 import type { LibraryMaterialBundle } from './proceduralMaterials';
 import {
   createSoftParticleTexture,
@@ -11,7 +10,13 @@ import {
   type WorldMaterialBundle,
 } from './worldMaterials';
 import { createScaledBox } from './worldGeometryBuilder';
-import type { BiomePropPlacement3D, FloorWorldLayout3D } from './worldTypes';
+import type { FloorWorldLayout3D } from './worldTypes';
+import {
+  DragonMascotGlb,
+  FloorBossSentinelGlb,
+  MountainStairsGlb,
+  StaticSceneryPropGlb,
+} from './WorldGlbActors';
 
 export interface BiomePropsMeshProps {
   floor: FloorWorldLayout3D;
@@ -22,13 +27,6 @@ export interface BiomePropsMeshProps {
   prefersReducedMotion?: boolean;
   requestRender?: () => void;
 }
-
-const BASE = import.meta.env.BASE_URL ?? '/';
-const MODEL_URLS = {
-  mountainStairs: `${BASE}models/mountain-stairs.glb`,
-  dragonMascot: `${BASE}models/dragon-mascot.glb`,
-  stoneGolem: `${BASE}models/stone-golem.glb`,
-} as const;
 
 const PARTICLE_COUNT = 130;
 
@@ -188,141 +186,6 @@ function buildPropBatch(floor: FloorWorldLayout3D): BatchedPropGeometries {
   };
 }
 
-function MountainStairsGlb({
-  prop,
-  fallbackMaterial,
-  requestRender,
-}: {
-  prop: BiomePropPlacement3D;
-  fallbackMaterial: THREE.Material;
-  requestRender?: () => void;
-}) {
-  const { template } = useLocalGlb(MODEL_URLS.mountainStairs);
-  const instance = useMemo(() => (template ? cloneGlbTemplate(template) : null), [template]);
-  const scale: [number, number, number] = prop.scaleVec ?? [prop.scale, prop.scale, prop.scale];
-
-  useEffect(() => {
-    if (instance) requestRender?.();
-  }, [instance, requestRender]);
-
-  if (!instance || !template) {
-    return (
-      <mesh
-        position={[0, 1.15, prop.position[2]]}
-        rotation={[-0.42, 0, 0]}
-        material={fallbackMaterial}
-      >
-        <boxGeometry args={[3.5, 0.35, 5.8]} />
-      </mesh>
-    );
-  }
-  const groundedY = prop.position[1] - template.bbox.min[1] * scale[1];
-  return (
-    <primitive
-      object={instance}
-      position={[prop.position[0], groundedY, prop.position[2]]}
-      rotation={[0, prop.rotationY, 0]}
-      scale={scale}
-    />
-  );
-}
-
-function DragonMascotGlb({
-  prop,
-  paused,
-  prefersReducedMotion,
-  requestRender,
-}: {
-  prop: BiomePropPlacement3D;
-  paused: boolean;
-  prefersReducedMotion: boolean;
-  requestRender?: () => void;
-}) {
-  const { template } = useLocalGlb(MODEL_URLS.dragonMascot);
-  const instance = useMemo(() => (template ? cloneGlbTemplate(template) : null), [template]);
-  const groupRef = useRef<THREE.Group | null>(null);
-  const phaseRef = useRef(0);
-  const mascotScale = 0.95;
-  const baseGroundedY = template
-    ? prop.position[1] + 0.62 - template.bbox.min[1] * mascotScale
-    : prop.position[1] + 0.62;
-
-  useEffect(() => {
-    if (instance) requestRender?.();
-  }, [instance, requestRender]);
-
-  useFrame((_, delta) => {
-    if (paused || prefersReducedMotion || !groupRef.current) return;
-    phaseRef.current += Math.min(delta, 0.05) * 2.1;
-    groupRef.current.position.y = baseGroundedY + Math.sin(phaseRef.current) * 0.035;
-  });
-
-  if (!instance || !template) return null;
-  return (
-    <group
-      ref={groupRef}
-      position={[prop.position[0], baseGroundedY, prop.position[2]]}
-      rotation={[0, prop.rotationY, 0]}
-      scale={[mascotScale, mascotScale, mascotScale]}
-    >
-      <primitive object={instance} />
-    </group>
-  );
-}
-
-function StoneGolemSentinelGlb({
-  position,
-  rotationY,
-  paused,
-  prefersReducedMotion,
-  requestRender,
-}: {
-  position: [number, number, number];
-  rotationY: number;
-  paused: boolean;
-  prefersReducedMotion: boolean;
-  requestRender?: () => void;
-}) {
-  const { template } = useLocalGlb(MODEL_URLS.stoneGolem);
-  const instance = useMemo(() => (template ? cloneGlbTemplate(template) : null), [template]);
-  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
-
-  useEffect(() => {
-    if (!instance || !template) return undefined;
-    const mixer = new THREE.AnimationMixer(instance);
-    const idleClip =
-      template.animations.find((clip) => clip.name.toLowerCase() === 'idle') ??
-      template.animations[0];
-    if (idleClip) {
-      const action = mixer.clipAction(idleClip);
-      action.play();
-    }
-    mixerRef.current = mixer;
-    requestRender?.();
-    return () => {
-      mixer.stopAllAction();
-      mixer.uncacheRoot(instance);
-      mixerRef.current = null;
-    };
-  }, [instance, template, requestRender]);
-
-  useFrame((_, delta) => {
-    if (paused || prefersReducedMotion || !mixerRef.current) return;
-    mixerRef.current.update(Math.min(delta, 0.05));
-  });
-
-  if (!instance || !template) return null;
-  const groundedY = position[1] - template.bbox.min[1];
-  return (
-    <primitive
-      object={instance}
-      position={[position[0], groundedY, position[2]]}
-      rotation={[0, rotationY, 0]}
-      scale={[1, 1, 1]}
-    />
-  );
-}
-
 function BiomeParticles({
   floor,
   color,
@@ -451,6 +314,14 @@ export function BiomePropsMesh({
     () => floor.props.filter((p) => p.kind === 'mascot_pedestal'),
     [floor.props],
   );
+  const vineProps = useMemo(
+    () => floor.props.filter((p) => p.kind === 'vine_glb'),
+    [floor.props],
+  );
+  const mossyStairsProps = useMemo(
+    () => floor.props.filter((p) => p.kind === 'mossy_stairs_glb'),
+    [floor.props],
+  );
 
   const wm = worldMaterials.materials;
   const lm = libraryMaterials.materials;
@@ -506,15 +377,28 @@ export function BiomePropsMesh({
           requestRender={requestRender}
         />
       ))}
-      {floor.biomeId === 'starlight_ruins' && (
-        <StoneGolemSentinelGlb
-          position={[3.6, floor.bossAnchor[1], floor.bossAnchor[2]]}
-          rotationY={-0.35}
-          paused={paused}
-          prefersReducedMotion={prefersReducedMotion}
+      {vineProps.map((p) => (
+        <StaticSceneryPropGlb
+          key={p.id}
+          kind="vine"
+          prop={p}
           requestRender={requestRender}
         />
-      )}
+      ))}
+      {mossyStairsProps.map((p) => (
+        <StaticSceneryPropGlb
+          key={p.id}
+          kind="mossy_stairs"
+          prop={p}
+          requestRender={requestRender}
+        />
+      ))}
+      <FloorBossSentinelGlb
+        floor={floor}
+        paused={paused}
+        prefersReducedMotion={prefersReducedMotion}
+        requestRender={requestRender}
+      />
 
       <BiomeParticles
         floor={floor}

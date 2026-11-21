@@ -108,6 +108,8 @@ export interface WorldStation3D {
 
 export type NpcRole = 'librarian' | 'reader_sitting' | 'stroller';
 
+export type NpcModelKey = 'yui' | 'asuna' | 'maid' | 'zhongli' | 'schoolgirl' | 'mint';
+
 export interface NpcWaypoint3D {
   x: number;
   y: number;
@@ -120,6 +122,7 @@ export interface WorldNpcSpec3D {
   id: string;
   name: string;
   role: NpcRole;
+  modelKey?: NpcModelKey;
   floorIndex: number;
   spawn: [number, number, number];
   facingYaw: number;
@@ -140,6 +143,8 @@ export type BiomePropKind =
   | 'atrium_column'
   | 'mascot_pedestal'
   | 'mountain_stairs_glb'
+  | 'vine_glb'
+  | 'mossy_stairs_glb'
   | 'boss_pedestal';
 
 export interface BiomePropPlacement3D {

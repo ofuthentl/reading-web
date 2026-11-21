@@ -359,23 +359,72 @@ export function createWorldMaterialBundle(
     skyDome: new THREE.MeshBasicMaterial({ map: sky, side: THREE.BackSide, depthWrite: false, fog: false }),
   };
 
+  let currentBiome: BiomeId = initialBiome;
+  let disposed = false;
+
+  // Local 1024px WebP PBR wet-cobblestone textures (0 CDN) upgrading Floors 2 & 4 walkways
+  const pbrCobble: {
+    albedo: THREE.Texture | null;
+    orm: THREE.Texture | null;
+    normal: THREE.Texture | null;
+  } = { albedo: null, orm: null, normal: null };
+
+  const syncCobbleMaterials = (biomeId: BiomeId) => {
+    const activeCobble = pbrCobble.albedo ?? cobble;
+    const usePbrMaps = biomeId !== 'starfield_atrium' && Boolean(pbrCobble.albedo);
+    materials.ground.map =
+      biomeId === 'starfield_atrium' ? marble : biomeId === 'starlight_ruins' ? activeCobble : grass;
+    materials.ground.normalMap = biomeId === 'starlight_ruins' ? pbrCobble.normal : null;
+    materials.ground.roughnessMap = biomeId === 'starlight_ruins' ? pbrCobble.orm : null;
+    materials.ground.needsUpdate = true;
+
+    materials.plaza.map = biomeId === 'starfield_atrium' ? marble : activeCobble;
+    materials.plaza.normalMap = usePbrMaps ? pbrCobble.normal : null;
+    materials.plaza.roughnessMap = usePbrMaps ? pbrCobble.orm : null;
+    materials.plaza.needsUpdate = true;
+  };
+
+  if (typeof window !== 'undefined') {
+    const texBase = `${import.meta.env.BASE_URL ?? '/'}textures/`;
+    const loader = new THREE.TextureLoader();
+    const loadTile = (file: string, srgb: boolean, slot: 'albedo' | 'orm' | 'normal') => {
+      loader.load(
+        `${texBase}${file}`,
+        (tex) => {
+          if (disposed) {
+            tex.dispose();
+            return;
+          }
+          if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
+          tex.wrapS = THREE.RepeatWrapping;
+          tex.wrapT = THREE.RepeatWrapping;
+          tex.anisotropy = 8;
+          tex.needsUpdate = true;
+          pbrCobble[slot] = tex;
+          syncCobbleMaterials(currentBiome);
+        },
+        undefined,
+        () => undefined,
+      );
+    };
+    loadTile('pbr-cobble-albedo.webp', true, 'albedo');
+    loadTile('pbr-cobble-orm.webp', false, 'orm');
+    loadTile('pbr-cobble-normal.webp', false, 'normal');
+  }
+
   const applyBiomeTheme = (
     biomeId: BiomeId,
     theme: AppTheme,
     variant = 0,
   ): WorldBiomeVisualPalette => {
+    currentBiome = biomeId;
     const pal = getWorldBiomePalette(biomeId, theme, variant);
     if (skySurf) {
       paintSkyCanvas(skySurf.canvas, pal);
       sky.needsUpdate = true;
     }
-    materials.ground.map =
-      biomeId === 'starfield_atrium' ? marble : biomeId === 'starlight_ruins' ? cobble : grass;
-    materials.ground.needsUpdate = true;
+    syncCobbleMaterials(biomeId);
     materials.ground.color.set(pal.groundTint);
-
-    materials.plaza.map = biomeId === 'starfield_atrium' ? marble : cobble;
-    materials.plaza.needsUpdate = true;
     materials.plaza.color.set(pal.plazaTint);
 
     materials.stone.color.set(pal.accentStone);
@@ -394,7 +443,6 @@ export function createWorldMaterialBundle(
   };
 
   applyBiomeTheme(initialBiome, initialTheme, 0);
-  let disposed = false;
 
   return {
     textures: { cobble, grass, marble, water, sky },
@@ -409,6 +457,9 @@ export function createWorldMaterialBundle(
       marble.dispose();
       water.dispose();
       sky.dispose();
+      pbrCobble.albedo?.dispose();
+      pbrCobble.orm?.dispose();
+      pbrCobble.normal?.dispose();
     },
   };
 }

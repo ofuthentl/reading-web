@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
-import type { FloorWorldLayout3D, WorldNpcSpec3D } from './worldTypes';
+import type { FloorWorldLayout3D, NpcModelKey, WorldNpcSpec3D } from './worldTypes';
 import type { PlayerMotionState } from './KiritoAvatar';
+import { cloneGlbTemplate, useLocalGlb } from './gltfLoader';
 import { createContactShadowTexture } from './worldMaterials';
 
 export interface AmbientNpcsProps {
@@ -15,69 +16,71 @@ export interface AmbientNpcsProps {
   onSelectNpc: (npc: WorldNpcSpec3D) => void;
 }
 
-const NPC_WALK_SPEED = 1.45;
+const BASE = import.meta.env.BASE_URL ?? '/';
+const NPC_WALK_SPEED = 1.28;
+const PLAYER_GREET_RADIUS = 3.2;
 
-/**
- * Equirectangular stylized anime NPC head texture mapped onto `SphereGeometry(r, 20, 14, -Math.PI/2)`
- * so eyes & smile sit cleanly on the curved front `+Z` face with zero z-fighting or buried planes.
- */
-function createNpcHeadTexture(eyeColor: string, hairColor: string): THREE.CanvasTexture {
-  const w = 256;
-  const h = 128;
-  const canvas =
-    typeof document !== 'undefined'
-      ? Object.assign(document.createElement('canvas'), { width: w, height: h })
-      : ({ width: w, height: h } as unknown as HTMLCanvasElement);
-  const ctx = typeof document !== 'undefined' ? canvas.getContext('2d') : null;
-
-  if (ctx) {
-    ctx.fillStyle = '#f8ddc7';
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = hairColor;
-    ctx.fillRect(0, 0, w, 34);
-    ctx.fillRect(0, 0, 74, h);
-    ctx.fillRect(w - 74, 0, 74, h);
-
-    for (const ex of [111, 145]) {
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.ellipse(ex, 65, 8.5, 7.2, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = eyeColor;
-      ctx.beginPath();
-      ctx.arc(ex, 66, 5.2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(ex - 2, 63, 2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#241e22';
-      ctx.lineWidth = 2.2;
-      ctx.beginPath();
-      ctx.moveTo(ex - 9, 63);
-      ctx.quadraticCurveTo(ex, 56, ex + 9, 63);
-      ctx.stroke();
-    }
-    ctx.strokeStyle = '#9e6f5c';
-    ctx.lineWidth = 1.8;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(122, 85);
-    ctx.quadraticCurveTo(128, 90, 134, 85);
-    ctx.stroke();
-  }
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.needsUpdate = true;
-  return tex;
-}
+const NPC_MODEL_META: Record<
+  NpcModelKey,
+  { url: string; targetHeight: number; floatHeight?: number }
+> = {
+  yui: { url: `${BASE}models/npc-yui.glb`, targetHeight: 1.12, floatHeight: 0.24 },
+  asuna: { url: `${BASE}models/npc-asuna.glb`, targetHeight: 1.66 },
+  maid: { url: `${BASE}models/npc-maid.glb`, targetHeight: 1.62 },
+  zhongli: { url: `${BASE}models/npc-zhongli.glb`, targetHeight: 1.82 },
+  schoolgirl: { url: `${BASE}models/npc-schoolgirl.glb`, targetHeight: 1.6 },
+  mint: { url: `${BASE}models/npc-mint.glb`, targetHeight: 1.64 },
+};
 
 function lerpAngle(current: number, target: number, alpha: number): number {
   let diff = target - current;
   while (diff > Math.PI) diff -= Math.PI * 2;
   while (diff < -Math.PI) diff += Math.PI * 2;
   return current + diff * alpha;
+}
+
+/**
+ * Strips flat Sketchfab showcase floor shadow tiles (`size.y < 0.015 && span > 1.2`,
+ * e.g. `Object_4` inside `npc-maid.glb`), enables crisp shadows + 8x anisotropy,
+ * and computes the true character-only bounding box for exact grounding & scaling.
+ */
+function prepareNpcGlbInstance(
+  instance: THREE.Object3D,
+  maxAniso: number,
+): { minY: number; height: number } {
+  instance.updateMatrixWorld(true);
+  const meshBox = new THREE.Box3();
+  const meshSize = new THREE.Vector3();
+  const charBox = new THREE.Box3();
+
+  instance.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    meshBox.setFromObject(obj);
+    meshBox.getSize(meshSize);
+    if (meshSize.y < 0.015 && Math.max(meshSize.x, meshSize.z) > 1.2) {
+      obj.visible = false;
+      return;
+    }
+    charBox.union(meshBox);
+    obj.castShadow = true;
+    obj.receiveShadow = true;
+    if (obj instanceof THREE.SkinnedMesh) {
+      obj.frustumCulled = false;
+    }
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (let i = 0; i < mats.length; i += 1) {
+      const mat = mats[i] as THREE.MeshStandardMaterial | undefined;
+      if (mat?.map) mat.map.anisotropy = maxAniso;
+    }
+  });
+
+  if (charBox.isEmpty()) {
+    charBox.setFromObject(instance);
+  }
+  return {
+    minY: Number.isFinite(charBox.min.y) ? charBox.min.y : 0,
+    height: Math.max(0.05, charBox.max.y - charBox.min.y),
+  };
 }
 
 function SingleAmbientNpc({
@@ -93,201 +96,195 @@ function SingleAmbientNpc({
   spec: WorldNpcSpec3D;
   playerMotionRef: MutableRefObject<PlayerMotionState>;
   npcPositionsRef: MutableRefObject<Map<string, [number, number, number]>>;
-  shadowTexture: THREE.CanvasTexture;
+  shadowTexture: THREE.Texture;
   paused: boolean;
   prefersReducedMotion: boolean;
   isDraggingRef: MutableRefObject<boolean>;
   onSelectNpc: (npc: WorldNpcSpec3D) => void;
 }) {
+  const { gl, invalidate } = useThree();
+  const modelKey: NpcModelKey = spec.modelKey ?? 'asuna';
+  const meta = NPC_MODEL_META[modelKey];
+  const { template } = useLocalGlb(meta.url);
+
+  const prepared = useMemo(() => {
+    if (!template) return null;
+    const instance = cloneGlbTemplate(template);
+    const maxAniso = Math.min(8, gl.capabilities.getMaxAnisotropy());
+    const bounds = prepareNpcGlbInstance(instance, maxAniso);
+    const scale = meta.targetHeight / bounds.height;
+    const groundedY = -bounds.minY * scale + (meta.floatHeight ?? 0);
+    return { instance, scale, groundedY };
+  }, [template, gl, meta.targetHeight, meta.floatHeight]);
+
   const groupRef = useRef<THREE.Group | null>(null);
-  const leftArmRef = useRef<THREE.Mesh | null>(null);
-  const rightArmRef = useRef<THREE.Mesh | null>(null);
-  const leftLegRef = useRef<THREE.Mesh | null>(null);
-  const rightLegRef = useRef<THREE.Mesh | null>(null);
+  const modelHolderRef = useRef<THREE.Group | null>(null);
+  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
 
-  const navRef = useRef({
-    x: spec.spawn[0],
-    y: spec.spawn[1],
-    z: spec.spawn[2],
-    yaw: spec.facingYaw,
-    wpIndex: spec.waypoints.length > 1 ? 1 : 0,
-    pauseLeft: 0.8,
-    phase: (spec.name.length * 1.37) % 6.28,
-  });
+  const posRef = useRef<[number, number, number]>([...spec.spawn]);
+  const yawRef = useRef(spec.facingYaw);
+  const waypointIndexRef = useRef(0);
+  const pauseTimerRef = useRef(1.2);
+  const cycleRef = useRef(Math.random() * Math.PI * 2);
 
-  const hairColor =
-    spec.role === 'librarian' ? '#4a3235' : spec.role === 'reader_sitting' ? '#6b452d' : '#323a52';
-
-  const headTexture = useMemo(
-    () => createNpcHeadTexture(spec.accentColor, hairColor),
-    [spec.accentColor, hairColor],
+  const shadowMat = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        map: shadowTexture,
+        transparent: true,
+        depthWrite: false,
+      }),
+    [shadowTexture],
   );
-  useEffect(() => {
-    return () => {
-      headTexture.dispose();
-    };
-  }, [headTexture]);
-
-  const mats = useMemo(
-    () => ({
-      cloak: new THREE.MeshStandardMaterial({ color: spec.accentColor, roughness: 0.68, metalness: 0.06 }),
-      tunic: new THREE.MeshStandardMaterial({ color: '#ece6da', roughness: 0.8, metalness: 0.02 }),
-      hair: new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.6 }),
-      head: new THREE.MeshStandardMaterial({ map: headTexture, roughness: 0.64 }),
-      book: new THREE.MeshStandardMaterial({ color: '#7c3aed', roughness: 0.7 }),
-      shadow: new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false }),
-    }),
-    [spec.accentColor, hairColor, headTexture, shadowTexture],
+  const fallbackMat = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: spec.accentColor, roughness: 0.72 }),
+    [spec.accentColor],
   );
 
   useEffect(() => {
     return () => {
-      Object.values(mats).forEach((m) => m.dispose());
+      shadowMat.dispose();
+      fallbackMat.dispose();
     };
-  }, [mats]);
+  }, [shadowMat, fallbackMat]);
+
+  // Attach embedded AnimationMixer clip when present (e.g. `npc-mint.glb` 24s animation)
+  useEffect(() => {
+    if (!prepared || !template) return undefined;
+    invalidate();
+    if (template.animations.length === 0) return undefined;
+    const mixer = new THREE.AnimationMixer(prepared.instance);
+    const clip = template.animations[0];
+    if (clip) {
+      mixer.clipAction(clip).play();
+    }
+    mixerRef.current = mixer;
+    return () => {
+      mixer.stopAllAction();
+      mixer.uncacheRoot(prepared.instance);
+      mixerRef.current = null;
+    };
+  }, [prepared, template, invalidate]);
+
+  useEffect(() => {
+    posRef.current = [...spec.spawn];
+    yawRef.current = spec.facingYaw;
+    waypointIndexRef.current = 0;
+    npcPositionsRef.current.set(spec.id, [...spec.spawn]);
+  }, [spec, npcPositionsRef]);
 
   useFrame((_, delta) => {
-    const grp = groupRef.current;
-    if (!grp || paused) return;
+    const group = groupRef.current;
+    if (!group) return;
+    if (paused) return;
 
-    const nav = navRef.current;
     const dt = Math.min(delta, 0.05);
-    const pPos = playerMotionRef.current.position;
-    const distToPlayer = Math.hypot(pPos[0] - nav.x, pPos[2] - nav.z);
-    let walking = false;
+    cycleRef.current += dt;
+    const pos = posRef.current;
+    const playerPos = playerMotionRef.current.position;
+    const distToPlayer = Math.hypot(playerPos[0] - pos[0], playerPos[2] - pos[2]);
 
-    if (spec.role === 'stroller' && spec.waypoints.length > 1 && !prefersReducedMotion) {
-      if (distToPlayer < 2.6) {
-        const lookYaw = Math.atan2(pPos[0] - nav.x, pPos[2] - nav.z);
-        nav.yaw = lerpAngle(nav.yaw, lookYaw, Math.min(1, dt * 6));
-      } else if (nav.pauseLeft > 0) {
-        nav.pauseLeft -= dt;
-      } else {
-        const target = spec.waypoints[nav.wpIndex];
-        const dx = target.x - nav.x;
-        const dz = target.z - nav.z;
+    let isMoving = false;
+    if (!prefersReducedMotion) {
+      if (distToPlayer < PLAYER_GREET_RADIUS) {
+        const facePlayerYaw = Math.atan2(playerPos[0] - pos[0], playerPos[2] - pos[2]);
+        yawRef.current = lerpAngle(yawRef.current, facePlayerYaw, Math.min(1, dt * 6));
+      } else if (spec.role === 'stroller' && spec.waypoints.length >= 2) {
+        const targetWp = spec.waypoints[waypointIndexRef.current];
+        const dx = targetWp.x - pos[0];
+        const dz = targetWp.z - pos[2];
         const dist = Math.hypot(dx, dz);
-        if (dist < 0.18) {
-          nav.pauseLeft = target.pauseSec ?? 2.2;
-          nav.wpIndex = (nav.wpIndex + 1) % spec.waypoints.length;
-        } else {
+        if (dist > 0.14) {
           const step = Math.min(dist, NPC_WALK_SPEED * dt);
-          nav.x += (dx / dist) * step;
-          nav.z += (dz / dist) * step;
-          nav.y = target.y;
-          nav.yaw = lerpAngle(nav.yaw, Math.atan2(dx, dz), Math.min(1, dt * 7));
-          walking = true;
+          pos[0] += (dx / dist) * step;
+          pos[1] = targetWp.y;
+          pos[2] += (dz / dist) * step;
+          yawRef.current = lerpAngle(yawRef.current, Math.atan2(dx, dz), Math.min(1, dt * 7));
+          isMoving = true;
+        } else {
+          pauseTimerRef.current -= dt;
+          if (pauseTimerRef.current <= 0) {
+            waypointIndexRef.current = (waypointIndexRef.current + 1) % spec.waypoints.length;
+            pauseTimerRef.current = spec.waypoints[waypointIndexRef.current].pauseSec ?? 2.2;
+          }
         }
-      }
-    } else if (distToPlayer < 3.4 && spec.role === 'librarian') {
-      const lookYaw = Math.atan2(pPos[0] - nav.x, pPos[2] - nav.z);
-      nav.yaw = lerpAngle(nav.yaw, lookYaw, Math.min(1, dt * 5));
-    }
-
-    nav.phase += dt * (walking ? 7.5 : 2.1);
-    const sitDrop = spec.role === 'reader_sitting' ? -0.3 : 0;
-    const bob = prefersReducedMotion ? 0 : walking ? Math.abs(Math.sin(nav.phase)) * 0.032 : Math.sin(nav.phase) * 0.01;
-
-    grp.position.set(nav.x, nav.y + sitDrop + bob, nav.z);
-    grp.rotation.y = nav.yaw;
-    npcPositionsRef.current.set(spec.id, [nav.x, nav.y, nav.z]);
-
-    const swing = walking && !prefersReducedMotion ? Math.sin(nav.phase) * 0.45 : 0;
-    if (leftLegRef.current && rightLegRef.current) {
-      if (spec.role === 'reader_sitting') {
-        leftLegRef.current.rotation.x = -1.25;
-        rightLegRef.current.rotation.x = -1.25;
       } else {
-        leftLegRef.current.rotation.x = swing;
-        rightLegRef.current.rotation.x = -swing;
+        yawRef.current = lerpAngle(yawRef.current, spec.facingYaw, Math.min(1, dt * 3));
       }
     }
-    if (leftArmRef.current && rightArmRef.current) {
-      if (spec.role === 'reader_sitting') {
-        leftArmRef.current.rotation.x = -0.75;
-        rightArmRef.current.rotation.x = -0.75;
-      } else {
-        leftArmRef.current.rotation.x = -swing * 0.8;
-        rightArmRef.current.rotation.x = swing * 0.8;
+
+    group.position.set(pos[0], pos[1], pos[2]);
+    group.rotation.y = yawRef.current;
+    npcPositionsRef.current.set(spec.id, [pos[0], pos[1], pos[2]]);
+
+    if (!prefersReducedMotion) {
+      if (mixerRef.current) {
+        mixerRef.current.update(dt);
+      }
+      if (modelHolderRef.current && prepared) {
+        if (meta.floatHeight) {
+          // Pixie Yui gentle hover float
+          modelHolderRef.current.position.y =
+            prepared.groundedY + Math.sin(cycleRef.current * 2.2) * 0.08;
+        } else if (isMoving) {
+          // Crisp light stride bounce while strolling
+          modelHolderRef.current.position.y =
+            prepared.groundedY + Math.abs(Math.sin(cycleRef.current * 7.2)) * 0.045;
+          modelHolderRef.current.rotation.z = Math.sin(cycleRef.current * 7.2) * 0.025;
+        } else {
+          modelHolderRef.current.position.y = prepared.groundedY;
+          modelHolderRef.current.rotation.z = 0;
+          if (!mixerRef.current) {
+            const breathe = 1 + Math.sin(cycleRef.current * 1.9) * 0.008;
+            modelHolderRef.current.scale.set(
+              prepared.scale,
+              prepared.scale * breathe,
+              prepared.scale,
+            );
+          }
+        }
       }
     }
   });
+
+  const handleClick = (event: ThreeEvent<MouseEvent>) => {
+    if (paused || isDraggingRef.current) return;
+    event.stopPropagation();
+    onSelectNpc(spec);
+  };
 
   return (
     <group
       ref={groupRef}
+      name={`npc-${spec.id}`}
       position={spec.spawn}
       rotation={[0, spec.facingYaw, 0]}
-      onClick={(e) => {
-        if (paused || isDraggingRef.current) return;
-        e.stopPropagation();
-        onSelectNpc(spec);
-      }}
-      onPointerOver={() => {
-        if (!paused && typeof document !== 'undefined') document.body.style.cursor = 'pointer';
-      }}
-      onPointerOut={() => {
-        if (typeof document !== 'undefined') document.body.style.cursor = '';
-      }}
+      onClick={handleClick}
     >
-      {spec.role !== 'reader_sitting' && (
-        <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]} material={mats.shadow}>
-          <planeGeometry args={[0.84, 0.84]} />
+      <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]} material={shadowMat}>
+        <planeGeometry args={[0.88, 0.88]} />
+      </mesh>
+
+      {prepared ? (
+        <group
+          ref={modelHolderRef}
+          position={[0, prepared.groundedY, 0]}
+          scale={[prepared.scale, prepared.scale, prepared.scale]}
+        >
+          <primitive object={prepared.instance} />
+        </group>
+      ) : (
+        <mesh position={[0, 0.85, 0]} material={fallbackMat}>
+          <capsuleGeometry args={[0.16, 1.1, 4, 8]} />
         </mesh>
       )}
-
-      {/* Tapered tunic & cozy adventurer cloak */}
-      <mesh position={[0, 1.0, 0]} scale={[1.05, 1, 0.72]} material={mats.tunic}>
-        <cylinderGeometry args={[0.135, 0.12, 0.44, 12]} />
-      </mesh>
-      <mesh position={[0, 0.85, -0.02]} material={mats.cloak}>
-        <cylinderGeometry args={[0.155, 0.255, 0.7, 12]} />
-      </mesh>
-
-      {/* Curved equirectangular anime head + downward hair bangs */}
-      <group position={[0, 1.42, 0]}>
-        <mesh scale={[0.96, 1.02, 0.94]} material={mats.head}>
-          <sphereGeometry args={[0.145, 20, 14, -Math.PI / 2]} />
-        </mesh>
-        <mesh position={[0, 0.032, -0.02]} material={mats.hair}>
-          <sphereGeometry args={[0.148, 14, 12]} />
-        </mesh>
-        <mesh position={[-0.048, 0.098, 0.11]} rotation={[Math.PI - 0.3, 0, -0.2]} material={mats.hair}>
-          <coneGeometry args={[0.036, 0.1, 6]} />
-        </mesh>
-        <mesh position={[0.048, 0.098, 0.11]} rotation={[Math.PI - 0.3, 0, 0.2]} material={mats.hair}>
-          <coneGeometry args={[0.036, 0.1, 6]} />
-        </mesh>
-      </group>
-
-      {/* Rounded capsule arms */}
-      <mesh ref={leftArmRef} position={[0.19, 1.0, 0]} material={mats.cloak}>
-        <capsuleGeometry args={[0.042, 0.3, 5, 8]} />
-      </mesh>
-      <mesh ref={rightArmRef} position={[-0.19, 1.0, 0]} material={mats.cloak}>
-        <capsuleGeometry args={[0.042, 0.3, 5, 8]} />
-      </mesh>
-
-      {spec.role === 'reader_sitting' && (
-        <mesh position={[0, 1.02, 0.28]} rotation={[0.35, 0, 0]} material={mats.book}>
-          <boxGeometry args={[0.24, 0.04, 0.18]} />
-        </mesh>
-      )}
-
-      {/* Rounded legs */}
-      <mesh ref={leftLegRef} position={[0.08, 0.36, 0]} material={mats.hair}>
-        <capsuleGeometry args={[0.05, 0.54, 5, 8]} />
-      </mesh>
-      <mesh ref={rightLegRef} position={[-0.08, 0.36, 0]} material={mats.hair}>
-        <capsuleGeometry args={[0.05, 0.54, 5, 8]} />
-      </mesh>
     </group>
   );
 }
 
 /**
- * Populates the active floor with living stylized Librarians, sitting Readers,
- * and patrolling Strollers along verified collision-free waypoints (`D-017`).
+ * Populates the active floor with real anime `.glb` NPCs (`yui`, `asuna`, `maid`,
+ * `zhongli`, `schoolgirl`, animated `mint`) synchronized in style with Kirito (`D-019`).
  */
 export function AmbientNpcs({
   floor,

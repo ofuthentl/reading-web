@@ -8,6 +8,7 @@ import type {
   BoxCollider3D,
   ColliderTag,
   CylinderCollider3D,
+  NpcModelKey,
   NpcRole,
   NpcWaypoint3D,
   WorldNpcSpec3D,
@@ -138,6 +139,7 @@ function npc(
   id: string,
   name: string,
   role: NpcRole,
+  modelKey: NpcModelKey,
   spawn: [number, number, number],
   facingYaw: number,
   greeting: string,
@@ -148,6 +150,7 @@ function npc(
     id,
     name,
     role,
+    modelKey,
     spawn,
     facingYaw,
     greeting,
@@ -204,15 +207,15 @@ function buildTownBlueprint(): BiomeBlueprint3D {
       prop('p-boss-pad', 'boss_pedestal', [0, 0, -19.2]),
     ],
     npcs: [
-      npc('npc-town-librarian', 'Thủ thư Yui', 'librarian', [3.65, 0, 4.4], -Math.PI / 2, 'Chào mừng tới Đại lộ Khởi Đầu! Hãy ghé Bục Thủ thư bất cứ lúc nào để thêm sách mới.', '#38bdf8'),
-      npc('npc-town-reader', 'Độc giả Klein', 'reader_sitting', [-3.65, 0, 11.2], Math.PI / 2, 'Ngồi đọc sách dưới tán cây phố đá lát sau cơn mưa thật yên bình.', '#f59e0b'),
-      npc('npc-town-walker-w', 'Lữ khách Asuna', 'stroller', [-0.95, 0, 15.0], Math.PI, 'Hai bên đại lộ đá lát có 6 gian kệ sách mở, thử ghé qua xem nhé!', '#f43f5e', [
+      npc('npc-town-librarian', 'Thủ thư Yui', 'librarian', 'yui', [3.65, 0, 4.4], -Math.PI / 2, 'Chào mừng tới Đại lộ Khởi Đầu! Hãy ghé Bục Thủ thư bất cứ lúc nào để thêm sách mới.', '#38bdf8'),
+      npc('npc-town-reader', 'Học giả Zhongli', 'reader_sitting', 'zhongli', [-3.65, 0, 11.2], Math.PI / 2, 'Ngồi đọc sách dưới tán cây phố đá lát sau cơn mưa thật yên bình.', '#f59e0b'),
+      npc('npc-town-walker-w', 'Lữ khách Asuna', 'stroller', 'asuna', [-0.95, 0, 15.0], Math.PI, 'Hai bên đại lộ đá lát có 6 gian kệ sách mở, thử ghé qua xem nhé!', '#f43f5e', [
         { x: -0.95, y: 0, z: 15.0, pauseSec: 2.2 },
         { x: -0.95, y: 0, z: -15.8, pauseSec: 2.5 },
         { x: 0.95, y: 0, z: -15.8, pauseSec: 1.8 },
         { x: 0.95, y: 0, z: 15.0, pauseSec: 2.2 },
       ]),
-      npc('npc-town-walker-e', 'Học giả Agil', 'stroller', [0.95, 0, -12.0], 0, 'Phía cuối con phố là Cổng Ánh Sáng dẫn thẳng lên Tầng 2 — Rừng Anh Đào & Cầu Gỗ.', '#10b981', [
+      npc('npc-town-walker-e', 'Hầu gái Thư viện', 'stroller', 'maid', [0.95, 0, -12.0], 0, 'Phía cuối con phố là Cổng Ánh Sáng dẫn thẳng lên Tầng 2 — Rừng Anh Đào & Cầu Gỗ.', '#10b981', [
         { x: 0.95, y: 0, z: -12.0, pauseSec: 2.5 },
         { x: 0.95, y: 0, z: 13.5, pauseSec: 2.0 },
         { x: -0.95, y: 0, z: 13.5, pauseSec: 1.5 },
@@ -277,12 +280,16 @@ function buildSakuraBlueprint(): BiomeBlueprint3D {
       prop('p-lantern-4', 'stone_lantern', [3.4, 0, -6.2]),
       prop('p-mascot', 'mascot_pedestal', [7.6, 0, -9.8], -Math.PI * 0.25),
       prop('p-stairs-glb', 'mountain_stairs_glb', [MOUNTAIN_STAIRS_OFFSET_X, 0, -20.23], 0, 1, MOUNTAIN_STAIRS_SCALE_VEC),
+      prop('p-sakura-vine-w', 'vine_glb', [-3.4, 1.4, -17.1], 0.1, 1.9),
+      prop('p-sakura-vine-e', 'vine_glb', [3.4, 1.4, -17.1], -0.1, 1.9),
+      prop('p-sakura-moss-w', 'mossy_stairs_glb', [-4.2, 0, 5.4], 0, 1.35),
+      prop('p-sakura-moss-e', 'mossy_stairs_glb', [4.2, 0, 5.4], 0, 1.35),
       prop('p-boss-pad', 'boss_pedestal', [0, 2.4, -24.2]),
     ],
     npcs: [
-      npc('npc-sakura-librarian', 'Vu nữ Silica', 'librarian', [4.2, 0, -10.5], -Math.PI * 0.3, 'Cầu gỗ vồng qua hồ và bậc đá dẫn lên Đền Cổng rất đẹp khi hoàng hôn xuống.', '#f472b6'),
-      npc('npc-sakura-reader', 'Độc giả Lisbeth', 'reader_sitting', [-6.5, 0, 11.8], Math.PI, 'Gió thổi cánh hoa anh đào rơi khắp mặt hồ — đọc light novel ở đây hết ý!', '#fb7185'),
-      npc('npc-sakura-stroller', 'Du khách Sinon', 'stroller', [-4.5, 0, -7.2], Math.PI, 'Cẩn thận vách đá hai bên khi leo bậc thang lên Đài Cổng nhé!', '#22d3ee', [
+      npc('npc-sakura-librarian', 'Vu nữ Silica', 'librarian', 'schoolgirl', [4.2, 0, -10.5], -Math.PI * 0.3, 'Cầu gỗ vồng qua hồ và bậc đá dẫn lên Đền Cổng rất đẹp khi hoàng hôn xuống.', '#f472b6'),
+      npc('npc-sakura-reader', 'Độc giả Mint', 'reader_sitting', 'mint', [-6.5, 0, 11.8], Math.PI, 'Gió thổi cánh hoa anh đào rơi khắp mặt hồ — đọc light novel ở đây hết ý!', '#fb7185'),
+      npc('npc-sakura-stroller', 'Du khách Asuna', 'stroller', 'asuna', [-4.5, 0, -7.2], Math.PI, 'Cẩn thận vách đá hai bên khi leo bậc thang lên Đài Cổng nhé!', '#22d3ee', [
         { x: -4.5, y: 0, z: -7.2, pauseSec: 2.5 },
         { x: -4.5, y: 0, z: -13.2, pauseSec: 2.5 },
         { x: 2.5, y: 0, z: -13.2, pauseSec: 2 },
@@ -354,9 +361,9 @@ function buildStarfieldBlueprint(): BiomeBlueprint3D {
       prop('p-boss-pad', 'boss_pedestal', [0, 1.8, -19.5]),
     ],
     npcs: [
-      npc('npc-sf-librarian', 'Thủ thư Alice', 'librarian', [5.2, 0, 0.8], Math.PI, 'Đại sảnh Starfield gom ánh sáng tự nhiên xuống toàn bộ vòng kệ cong hai tầng.', '#eab308'),
-      npc('npc-sf-reader', 'Độc giả Eugeo', 'reader_sitting', [-5.2, 0, 3.9], Math.PI, 'Không gian rộng rãi thế này giúp tập trung đọc liền mạch hàng chục chương!', '#60a5fa'),
-      npc('npc-sf-walker', 'Nhà nghiên cứu Leafa', 'stroller', [-8.8, 0, 4.8], Math.PI, 'Đi dọc vòng cung kệ sách là thấy đủ mọi bộ truyện yêu thích.', '#34d399', [
+      npc('npc-sf-librarian', 'Thủ thư Alice', 'librarian', 'maid', [5.2, 0, 0.8], Math.PI, 'Đại sảnh Starfield gom ánh sáng tự nhiên xuống toàn bộ vòng kệ cong hai tầng.', '#eab308'),
+      npc('npc-sf-reader', 'Học giả Zhongli', 'reader_sitting', 'zhongli', [-5.2, 0, 3.9], Math.PI, 'Không gian rộng rãi thế này giúp tập trung đọc liền mạch hàng chục chương!', '#60a5fa'),
+      npc('npc-sf-walker', 'Nhà nghiên cứu Leafa', 'stroller', 'schoolgirl', [-8.8, 0, 4.8], Math.PI, 'Đi dọc vòng cung kệ sách là thấy đủ mọi bộ truyện yêu thích.', '#34d399', [
         { x: -8.8, y: 0, z: 4.8, pauseSec: 2 },
         { x: -8.8, y: 0, z: -6.8, pauseSec: 2.5 },
         { x: 0, y: 0, z: -9.6, pauseSec: 2 },
@@ -418,11 +425,17 @@ function buildStarlightRuinsBlueprint(): BiomeBlueprint3D {
       prop('p-crystal-1', 'crystal_pillar', [-7.5, 2.4, -22.5], 0.2, 1.1),
       prop('p-crystal-2', 'crystal_pillar', [7.5, 2.4, -22.5], 1.4, 1.1),
       prop('p-stairs-glb', 'mountain_stairs_glb', [MOUNTAIN_STAIRS_OFFSET_X, 0, -18.53], 0, 1, MOUNTAIN_STAIRS_SCALE_VEC),
+      prop('p-ruins-vine-1', 'vine_glb', [-12.6, 2.0, 11.4], Math.PI / 2, 2.2),
+      prop('p-ruins-vine-2', 'vine_glb', [12.6, 2.0, 11.4], -Math.PI / 2, 2.2),
+      prop('p-ruins-vine-3', 'vine_glb', [-12.6, 2.0, -13.0], Math.PI / 2, 2.2),
+      prop('p-ruins-vine-4', 'vine_glb', [12.6, 2.0, -13.0], -Math.PI / 2, 2.2),
+      prop('p-ruins-vine-5', 'vine_glb', [-3.0, 1.5, -15.4], 0, 1.9),
+      prop('p-ruins-vine-6', 'vine_glb', [3.0, 1.5, -15.4], 0, 1.9),
       prop('p-boss-pad', 'boss_pedestal', [0, 2.4, -24.0], 0, 1.2),
     ],
     npcs: [
-      npc('npc-ruins-keeper', 'Người gác Sao Argo', 'librarian', [5.8, 0, 7.8], -Math.PI * 0.7, 'Phía trên bậc đá cổ là Đài Hộ vệ Stone Golem — hãy chuẩn bị thật kỹ kiến thức các chương sách!', '#a78bfa'),
-      npc('npc-ruins-explorer', 'Kiếm sĩ Yuuki', 'stroller', [-4.8, 0, 3.0], Math.PI, 'Đêm sao trên phế tích cổ Aincrad yên tĩnh đến mức nghe rõ tiếng lật trang.', '#c084fc', [
+      npc('npc-ruins-keeper', 'Người gác Sao Yui', 'librarian', 'yui', [5.8, 0, 7.8], -Math.PI * 0.7, 'Phía trên bậc đá cổ là Phòng Boss của Stormterror — hãy chuẩn bị thật kỹ kiến thức các chương sách!', '#a78bfa'),
+      npc('npc-ruins-explorer', 'Kiếm sĩ Asuna', 'stroller', 'asuna', [-4.8, 0, 3.0], Math.PI, 'Đêm sao trên phế tích cổ Aincrad yên tĩnh đến mức nghe rõ tiếng lật trang.', '#c084fc', [
         { x: -4.8, y: 0, z: 3.0, pauseSec: 2 },
         { x: -4.8, y: 0, z: -8.0, pauseSec: 2.5 },
         { x: 4.8, y: 0, z: -8.0, pauseSec: 2 },
