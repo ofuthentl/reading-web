@@ -5,6 +5,7 @@ import {
   getWorldBiomePalette,
   type WorldBiomeVisualPalette,
 } from './worldPalettes';
+import { paintSkyPanorama } from './skyPanoramaPainter';
 
 export { getWorldBiomePalette, type WorldBiomeVisualPalette };
 
@@ -204,61 +205,6 @@ function createWaterTexture(): THREE.CanvasTexture {
   return toTexture(canvas, true, true, 8);
 }
 
-function paintSkyCanvas(canvas: HTMLCanvasElement, palette: WorldBiomeVisualPalette): void {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  const w = canvas.width;
-  const h = canvas.height;
-  const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, palette.skyTop);
-  grad.addColorStop(0.52, palette.skyHorizon);
-  grad.addColorStop(1, palette.skyBottom);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, w, h);
-
-  const rand = createSeededRandom(palette.showStars ? 7711 : 5503);
-  if (palette.showStars) {
-    const neb = ctx.createRadialGradient(w * 0.65, h * 0.26, 8, w * 0.65, h * 0.26, w * 0.34);
-    neb.addColorStop(0, 'rgba(139, 92, 246, 0.24)');
-    neb.addColorStop(0.5, 'rgba(56, 189, 248, 0.12)');
-    neb.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = neb;
-    ctx.fillRect(0, 0, w, h * 0.65);
-
-    for (let i = 0; i < palette.starDensity; i += 1) {
-      const x = rand() * w;
-      const y = rand() * h * 0.54;
-      const r = 0.6 + rand() * 1.6;
-      ctx.fillStyle = `rgba(244, 248, 255, ${(0.35 + rand() * 0.65).toFixed(2)})`;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    const moon = ctx.createRadialGradient(w * 0.28, h * 0.2, 4, w * 0.28, h * 0.2, 42);
-    moon.addColorStop(0, 'rgba(255, 252, 236, 0.96)');
-    moon.addColorStop(0.32, 'rgba(218, 232, 255, 0.45)');
-    moon.addColorStop(1, 'rgba(218, 232, 255, 0)');
-    ctx.fillStyle = moon;
-    ctx.fillRect(w * 0.16, h * 0.04, 120, 120);
-  } else {
-    const sun = ctx.createRadialGradient(w * 0.72, h * 0.28, 6, w * 0.72, h * 0.28, 86);
-    sun.addColorStop(0, palette.sunColor);
-    sun.addColorStop(0.45, 'rgba(255, 236, 198, 0.28)');
-    sun.addColorStop(1, 'rgba(255, 236, 198, 0)');
-    ctx.fillStyle = sun;
-    ctx.fillRect(w * 0.5, 0, 220, 180);
-
-    for (let i = 0; i < 24; i += 1) {
-      const cx = rand() * w;
-      const cy = h * (0.14 + rand() * 0.28);
-      ctx.fillStyle = 'rgba(255, 250, 242, 0.22)';
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, 24 + rand() * 54, 8 + rand() * 14, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-}
-
 export function createContactShadowTexture(): THREE.CanvasTexture {
   const size = 64;
   const surf = makeCanvas(size, size);
@@ -296,9 +242,10 @@ export function createSoftParticleTexture(
     ctx.fill();
     ctx.restore();
   } else {
-    const grad = ctx.createRadialGradient(32, 32, 2, 32, 32, 28);
+    const grad = ctx.createRadialGradient(32, 32, 0.5, 32, 32, 26);
     grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-    grad.addColorStop(0.45, 'rgba(255, 255, 255, 0.65)');
+    grad.addColorStop(0.22, 'rgba(255, 255, 255, 0.75)');
+    grad.addColorStop(0.55, 'rgba(255, 255, 255, 0.16)');
     grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, size, size);
@@ -314,7 +261,7 @@ export function createWorldMaterialBundle(
   const grass = createGrassTexture();
   const marble = createMarbleTexture();
   const water = createWaterTexture();
-  const skySurf = makeCanvas(512, 256);
+  const skySurf = makeCanvas(2048, 1024);
   const sky = toTexture(skySurf?.canvas ?? null, false, true);
 
   const materials = {
@@ -445,7 +392,7 @@ export function createWorldMaterialBundle(
     currentBiome = biomeId;
     const pal = getWorldBiomePalette(biomeId, theme, variant);
     if (skySurf) {
-      paintSkyCanvas(skySurf.canvas, pal);
+      paintSkyPanorama(skySurf.canvas, pal, biomeId, theme);
       sky.needsUpdate = true;
     }
     syncCobbleMaterials(biomeId);

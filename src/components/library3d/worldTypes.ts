@@ -110,7 +110,7 @@ export interface WorldStation3D {
 
 export type NpcRole = 'librarian' | 'reader_sitting' | 'stroller';
 
-export type NpcModelKey = 'asuna' | 'yui' | 'maid' | 'zhongli' | 'schoolgirl' | 'mint';
+export type NpcModelKey = 'asuna' | 'maid' | 'zhongli' | 'schoolgirl' | 'mint';
 
 export interface NpcWaypoint3D {
   x: number;

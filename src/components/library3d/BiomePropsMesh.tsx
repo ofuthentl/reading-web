@@ -273,10 +273,11 @@ function BiomeParticles({
       <pointsMaterial
         color={color}
         map={spriteTexture}
-        alphaTest={0.05}
-        size={risesUp ? 0.24 : 0.3}
+        alphaTest={0.02}
+        size={risesUp ? 0.105 : 0.14}
         transparent
-        opacity={0.88}
+        opacity={risesUp ? 0.85 : 0.78}
+        blending={risesUp ? THREE.AdditiveBlending : THREE.NormalBlending}
         depthWrite={false}
       />
     </points>

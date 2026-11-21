@@ -19,6 +19,8 @@ import {
 import { createProceduralSkyEnvironment } from './skyEnvironment';
 import { TownWorldGlb } from './TownWorldGlb';
 import { BossArenaMesh } from './BossArenaMesh';
+import { WorldHorizonVista } from './WorldHorizonVista';
+import { GrandLibraryHallMesh } from './GrandLibraryHallMesh';
 
 export interface WorldBiomeMeshProps {
   floor: FloorWorldLayout3D;
@@ -158,8 +160,17 @@ export function WorldBiomeMesh({
       <color attach="background" args={[palette.fogColor]} />
       <fog attach="fog" args={[palette.fogColor, palette.fogNear, palette.fogFar]} />
 
-      {/* Painted procedural SkyDome synced with Day / Dusk / Starry Night */}
+      {/* Painted 2K equirectangular SkyDome synced with Day / Dusk / Starry Night */}
       <mesh geometry={skyGeometry} material={wm.skyDome} frustumCulled={false} />
+
+      {/* 360-degree Aincrad outside horizon vista: cloud sea, mountains, floating islands & upper citadel ring */}
+      <WorldHorizonVista
+        biomeId={floor.biomeId}
+        theme={theme}
+        biomeVariant={floor.biomeVariant}
+        paused={paused}
+        prefersReducedMotion={prefersReducedMotion}
+      />
 
       {/* Biome-tuned lighting rig + soft directional shadows (0 CDN HDRI) */}
       <hemisphereLight args={[palette.hemiSky, palette.hemiGround, palette.hemiIntensity]} />
@@ -202,6 +213,15 @@ export function WorldBiomeMesh({
         />
       )}
 
+      {/* Floor 3 Two-Story Cathedral Grand Library (`D-022`) */}
+      {floor.biomeId === 'starfield_atrium' && (
+        <GrandLibraryHallMesh
+          theme={theme}
+          libraryMaterials={libraryMaterials}
+          worldMaterials={worldBundle}
+        />
+      )}
+
       {/* Merged Biome Terrain, Streets, Bridge, Water & Vault Glass */}
       {archGeometries.ground.attributes.position && (
         <mesh geometry={archGeometries.ground} material={wm.ground} receiveShadow />
@@ -222,6 +242,9 @@ export function WorldBiomeMesh({
       {archGeometries.glassDome && (
         <mesh geometry={archGeometries.glassDome} material={wm.glassDome} />
       )}
+      {archGeometries.brassTrim.attributes.position && (
+        <mesh geometry={archGeometries.brassTrim} material={lm.brassTrim} />
+      )}
 
       {/* Rotated Grand Bookcases, Twin Brass Sconce Lamps & Batched Shelf Nameplates */}
       {floor.bookcases.length > 0 && (
@@ -229,7 +252,6 @@ export function WorldBiomeMesh({
           <mesh geometry={archGeometries.woodBackPanel} material={lm.woodBackPanel} receiveShadow />
           <mesh geometry={archGeometries.woodCabinet} material={lm.woodCabinet} castShadow receiveShadow />
           <mesh geometry={archGeometries.woodCrown} material={lm.woodCrown} receiveShadow />
-          <mesh geometry={archGeometries.brassTrim} material={lm.brassTrim} />
           {archGeometries.bookcaseLampGlow.attributes.position && (
             <mesh geometry={archGeometries.bookcaseLampGlow} material={lm.lanternGlow} />
           )}

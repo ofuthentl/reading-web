@@ -278,39 +278,21 @@ function buildStarfieldTerrain(
   plaza.push(medallion);
   plaza.push(createScaledBox(15.0, 1.8, 6.5, 0, 0.9, -20.75, 0.16));
 
-  // Translucent glass staircase steps + brass handrails
+  // Translucent glass staircase steps + upper terrace ledges & brass stair handrails
+  // (Perimeter two-story bookshelves, mezzanine balconies, stained-glass windows & vaulted ribs
+  // are rendered by `GrandLibraryHallMesh.tsx` so Floor 3 always feels like a true Grand Library.)
   const ramp = floor.surfaces.find((s) => s.kind === 'ramp');
   if (ramp && ramp.kind === 'ramp') addSteppedRamp(glass, ramp, 12, 0.35);
   stone.push(
     createScaledBox(4.5, 1.85, 0.45, -5.25, 0.92, -17.5, 0.35),
     createScaledBox(4.5, 1.85, 0.45, 5.25, 0.92, -17.5, 0.35),
-    // Perimeter architectural atrium base walls & beveled corners
-    createScaledBox(39.4, 9.5, 0.4, 0, 4.75, 20.1, 0.22),
-    createScaledBox(39.4, 9.5, 0.4, 0, 4.75, -24.6, 0.22),
-    createScaledBox(0.4, 9.5, 45.0, -19.6, 4.75, -2.25, 0.22),
-    createScaledBox(0.4, 9.5, 45.0, 19.6, 4.75, -2.25, 0.22),
-    createScaledBox(9.2, 9.5, 0.55, -17.0, 4.75, 17.0, 0.25, Math.PI / 4),
-    createScaledBox(9.2, 9.5, 0.55, 17.0, 4.75, 17.0, 0.25, -Math.PI / 4),
-    createScaledBox(9.2, 9.5, 0.55, -17.0, 4.75, -15.0, 0.25, -Math.PI / 4),
-    createScaledBox(9.2, 9.5, 0.55, 17.0, 4.75, -15.0, 0.25, Math.PI / 4),
   );
-  // Starfield soaring arched steel/brass vault ribs & overhead glass skylight canopy
-  for (let z = -16; z <= 16; z += 8) {
-    brass.push(
-      createScaledBox(39.0, 0.28, 0.28, 0, 9.4, z, 0.5),
-      createScaledBox(36.0, 0.22, 0.22, 0, 11.4, z, 0.5),
-    );
-  }
   brass.push(
     createScaledBox(0.14, 0.9, 5.6, -3.15, 1.35, -14.75, 0.5),
     createScaledBox(0.14, 0.9, 5.6, 3.15, 1.35, -14.75, 0.5),
     createScaledBox(0.14, 0.95, 6.5, -7.55, 2.28, -20.75, 0.5),
     createScaledBox(0.14, 0.95, 6.5, 7.55, 2.28, -20.75, 0.5),
   );
-  const skylight = new THREE.PlaneGeometry(36, 40);
-  skylight.rotateX(Math.PI / 2);
-  skylight.translate(0, 11.55, -1.5);
-  glass.push(skylight);
 }
 
 function buildStarlightRuinsTerrain(

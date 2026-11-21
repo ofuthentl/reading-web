@@ -41,8 +41,8 @@ export const BIOME_CATALOG: Record<BiomeId, BiomeMeta> = {
   },
   starfield_atrium: {
     id: 'starfield_atrium',
-    label: 'Đại sảnh Kính Starfield',
-    subtitle: 'Mái vòm kính cao vút & vòng cung tháp kệ cong',
+    label: 'Đại Thư Viện Starfield',
+    subtitle: 'Hai tầng kệ gỗ mái vòm kính, đèn chùm đồng & thảm hoàng gia',
     particleKind: 'dust_motes',
     hasWater: false,
   },
@@ -226,7 +226,6 @@ function buildTownBlueprint(): BiomeBlueprint3D {
           { x: 1.35, y: 0, z: -1.5, pauseSec: 3.5, facingYaw: -Math.PI / 2 },
         ],
       ),
-      npc('npc-town-yui', 'Bé Yui', 'librarian', 'yui', [1.8, 0, 14.5], -0.45, 'Papa! Con đã đánh dấu sẵn tiến độ đọc trên thanh tầng phía trên — đọc đủ mốc là mở được Cửa Phòng Boss ngay!', '#f472b6'),
     ],
     walkCheckpoints: [[0, 18.0], [0, 8.0], [0, 0.0], [0, -10.0], [0, -17.0], [0, -21.8]],
   };
@@ -307,7 +306,6 @@ function buildSakuraBlueprint(): BiomeBlueprint3D {
           { x: -0.5, y: 0, z: -14.6, pauseSec: 3.5, facingYaw: 0 },
         ],
       ),
-      npc('npc-sakura-yui', 'Bé Yui', 'librarian', 'yui', [2.6, 0, 9.2], -0.55, 'Cổng Torii đỏ đẹp quá Papa ơi! Qua cầu gỗ là tới khu đền sách hoa anh đào đó!', '#f472b6'),
     ],
     walkCheckpoints: [[0, 14.0], [0, 5.0], [0, 0.0], [0, -5.0], [0, -11.5], [0, -17.2], [0, -20.0], [0, -26.2]],
   };
@@ -391,7 +389,7 @@ function buildStarfieldBlueprint(): BiomeBlueprint3D {
           { x: 0, y: 0, z: -8.2, pauseSec: 3.5, facingYaw: 0 },
         ],
       ),
-      npc('npc-sf-yui', 'Bé Yui', 'librarian', 'yui', [2.4, 0, 7.6], -0.5, 'Ánh nắng qua mái vòm kính chiếu sáng rực cả đại sảnh luôn kìa!', '#34d399'),
+      npc('npc-sf-leafa', 'Học viên Silica', 'librarian', 'schoolgirl', [6.2, 0, 8.2], -0.6, 'Hai tầng tủ sách gỗ óc chó dưới mái vòm kính đèn chùm này ấm cúng đến mức chỉ muốn đọc mãi!', '#34d399'),
     ],
     walkCheckpoints: [[0, 14.0], [0, 4.0], [0, -6.0], [0, -12.0], [0, -15.0], [0, -21.5]],
   };
@@ -467,7 +465,6 @@ function buildStarlightRuinsBlueprint(): BiomeBlueprint3D {
           { x: 3.2, y: 0, z: 3.5, pauseSec: 3.5, facingYaw: -Math.PI / 2 },
         ],
       ),
-      npc('npc-ruins-yui', 'Bé Yui', 'librarian', 'yui', [-3.0, 0, 8.8], 0.55, 'Con thấy đom đóm bay quanh các cột pha lê cổ đại đẹp lắm luôn!', '#f472b6'),
       npc('npc-ruins-mint', 'Lữ khách Mint', 'librarian', 'mint', [4.5, 0, -10.5], -0.6, 'Không gian hồ đêm sao này đọc tiểu thuyết kỳ ảo cực kỳ cuốn!', '#c084fc'),
     ],
     walkCheckpoints: [[0, 13.5], [0, 4.0], [0, -6.0], [0, -15.5], [0, -18.2], [0, -22.2], [0, -27.2]],

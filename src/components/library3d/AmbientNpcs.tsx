@@ -22,7 +22,6 @@ const NPC_WALK_SPEED = 1.05;
 
 const NPC_MODEL_META: Record<NpcModelKey, { url: string; targetHeight: number }> = {
   asuna: { url: `${BASE}models/npc-asuna.glb`, targetHeight: 1.66 },
-  yui: { url: `${BASE}models/npc-yui.glb`, targetHeight: 1.24 },
   maid: { url: `${BASE}models/npc-maid.glb`, targetHeight: 1.62 },
   zhongli: { url: `${BASE}models/npc-zhongli.glb`, targetHeight: 1.82 },
   schoolgirl: { url: `${BASE}models/npc-schoolgirl.glb`, targetHeight: 1.6 },
@@ -442,9 +441,8 @@ function SingleAmbientNpc({
 
 /**
  * Populates the active floor with skeletally animated / naturally posed anime `.glb` NPCs
- * (`asuna` real Mixamo `Idle` + `Walk` patrol, `yui` Mixamo `Idle`, `mint` live 24s clip,
- * `zhongli` & `schoolgirl` relaxed rigged Idle, `maid` naturally sculpted standing pose —
- * zero T-pose/A-pose and zero stiff sliding, `D-021`).
+ * (`asuna` real Mixamo `Idle` + `Walk` patrol, `mint` live 24s clip, `zhongli` & `schoolgirl`
+ * relaxed rigged Idle, `maid` naturally sculpted standing pose — zero T-pose/A-pose, `D-021`).
  */
 export function AmbientNpcs({
   floor,

@@ -44,7 +44,7 @@ export function getWorldBiomePalette(
       return {
         skyTop: '#080c1c', skyHorizon: '#1c2447', skyBottom: '#11162b',
         showStars: true, starDensity: 260, sunColor: '#dbeafe',
-        fogColor: '#141a33', fogNear: 24, fogFar: 64,
+        fogColor: '#141a33', fogNear: 48, fogFar: 225,
         hemiSky: '#8fa8e6', hemiGround: '#241c30', hemiIntensity: 0.72,
         sunIntensity: 0.85, sunPosition: [14, 22, 12], fillColor: '#f472b6', fillIntensity: 0.35,
         groundTint: '#32483b', plazaTint: '#6c6a7a', accentStone: '#4b4d63',
@@ -57,7 +57,7 @@ export function getWorldBiomePalette(
       return {
         skyTop: '#31255a', skyHorizon: '#e0896b', skyBottom: '#59334d',
         showStars: false, starDensity: 0, sunColor: '#ffd29d',
-        fogColor: '#8d5d6b', fogNear: 26, fogFar: 68,
+        fogColor: '#8d5d6b', fogNear: 50, fogFar: 235,
         hemiSky: '#f7b29c', hemiGround: '#4a353b', hemiIntensity: 0.92,
         sunIntensity: 1.25, sunPosition: [-16, 15, -12], fillColor: '#9ab6e8', fillIntensity: 0.45,
         groundTint: autumnShift ? '#8c7244' : '#5e7f52', plazaTint: '#b3a39a', accentStone: '#7d6e73',
@@ -69,7 +69,7 @@ export function getWorldBiomePalette(
     return {
       skyTop: '#5ca9e6', skyHorizon: '#d9eefc', skyBottom: '#b8d9c8',
       showStars: false, starDensity: 0, sunColor: '#fff6d6',
-      fogColor: '#d7eaf7', fogNear: 30, fogFar: 78,
+      fogColor: '#d7eaf7', fogNear: 56, fogFar: 250,
       hemiSky: '#eef7ff', hemiGround: '#789267', hemiIntensity: 1.15,
       sunIntensity: 1.55, sunPosition: [16, 26, 14], fillColor: '#ffd6e7', fillIntensity: 0.42,
       groundTint: autumnShift ? '#9ca658' : '#7fb069', plazaTint: '#d8d0c3', accentStone: '#99928c',
@@ -84,9 +84,9 @@ export function getWorldBiomePalette(
       return {
         skyTop: '#060914', skyHorizon: '#16203a', skyBottom: '#0d1324',
         showStars: true, starDensity: 240, sunColor: '#cfe2ff',
-        fogColor: '#11182c', fogNear: 24, fogFar: 62,
-        hemiSky: '#7e9ed8', hemiGround: '#2e2620', hemiIntensity: 0.78,
-        sunIntensity: 0.9, sunPosition: [10, 26, 10], fillColor: '#fbbf24', fillIntensity: 0.48,
+        fogColor: '#11182c', fogNear: 42, fogFar: 185,
+        hemiSky: '#8fa9dc', hemiGround: '#4a3626', hemiIntensity: 0.92,
+        sunIntensity: 0.95, sunPosition: [10, 26, 10], fillColor: '#fbbf24', fillIntensity: 0.62,
         groundTint: '#786e66', plazaTint: '#8a8278', accentStone: '#4b556b',
         foliagePrimary: '#38bdf8', foliageSecondary: '#93c5fd',
         waterColor: '#1e3a5f', portalGlow: '#60a5fa', lampGlow: '#ffd580', lampEmissiveIntensity: 1.65,
@@ -97,7 +97,7 @@ export function getWorldBiomePalette(
       return {
         skyTop: '#263357', skyHorizon: '#d99a6c', skyBottom: '#3e3545',
         showStars: false, starDensity: 0, sunColor: '#ffe0a8',
-        fogColor: '#6f5c63', fogNear: 26, fogFar: 66,
+        fogColor: '#6f5c63', fogNear: 44, fogFar: 195,
         hemiSky: '#f5cfa0', hemiGround: '#59483b', hemiIntensity: 0.96,
         sunIntensity: 1.35, sunPosition: [-14, 22, 10], fillColor: '#90b4e8', fillIntensity: 0.5,
         groundTint: '#c2b3a1', plazaTint: '#cfc2b0', accentStone: '#8c837c',
@@ -109,7 +109,7 @@ export function getWorldBiomePalette(
     return {
       skyTop: '#64a8df', skyHorizon: '#f2f0e6', skyBottom: '#dfd5c5',
       showStars: false, starDensity: 0, sunColor: '#fff9e6',
-      fogColor: '#ede8dc', fogNear: 30, fogFar: 76,
+      fogColor: '#ede8dc', fogNear: 48, fogFar: 215,
       hemiSky: '#ffffff', hemiGround: '#b59d7d', hemiIntensity: 1.25,
       sunIntensity: 1.55, sunPosition: [12, 28, 12], fillColor: '#dbeafe', fillIntensity: 0.52,
       groundTint: '#e5ddd0', plazaTint: '#efe8db', accentStone: '#b6afa4',
@@ -129,8 +129,8 @@ export function getWorldBiomePalette(
       starDensity: isNight ? 360 : 220,
       sunColor: '#e0e7ff',
       fogColor: isNight ? '#10132b' : isDusk ? '#201f44' : '#354070',
-      fogNear: 24,
-      fogFar: 68,
+      fogNear: 48,
+      fogFar: 240,
       hemiSky: '#a5b4fc',
       hemiGround: '#241f3d',
       hemiIntensity: 0.78 * nightBoost + 0.22,
