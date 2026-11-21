@@ -7,7 +7,6 @@ import type { BiomePropPlacement3D, FloorWorldLayout3D, PlayerMotionState } from
 
 const BASE = import.meta.env.BASE_URL ?? '/';
 const ACTOR_MODEL_URLS = {
-  mountainStairs: `${BASE}models/mountain-stairs.glb`,
   dragonMascot: `${BASE}models/dragon-mascot.glb`,
   toriiGate: `${BASE}models/prop-torii-gate.glb`,
   mossyStairs: `${BASE}models/prop-mossy-stairs.glb`,
@@ -32,48 +31,6 @@ function polishGlbMesh(instance: THREE.Object3D, maxAniso: number, castShadow = 
       if (mat.normalMap) mat.normalMap.anisotropy = maxAniso;
     }
   });
-}
-
-export function MountainStairsGlb({
-  prop,
-  fallbackMaterial,
-  requestRender,
-}: {
-  prop: BiomePropPlacement3D;
-  fallbackMaterial: THREE.Material;
-  requestRender?: () => void;
-}) {
-  const { gl } = useThree();
-  const { template } = useLocalGlb(ACTOR_MODEL_URLS.mountainStairs);
-  const instance = useMemo(() => (template ? cloneGlbTemplate(template) : null), [template]);
-  const scale: [number, number, number] = prop.scaleVec ?? [prop.scale, prop.scale, prop.scale];
-
-  useEffect(() => {
-    if (!instance) return;
-    polishGlbMesh(instance, Math.min(8, gl.capabilities.getMaxAnisotropy()), true);
-    requestRender?.();
-  }, [instance, gl, requestRender]);
-
-  if (!instance || !template) {
-    return (
-      <mesh
-        position={[0, 1.15, prop.position[2]]}
-        rotation={[-0.42, 0, 0]}
-        material={fallbackMaterial}
-      >
-        <boxGeometry args={[3.5, 0.35, 5.8]} />
-      </mesh>
-    );
-  }
-  const groundedY = prop.position[1] - template.bbox.min[1] * scale[1];
-  return (
-    <primitive
-      object={instance}
-      position={[prop.position[0], groundedY, prop.position[2]]}
-      rotation={[0, prop.rotationY, 0]}
-      scale={scale}
-    />
-  );
 }
 
 export function ToriiGateGlb({

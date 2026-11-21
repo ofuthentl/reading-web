@@ -27,3 +27,6 @@ dist-ssr
 .wrangler/
 dist/
 glb/
+library_sample/
+*.mp4
+/image.png

@@ -153,11 +153,11 @@ export function attachLocalWoodAlbedo(
       tex.wrapT = THREE.RepeatWrapping;
       tex.anisotropy = 8;
       tex.needsUpdate = true;
-      onReady(tex);
       for (let i = 0; i < targets.length; i += 1) {
         targets[i].map = tex;
         targets[i].needsUpdate = true;
       }
+      onReady(tex);
     },
     undefined,
     () => undefined,

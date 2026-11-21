@@ -189,24 +189,9 @@ export default function App() {
     );
   }
 
-  if (reader.activeBook && reader.parsedBook) {
-    return (
-      <>
-        <ReaderView
-          key={reader.activeBook.id}
-          book={reader.activeBook}
-          parsedBook={reader.parsedBook}
-          loadedFromCache={reader.loadedFromCache}
-          initialProgress={progress[reader.activeBook.id]}
-          settings={reader.settings}
-          onUpdateSettings={reader.updateSettings}
-          onSaveProgress={reader.handleSaveProgress}
-          onClose={reader.closeBook}
-        />
-        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-      </>
-    );
-  }
+  const isReaderOpen = Boolean(reader.activeBook && reader.parsedBook);
+  const is3DPaused = Boolean(reader.openingBook || isReaderOpen || modal.kind !== 'none');
+  const is3DDimmed = Boolean(reader.openingBook || isReaderOpen);
 
   const renamingShelfName = modal.kind === 'rename-shelf' ? modal.shelfName : null;
   const renamingShelfKey = renamingShelfName?.trim().toLocaleLowerCase('vi') ?? null;
@@ -245,11 +230,27 @@ export default function App() {
           {...sharedLibraryProps}
           retryKey={retryKey}
           prefersReducedMotion={prefersReducedMotion}
-          paused={Boolean(reader.openingBook)}
+          paused={is3DPaused}
+          dimmed={is3DDimmed}
           onFallbackTo2D={handleFallbackTo2D}
         />
       ) : (
-        <Library2DView {...sharedLibraryProps} />
+        !isReaderOpen && <Library2DView {...sharedLibraryProps} />
+      )}
+      {reader.activeBook && reader.parsedBook && (
+        <div className="fixed inset-0 z-40">
+          <ReaderView
+            key={reader.activeBook.id}
+            book={reader.activeBook}
+            parsedBook={reader.parsedBook}
+            loadedFromCache={reader.loadedFromCache}
+            initialProgress={progress[reader.activeBook.id]}
+            settings={reader.settings}
+            onUpdateSettings={reader.updateSettings}
+            onSaveProgress={reader.handleSaveProgress}
+            onClose={reader.closeBook}
+          />
+        </div>
       )}
       {modal.kind === 'upload' && (
         <UploadDropzone open books={books} storage={storage} onClose={closeModal} onBookUploaded={handleBookUploaded} onBookUpdated={handleBookUpdated} onApiError={handleApiError} onNotify={addToast} />

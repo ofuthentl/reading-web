@@ -144,7 +144,6 @@ export type BiomePropKind =
   | 'ruin_column'
   | 'atrium_column'
   | 'mascot_pedestal'
-  | 'mountain_stairs_glb'
   | 'torii_gate_glb'
   | 'mossy_stairs_glb'
   | 'boss_pedestal';

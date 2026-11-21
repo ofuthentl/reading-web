@@ -380,18 +380,6 @@ function drawNameplateCell(
   }
 }
 
-/** Generates a standalone procedural nameplate texture using system fonts (0 CDN). */
-export function createShelfNameplateTexture(
-  label: string,
-  theme: AppTheme,
-  bookCount?: number,
-): THREE.CanvasTexture {
-  const surface = createCanvas2D(512, 96);
-  if (!surface) return buildCanvasTexture(null, false, true);
-  drawNameplateCell(surface.ctx, 0, 0, 512, 96, label, getLibrary3DThemePalette(theme), bookCount);
-  return buildCanvasTexture(surface.canvas, false, true);
-}
-
 /**
  * Packs ALL shelf nameplates into ONE shared `CanvasTexture` atlas so even 50+ shelves
  * consume only 1 VRAM texture slot (keeping procedural textures <= 4 per D-013).
@@ -460,7 +448,10 @@ export function createShelfNameplateAtlas(
  * Creates the shared procedural material & texture bundle (3 VRAM textures: wood albedo,
  * wood bump, archival paper) with in-place theme switching and full GPU disposal.
  */
-export function createLibraryMaterialBundle(initialTheme: AppTheme): LibraryMaterialBundle {
+export function createLibraryMaterialBundle(
+  initialTheme: AppTheme,
+  onTextureReady?: () => void,
+): LibraryMaterialBundle {
   const woodAlbedo = createWoodAlbedoTexture();
   const woodBump = createWoodBumpTexture();
   const paper = createPaperGrainTexture();
@@ -519,6 +510,7 @@ export function createLibraryMaterialBundle(initialTheme: AppTheme): LibraryMate
     () => disposed,
     (tex) => {
       pbrWoodAlbedo = tex;
+      onTextureReady?.();
     },
   );
 
