@@ -188,8 +188,9 @@ function buildTownBlueprint(): BiomeBlueprint3D {
       cyl('town-tree-2', 'tree', -5.55, 13.4, 0.48, 0, 4.8, false),
       cyl('town-tree-3', 'tree', -5.45, 15.5, 0.48, 0, 4.8, false),
       box('town-barrels', 'wall', 4.65, 6.2, 2.7, 9.7, 0, 1.4, false),
-      // Interactive street stations & mascot pedestal
+      // Interactive street stations, reading bench & mascot pedestal
       box('town-reading-table', 'station', -3.05, -1.95, 10.25, 12.15, 0, 0.9, false),
+      box('town-reading-bench', 'station', -3.95, -3.35, 10.25, 12.15, 0, 0.9, false),
       box('town-librarian-desk', 'station', 1.95, 3.05, 3.45, 5.35, 0, 1.1, false),
       cyl('town-weather-pillar', 'station', -2.8, -18.2, 0.55, 0, 2.5, false),
       cyl('town-mascot-pedestal', 'pillar', 3.2, 1.5, 0.65, 0, 1.4, false),
@@ -208,8 +209,8 @@ function buildTownBlueprint(): BiomeBlueprint3D {
     ],
     npcs: [
       npc('npc-town-librarian', 'Thủ thư Maid', 'librarian', 'maid', [3.65, 0, 4.4], -Math.PI / 2, 'Chào mừng tới Đại lộ Khởi Đầu! Hãy ghé Bục Thủ thư bất cứ lúc nào để thêm sách mới.', '#38bdf8'),
-      npc('npc-town-reader', 'Học giả Zhongli', 'reader_sitting', 'zhongli', [-3.65, 0, 11.2], Math.PI / 2, 'Đọc đủ số tập hoặc số trang bất kỳ, ấn phong ấn Cửa Phòng Boss phía Bắc sẽ tự khắc khai mở.', '#f59e0b'),
-      npc('npc-town-asuna', 'Kiếm sĩ Asuna', 'librarian', 'asuna', [-2.6, 0, -4.8], Math.PI / 2, 'Hai bên đại lộ đá lát có 6 gian kệ sách sáng đèn, bấm vào bất kỳ cuốn nào để đọc ngay nhé!', '#f43f5e'),
+      npc('npc-town-reader', 'Học giả Zhongli', 'librarian', 'zhongli', [-2.6, 0, 12.85], 0.55, 'Đọc đủ số tập hoặc số trang bất kỳ, ấn phong ấn Cửa Phòng Boss phía Bắc sẽ tự khắc khai mở.', '#f59e0b'),
+      npc('npc-town-guide', 'Học viên Silica', 'librarian', 'schoolgirl', [-2.6, 0, -4.8], Math.PI / 2, 'Hai bên đại lộ đá lát có 6 gian kệ sách sáng đèn, bấm vào bất kỳ cuốn nào để đọc ngay nhé!', '#f43f5e'),
     ],
     walkCheckpoints: [[0, 18.0], [0, 8.0], [0, 0.0], [0, -10.0], [0, -17.0], [0, -21.8]],
   };
@@ -274,8 +275,8 @@ function buildSakuraBlueprint(): BiomeBlueprint3D {
     ],
     npcs: [
       npc('npc-sakura-librarian', 'Vu nữ Silica', 'librarian', 'schoolgirl', [4.2, 0, -10.5], -Math.PI * 0.3, 'Đi qua Cổng Torii đỏ và cầu gỗ vồng là lên tới Đỉnh Đền — nơi đặt Cửa Phòng Boss Tầng 2.', '#f472b6'),
-      npc('npc-sakura-reader', 'Độc giả Mint', 'reader_sitting', 'mint', [-6.5, 0, 11.8], Math.PI, 'Gió thổi cánh hoa anh đào rơi khắp mặt hồ — đọc light novel ở đây hết ý!', '#fb7185'),
-      npc('npc-sakura-asuna', 'Kiếm sĩ Asuna', 'librarian', 'asuna', [-4.5, 0, -13.4], Math.PI * 0.25, 'Phía trên bậc đá núi là Cửa Phòng Boss của Long Kỵ Sĩ Đền Đỏ!', '#22d3ee'),
+      npc('npc-sakura-reader', 'Độc giả Mint', 'librarian', 'mint', [-6.5, 0, 11.8], Math.PI, 'Gió thổi cánh hoa anh đào rơi khắp mặt hồ — đọc light novel ở đây hết ý!', '#fb7185'),
+      npc('npc-sakura-maid', 'Hầu gái Đền Đỏ', 'librarian', 'maid', [-4.5, 0, -13.4], Math.PI * 0.25, 'Phía trên bậc đá núi là Cửa Phòng Boss của Long Kỵ Sĩ Đền Đỏ!', '#22d3ee'),
     ],
     walkCheckpoints: [[0, 14.0], [0, 5.0], [0, 0.0], [0, -5.0], [0, -11.5], [0, -17.2], [0, -20.0], [0, -26.2]],
   };
@@ -342,8 +343,8 @@ function buildStarfieldBlueprint(): BiomeBlueprint3D {
       prop('p-bench-2', 'bench', [5.2, 0, -4.5]),
     ],
     npcs: [
-      npc('npc-sf-librarian', 'Thủ thư Alice', 'librarian', 'maid', [5.2, 0, 0.8], Math.PI, 'Đại sảnh Starfield gom ánh sáng tự nhiên xuống toàn bộ vòng kệ cong hai tầng.', '#eab308'),
-      npc('npc-sf-reader', 'Học giả Zhongli', 'reader_sitting', 'zhongli', [-5.2, 0, 3.9], Math.PI, 'Không gian rộng rãi thế này giúp tập trung đọc liền mạch hàng chục chương!', '#60a5fa'),
+      npc('npc-sf-librarian', 'Thủ thư Alice', 'librarian', 'maid', [5.2, 0, 0.8], 0, 'Đại sảnh Starfield gom ánh sáng tự nhiên xuống toàn bộ vòng kệ cong hai tầng.', '#eab308'),
+      npc('npc-sf-reader', 'Học giả Zhongli', 'librarian', 'zhongli', [-3.4, 0, 2.2], Math.PI * 0.35, 'Không gian rộng rãi thế này giúp tập trung đọc liền mạch hàng chục chương!', '#60a5fa'),
       npc('npc-sf-leafa', 'Học viên Leafa', 'librarian', 'schoolgirl', [-8.6, 0, -3.5], Math.PI * 0.4, 'Đi dọc vòng cung kệ sách là thấy đủ mọi bộ truyện yêu thích.', '#34d399'),
     ],
     walkCheckpoints: [[0, 14.0], [0, 4.0], [0, -6.0], [0, -12.0], [0, -15.0], [0, -21.5]],
@@ -403,8 +404,8 @@ function buildStarlightRuinsBlueprint(): BiomeBlueprint3D {
       prop('p-stairs-glb', 'mountain_stairs_glb', [MOUNTAIN_STAIRS_OFFSET_X, 0, -18.53], 0, 1, MOUNTAIN_STAIRS_SCALE_VEC),
     ],
     npcs: [
-      npc('npc-ruins-keeper', 'Học giả Zhongli', 'librarian', 'zhongli', [5.8, 0, 7.8], -Math.PI * 0.7, 'Phía trên bậc đá cổ là Cửa Phòng Boss của Phong Long Stormterror — hãy tích luỹ đủ trang sách để mở phong ấn!', '#a78bfa'),
-      npc('npc-ruins-explorer', 'Kiếm sĩ Asuna', 'librarian', 'asuna', [-5.2, 0, -2.5], Math.PI * 0.4, 'Đêm sao trên phế tích cổ Aincrad yên tĩnh đến mức nghe rõ tiếng lật trang.', '#c084fc'),
+      npc('npc-ruins-keeper', 'Học giả Zhongli', 'librarian', 'zhongli', [5.8, 0, 7.8], -0.25, 'Phía trên bậc đá cổ là Cửa Phòng Boss của Phong Long Stormterror — hãy tích luỹ đủ trang sách để mở phong ấn!', '#a78bfa'),
+      npc('npc-ruins-mint', 'Lữ khách Mint', 'librarian', 'mint', [-5.2, 0, -2.5], Math.PI * 0.4, 'Đêm sao trên phế tích cổ Aincrad yên tĩnh đến mức nghe rõ tiếng lật trang.', '#c084fc'),
     ],
     walkCheckpoints: [[0, 13.5], [0, 4.0], [0, -6.0], [0, -15.5], [0, -18.2], [0, -22.2], [0, -27.2]],
   };

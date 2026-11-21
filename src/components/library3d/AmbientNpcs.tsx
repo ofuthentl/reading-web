@@ -20,7 +20,6 @@ const BASE = import.meta.env.BASE_URL ?? '/';
 const PLAYER_GREET_RADIUS = 3.6;
 
 const NPC_MODEL_META: Record<NpcModelKey, { url: string; targetHeight: number }> = {
-  asuna: { url: `${BASE}models/npc-asuna.glb`, targetHeight: 1.66 },
   maid: { url: `${BASE}models/npc-maid.glb`, targetHeight: 1.62 },
   zhongli: { url: `${BASE}models/npc-zhongli.glb`, targetHeight: 1.82 },
   schoolgirl: { url: `${BASE}models/npc-schoolgirl.glb`, targetHeight: 1.6 },
@@ -185,7 +184,7 @@ function SingleAmbientNpc({
   onSelectNpc: (npc: WorldNpcSpec3D) => void;
 }) {
   const { gl, invalidate } = useThree();
-  const modelKey: NpcModelKey = spec.modelKey ?? 'asuna';
+  const modelKey: NpcModelKey = spec.modelKey ?? 'schoolgirl';
   const meta = NPC_MODEL_META[modelKey];
   const { template } = useLocalGlb(meta.url);
 
@@ -333,7 +332,7 @@ function SingleAmbientNpc({
         );
       }
     } else if (modelHolderRef.current) {
-      // Ultra-subtle natural standing breath for posed static models (Asuna, Maid)
+      // Ultra-subtle natural standing breath for posed static models (Maid)
       const breathe = 1 + Math.sin(cycleRef.current * 1.75) * 0.006;
       modelHolderRef.current.scale.set(prepared.scale, prepared.scale * breathe, prepared.scale);
     }
@@ -376,8 +375,8 @@ function SingleAmbientNpc({
 
 /**
  * Populates the active floor with naturally posed / skeletally animated anime `.glb` NPCs
- * (`mint` live 24s clip, `zhongli` & `schoolgirl` relaxed rigged Idle, `asuna` & `maid`
- * standing at bookstalls/desks — zero T-pose and zero stiff sliding, `D-021`).
+ * (`mint` live 24s clip, `zhongli` & `schoolgirl` relaxed rigged Idle, `maid` naturally sculpted
+ * standing pose — zero T-pose/A-pose and zero stiff sliding, `D-021`).
  */
 export function AmbientNpcs({
   floor,
