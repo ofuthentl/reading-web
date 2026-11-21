@@ -2,13 +2,16 @@ import {
   BookOpen,
   CheckSquare,
   HardDrive,
+  Home,
+  Library,
   LogOut,
   RefreshCw,
   Upload,
 } from 'lucide-react';
-import type { StorageStats } from '@/types';
+import type { LibraryTab, StorageStats, ViewMode } from '@/types';
 import { HARD_LIMIT_BYTES, formatBytes, isCloudMode } from '@/lib/api';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { ViewModeToggle } from '@/components/ViewModeToggle';
 import type { AppTheme } from '@/hooks/useTheme';
 
 interface LibraryHeaderProps {
@@ -18,12 +21,23 @@ interface LibraryHeaderProps {
   theme: AppTheme;
   selectionMode: boolean;
   selectedCount: number;
+  showSelectionToggle?: boolean;
+  activeTab?: LibraryTab;
+  onChangeTab?: (tab: LibraryTab) => void;
+  canUse3D?: boolean;
+  viewMode?: ViewMode;
+  onChangeViewMode?: (mode: ViewMode) => void;
   onCycleTheme: (origin?: { x: number; y: number }) => void;
   onUploadClick: () => void;
   onToggleSelectionMode: () => void;
   onRefresh: () => void;
   onLogout: () => void;
 }
+
+const NAV_TABS: Array<{ id: LibraryTab; label: string; icon: typeof Home }> = [
+  { id: 'home', label: 'Trang chủ', icon: Home },
+  { id: 'library', label: 'Thư viện', icon: Library },
+];
 
 export function LibraryHeader({
   storage,
@@ -32,6 +46,12 @@ export function LibraryHeader({
   theme,
   selectionMode,
   selectedCount,
+  showSelectionToggle = true,
+  activeTab,
+  onChangeTab,
+  canUse3D = false,
+  viewMode = '2d',
+  onChangeViewMode,
   onCycleTheme,
   onUploadClick,
   onToggleSelectionMode,
@@ -41,6 +61,7 @@ export function LibraryHeader({
   const usedBytes = storage?.usedBytes ?? 0;
   const limitBytes = storage?.limitBytes || HARD_LIMIT_BYTES;
   const usagePercent = Math.min(100, Math.max(0, (usedBytes / limitBytes) * 100));
+  const showTabs = Boolean(activeTab && onChangeTab);
 
   const barToneClass =
     usagePercent >= 90
@@ -49,34 +70,70 @@ export function LibraryHeader({
         ? 'bg-amber-700 dark:bg-amber-500'
         : 'bg-accent';
 
+  const renderTabButtons = (compact: boolean) =>
+    NAV_TABS.map(({ id, label, icon: Icon }) => {
+      const isActive = activeTab === id;
+      return (
+        <button
+          key={id}
+          type="button"
+          aria-current={isActive ? 'page' : undefined}
+          onClick={() => onChangeTab?.(id)}
+          className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 font-medium transition-colors ${
+            compact ? 'justify-center text-xs' : 'text-sm'
+          } ${
+            isActive
+              ? 'bg-surface text-ink shadow-sm ring-1 ring-line-strong/80'
+              : 'text-ink-muted hover:bg-subtle/70 hover:text-ink'
+          }`}
+        >
+          <Icon className={`${compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} ${isActive ? 'text-accent' : ''}`} />
+          <span>{label}</span>
+        </button>
+      );
+    });
+
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur-sm transition-colors duration-200 dark:shadow-[0_1px_0_rgba(241,241,241,0.04)]">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-        {/* Thương hiệu */}
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
-            <BookOpen className="h-5 w-5" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="truncate font-display text-lg font-semibold tracking-tight text-ink sm:text-xl">
-                Ofu&apos;s Library
-              </h1>
-              {!isCloudMode && (
-                <span className="shrink-0 rounded-md border border-line bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
-                  Local Dev
-                </span>
-              )}
+        {/* Thương hiệu + Thanh tab điều hướng (Desktop) */}
+        <div className="flex min-w-0 shrink-0 items-center gap-3 lg:gap-4">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
+              <BookOpen className="h-5 w-5" />
             </div>
-            <p className="hidden text-xs text-ink-muted sm:block">
-              {bookCount} cuốn sách trong kho
-            </p>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="truncate whitespace-nowrap font-display text-lg font-semibold tracking-tight text-ink sm:text-xl">
+                  Ofu&apos;s Library
+                </h1>
+                {!isCloudMode && (
+                  <span className="hidden shrink-0 rounded-md border border-line bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-ink-muted sm:inline-flex">
+                    Local Dev
+                  </span>
+                )}
+              </div>
+              <p className="hidden text-xs text-ink-muted sm:block">
+                {bookCount} cuốn sách trong kho
+              </p>
+            </div>
           </div>
+
+          {showTabs && onChangeTab && (
+            <nav
+              aria-label="Điều hướng thư viện"
+              className="hidden shrink-0 items-center gap-1 rounded-xl border border-line bg-canvas p-1 md:flex"
+            >
+              {renderTabButtons(false)}
+            </nav>
+          )}
         </div>
 
         {/* Thanh dung lượng (Desktop) */}
         <div
-          className="hidden min-w-[210px] max-w-xs flex-1 flex-col gap-1.5 rounded-xl border border-line bg-canvas px-3 py-2 lg:flex"
+          className={`hidden min-w-[160px] max-w-[240px] flex-1 flex-col gap-1.5 rounded-xl border border-line bg-canvas px-3 py-2 ${
+            showTabs ? 'xl:flex' : 'lg:flex'
+          }`}
           title={`Đã dùng ${formatBytes(usedBytes)} / ${formatBytes(limitBytes)}`}
         >
           <div className="flex items-center justify-between gap-2 text-xs">
@@ -108,27 +165,37 @@ export function LibraryHeader({
             <span className="hidden sm:inline">Tải sách</span>
           </button>
 
-          <button
-            type="button"
-            onClick={onToggleSelectionMode}
-            aria-pressed={selectionMode}
-            aria-label={selectionMode ? 'Thoát chế độ chọn nhiều' : 'Chọn nhiều sách'}
-            title={selectionMode ? 'Thoát chế độ chọn' : 'Chọn nhiều sách'}
-            className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-sm font-medium transition-colors ${
-              selectionMode
-                ? 'border-accent bg-accent/15 text-accent'
-                : 'border-line bg-canvas text-ink-muted hover:border-line-strong hover:bg-subtle hover:text-ink'
-            }`}
-          >
-            <CheckSquare className="h-4 w-4" />
-            <span className="hidden md:inline">
-              {selectionMode
-                ? selectedCount > 0
-                  ? `Đang chọn (${selectedCount})`
-                  : 'Đang chọn'
-                : 'Chọn'}
-            </span>
-          </button>
+          {showSelectionToggle && (
+            <button
+              type="button"
+              onClick={onToggleSelectionMode}
+              aria-pressed={selectionMode}
+              aria-label={selectionMode ? 'Thoát chế độ chọn nhiều' : 'Chọn nhiều sách'}
+              title={selectionMode ? 'Thoát chế độ chọn' : 'Chọn nhiều sách'}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-sm font-medium transition-colors ${
+                selectionMode
+                  ? 'border-accent bg-accent/15 text-accent'
+                  : 'border-line bg-canvas text-ink-muted hover:border-line-strong hover:bg-subtle hover:text-ink'
+              }`}
+            >
+              <CheckSquare className="h-4 w-4" />
+              <span className="hidden md:inline">
+                {selectionMode
+                  ? selectedCount > 0
+                    ? `Đang chọn (${selectedCount})`
+                    : 'Đang chọn'
+                  : 'Chọn'}
+              </span>
+            </button>
+          )}
+
+          {canUse3D && onChangeViewMode && (
+            <ViewModeToggle
+              canUse3D={canUse3D}
+              viewMode={viewMode}
+              onChange={onChangeViewMode}
+            />
+          )}
 
           <ThemeToggle theme={theme} onCycle={onCycleTheme} />
 
@@ -155,8 +222,24 @@ export function LibraryHeader({
         </div>
       </div>
 
+      {/* Thanh tab điều hướng gọn cho Mobile */}
+      {showTabs && onChangeTab && (
+        <nav
+          aria-label="Điều hướng thư viện"
+          className="border-t border-line/70 bg-surface/90 px-4 py-1.5 md:hidden"
+        >
+          <div className="mx-auto grid max-w-7xl grid-cols-2 gap-1.5 rounded-xl border border-line bg-canvas p-1">
+            {renderTabButtons(true)}
+          </div>
+        </nav>
+      )}
+
       {/* Thanh dung lượng gọn cho Mobile / Tablet */}
-      <div className="border-t border-line/70 bg-canvas/60 px-4 py-2 lg:hidden">
+      <div
+        className={`border-t border-line/70 bg-canvas/60 px-4 py-2 ${
+          showTabs ? 'xl:hidden' : 'lg:hidden'
+        }`}
+      >
         <div className="mx-auto flex max-w-7xl items-center gap-3 text-xs">
           <span className="inline-flex shrink-0 items-center gap-1.5 text-ink-muted">
             <HardDrive className="h-3.5 w-3.5 text-accent" />

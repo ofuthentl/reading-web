@@ -177,6 +177,9 @@ export function isToggleFlagEnabled(rPr: Element, tagName: string): boolean {
   return val !== '0' && val !== 'false' && val !== 'none';
 }
 
+export const RASTER_IMAGE_EXT_RE = /\.(?:avif|bmp|gif|jfif|jpe?g|png|webp)$/i;
+export const RENDERABLE_IMAGE_EXT_RE = /\.(?:avif|bmp|gif|jfif|jpe?g|png|svg|webp)$/i;
+
 export function findImageRelIds(node: Element): string[] {
   const ids: string[] = [];
   const walk = (el: Element) => {
@@ -198,4 +201,66 @@ export function findImageRelIds(node: Element): string[] {
   };
   walk(node);
   return ids;
+}
+
+/**
+ * Collects candidate cover image paths in priority order:
+ * 1. Raster images in actual reading appearance order from word/document.xml
+ * 2. Remaining raster images under word/media/* (or media/*) sorted naturally
+ * 3. docProps/thumbnail.* as a last resort (often blank white in exported DOCX files)
+ */
+export async function collectDocxCoverCandidates(zip: JSZip): Promise<string[]> {
+  const seen = new Set<string>();
+  const candidates: string[] = [];
+  const pushCandidate = (zipPath: string) => {
+    if (seen.has(zipPath) || !RASTER_IMAGE_EXT_RE.test(zipPath)) return;
+    const entry = zip.file(zipPath);
+    if (!entry || entry.dir) return;
+    seen.add(zipPath);
+    candidates.push(zipPath);
+  };
+
+  const [rels, documentXml] = await Promise.all([
+    parseRelationships(zip, 'word/_rels/document.xml.rels'),
+    zip.file('word/document.xml')?.async('string'),
+  ]);
+
+  if (documentXml && rels.size > 0) {
+    const doc = new DOMParser().parseFromString(documentXml, 'application/xml');
+    if (doc.documentElement) {
+      for (const relId of findImageRelIds(doc.documentElement)) {
+        const rel = rels.get(relId);
+        if (rel && !rel.external) {
+          pushCandidate(resolveDocxPath('word', rel.target));
+        }
+        if (candidates.length >= 6) break;
+      }
+    }
+  }
+
+  const mediaEntries = Object.values(zip.files)
+    .filter(
+      (entry) =>
+        !entry.dir &&
+        /^(?:word\/)?media\//i.test(entry.name) &&
+        RASTER_IMAGE_EXT_RE.test(entry.name),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+  for (const entry of mediaEntries) {
+    pushCandidate(entry.name);
+    if (candidates.length >= 8) break;
+  }
+
+  const thumbEntries = Object.values(zip.files).filter(
+    (entry) =>
+      !entry.dir &&
+      /^docProps\/thumbnail\.[^.]+$/i.test(entry.name) &&
+      RASTER_IMAGE_EXT_RE.test(entry.name),
+  );
+  for (const entry of thumbEntries) {
+    pushCandidate(entry.name);
+  }
+
+  return candidates;
 }

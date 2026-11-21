@@ -121,9 +121,9 @@ export function extractSeriesName(title: string): string | null {
       /\s*(?:\(\s*0*\d{1,3}(?:\s*[-–~.]\s*\d{1,3})?\s*\)|\[\s*0*\d{1,3}(?:\s*[-–~.]\s*\d{1,3})?\s*\])\s*$/i,
       '',
     )
-    // 4. Số tập đứng cuối cách khoảng trắng (`SAO 01`, `SAO 1`, tránh cắt số >= 3 chữ số không có 0 đầu như `Fahrenheit 451`)
+    // 4. Số tập đứng cuối cách khoảng trắng (`SAO 01`, `SAO 1`, `SAO 6.5`, tránh cắt số >= 3 chữ số không có 0 đầu như `Fahrenheit 451`)
     .replace(
-      /\s+(?:0+\d{1,3}|[1-9]\d?)(?:\s*\([^)]*\)|\s*\[[^\]]*\])?\s*$/i,
+      /\s+(?:0+\d{1,3}|[1-9]\d?)(?:\.\d+)?(?:\s*\([^)]*\)|\s*\[[^\]]*\])?\s*$/i,
       '',
     );
 

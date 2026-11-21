@@ -26,3 +26,4 @@ dist-ssr
 .dev.vars
 .wrangler/
 dist/
+glb/

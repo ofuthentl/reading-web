@@ -1,42 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, CheckCircle2, Pencil } from 'lucide-react';
 import type { Book, ReadingProgress } from '@/types';
+import { pickClothCoverColor } from '@/lib/bookMetadata';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
-
-const CLOTH_COVER_PALETTE = [
-  '#5a2b27', // Oxblood
-  '#2d4337', // Forest Pine
-  '#6b492a', // Saddle Bronze
-  '#333d45', // Prussian Slate
-  '#4f3829', // Walnut Leather
-  '#56323c', // Antique Plum
-  '#70532c', // Ochre Cloth
-  '#3a473d', // Sage Moss
-];
-
-function pickClothCoverColor(seed: string): string {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  }
-  return CLOTH_COVER_PALETTE[hash % CLOTH_COVER_PALETTE.length];
-}
-
-function getProgressPercent(book: Book, progress?: ReadingProgress): number | null {
-  if (!progress) return null;
-  if (progress.completed) return 100;
-  const clamped = Math.min(1, Math.max(0, progress.scrollRatio || 0));
-  if (progress.totalChapters && progress.totalChapters > 0) {
-    if (book.file_type === 'pdf') {
-      return Math.min(100, Math.round(((progress.chapterIndex + 1) / progress.totalChapters) * 100));
-    }
-    return Math.min(
-      100,
-      Math.round(((progress.chapterIndex + clamped) / progress.totalChapters) * 100),
-    );
-  }
-  return Math.round(clamped * 100);
-}
+import { computeBookProgressPercent } from '@/hooks/useLibraryViewState';
 
 function getProgressChapterLabel(book: Book, progress?: ReadingProgress): string {
   if (!progress) return '';
@@ -111,7 +78,7 @@ export function BookCard({
   const coverUrl = useCoverUrl(book.cover_key, isNearViewport);
   const showImage = Boolean(coverUrl && !imgFailed);
   const clothColor = pickClothCoverColor(`${book.id}-${book.title}`);
-  const percent = getProgressPercent(book, progress);
+  const percent = computeBookProgressPercent(book, progress);
   const chapterLabel = getProgressChapterLabel(book, progress);
   const isCompleted = Boolean(progress?.completed);
 
