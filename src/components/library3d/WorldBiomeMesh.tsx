@@ -18,6 +18,7 @@ import {
 } from './worldGeometryBuilder';
 import { createProceduralSkyEnvironment } from './skyEnvironment';
 import { TownWorldGlb } from './TownWorldGlb';
+import { BossArenaMesh } from './BossArenaMesh';
 
 export interface WorldBiomeMeshProps {
   floor: FloorWorldLayout3D;
@@ -139,6 +140,18 @@ export function WorldBiomeMesh({
   const wm = worldBundle.materials;
   const lm = libraryMaterials.materials;
   const portalUp = floor.stations.find((s) => s.kind === 'portal_up');
+
+  if (floor.isBossRoom) {
+    return (
+      <BossArenaMesh
+        floor={floor}
+        worldMaterials={worldBundle}
+        paused={paused}
+        prefersReducedMotion={prefersReducedMotion}
+        requestRender={requestRender}
+      />
+    );
+  }
 
   return (
     <group name={`world-biome-floor-${floor.floorNumber}`}>

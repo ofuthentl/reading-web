@@ -93,7 +93,9 @@ export type WorldStationKind =
   | 'librarian_desk'
   | 'weather_shrine'
   | 'portal_up'
-  | 'portal_down';
+  | 'portal_down'
+  | 'boss_door'
+  | 'boss_exit';
 
 export interface WorldStation3D {
   id: string;
@@ -108,7 +110,7 @@ export interface WorldStation3D {
 
 export type NpcRole = 'librarian' | 'reader_sitting' | 'stroller';
 
-export type NpcModelKey = 'yui' | 'asuna' | 'maid' | 'zhongli' | 'schoolgirl' | 'mint';
+export type NpcModelKey = 'asuna' | 'maid' | 'zhongli' | 'schoolgirl' | 'mint';
 
 export interface NpcWaypoint3D {
   x: number;
@@ -143,9 +145,20 @@ export type BiomePropKind =
   | 'atrium_column'
   | 'mascot_pedestal'
   | 'mountain_stairs_glb'
-  | 'vine_glb'
+  | 'torii_gate_glb'
   | 'mossy_stairs_glb'
   | 'boss_pedestal';
+
+export interface BossRoomUnlockStatus {
+  floorNumber: number;
+  unlocked: boolean;
+  completedBooks: number;
+  requiredBooks: number;
+  readPages: number;
+  requiredPages: number;
+  bossName: string;
+  summaryText: string;
+}
 
 export interface BiomePropPlacement3D {
   id: string;
@@ -247,6 +260,9 @@ export interface FloorWorldLayout3D {
   walkCheckpoints: Array<[number, number]>;
   hasPrevFloor: boolean;
   hasNextFloor: boolean;
+  /** True when rendering the dedicated 360° enclosed Boss Arena chamber for this floor */
+  isBossRoom?: boolean;
+  bossSourceFloorIndex?: number;
 }
 
 export interface TowerWorldLayout3D {

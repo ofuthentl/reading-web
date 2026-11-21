@@ -13,9 +13,9 @@ import { createScaledBox } from './worldGeometryBuilder';
 import type { FloorWorldLayout3D } from './worldTypes';
 import {
   DragonMascotGlb,
-  FloorBossSentinelGlb,
+  MossyStairsGlb,
   MountainStairsGlb,
-  StaticSceneryPropGlb,
+  ToriiGateGlb,
 } from './WorldGlbActors';
 
 export interface BiomePropsMeshProps {
@@ -23,6 +23,7 @@ export interface BiomePropsMeshProps {
   theme: AppTheme;
   libraryMaterials: LibraryMaterialBundle;
   worldMaterials: WorldMaterialBundle;
+  bossDoorUnlocked?: boolean;
   paused?: boolean;
   prefersReducedMotion?: boolean;
   requestRender?: () => void;
@@ -169,6 +170,17 @@ function buildPropBatch(floor: FloorWorldLayout3D): BatchedPropGeometries {
       const curtain = new THREE.PlaneGeometry(gateW - 0.55, gateH - 0.35);
       curtain.translate(0, (gateH - 0.2) * 0.5, 0);
       addRotatedPart(portalGlow, curtain, x, y, z, st.facingYaw);
+    } else if (st.kind === 'boss_door') {
+      // Iconic SAO Heavy Double Boss Door frame & twin wooden-iron leaves (seal rendered dynamically below)
+      const doorW = 3.2;
+      const doorH = 4.3;
+      addRotatedPart(stone, createScaledBox(0.62, doorH + 0.3, 0.72, -doorW * 0.5, (doorH + 0.3) * 0.5, 0), x, y, z, st.facingYaw);
+      addRotatedPart(stone, createScaledBox(0.62, doorH + 0.3, 0.72, doorW * 0.5, (doorH + 0.3) * 0.5, 0), x, y, z, st.facingYaw);
+      addRotatedPart(stone, createScaledBox(doorW + 1.1, 0.65, 0.85, 0, doorH + 0.35, 0), x, y, z, st.facingYaw);
+      addRotatedPart(wood, createScaledBox(doorW * 0.44, doorH - 0.15, 0.22, -doorW * 0.23, (doorH - 0.15) * 0.5, 0), x, y, z, st.facingYaw);
+      addRotatedPart(wood, createScaledBox(doorW * 0.44, doorH - 0.15, 0.22, doorW * 0.23, (doorH - 0.15) * 0.5, 0), x, y, z, st.facingYaw);
+      addRotatedPart(brass, createScaledBox(doorW - 0.4, 0.12, 0.28, 0, doorH * 0.72, 0), x, y, z, st.facingYaw);
+      addRotatedPart(brass, createScaledBox(doorW - 0.4, 0.12, 0.28, 0, doorH * 0.26, 0), x, y, z, st.facingYaw);
     }
   }
 
@@ -281,6 +293,7 @@ export function BiomePropsMesh({
   theme,
   libraryMaterials,
   worldMaterials,
+  bossDoorUnlocked = false,
   paused = false,
   prefersReducedMotion = false,
   requestRender,
@@ -314,13 +327,17 @@ export function BiomePropsMesh({
     () => floor.props.filter((p) => p.kind === 'mascot_pedestal'),
     [floor.props],
   );
-  const vineProps = useMemo(
-    () => floor.props.filter((p) => p.kind === 'vine_glb'),
+  const toriiProps = useMemo(
+    () => floor.props.filter((p) => p.kind === 'torii_gate_glb'),
     [floor.props],
   );
   const mossyStairsProps = useMemo(
     () => floor.props.filter((p) => p.kind === 'mossy_stairs_glb'),
     [floor.props],
+  );
+  const bossDoorStation = useMemo(
+    () => floor.stations.find((s) => s.kind === 'boss_door') ?? null,
+    [floor.stations],
   );
 
   const wm = worldMaterials.materials;
@@ -377,28 +394,47 @@ export function BiomePropsMesh({
           requestRender={requestRender}
         />
       ))}
-      {vineProps.map((p) => (
-        <StaticSceneryPropGlb
-          key={p.id}
-          kind="vine"
-          prop={p}
-          requestRender={requestRender}
-        />
+      {toriiProps.map((p) => (
+        <ToriiGateGlb key={p.id} prop={p} requestRender={requestRender} />
       ))}
       {mossyStairsProps.map((p) => (
-        <StaticSceneryPropGlb
-          key={p.id}
-          kind="mossy_stairs"
-          prop={p}
-          requestRender={requestRender}
-        />
+        <MossyStairsGlb key={p.id} prop={p} requestRender={requestRender} />
       ))}
-      <FloorBossSentinelGlb
-        floor={floor}
-        paused={paused}
-        prefersReducedMotion={prefersReducedMotion}
-        requestRender={requestRender}
-      />
+
+      {/* Glowing Lock / Unlock Crest on the Sealed Boss Room Door (Bosses stay strictly inside Boss Room) */}
+      {bossDoorStation && (
+        <group
+          position={bossDoorStation.position}
+          rotation={[0, bossDoorStation.facingYaw, 0]}
+        >
+          <mesh position={[0, 2.2, 0.16]}>
+            <octahedronGeometry args={[0.42, 0]} />
+            <meshStandardMaterial
+              color={bossDoorUnlocked ? '#22d3ee' : '#ef4444'}
+              emissive={bossDoorUnlocked ? '#10b981' : '#f59e0b'}
+              emissiveIntensity={bossDoorUnlocked ? 2.4 : 1.9}
+              roughness={0.2}
+              metalness={0.25}
+            />
+          </mesh>
+          <mesh position={[0, 2.2, 0.14]}>
+            <ringGeometry args={[0.56, 0.72, 24]} />
+            <meshStandardMaterial
+              color={bossDoorUnlocked ? '#34d399' : '#f59e0b'}
+              emissive={bossDoorUnlocked ? '#22d3ee' : '#ef4444'}
+              emissiveIntensity={1.8}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+          <pointLight
+            color={bossDoorUnlocked ? '#22d3ee' : '#f97316'}
+            intensity={bossDoorUnlocked ? 3.8 : 2.6}
+            distance={10}
+            decay={1.8}
+            position={[0, 2.4, 1.2]}
+          />
+        </group>
+      )}
 
       <BiomeParticles
         floor={floor}

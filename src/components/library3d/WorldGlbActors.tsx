@@ -8,7 +8,7 @@ const BASE = import.meta.env.BASE_URL ?? '/';
 const ACTOR_MODEL_URLS = {
   mountainStairs: `${BASE}models/mountain-stairs.glb`,
   dragonMascot: `${BASE}models/dragon-mascot.glb`,
-  vineProp: `${BASE}models/prop-vines.glb`,
+  toriiGate: `${BASE}models/prop-torii-gate.glb`,
   mossyStairs: `${BASE}models/prop-mossy-stairs.glb`,
   stoneGolem: `${BASE}models/stone-golem.glb`,
   bossMonster: `${BASE}models/boss-monster.glb`,
@@ -75,6 +75,37 @@ export function MountainStairsGlb({
   );
 }
 
+export function ToriiGateGlb({
+  prop,
+  requestRender,
+}: {
+  prop: BiomePropPlacement3D;
+  requestRender?: () => void;
+}) {
+  const { gl } = useThree();
+  const { template } = useLocalGlb(ACTOR_MODEL_URLS.toriiGate);
+  const instance = useMemo(() => (template ? cloneGlbTemplate(template) : null), [template]);
+
+  useEffect(() => {
+    if (!instance) return;
+    polishGlbMesh(instance, Math.min(8, gl.capabilities.getMaxAnisotropy()), true);
+    requestRender?.();
+  }, [instance, gl, requestRender]);
+
+  if (!instance || !template) return null;
+  const rawH = Math.max(0.1, template.bbox.size[1]);
+  const s = (6.2 * prop.scale) / rawH;
+  const groundedY = prop.position[1] - template.bbox.min[1] * s;
+  return (
+    <primitive
+      object={instance}
+      position={[prop.position[0], groundedY, prop.position[2]]}
+      rotation={[0, prop.rotationY, 0]}
+      scale={[s, s, s]}
+    />
+  );
+}
+
 export function DragonMascotGlb({
   prop,
   paused,
@@ -121,18 +152,15 @@ export function DragonMascotGlb({
   );
 }
 
-export function StaticSceneryPropGlb({
-  kind,
+export function MossyStairsGlb({
   prop,
   requestRender,
 }: {
-  kind: 'vine' | 'mossy_stairs';
   prop: BiomePropPlacement3D;
   requestRender?: () => void;
 }) {
   const { gl } = useThree();
-  const url = kind === 'vine' ? ACTOR_MODEL_URLS.vineProp : ACTOR_MODEL_URLS.mossyStairs;
-  const { template } = useLocalGlb(url);
+  const { template } = useLocalGlb(ACTOR_MODEL_URLS.mossyStairs);
   const instance = useMemo(() => (template ? cloneGlbTemplate(template) : null), [template]);
   const scale: [number, number, number] = prop.scaleVec ?? [prop.scale, prop.scale, prop.scale];
 
@@ -157,56 +185,42 @@ export function StaticSceneryPropGlb({
 interface BossConfig {
   url: string;
   targetHeight: number;
-  position: [number, number, number];
-  rotationY: number;
   preferredClip?: string;
   auraColor: string;
   auraIntensity: number;
 }
 
-function getFloorBossConfig(floor: FloorWorldLayout3D): BossConfig | null {
-  const [bx, by, bz] = floor.bossAnchor;
+function getBossRoomSentinelConfig(floor: FloorWorldLayout3D): BossConfig {
   if (floor.biomeId === 'sakura_shrine') {
     return {
       url: ACTOR_MODEL_URLS.bossMonster,
-      targetHeight: 3.15,
-      position: [bx + 3.5, by, bz],
-      rotationY: -0.38,
+      targetHeight: 3.45,
       preferredClip: 'motion',
       auraColor: '#fb7185',
-      auraIntensity: 3.2,
-    };
-  }
-  if (floor.biomeId === 'starfield_atrium') {
-    return {
-      url: ACTOR_MODEL_URLS.stoneGolem,
-      targetHeight: 3.05,
-      position: [bx + 3.5, by, bz],
-      rotationY: -0.35,
-      preferredClip: 'idle',
-      auraColor: '#60a5fa',
-      auraIntensity: 3.0,
+      auraIntensity: 5.5,
     };
   }
   if (floor.biomeId === 'starlight_ruins') {
-    // Stormterror stands majestically grounded inside the Floor 4 Boss Room (never circling sky)
     return {
       url: ACTOR_MODEL_URLS.bossStormterror,
-      targetHeight: 3.7,
-      position: [bx, by, bz - 1.2],
-      rotationY: floor.bossYaw,
+      targetHeight: 4.1,
       auraColor: '#38bdf8',
-      auraIntensity: 5.0,
+      auraIntensity: 7.0,
     };
   }
-  return null;
+  // Floor 1 (Town of Beginnings) & Floor 3 (Starfield Atrium): Stone Golem guardian
+  return {
+    url: ACTOR_MODEL_URLS.stoneGolem,
+    targetHeight: 3.35,
+    preferredClip: 'idle',
+    auraColor: floor.biomeId === 'starfield_atrium' ? '#60a5fa' : '#f59e0b',
+    auraIntensity: 5.2,
+  };
 }
 
 /**
- * Renders each upper floor's unique 3D Boss Guardian standing inside its Boss Room:
- * - Floor 2 (Sakura Shrine): Animated Dragon Knight (`boss-monster.glb`, `MOTION` clip)
- * - Floor 3 (Starfield Atrium): Animated Stone Golem (`stone-golem.glb`, `Idle` clip)
- * - Floor 4 (Starlight Ruins): Stormterror / Dvalin (`boss-stormterror.glb`, grounded inside Boss Room)
+ * Renders the Boss Guardian strictly INSIDE the dedicated 360° Boss Arena (`BossArenaMesh.tsx`).
+ * Never rendered outdoors on normal library floors (`D-021`).
  */
 export function FloorBossSentinelGlb({
   floor,
@@ -219,22 +233,22 @@ export function FloorBossSentinelGlb({
   prefersReducedMotion: boolean;
   requestRender?: () => void;
 }) {
-  const cfg = useMemo(() => getFloorBossConfig(floor), [floor]);
+  const cfg = useMemo(() => getBossRoomSentinelConfig(floor), [floor]);
   const { gl } = useThree();
-  const { template } = useLocalGlb(cfg?.url ?? null);
+  const { template } = useLocalGlb(cfg.url);
   const instance = useMemo(() => (template ? cloneGlbTemplate(template) : null), [template]);
   const groupRef = useRef<THREE.Group | null>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const breathRef = useRef(0);
 
   const computedScale = useMemo(() => {
-    if (!template || !cfg) return 1;
+    if (!template) return 1;
     const rawH = Math.max(0.01, template.bbox.size[1]);
     return cfg.targetHeight / rawH;
-  }, [template, cfg]);
+  }, [template, cfg.targetHeight]);
 
   useEffect(() => {
-    if (!instance || !template || !cfg) return undefined;
+    if (!instance || !template) return undefined;
     polishGlbMesh(instance, Math.min(8, gl.capabilities.getMaxAnisotropy()), true);
 
     if (template.animations.length > 0) {
@@ -244,9 +258,7 @@ export function FloorBossSentinelGlb({
         (preferred
           ? template.animations.find((c) => c.name.toLowerCase().includes(preferred))
           : undefined) ?? template.animations[0];
-      if (clip) {
-        mixer.clipAction(clip).play();
-      }
+      if (clip) mixer.clipAction(clip).play();
       mixerRef.current = mixer;
       requestRender?.();
       return () => {
@@ -257,7 +269,7 @@ export function FloorBossSentinelGlb({
     }
     requestRender?.();
     return undefined;
-  }, [instance, template, cfg, gl, requestRender]);
+  }, [instance, template, cfg.preferredClip, gl, requestRender]);
 
   useFrame((_, delta) => {
     if (paused || prefersReducedMotion) return;
@@ -265,21 +277,21 @@ export function FloorBossSentinelGlb({
     if (mixerRef.current) {
       mixerRef.current.update(dt);
     } else if (groupRef.current) {
-      // Subtle grounded breathing heave for static Boss statues (Stormterror)
       breathRef.current += dt * 1.4;
-      const heave = 1 + Math.sin(breathRef.current) * 0.014;
+      const heave = 1 + Math.sin(breathRef.current) * 0.015;
       groupRef.current.scale.set(computedScale, computedScale * heave, computedScale);
     }
   });
 
-  if (!cfg || !instance || !template) return null;
-  const groundedY = cfg.position[1] - template.bbox.min[1] * computedScale;
+  if (!instance || !template) return null;
+  const [bx, by, bz] = floor.bossAnchor;
+  const groundedY = by - template.bbox.min[1] * computedScale;
   return (
-    <group name={`boss-sentinel-${floor.biomeId}`}>
+    <group name={`boss-room-guardian-${floor.biomeId}`}>
       <group
         ref={groupRef}
-        position={[cfg.position[0], groundedY, cfg.position[2]]}
-        rotation={[0, cfg.rotationY, 0]}
+        position={[bx, groundedY, bz]}
+        rotation={[0, floor.bossYaw, 0]}
         scale={[computedScale, computedScale, computedScale]}
       >
         <primitive object={instance} />
@@ -287,9 +299,9 @@ export function FloorBossSentinelGlb({
       <pointLight
         color={cfg.auraColor}
         intensity={cfg.auraIntensity}
-        distance={14}
-        decay={1.8}
-        position={[cfg.position[0], cfg.position[1] + 2.2, cfg.position[2] + 1.8]}
+        distance={16}
+        decay={1.65}
+        position={[bx, by + 2.6, bz + 2.4]}
       />
     </group>
   );

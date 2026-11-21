@@ -17,20 +17,36 @@ export interface AmbientNpcsProps {
 }
 
 const BASE = import.meta.env.BASE_URL ?? '/';
-const NPC_WALK_SPEED = 1.28;
-const PLAYER_GREET_RADIUS = 3.2;
+const PLAYER_GREET_RADIUS = 3.6;
 
-const NPC_MODEL_META: Record<
-  NpcModelKey,
-  { url: string; targetHeight: number; floatHeight?: number }
-> = {
-  yui: { url: `${BASE}models/npc-yui.glb`, targetHeight: 1.12, floatHeight: 0.24 },
+const NPC_MODEL_META: Record<NpcModelKey, { url: string; targetHeight: number }> = {
   asuna: { url: `${BASE}models/npc-asuna.glb`, targetHeight: 1.66 },
   maid: { url: `${BASE}models/npc-maid.glb`, targetHeight: 1.62 },
   zhongli: { url: `${BASE}models/npc-zhongli.glb`, targetHeight: 1.82 },
   schoolgirl: { url: `${BASE}models/npc-schoolgirl.glb`, targetHeight: 1.6 },
   mint: { url: `${BASE}models/npc-mint.glb`, targetHeight: 1.64 },
 };
+
+const WORLD_X = new THREE.Vector3(1, 0, 0);
+const WORLD_Y = new THREE.Vector3(0, 1, 0);
+const WORLD_Z = new THREE.Vector3(0, 0, 1);
+
+interface RiggedBoneSlot {
+  bone: THREE.Object3D;
+  restLocalQ: THREE.Quaternion;
+  restParentWorldQ: THREE.Quaternion;
+}
+
+interface RiggedNpcPoseRig {
+  leftArm?: RiggedBoneSlot;
+  rightArm?: RiggedBoneSlot;
+  leftElbow?: RiggedBoneSlot;
+  rightElbow?: RiggedBoneSlot;
+  chest?: RiggedBoneSlot;
+  head?: RiggedBoneSlot;
+  armDropDeg: number;
+  elbowBendDeg: number;
+}
 
 function lerpAngle(current: number, target: number, alpha: number): number {
   let diff = target - current;
@@ -39,10 +55,76 @@ function lerpAngle(current: number, target: number, alpha: number): number {
   return current + diff * alpha;
 }
 
+function applyWorldAxisDeltas(
+  slot: RiggedBoneSlot,
+  ops: ReadonlyArray<readonly [THREE.Vector3, number]>,
+  tmpQ: THREE.Quaternion,
+  tmpTarget: THREE.Quaternion,
+  tmpInvParent: THREE.Quaternion,
+): void {
+  tmpTarget.copy(slot.restParentWorldQ).multiply(slot.restLocalQ);
+  for (let i = 0; i < ops.length; i += 1) {
+    const [axis, deg] = ops[i];
+    if (Math.abs(deg) < 1e-4) continue;
+    tmpQ.setFromAxisAngle(axis, (deg * Math.PI) / 180);
+    tmpTarget.premultiply(tmpQ);
+  }
+  tmpInvParent.copy(slot.restParentWorldQ).invert();
+  slot.bone.quaternion.copy(tmpInvParent).multiply(tmpTarget).normalize();
+}
+
+function captureBoneSlot(root: THREE.Object3D, namePattern: RegExp): RiggedBoneSlot | undefined {
+  let found: THREE.Object3D | undefined;
+  root.traverse((obj) => {
+    if (!found && obj instanceof THREE.Bone && namePattern.test(obj.name)) {
+      found = obj;
+    }
+  });
+  if (!found) return undefined;
+  const parentWorldQ = new THREE.Quaternion();
+  if (found.parent) {
+    found.parent.getWorldQuaternion(parentWorldQ);
+  }
+  return {
+    bone: found,
+    restLocalQ: found.quaternion.clone(),
+    restParentWorldQ: parentWorldQ,
+  };
+}
+
+function buildRiggedIdleRig(
+  instance: THREE.Object3D,
+  modelKey: NpcModelKey,
+): RiggedNpcPoseRig | null {
+  if (modelKey !== 'zhongli' && modelKey !== 'schoolgirl') return null;
+  instance.updateMatrixWorld(true);
+  if (modelKey === 'zhongli') {
+    return {
+      leftArm: captureBoneSlot(instance, /^Left_arm_/i),
+      rightArm: captureBoneSlot(instance, /^Right_arm_/i),
+      leftElbow: captureBoneSlot(instance, /^Left_elbow_/i),
+      rightElbow: captureBoneSlot(instance, /^Right_elbow_/i),
+      chest: captureBoneSlot(instance, /^Chest_/i),
+      head: captureBoneSlot(instance, /^Head_/i),
+      armDropDeg: 38,
+      elbowBendDeg: 9,
+    };
+  }
+  return {
+    leftArm: captureBoneSlot(instance, /Bip001_L_UpperArm/i),
+    rightArm: captureBoneSlot(instance, /Bip001_R_UpperArm/i),
+    leftElbow: captureBoneSlot(instance, /Bip001_L_Forearm/i),
+    rightElbow: captureBoneSlot(instance, /Bip001_R_Forearm/i),
+    chest: captureBoneSlot(instance, /Bip001_Spine2/i),
+    head: captureBoneSlot(instance, /Bip001_Head_/i),
+    armDropDeg: 6,
+    elbowBendDeg: 7,
+  };
+}
+
 /**
- * Strips flat Sketchfab showcase floor shadow tiles (`size.y < 0.015 && span > 1.2`,
- * e.g. `Object_4` inside `npc-maid.glb`), enables crisp shadows + 8x anisotropy,
- * and computes the true character-only bounding box for exact grounding & scaling.
+ * Strips flat Sketchfab showcase floor tiles (`size.y < 0.015 && span > 1.2`, e.g. `Object_4`
+ * inside `npc-maid.glb`), enables crisp shadows + 8x anisotropy, and measures exact character height.
  */
 function prepareNpcGlbInstance(
   instance: THREE.Object3D,
@@ -112,20 +194,21 @@ function SingleAmbientNpc({
     const instance = cloneGlbTemplate(template);
     const maxAniso = Math.min(8, gl.capabilities.getMaxAnisotropy());
     const bounds = prepareNpcGlbInstance(instance, maxAniso);
+    const poseRig = buildRiggedIdleRig(instance, modelKey);
     const scale = meta.targetHeight / bounds.height;
-    const groundedY = -bounds.minY * scale + (meta.floatHeight ?? 0);
-    return { instance, scale, groundedY };
-  }, [template, gl, meta.targetHeight, meta.floatHeight]);
+    const groundedY = -bounds.minY * scale;
+    return { instance, scale, groundedY, poseRig };
+  }, [template, gl, meta.targetHeight, modelKey]);
 
   const groupRef = useRef<THREE.Group | null>(null);
   const modelHolderRef = useRef<THREE.Group | null>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
-
-  const posRef = useRef<[number, number, number]>([...spec.spawn]);
   const yawRef = useRef(spec.facingYaw);
-  const waypointIndexRef = useRef(0);
-  const pauseTimerRef = useRef(1.2);
   const cycleRef = useRef(Math.random() * Math.PI * 2);
+  const scratchQuats = useMemo(
+    () => ({ q: new THREE.Quaternion(), t: new THREE.Quaternion(), inv: new THREE.Quaternion() }),
+    [],
+  );
 
   const shadowMat = useMemo(
     () =>
@@ -148,102 +231,111 @@ function SingleAmbientNpc({
     };
   }, [shadowMat, fallbackMat]);
 
-  // Attach embedded AnimationMixer clip when present (e.g. `npc-mint.glb` 24s animation)
+  // Apply initial relaxed skeletal pose immediately & wire embedded AnimationMixer clip (`npc-mint.glb`)
   useEffect(() => {
     if (!prepared || !template) return undefined;
+    if (prepared.poseRig) {
+      const r = prepared.poseRig;
+      if (r.leftArm) {
+        applyWorldAxisDeltas(r.leftArm, [[WORLD_Z, -r.armDropDeg]], scratchQuats.q, scratchQuats.t, scratchQuats.inv);
+      }
+      if (r.rightArm) {
+        applyWorldAxisDeltas(r.rightArm, [[WORLD_Z, r.armDropDeg]], scratchQuats.q, scratchQuats.t, scratchQuats.inv);
+      }
+      if (r.leftElbow) {
+        applyWorldAxisDeltas(r.leftElbow, [[WORLD_X, -r.elbowBendDeg]], scratchQuats.q, scratchQuats.t, scratchQuats.inv);
+      }
+      if (r.rightElbow) {
+        applyWorldAxisDeltas(r.rightElbow, [[WORLD_X, -r.elbowBendDeg]], scratchQuats.q, scratchQuats.t, scratchQuats.inv);
+      }
+    }
     invalidate();
     if (template.animations.length === 0) return undefined;
     const mixer = new THREE.AnimationMixer(prepared.instance);
     const clip = template.animations[0];
-    if (clip) {
-      mixer.clipAction(clip).play();
-    }
+    if (clip) mixer.clipAction(clip).play();
     mixerRef.current = mixer;
     return () => {
       mixer.stopAllAction();
       mixer.uncacheRoot(prepared.instance);
       mixerRef.current = null;
     };
-  }, [prepared, template, invalidate]);
+  }, [prepared, template, invalidate, scratchQuats]);
 
   useEffect(() => {
-    posRef.current = [...spec.spawn];
     yawRef.current = spec.facingYaw;
-    waypointIndexRef.current = 0;
     npcPositionsRef.current.set(spec.id, [...spec.spawn]);
   }, [spec, npcPositionsRef]);
 
   useFrame((_, delta) => {
     const group = groupRef.current;
-    if (!group) return;
-    if (paused) return;
+    if (!group || paused) return;
 
     const dt = Math.min(delta, 0.05);
     cycleRef.current += dt;
-    const pos = posRef.current;
+    const [sx, sy, sz] = spec.spawn;
     const playerPos = playerMotionRef.current.position;
-    const distToPlayer = Math.hypot(playerPos[0] - pos[0], playerPos[2] - pos[2]);
+    const distToPlayer = Math.hypot(playerPos[0] - sx, playerPos[2] - sz);
 
-    let isMoving = false;
+    // Smooth turn to greet Kirito when nearby (ZERO stiff waypoint sliding!)
     if (!prefersReducedMotion) {
-      if (distToPlayer < PLAYER_GREET_RADIUS) {
-        const facePlayerYaw = Math.atan2(playerPos[0] - pos[0], playerPos[2] - pos[2]);
-        yawRef.current = lerpAngle(yawRef.current, facePlayerYaw, Math.min(1, dt * 6));
-      } else if (spec.role === 'stroller' && spec.waypoints.length >= 2) {
-        const targetWp = spec.waypoints[waypointIndexRef.current];
-        const dx = targetWp.x - pos[0];
-        const dz = targetWp.z - pos[2];
-        const dist = Math.hypot(dx, dz);
-        if (dist > 0.14) {
-          const step = Math.min(dist, NPC_WALK_SPEED * dt);
-          pos[0] += (dx / dist) * step;
-          pos[1] = targetWp.y;
-          pos[2] += (dz / dist) * step;
-          yawRef.current = lerpAngle(yawRef.current, Math.atan2(dx, dz), Math.min(1, dt * 7));
-          isMoving = true;
-        } else {
-          pauseTimerRef.current -= dt;
-          if (pauseTimerRef.current <= 0) {
-            waypointIndexRef.current = (waypointIndexRef.current + 1) % spec.waypoints.length;
-            pauseTimerRef.current = spec.waypoints[waypointIndexRef.current].pauseSec ?? 2.2;
-          }
-        }
-      } else {
-        yawRef.current = lerpAngle(yawRef.current, spec.facingYaw, Math.min(1, dt * 3));
-      }
+      const targetYaw =
+        distToPlayer < PLAYER_GREET_RADIUS
+          ? Math.atan2(playerPos[0] - sx, playerPos[2] - sz)
+          : spec.facingYaw;
+      yawRef.current = lerpAngle(yawRef.current, targetYaw, Math.min(1, dt * 4.5));
     }
 
-    group.position.set(pos[0], pos[1], pos[2]);
+    group.position.set(sx, sy, sz);
     group.rotation.y = yawRef.current;
-    npcPositionsRef.current.set(spec.id, [pos[0], pos[1], pos[2]]);
+    npcPositionsRef.current.set(spec.id, [sx, sy, sz]);
 
-    if (!prefersReducedMotion) {
-      if (mixerRef.current) {
-        mixerRef.current.update(dt);
+    if (prefersReducedMotion || !prepared) return;
+
+    if (mixerRef.current) {
+      mixerRef.current.update(dt);
+    } else if (prepared.poseRig) {
+      // Live skeletal breathing + subtle arm/head poise for rigged Zhongli & SchoolGirl
+      const breath = Math.sin(cycleRef.current * 1.65);
+      const gaze = Math.sin(cycleRef.current * 0.72);
+      const r = prepared.poseRig;
+      if (r.chest) {
+        applyWorldAxisDeltas(r.chest, [[WORLD_X, -breath * 1.4]], scratchQuats.q, scratchQuats.t, scratchQuats.inv);
       }
-      if (modelHolderRef.current && prepared) {
-        if (meta.floatHeight) {
-          // Pixie Yui gentle hover float
-          modelHolderRef.current.position.y =
-            prepared.groundedY + Math.sin(cycleRef.current * 2.2) * 0.08;
-        } else if (isMoving) {
-          // Crisp light stride bounce while strolling
-          modelHolderRef.current.position.y =
-            prepared.groundedY + Math.abs(Math.sin(cycleRef.current * 7.2)) * 0.045;
-          modelHolderRef.current.rotation.z = Math.sin(cycleRef.current * 7.2) * 0.025;
-        } else {
-          modelHolderRef.current.position.y = prepared.groundedY;
-          modelHolderRef.current.rotation.z = 0;
-          if (!mixerRef.current) {
-            const breathe = 1 + Math.sin(cycleRef.current * 1.9) * 0.008;
-            modelHolderRef.current.scale.set(
-              prepared.scale,
-              prepared.scale * breathe,
-              prepared.scale,
-            );
-          }
-        }
+      if (r.head) {
+        applyWorldAxisDeltas(
+          r.head,
+          [
+            [WORLD_X, breath * 1.2],
+            [WORLD_Y, gaze * 4.5],
+          ],
+          scratchQuats.q,
+          scratchQuats.t,
+          scratchQuats.inv,
+        );
       }
+      if (r.leftArm) {
+        applyWorldAxisDeltas(
+          r.leftArm,
+          [[WORLD_Z, -r.armDropDeg + breath * 1.1]],
+          scratchQuats.q,
+          scratchQuats.t,
+          scratchQuats.inv,
+        );
+      }
+      if (r.rightArm) {
+        applyWorldAxisDeltas(
+          r.rightArm,
+          [[WORLD_Z, r.armDropDeg - breath * 1.1]],
+          scratchQuats.q,
+          scratchQuats.t,
+          scratchQuats.inv,
+        );
+      }
+    } else if (modelHolderRef.current) {
+      // Ultra-subtle natural standing breath for posed static models (Asuna, Maid)
+      const breathe = 1 + Math.sin(cycleRef.current * 1.75) * 0.006;
+      modelHolderRef.current.scale.set(prepared.scale, prepared.scale * breathe, prepared.scale);
     }
   });
 
@@ -283,8 +375,9 @@ function SingleAmbientNpc({
 }
 
 /**
- * Populates the active floor with real anime `.glb` NPCs (`yui`, `asuna`, `maid`,
- * `zhongli`, `schoolgirl`, animated `mint`) synchronized in style with Kirito (`D-019`).
+ * Populates the active floor with naturally posed / skeletally animated anime `.glb` NPCs
+ * (`mint` live 24s clip, `zhongli` & `schoolgirl` relaxed rigged Idle, `asuna` & `maid`
+ * standing at bookstalls/desks — zero T-pose and zero stiff sliding, `D-021`).
  */
 export function AmbientNpcs({
   floor,
@@ -310,6 +403,8 @@ export function AmbientNpcs({
       map.set(n.id, [...n.spawn]);
     }
   }, [floor, npcPositionsRef]);
+
+  if (floor.npcs.length === 0) return null;
 
   return (
     <group name={`ambient-npcs-floor-${floor.floorNumber}`}>

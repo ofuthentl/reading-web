@@ -19,7 +19,12 @@ import {
 } from '@/hooks/useLibraryViewState';
 import type { AppTheme } from '@/hooks/useTheme';
 import { BookInspectCard } from './BookInspectCard';
-import type { FloorWorldLayout3D, WorldNpcSpec3D, WorldStation3D } from './worldTypes';
+import type {
+  BossRoomUnlockStatus,
+  FloorWorldLayout3D,
+  WorldNpcSpec3D,
+  WorldStation3D,
+} from './worldTypes';
 import type { ActiveWorldPrompt } from './PlayerRig';
 import { WorldInteractToast, WorldQuickBar } from './WorldQuickBar';
 
@@ -71,12 +76,17 @@ export interface Library3DOverlayProps {
   paused: boolean;
   floors: readonly FloorWorldLayout3D[];
   activeFloorIndex: number;
+  inBossRoom: boolean;
+  bossUnlock: BossRoomUnlockStatus;
+  bossSealNotice: string | null;
   firstPerson: boolean;
   activePrompt: ActiveWorldPrompt | null;
   activeDialogue: WorldNpcSpec3D | null;
   selectedBook: Book | null;
   hoveredBook: Book | null;
   onSelectFloor: (floorIndex: number) => void;
+  onExitBossRoom: () => void;
+  onCloseBossNotice: () => void;
   onToggleFirstPerson: () => void;
   onTriggerStation: (station: WorldStation3D) => void;
   onTriggerNpc: (npc: WorldNpcSpec3D) => void;
@@ -109,12 +119,17 @@ export function Library3DOverlay({
   paused,
   floors,
   activeFloorIndex,
+  inBossRoom,
+  bossUnlock,
+  bossSealNotice,
   firstPerson,
   activePrompt,
   activeDialogue,
   selectedBook,
   hoveredBook,
   onSelectFloor,
+  onExitBossRoom,
+  onCloseBossNotice,
   onToggleFirstPerson,
   onTriggerStation,
   onTriggerNpc,
@@ -175,8 +190,11 @@ export function Library3DOverlay({
             <WorldQuickBar
               floors={floors}
               activeFloorIndex={activeFloorIndex}
+              inBossRoom={inBossRoom}
+              bossUnlock={bossUnlock}
               firstPerson={firstPerson}
               onSelectFloor={onSelectFloor}
+              onExitBossRoom={onExitBossRoom}
               onToggleFirstPerson={onToggleFirstPerson}
             />
 
@@ -321,9 +339,12 @@ export function Library3DOverlay({
               <WorldInteractToast
                 prompt={activePrompt}
                 activeDialogue={activeDialogue}
+                bossUnlock={bossUnlock}
+                bossSealNotice={bossSealNotice}
                 onTriggerStation={onTriggerStation}
                 onTriggerNpc={onTriggerNpc}
                 onCloseDialogue={onCloseDialogue}
+                onCloseBossNotice={onCloseBossNotice}
               />
               <p className="hidden rounded-full border border-line-strong/70 bg-surface/90 px-3.5 py-1 text-[11px] font-medium text-ink-muted shadow-sm backdrop-blur-sm xl:block">
                 WASD đi dạo · Shift chạy · Kéo chuột xoay 360° · Cuộn zoom · V góc nhìn · E tương tác

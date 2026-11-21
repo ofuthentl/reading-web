@@ -8,6 +8,7 @@ import {
   type WorldNpcSpec3D,
   type WorldStation3D,
 } from './floorWorldLayout3d';
+import { buildBossRoomFloorLayout, evaluateFloorBossUnlock } from './bossRoomLayout3d';
 import { createCoverTextureCache } from './coverTextureCache';
 import { clearLocalGlbCache } from './gltfLoader';
 import { LibraryCanvas } from './LibraryCanvas';
@@ -68,6 +69,8 @@ export function FantasyLibrary3D({
   onDeleteSelected,
 }: FantasyLibrary3DProps) {
   const [activeFloorIndex, setActiveFloorIndex] = useState(0);
+  const [bossRoomFloorIndex, setBossRoomFloorIndex] = useState<number | null>(null);
+  const [bossSealNotice, setBossSealNotice] = useState<string | null>(null);
   const [firstPerson, setFirstPerson] = useState(false);
   const [hoveredBook, setHoveredBook] = useState<Book | null>(null);
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
@@ -114,6 +117,19 @@ export function FantasyLibrary3D({
 
   const safeFloorIndex = Math.min(activeFloorIndex, Math.max(0, tower.totalFloors - 1));
   const activeFloor = tower.floors[safeFloorIndex] ?? tower.floors[0];
+  const inBossRoom = bossRoomFloorIndex !== null;
+
+  const activeBossUnlock = useMemo(
+    () =>
+      evaluateFloorBossUnlock(activeFloor.floorNumber, activeFloor.biomeId, books, progress),
+    [activeFloor.floorNumber, activeFloor.biomeId, books, progress],
+  );
+
+  const renderedFloor = useMemo(() => {
+    if (bossRoomFloorIndex === null) return activeFloor;
+    const srcFloor = tower.floors[bossRoomFloorIndex] ?? activeFloor;
+    return buildBossRoomFloorLayout(srcFloor);
+  }, [bossRoomFloorIndex, tower.floors, activeFloor]);
 
   useEffect(() => {
     if (safeFloorIndex !== activeFloorIndex) {
@@ -146,8 +162,10 @@ export function FantasyLibrary3D({
 
       setActiveDialogue(null);
       setActivePrompt(null);
+      setBossSealNotice(null);
+      setBossRoomFloorIndex(null);
 
-      if (clamped !== safeFloorIndex && !prefersReducedMotion) {
+      if ((clamped !== safeFloorIndex || inBossRoom) && !prefersReducedMotion) {
         setFloorFadeLabel(targetFloor.title);
         if (fadeTimerRef.current !== null) window.clearTimeout(fadeTimerRef.current);
         fadeTimerRef.current = window.setTimeout(() => {
@@ -162,8 +180,28 @@ export function FantasyLibrary3D({
         setTeleportCommand({ ...pendingTeleport, nonce: teleportNonceRef.current });
       }
     },
-    [tower, safeFloorIndex, prefersReducedMotion],
+    [tower, safeFloorIndex, inBossRoom, prefersReducedMotion],
   );
+
+  const enterBossRoom = useCallback(() => {
+    setActiveDialogue(null);
+    setActivePrompt(null);
+    setBossSealNotice(null);
+    if (!prefersReducedMotion) {
+      setFloorFadeLabel(`Phòng Boss Tầng ${activeFloor.floorNumber} — ${activeBossUnlock.bossName}`);
+      if (fadeTimerRef.current !== null) window.clearTimeout(fadeTimerRef.current);
+      fadeTimerRef.current = window.setTimeout(() => {
+        setFloorFadeLabel(null);
+        fadeTimerRef.current = null;
+      }, 480);
+    }
+    setBossRoomFloorIndex(safeFloorIndex);
+  }, [activeFloor.floorNumber, activeBossUnlock.bossName, safeFloorIndex, prefersReducedMotion]);
+
+  const exitBossRoom = useCallback(() => {
+    const returnIdx = bossRoomFloorIndex ?? safeFloorIndex;
+    triggerFloorTransition(returnIdx);
+  }, [bossRoomFloorIndex, safeFloorIndex, triggerFloorTransition]);
 
   const handleJumpToShelf = useCallback(
     (shelfKey: string) => {
@@ -203,10 +241,11 @@ export function FantasyLibrary3D({
       }
       setSelectedBookId(null);
       setActiveDialogue(null);
+      setBossSealNotice(null);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedBookId, activeDialogue, paused]);
+  }, [selectedBookId, activeDialogue, bossSealNotice, paused]);
 
   const handleSelectBook = useCallback(
     (book: Book) => {
@@ -221,6 +260,18 @@ export function FantasyLibrary3D({
 
   const handleInteractStation = useCallback(
     (station: WorldStation3D) => {
+      if (station.kind === 'boss_door') {
+        if (!activeBossUnlock.unlocked) {
+          setBossSealNotice(activeBossUnlock.summaryText);
+          return;
+        }
+        enterBossRoom();
+        return;
+      }
+      if (station.kind === 'boss_exit') {
+        exitBossRoom();
+        return;
+      }
       if (station.kind === 'portal_up' || station.kind === 'portal_down') {
         if (station.targetFloorIndex !== undefined) {
           triggerFloorTransition(station.targetFloorIndex);
@@ -241,7 +292,17 @@ export function FantasyLibrary3D({
         else onUploadClick();
       }
     },
-    [triggerFloorTransition, onUploadClick, onCycleTheme, viewState.continueReadingBooks, books, onOpenBook],
+    [
+      activeBossUnlock,
+      enterBossRoom,
+      exitBossRoom,
+      triggerFloorTransition,
+      onUploadClick,
+      onCycleTheme,
+      viewState.continueReadingBooks,
+      books,
+      onOpenBook,
+    ],
   );
 
   const handleInteractNpc = useCallback((npc: WorldNpcSpec3D) => {
@@ -256,10 +317,11 @@ export function FantasyLibrary3D({
   return (
     <div className="theme-canvas relative h-screen w-screen overflow-hidden text-ink select-none">
       <LibraryCanvas
-        floor={activeFloor}
+        floor={renderedFloor}
         theme={theme}
         coverTextureCache={coverTextureCache}
         firstPerson={firstPerson}
+        bossDoorUnlocked={activeBossUnlock.unlocked}
         teleportCommand={teleportCommand}
         hoveredBookId={hoveredBook?.id ?? null}
         selectedBookId={selectedBook?.id ?? null}
@@ -277,6 +339,7 @@ export function FantasyLibrary3D({
         onClearSelection={() => {
           setSelectedBookId(null);
           setActiveDialogue(null);
+          setBossSealNotice(null);
         }}
         onFallbackTo2D={onFallbackTo2D}
       />
@@ -305,12 +368,17 @@ export function FantasyLibrary3D({
         paused={paused}
         floors={tower.floors}
         activeFloorIndex={safeFloorIndex}
+        inBossRoom={inBossRoom}
+        bossUnlock={activeBossUnlock}
+        bossSealNotice={bossSealNotice}
         firstPerson={firstPerson}
         activePrompt={activePrompt}
         activeDialogue={activeDialogue}
         selectedBook={selectedBook}
         hoveredBook={hoveredBook}
         onSelectFloor={(idx) => triggerFloorTransition(idx)}
+        onExitBossRoom={exitBossRoom}
+        onCloseBossNotice={() => setBossSealNotice(null)}
         onToggleFirstPerson={() => setFirstPerson((prev) => !prev)}
         onTriggerStation={handleInteractStation}
         onTriggerNpc={handleInteractNpc}

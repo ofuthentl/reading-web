@@ -29,6 +29,7 @@ export interface LibraryCanvasProps {
   theme: AppTheme;
   coverTextureCache: CoverTextureCache;
   firstPerson: boolean;
+  bossDoorUnlocked?: boolean;
   teleportCommand: TeleportCommand | null;
   hoveredBookId: string | null;
   selectedBookId: string | null;
@@ -55,6 +56,7 @@ interface WorldSceneContentProps {
   theme: AppTheme;
   coverTextureCache: CoverTextureCache;
   firstPerson: boolean;
+  bossDoorUnlocked?: boolean;
   teleportCommand: TeleportCommand | null;
   hoveredBookId: string | null;
   selectedBookId: string | null;
@@ -77,6 +79,7 @@ function WorldSceneContent({
   theme,
   coverTextureCache,
   firstPerson,
+  bossDoorUnlocked,
   teleportCommand,
   hoveredBookId,
   selectedBookId,
@@ -210,15 +213,18 @@ function WorldSceneContent({
         requestRender={requestRender}
       />
 
-      <BiomePropsMesh
-        floor={floor}
-        theme={theme}
-        libraryMaterials={libraryMaterials}
-        worldMaterials={worldMaterials}
-        paused={isRenderPaused}
-        prefersReducedMotion={prefersReducedMotion}
-        requestRender={requestRender}
-      />
+      {!floor.isBossRoom && (
+        <BiomePropsMesh
+          floor={floor}
+          theme={theme}
+          libraryMaterials={libraryMaterials}
+          worldMaterials={worldMaterials}
+          bossDoorUnlocked={bossDoorUnlocked}
+          paused={isRenderPaused}
+          prefersReducedMotion={prefersReducedMotion}
+          requestRender={requestRender}
+        />
+      )}
 
       <KiritoAvatar
         motionRef={playerMotionRef}
@@ -226,36 +232,40 @@ function WorldSceneContent({
         prefersReducedMotion={prefersReducedMotion}
       />
 
-      <AmbientNpcs
-        floor={floor}
-        playerMotionRef={playerMotionRef}
-        npcPositionsRef={npcPositionsRef}
-        paused={isRenderPaused}
-        prefersReducedMotion={prefersReducedMotion}
-        isDraggingRef={isDraggingRef}
-        onSelectNpc={onInteractNpc}
-      />
+      {!floor.isBossRoom && (
+        <AmbientNpcs
+          floor={floor}
+          playerMotionRef={playerMotionRef}
+          npcPositionsRef={npcPositionsRef}
+          paused={isRenderPaused}
+          prefersReducedMotion={prefersReducedMotion}
+          isDraggingRef={isDraggingRef}
+          onSelectNpc={onInteractNpc}
+        />
+      )}
 
-      <InstancedBooksMesh
-        layout={activeFloorLayout}
-        theme={theme}
-        materialBundle={libraryMaterials}
-        coverTextureCache={coverTextureCache}
-        cameraX={playerArea.x}
-        cameraZ={playerArea.z}
-        activeFloorIndex={floor.floorIndex}
-        visibleShelfKeys={playerArea.visibleShelfKeys}
-        hoveredBookId={hoveredBookId}
-        selectedBookId={selectedBookId}
-        selectionMode={selectionMode}
-        selectedIds={selectedIds}
-        prefersReducedMotion={prefersReducedMotion}
-        paused={isRenderPaused}
-        isDraggingRef={isDraggingRef}
-        requestRender={requestRender}
-        onHoverBook={onHoverBook}
-        onSelectBook={handleSelectBookWithPulse}
-      />
+      {!floor.isBossRoom && (
+        <InstancedBooksMesh
+          layout={activeFloorLayout}
+          theme={theme}
+          materialBundle={libraryMaterials}
+          coverTextureCache={coverTextureCache}
+          cameraX={playerArea.x}
+          cameraZ={playerArea.z}
+          activeFloorIndex={floor.floorIndex}
+          visibleShelfKeys={playerArea.visibleShelfKeys}
+          hoveredBookId={hoveredBookId}
+          selectedBookId={selectedBookId}
+          selectionMode={selectionMode}
+          selectedIds={selectedIds}
+          prefersReducedMotion={prefersReducedMotion}
+          paused={isRenderPaused}
+          isDraggingRef={isDraggingRef}
+          requestRender={requestRender}
+          onHoverBook={onHoverBook}
+          onSelectBook={handleSelectBookWithPulse}
+        />
+      )}
     </>
   );
 }
@@ -272,6 +282,7 @@ export function LibraryCanvas({
   theme,
   coverTextureCache,
   firstPerson,
+  bossDoorUnlocked = false,
   teleportCommand,
   hoveredBookId,
   selectedBookId,
@@ -411,6 +422,7 @@ export function LibraryCanvas({
           theme={theme}
           coverTextureCache={coverTextureCache}
           firstPerson={firstPerson}
+          bossDoorUnlocked={bossDoorUnlocked}
           teleportCommand={teleportCommand}
           hoveredBookId={hoveredBookId}
           selectedBookId={selectedBookId}

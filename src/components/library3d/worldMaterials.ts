@@ -362,54 +362,79 @@ export function createWorldMaterialBundle(
   let currentBiome: BiomeId = initialBiome;
   let disposed = false;
 
-  // Local 1024px WebP PBR wet-cobblestone textures (0 CDN) upgrading Floors 2 & 4 walkways
-  const pbrCobble: {
-    albedo: THREE.Texture | null;
-    orm: THREE.Texture | null;
-    normal: THREE.Texture | null;
-  } = { albedo: null, orm: null, normal: null };
+  // Local 1024px WebP PBR sets (0 CDN): wet cobblestone, tiled marble (Floor 3), rustic stone (cliffs/walls)
+  type PbrTriplet = { albedo: THREE.Texture | null; orm: THREE.Texture | null; normal: THREE.Texture | null };
+  const pbrCobble: PbrTriplet = { albedo: null, orm: null, normal: null };
+  const pbrTile: PbrTriplet = { albedo: null, orm: null, normal: null };
+  const pbrStone: PbrTriplet = { albedo: null, orm: null, normal: null };
 
   const syncCobbleMaterials = (biomeId: BiomeId) => {
     const activeCobble = pbrCobble.albedo ?? cobble;
-    const usePbrMaps = biomeId !== 'starfield_atrium' && Boolean(pbrCobble.albedo);
-    materials.ground.map =
-      biomeId === 'starfield_atrium' ? marble : biomeId === 'starlight_ruins' ? activeCobble : grass;
-    materials.ground.normalMap = biomeId === 'starlight_ruins' ? pbrCobble.normal : null;
-    materials.ground.roughnessMap = biomeId === 'starlight_ruins' ? pbrCobble.orm : null;
-    materials.ground.needsUpdate = true;
+    const activeTile = pbrTile.albedo ?? marble;
+    const activeStone = pbrStone.albedo ?? cobble;
 
-    materials.plaza.map = biomeId === 'starfield_atrium' ? marble : activeCobble;
-    materials.plaza.normalMap = usePbrMaps ? pbrCobble.normal : null;
-    materials.plaza.roughnessMap = usePbrMaps ? pbrCobble.orm : null;
+    if (biomeId === 'starfield_atrium') {
+      materials.ground.map = activeTile;
+      materials.ground.normalMap = pbrTile.normal;
+      materials.ground.roughnessMap = pbrTile.orm;
+      materials.plaza.map = activeTile;
+      materials.plaza.normalMap = pbrTile.normal;
+      materials.plaza.roughnessMap = pbrTile.orm;
+    } else if (biomeId === 'starlight_ruins') {
+      materials.ground.map = activeCobble;
+      materials.ground.normalMap = pbrCobble.normal;
+      materials.ground.roughnessMap = pbrCobble.orm;
+      materials.plaza.map = activeCobble;
+      materials.plaza.normalMap = pbrCobble.normal;
+      materials.plaza.roughnessMap = pbrCobble.orm;
+    } else {
+      materials.ground.map = grass;
+      materials.ground.normalMap = null;
+      materials.ground.roughnessMap = null;
+      materials.plaza.map = activeCobble;
+      materials.plaza.normalMap = pbrCobble.normal;
+      materials.plaza.roughnessMap = pbrCobble.orm;
+    }
+    materials.ground.needsUpdate = true;
     materials.plaza.needsUpdate = true;
+
+    materials.stone.map = activeStone;
+    materials.stone.normalMap = pbrStone.normal;
+    materials.stone.roughnessMap = pbrStone.orm;
+    materials.stone.needsUpdate = true;
   };
 
   if (typeof window !== 'undefined') {
     const texBase = `${import.meta.env.BASE_URL ?? '/'}textures/`;
     const loader = new THREE.TextureLoader();
-    const loadTile = (file: string, srgb: boolean, slot: 'albedo' | 'orm' | 'normal') => {
-      loader.load(
-        `${texBase}${file}`,
-        (tex) => {
-          if (disposed) {
-            tex.dispose();
-            return;
-          }
-          if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
-          tex.wrapS = THREE.RepeatWrapping;
-          tex.wrapT = THREE.RepeatWrapping;
-          tex.anisotropy = 8;
-          tex.needsUpdate = true;
-          pbrCobble[slot] = tex;
-          syncCobbleMaterials(currentBiome);
-        },
-        undefined,
-        () => undefined,
-      );
+    const loadTriplet = (prefix: string, target: PbrTriplet) => {
+      const loadSlot = (suffix: string, srgb: boolean, slot: keyof PbrTriplet) => {
+        loader.load(
+          `${texBase}${prefix}-${suffix}.webp`,
+          (tex) => {
+            if (disposed) {
+              tex.dispose();
+              return;
+            }
+            if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.anisotropy = 8;
+            tex.needsUpdate = true;
+            target[slot] = tex;
+            syncCobbleMaterials(currentBiome);
+          },
+          undefined,
+          () => undefined,
+        );
+      };
+      loadSlot('albedo', true, 'albedo');
+      loadSlot('orm', false, 'orm');
+      loadSlot('normal', false, 'normal');
     };
-    loadTile('pbr-cobble-albedo.webp', true, 'albedo');
-    loadTile('pbr-cobble-orm.webp', false, 'orm');
-    loadTile('pbr-cobble-normal.webp', false, 'normal');
+    loadTriplet('pbr-cobble', pbrCobble);
+    loadTriplet('pbr-tile', pbrTile);
+    loadTriplet('pbr-stone', pbrStone);
   }
 
   const applyBiomeTheme = (
@@ -460,6 +485,12 @@ export function createWorldMaterialBundle(
       pbrCobble.albedo?.dispose();
       pbrCobble.orm?.dispose();
       pbrCobble.normal?.dispose();
+      pbrTile.albedo?.dispose();
+      pbrTile.orm?.dispose();
+      pbrTile.normal?.dispose();
+      pbrStone.albedo?.dispose();
+      pbrStone.orm?.dispose();
+      pbrStone.normal?.dispose();
     },
   };
 }
