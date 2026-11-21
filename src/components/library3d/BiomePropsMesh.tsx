@@ -457,21 +457,23 @@ export function BiomePropsMesh({
 
   return (
     <group name={`biome-props-floor-${floor.floorNumber}`}>
-      {propGeoms.bark.attributes.position && <mesh geometry={propGeoms.bark} material={wm.bark} />}
+      {propGeoms.bark.attributes.position && (
+        <mesh geometry={propGeoms.bark} material={wm.bark} castShadow receiveShadow />
+      )}
       {propGeoms.foliageMain.attributes.position && (
-        <mesh geometry={propGeoms.foliageMain} material={wm.foliageMain} />
+        <mesh geometry={propGeoms.foliageMain} material={wm.foliageMain} castShadow receiveShadow />
       )}
       {propGeoms.foliageAlt.attributes.position && (
-        <mesh geometry={propGeoms.foliageAlt} material={wm.foliageAlt} />
+        <mesh geometry={propGeoms.foliageAlt} material={wm.foliageAlt} castShadow receiveShadow />
       )}
       {propGeoms.stone.attributes.position && (
-        <mesh geometry={propGeoms.stone} material={wm.stone} />
+        <mesh geometry={propGeoms.stone} material={wm.stone} castShadow receiveShadow />
       )}
       {propGeoms.wood.attributes.position && (
-        <mesh geometry={propGeoms.wood} material={lm.woodCabinet} />
+        <mesh geometry={propGeoms.wood} material={lm.woodCabinet} castShadow receiveShadow />
       )}
       {propGeoms.brass.attributes.position && (
-        <mesh geometry={propGeoms.brass} material={lm.brassTrim} />
+        <mesh geometry={propGeoms.brass} material={lm.brassTrim} castShadow />
       )}
       {propGeoms.lampGlow.attributes.position && (
         <mesh geometry={propGeoms.lampGlow} material={wm.lampGlow} />

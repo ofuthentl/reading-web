@@ -478,6 +478,8 @@ export function InstancedBooksMesh({
         key={`body-${capacity}`}
         ref={bodyMeshRef}
         args={[geometries.body, materials.bookBody, capacity]}
+        castShadow
+        receiveShadow
         frustumCulled={false}
         onPointerMove={handlePointerMove}
         onPointerOut={handlePointerOut}

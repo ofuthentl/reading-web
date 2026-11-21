@@ -151,14 +151,14 @@ export function getWorldBiomePalette(
     };
   }
 
-  // Default: `town_of_beginnings`
+  // Default: `town_of_beginnings` (real European cobblestone avenue from `town-world.glb`)
   if (isNight) {
     return {
       skyTop: '#070b18', skyHorizon: '#16223b', skyBottom: '#0e1320',
-      showStars: true, starDensity: 250, sunColor: '#dbeafe',
-      fogColor: '#12192b', fogNear: 24, fogFar: 64,
-      hemiSky: '#7d9ed6', hemiGround: '#29221c', hemiIntensity: 0.72,
-      sunIntensity: 0.85, sunPosition: [12, 22, 14], fillColor: '#ffb74d', fillIntensity: 0.42,
+      showStars: true, starDensity: 280, sunColor: '#dbeafe',
+      fogColor: '#12192b', fogNear: 34, fogFar: 145,
+      hemiSky: '#7d9ed6', hemiGround: '#29221c', hemiIntensity: 0.78,
+      sunIntensity: 0.9, sunPosition: [18, 28, 16], fillColor: '#ffb74d', fillIntensity: 0.45,
       groundTint: '#364d36', plazaTint: '#6c6862', accentStone: '#525663',
       foliagePrimary: autumnShift ? '#b45309' : '#2d5a3c', foliageSecondary: '#3f734e',
       waterColor: '#1e3a5f', portalGlow: '#38bdf8', lampGlow: '#ffca7a', lampEmissiveIntensity: 1.75,
@@ -169,9 +169,9 @@ export function getWorldBiomePalette(
     return {
       skyTop: '#29335c', skyHorizon: '#e5925d', skyBottom: '#57393b',
       showStars: false, starDensity: 0, sunColor: '#ffd08a',
-      fogColor: '#8f6556', fogNear: 26, fogFar: 68,
-      hemiSky: '#f7bc8d', hemiGround: '#4f3a29', hemiIntensity: 0.94,
-      sunIntensity: 1.35, sunPosition: [-18, 14, 10], fillColor: '#8eb2e0', fillIntensity: 0.45,
+      fogColor: '#8f6556', fogNear: 38, fogFar: 155,
+      hemiSky: '#f7bc8d', hemiGround: '#4f3a29', hemiIntensity: 0.96,
+      sunIntensity: 1.5, sunPosition: [-22, 18, 12], fillColor: '#8eb2e0', fillIntensity: 0.48,
       groundTint: '#627d47', plazaTint: '#b8a58e', accentStone: '#87786a',
       foliagePrimary: autumnShift ? '#d97706' : '#4a7c44', foliageSecondary: '#659652',
       waterColor: '#4e7f9e', portalGlow: '#38bdf8', lampGlow: '#ffba5c', lampEmissiveIntensity: 1.45,
@@ -180,10 +180,10 @@ export function getWorldBiomePalette(
   }
   return {
     skyTop: '#4c9be8', skyHorizon: '#cfe9fc', skyBottom: '#b8d9b0',
-    showStars: false, starDensity: 0, sunColor: '#fff6d1',
-    fogColor: '#d4e8f7', fogNear: 30, fogFar: 78,
-    hemiSky: '#eef7ff', hemiGround: '#7a8a62', hemiIntensity: 1.18,
-    sunIntensity: 1.6, sunPosition: [18, 28, 16], fillColor: '#dbeafe', fillIntensity: 0.45,
+    showStars: false, starDensity: 0, sunColor: '#fff6d6',
+    fogColor: '#d4e8f7', fogNear: 44, fogFar: 180,
+    hemiSky: '#eef7ff', hemiGround: '#827c6e', hemiIntensity: 1.15,
+    sunIntensity: 1.85, sunPosition: [22, 34, 18], fillColor: '#dbeafe', fillIntensity: 0.5,
     groundTint: '#78a85a', plazaTint: '#d8cbb8', accentStone: '#a89f93',
     foliagePrimary: autumnShift ? '#ea8c2c' : '#4d8c46', foliageSecondary: '#73b05d',
     waterColor: '#56b2d6', portalGlow: '#38bdf8', lampGlow: '#ffe6a6', lampEmissiveIntensity: 0.45,

@@ -93,7 +93,7 @@ function WorldSceneContent({
   onSelectBook,
   onVisibleShelfChange,
 }: WorldSceneContentProps) {
-  const { invalidate, size } = useThree();
+  const { gl, invalidate, size } = useThree();
   const pausedRef = useRef(isRenderPaused);
   pausedRef.current = isRenderPaused;
 
@@ -147,8 +147,9 @@ function WorldSceneContent({
 
   useEffect(() => {
     libraryMaterials.applyTheme(theme);
+    gl.toneMappingExposure = theme === 'light' ? 1.08 : theme === 'dim' ? 1.02 : 0.98;
     requestRender();
-  }, [libraryMaterials, theme, requestRender]);
+  }, [gl, libraryMaterials, theme, requestRender]);
 
   // Sync 1 frame when unpausing, returning to tab, or resizing viewport
   useEffect(() => {
@@ -387,11 +388,11 @@ export function LibraryCanvas({
       <Canvas
         frameloop={frameloopMode}
         dpr={[1, 2]}
-        shadows={false}
+        shadows={!prefersReducedMotion}
         camera={{
           fov: 50,
           near: 0.1,
-          far: 180,
+          far: 560,
           position: [floor.spawnPoint[0], 2.9, floor.spawnPoint[2] + 4.8],
         }}
         gl={{

@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { AppTheme } from '@/hooks/useTheme';
 import type { FloorWorldLayout3D } from './worldTypes';
@@ -16,6 +16,8 @@ import {
   buildRotatedNameplateGeometry,
   buildWorldArchitectureGeometries,
 } from './worldGeometryBuilder';
+import { createProceduralSkyEnvironment } from './skyEnvironment';
+import { TownWorldGlb } from './TownWorldGlb';
 
 export interface WorldBiomeMeshProps {
   floor: FloorWorldLayout3D;
@@ -41,6 +43,7 @@ export function WorldBiomeMesh({
   prefersReducedMotion = false,
   requestRender,
 }: WorldBiomeMeshProps) {
+  const { gl, scene } = useThree();
   const internalBundle = useMemo(
     () => (externalWorldMaterials ? null : createWorldMaterialBundle(floor.biomeId, theme)),
     // Created once when no external bundle is injected; updated in place via applyBiomeTheme
@@ -65,6 +68,22 @@ export function WorldBiomeMesh({
     requestRender?.();
   }, [worldBundle, floor.biomeId, theme, floor.biomeVariant, requestRender]);
 
+  // Zero-CDN PMREM Sky/Sun IBL environment so wet cobblestones, European windows,
+  // metallic trims, and anime models reflect natural daylight/dusk/moonlight (`D-010`/`D-019`)
+  useEffect(() => {
+    const env = createProceduralSkyEnvironment(gl, palette, theme);
+    if (!env) return undefined;
+    scene.environment = env.texture;
+    scene.environmentIntensity = env.intensity;
+    requestRender?.();
+    return () => {
+      if (scene.environment === env.texture) {
+        scene.environment = null;
+      }
+      env.dispose();
+    };
+  }, [gl, scene, palette, theme, requestRender]);
+
   const archGeometries = useMemo(() => buildWorldArchitectureGeometries(floor), [floor]);
 
   useEffect(() => {
@@ -83,7 +102,7 @@ export function WorldBiomeMesh({
     };
   }, [archGeometries]);
 
-  const skyGeometry = useMemo(() => new THREE.SphereGeometry(96, 24, 16), []);
+  const skyGeometry = useMemo(() => new THREE.SphereGeometry(460, 28, 18), []);
   useEffect(() => {
     return () => {
       skyGeometry.dispose();
@@ -128,12 +147,22 @@ export function WorldBiomeMesh({
       {/* Painted procedural SkyDome synced with Day / Dusk / Starry Night */}
       <mesh geometry={skyGeometry} material={wm.skyDome} frustumCulled={false} />
 
-      {/* Biome-tuned lighting rig (0 CDN HDRI) */}
+      {/* Biome-tuned lighting rig + soft directional shadows (0 CDN HDRI) */}
       <hemisphereLight args={[palette.hemiSky, palette.hemiGround, palette.hemiIntensity]} />
       <directionalLight
         color={palette.sunColor}
         intensity={palette.sunIntensity}
         position={palette.sunPosition}
+        castShadow={!prefersReducedMotion}
+        shadow-mapSize={[2048, 2048]}
+        shadow-camera-left={-26}
+        shadow-camera-right={26}
+        shadow-camera-top={28}
+        shadow-camera-bottom={-28}
+        shadow-camera-near={2}
+        shadow-camera-far={95}
+        shadow-bias={-0.0005}
+        shadow-normalBias={0.035}
       />
       <directionalLight
         color={palette.fillColor}
@@ -150,15 +179,30 @@ export function WorldBiomeMesh({
         />
       )}
 
+      {/* Floor 1 Real GLB European Cobblestone Town Scenery (`D-019`) */}
+      {floor.biomeId === 'town_of_beginnings' && (
+        <TownWorldGlb
+          theme={theme}
+          prefersReducedMotion={prefersReducedMotion}
+          requestRender={requestRender}
+        />
+      )}
+
       {/* Merged Biome Terrain, Streets, Bridge, Water & Vault Glass */}
-      <mesh geometry={archGeometries.ground} material={wm.ground} />
-      <mesh geometry={archGeometries.plaza} material={wm.plaza} />
-      <mesh geometry={archGeometries.stone} material={wm.stone} />
+      {archGeometries.ground.attributes.position && (
+        <mesh geometry={archGeometries.ground} material={wm.ground} receiveShadow />
+      )}
+      {archGeometries.plaza.attributes.position && (
+        <mesh geometry={archGeometries.plaza} material={wm.plaza} receiveShadow />
+      )}
+      {archGeometries.stone.attributes.position && (
+        <mesh geometry={archGeometries.stone} material={wm.stone} castShadow receiveShadow />
+      )}
       {archGeometries.bridgeWood.attributes.position && (
-        <mesh geometry={archGeometries.bridgeWood} material={wm.bridgeWood} />
+        <mesh geometry={archGeometries.bridgeWood} material={wm.bridgeWood} castShadow receiveShadow />
       )}
       {archGeometries.bridgeRed.attributes.position && (
-        <mesh geometry={archGeometries.bridgeRed} material={wm.bridgeRed} />
+        <mesh geometry={archGeometries.bridgeRed} material={wm.bridgeRed} castShadow receiveShadow />
       )}
       {archGeometries.water && <mesh geometry={archGeometries.water} material={wm.water} />}
       {archGeometries.glassDome && (
@@ -168,9 +212,9 @@ export function WorldBiomeMesh({
       {/* Rotated Grand Bookcases & Batched Canvas2D Shelf Nameplates */}
       {floor.bookcases.length > 0 && (
         <group name="world-floor-bookcases">
-          <mesh geometry={archGeometries.woodBackPanel} material={lm.woodBackPanel} />
-          <mesh geometry={archGeometries.woodCabinet} material={lm.woodCabinet} />
-          <mesh geometry={archGeometries.woodCrown} material={lm.woodCrown} />
+          <mesh geometry={archGeometries.woodBackPanel} material={lm.woodBackPanel} castShadow receiveShadow />
+          <mesh geometry={archGeometries.woodCabinet} material={lm.woodCabinet} castShadow receiveShadow />
+          <mesh geometry={archGeometries.woodCrown} material={lm.woodCrown} castShadow receiveShadow />
           <mesh geometry={archGeometries.brassTrim} material={lm.brassTrim} />
           <mesh geometry={nameplateBatch.geometry} material={nameplateBatch.atlas.material} />
         </group>

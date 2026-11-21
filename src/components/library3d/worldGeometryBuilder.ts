@@ -193,48 +193,6 @@ function addArchBridge(
   }
 }
 
-function buildTownTerrain(
-  floor: FloorWorldLayout3D,
-  ground: THREE.BufferGeometry[],
-  plaza: THREE.BufferGeometry[],
-  stone: THREE.BufferGeometry[],
-): void {
-  const { minX, maxX, minZ, maxZ } = floor.bounds;
-  const w = maxX - minX + 16;
-  const d = maxZ - minZ + 16;
-  const cx = (minX + maxX) * 0.5;
-  const cz = (minZ + maxZ) * 0.5;
-
-  ground.push(createScaledBox(w, 0.4, d, cx, -0.22, cz, 0.08));
-  // Grand cobblestone boulevard + central circular plaza
-  plaza.push(
-    createScaledBox(24.5, 0.08, 36.5, 0, -0.02, 1.2, 0.14),
-    createScaledBox(9.0, 0.09, 40.0, 0, -0.015, 0.5, 0.16),
-  );
-  const circlePlaza = new THREE.CylinderGeometry(7.8, 8.0, 0.09, 32);
-  circlePlaza.translate(0, -0.01, 0);
-  plaza.push(circlePlaza);
-
-  // North Gate stairs & elevated platform (Y = 1.2)
-  const ramp = floor.surfaces.find((s) => s.kind === 'ramp');
-  if (ramp && ramp.kind === 'ramp') addSteppedRamp(stone, ramp, 10);
-  plaza.push(createScaledBox(15.0, 1.2, 7.0, 0, 0.6, -21.0, 0.18));
-
-  // Low decorative European plaza perimeter curb walls & platform balustrades
-  stone.push(
-    createScaledBox(40.4, 0.9, 0.45, 0, 0.45, 20.1, 0.35),
-    createScaledBox(40.4, 0.9, 0.45, 0, 0.45, -25.6, 0.35),
-    createScaledBox(0.45, 0.9, 46.0, -20.1, 0.45, -2.75, 0.35),
-    createScaledBox(0.45, 0.9, 46.0, 20.1, 0.45, -2.75, 0.35),
-    createScaledBox(4.3, 1.32, 0.45, -5.35, 0.66, -17.5, 0.4),
-    createScaledBox(4.3, 1.32, 0.45, 5.35, 0.66, -17.5, 0.4),
-    createScaledBox(0.32, 0.85, 7.0, -7.55, 1.62, -21.0, 0.4),
-    createScaledBox(0.32, 0.85, 7.0, 7.55, 1.62, -21.0, 0.4),
-    createScaledBox(0.32, 0.52, 5.1, -3.38, 0.65, -15.0, 0.4),
-    createScaledBox(0.32, 0.52, 5.1, 3.38, 0.65, -15.0, 0.4),
-  );
-}
-
 function buildSakuraTerrain(
   floor: FloorWorldLayout3D,
   ground: THREE.BufferGeometry[],
@@ -379,9 +337,9 @@ export function buildWorldArchitectureGeometries(
     buildStarfieldTerrain(floor, ground, plaza, stone, glassDome, brass);
   } else if (floor.biomeId === 'starlight_ruins') {
     buildStarlightRuinsTerrain(ground, plaza, stone, water);
-  } else {
-    buildTownTerrain(floor, ground, plaza, stone);
   }
+  // `town_of_beginnings` renders the real Parisian cobblestone scenery (`TownWorldGlb.tsx`, D-019)
+  // instead of flat procedural ground/curb blocks, while still keeping rotated bookcases below.
 
   buildRotatedBookcases(floor, cabinet, crown, backPanel, brass);
 

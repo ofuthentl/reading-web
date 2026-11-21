@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { cloneGlbTemplate, useLocalGlb } from './gltfLoader';
+import { AnimatedPlayerGlb } from './AnimatedPlayerGlb';
 import { createContactShadowTexture } from './worldMaterials';
+
+const DEFAULT_PLAYER_MODEL_URL = `${import.meta.env.BASE_URL ?? '/'}models/player.glb`;
 
 export interface PlayerMotionState {
   position: [number, number, number];
@@ -131,27 +133,21 @@ function createKiritoHeadTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-function CustomPlayerGlb({ url }: { url: string }) {
-  const { template } = useLocalGlb(url);
-  const instance = useMemo(() => (template ? cloneGlbTemplate(template) : null), [template]);
-  if (!instance || !template) return null;
-  const groundedY = -template.bbox.min[1];
-  return <primitive object={instance} position={[0, groundedY, 0]} />;
-}
-
 /**
- * Stylized articulated Black Swordsman (Kirito) 3D avatar (`D-015`):
- * curved equirectangular anime head texture (zero clipping), downward-sweeping spiky
- * black bangs, rounded capsule limbs, slate-obsidian Coat of Midnight with crisp silver
- * piping, diagonal chest strap + 3-pronged buckle, flowing A-line coat tails, contact
- * ground shadow, and Elucidator slung behind the right shoulder.
+ * Player avatar (`D-015`/`D-019`): defaults to the real Mixamo-rigged Kirito `.glb`
+ * (`public/models/player.glb`, 4 clips `Idle`/`Walk`/`Run`/`Sprint`, 0 CDN) and keeps the
+ * articulated stylized Black Swordsman procedural rig as an instant loading/error fallback.
  */
 export function KiritoAvatar({
   motionRef,
   paused,
   prefersReducedMotion,
-  customModelUrl = null,
+  customModelUrl = DEFAULT_PLAYER_MODEL_URL,
 }: KiritoAvatarProps) {
+  const [glbLoaded, setGlbLoaded] = useState(false);
+  const handleGlbLoadedChange = useCallback((loaded: boolean) => {
+    setGlbLoaded(loaded);
+  }, []);
   const rootRef = useRef<THREE.Group | null>(null);
   const bodyRef = useRef<THREE.Group | null>(null);
   const headRef = useRef<THREE.Group | null>(null);
@@ -207,7 +203,7 @@ export function KiritoAvatar({
     root.position.set(state.position[0], state.position[1], state.position[2]);
     root.rotation.y = state.yaw;
 
-    if (paused || state.firstPerson) return;
+    if (paused || state.firstPerson || glbLoaded) return;
 
     const dt = Math.min(delta, 0.05);
     idleTimeRef.current += dt;
@@ -249,22 +245,25 @@ export function KiritoAvatar({
     if (coatTailRRef.current) coatTailRRef.current.rotation.z = -(0.12 + tailFlutter * 0.24);
   });
 
-  if (customModelUrl) {
-    return (
-      <group ref={rootRef} name="kirito-custom-avatar">
-        <CustomPlayerGlb url={customModelUrl} />
-      </group>
-    );
-  }
-
   return (
     <group ref={rootRef} name="kirito-avatar">
-      {/* Ground contact shadow disc */}
+      {/* Ground contact shadow disc (grounds boots smoothly in both GLB & fallback modes) */}
       <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]} material={mats.shadow}>
         <planeGeometry args={[0.92, 0.92]} />
       </mesh>
 
-      <group ref={bodyRef}>
+      {customModelUrl && (
+        <AnimatedPlayerGlb
+          url={customModelUrl}
+          motionRef={motionRef}
+          paused={paused}
+          prefersReducedMotion={prefersReducedMotion}
+          onLoadedChange={handleGlbLoadedChange}
+        />
+      )}
+
+      {!glbLoaded && (
+        <group ref={bodyRef}>
         {/* Tapered athletic torso & Coat of Midnight upper jacket */}
         <group position={[0, 1.07, 0]}>
           {/* Inner shirt */}
@@ -457,6 +456,7 @@ export function KiritoAvatar({
           </group>
         ))}
       </group>
+      )}
     </group>
   );
 }

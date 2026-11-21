@@ -1,25 +1,24 @@
 # HANDOFF
-Cập nhật: 2026-11-21 11:52 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 84.70 kB gzip, 0 B three) · 🟢 ESLint 100%
-Nhiệm vụ hiện tại: Triển khai **PR 4A — Aincrad Reading Tower** (`Sub-phase 4A-T3` xong, đã test được trực tiếp trên web → chuẩn bị `Sub-phase 4A-T4`)
+Cập nhật: 2026-11-21 12:55 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 84.70 kB gzip, 0 B three) · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: Triển khai **PR 4A — Aincrad Reading Tower** (vừa hoàn tất **Real GLB Kirito + Tầng 1 Phố Châu Âu `D-019`**, chờ kiểm tra trực quan → tiếp tục `Sub-phase 4A-T4`)
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/library-series-tab.md · docs/plans/phase-4-aincrad-tower.md
 
 ## Đang làm dở
-- **Sub-phase 4A-T3 hoàn tất & kiểm định XANH 100% (đã chạy thử trực tiếp được trên web qua `npm run dev`):**
-  - `KiritoAvatar.tsx` (395 dòng) & `AmbientNpcs.tsx` (297 dòng): đã vá sạch lỗi hình ảnh (vẽ mặt anime trực tiếp lên UV cầu cong không còn bị chìm, lật mái tóc rủ xuống, thân/tay/chân bo tròn `CapsuleGeometry`/`CylinderGeometry`, tông áo xám-than có khối, khoá 3 chấu xoay đúng mặt trước, thêm bóng tiếp xúc chân) + `worldMaterials.ts` thêm sprite cánh hoa/lá/đom đóm mượt (bỏ hạt ô vuông).
-  - `PlayerRig.tsx` (381 dòng): `WASD` + `Shift`, kéo chuột xoay 360° (ngưỡng 5px tách drag/click), zoom, `V` Thứ 3 ↔ Thứ 1, `E` tương tác Cổng/Trạm/NPC, vật lý `worldPhysics3d.ts`.
-  - Xử lý trọn vẹn 3 điểm lưu ý: `LibraryCanvas.tsx` chuyển `frameloop` thông minh (`'always'` khi đi dạo, `'demand'` khi giảm chuyển động, **`'never'` = 0 FPS** khi mở sách/modal/ẩn tab), `FantasyLibrary3D.tsx` gọi **`clearLocalGlbCache()`** khi unmount 3D, `BiomePropsMesh.tsx` tự trừ `template.bbox.min[1]` căn sát đất cho cả 3 `.glb`.
-  - Gỡ bỏ `CameraRig.tsx` & `LibraryRoomMesh.tsx` cũ; thêm `WorldQuickBar.tsx` (chuyển nhanh Tầng 1..N, nút Thứ 3/1, pill `[E]` & thoại NPC).
-  - Kiểm định: 19/19 (4A-T1) + 5/5 (4A-T2, 0 CDN cả `src/` & `dist/`), `typecheck`/`lint`/`build` XANH 100%, mọi file `<= 500` dòng hiệu dụng.
+- **Nâng cấp Real GLB Kirito & Tầng 1 Phố Châu Âu (`D-019`, Phương án A) hoàn tất & XANH 100%:**
+  - **`public/models/player.glb` (316 KB)** + `AnimatedPlayerGlb.tsx` (149 dòng) + `KiritoAvatar.tsx`: hợp nhất 4 file Mixamo FBX (`Idle`, `Walk`, `Run`, `Sprint`) thành 1 bộ xương 25 xương chuẩn (0 lệch bind pose) + 4 ảnh PNG gốc nén WebP 1024 + Meshopt, cao đúng 1.70 m, tự pha mượt `crossFadeTo(0.18s)`, giữ bản procedural làm fallback.
+  - **`public/models/town-world.glb` (13.09 MiB)** + `TownWorldGlb.tsx` (133 dòng) + `biomeBlueprints.ts`: nén `after_the_rain` (153.6 MiB → 13.09 MiB, chuyển `metalrough` + WebP 1024 + Meshopt), lọc `anisotropy` 8x, chuyển tán lá/cỏ sang `alphaTest` chống lỗi độ sâu, bật sáng 22 đèn đường & 4 đèn ấm vào Chiều/Đêm, căn đại lộ lát đá khớp chuẩn 6 gian kệ sách, Bàn đọc, Bục Thủ thư, Dragon Mascot, 4 NPC và collider mặt tiền (`blocksCamera = true`).
+  - **Ánh sáng & phản chiếu PBR 0-CDN:** thêm `skyEnvironment.ts` (`THREE.PMREMGenerator` nội bộ cho `scene.environment`), bật đổ bóng mềm `PCFSoftShadowMap` (`2048×2048`, tắt khi `prefers-reduced-motion`) và mở rộng `SkyDome` 460 m / `camera.far = 560` để hiển thị trọn khinh khí cầu xa.
+  - Kiểm định: `typecheck`, `lint` (0 lỗi, 0 cảnh báo), `build` (entry `84.70 kB gzip`, `0 B three`), 19/19 test vật lý/va chạm/camera (4A-T1) và 6/6 test hình học/GLB/0-CDN (4A-T2).
 
 ## Bước tiếp theo
-1. Người dùng chạy `npm run dev` kiểm tra trực quan 4 tầng Biome (độ khít `mountain-stairs.glb`, chân `dragon-mascot.glb` & `stone-golem.glb`, hướng bìa vòng cung Starfield, Kirito & NPC).
-2. **Sub-phase 4A-T4**: `MinimapWidget.tsx`, `CozyGameHud.tsx` (HP/Mana/XP nền + Nhiệm vụ đọc thu gọn), `ambientAudio.ts` (âm thanh môi trường Web Audio API), `InteractiveStations.tsx` (hitboxes & vòng sáng trạm tương tác 3D).
+1. Người dùng tải lại `npm run dev` kiểm tra trực quan **Kirito thật** (`Idle`/`Walk`/`Run`/`Sprint` khi bấm `WASD` + `Shift`) và **Tầng 1 Thị trấn Khởi Đầu** (Ban ngày / Chiều tối / Đêm khuya + đèn đường sáng + bóng đổ + 6 kệ sách + khinh khí cầu), quyết định có đồng bộ thêm NPC `.glb` hay GLB cho tầng 2–4.
+2. **Sub-phase 4A-T4**: `MinimapWidget.tsx`, `CozyGameHud.tsx` (HP/Mana/XP nền + Nhiệm vụ đọc thu gọn), `ambientAudio.ts` (âm thanh môi trường Web Audio API), `InteractiveStations.tsx` (vòng sáng & hitboxes trạm tương tác 3D).
 3. **Sub-phase 4A-T5**: kiểm thử toàn bộ checklist PR 4A → mở PR merge vào `main`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **Sub-phase 4A-T3 (`feat/library-3d`):** dựng Kirito, NPC, `PlayerRig`, nối trọn thế giới 4 Biome vào `LibraryCanvas`/`FantasyLibrary3D`/`Library3DOverlay`, xử lý `frameloop` 0 FPS, `clearLocalGlbCache()`, và tự căn `min.y` cho 3 `.glb`.
-- **Tab Thư viện 2D (`feat/library-3d`, D-018):** thêm tab `Trang chủ` | `Thư viện`, bìa Tập 1 (`shelfSummary.ts`), lưới thẻ kệ & trang chi tiết nạp lười (`6.03 kB gzip`).
-- **Sub-phase 4A-T1 → 4A-T2 (`feat/library-3d`):** thế giới 4 Biome + vật lý OBB/dốc/cầu + nén 3 GLB vào `public/models/` (1.89 MiB, Meshopt/WebP local).
+- **Real GLB Kirito & Tầng 1 Phố Châu Âu (`feat/library-3d`, D-019):** xây `player.glb` (316 KB, 4 anim Mixamo) & `town-world.glb` (13.09 MiB), thêm `AnimatedPlayerGlb.tsx`, `TownWorldGlb.tsx`, `skyEnvironment.ts`, đổ bóng mềm & khớp bố cục Tầng 1.
+- **Sub-phase 4A-T1 → 4A-T3 (`feat/library-3d`):** thế giới 4 Biome, vật lý OBB/dốc/cầu, 3 model `.glb`, `PlayerRig`, NPC, `frameloop` 0 FPS, `clearLocalGlbCache()`.
+- **Tab Thư viện 2D (`feat/library-3d`, D-018):** cặp tab `Trang chủ` | `Thư viện`, bìa Tập 1 & drill-down tại chỗ (`6.03 kB gzip`).
