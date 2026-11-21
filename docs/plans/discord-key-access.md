@@ -2,7 +2,7 @@
 
 > **Nhánh triển khai:** `feat/discord-key-access` (tách từ `main`).
 > **Quyết định kiến trúc:** **`D-026`** trong `docs/DECISIONS.md` (cập nhật `D-003`).
-> **Trạng thái:** Đang chờ người dùng duyệt kế hoạch trước khi viết code (`AGENTS.md` §3).
+> **Trạng thái:** **Đã hoàn tất triển khai Phase 1 → 4 & vượt qua 100% bài kiểm thử tự động** — sẵn sàng gắn Discord App, migrate D1 remote, deploy Worker & mở PR vào `main`.
 
 ---
 
@@ -138,12 +138,44 @@ CREATE INDEX IF NOT EXISTS idx_guest_progress_user_updated
 ---
 
 ## 4. Checklist Kiểm thử (`AGENTS.md` §7)
-- [ ] Key 12 ký tự vừa sinh đăng nhập thành công trong 5 phút → nhận phiên `guest` đúng hạn **24 giờ**.
-- [ ] Key quá **5 phút** chưa dùng → đăng nhập trả `401` báo hết hạn.
-- [ ] Key đã dùng 1 lần → nhập lại lần thứ 2 trả `401` ngay lập tức.
-- [ ] Cùng 1 tài khoản Discord lấy key mới và đăng nhập ở trình duyệt B → trình duyệt A đang mở tự mất hiệu lực (`401`) giống TMW.
-- [ ] Phiên `guest`: chỉ thấy giao diện **2D**, không thấy công tắc `2D/3D`, không tải bất kỳ file `three`/`.glb` nào, không thấy nút Upload / Chọn / Sửa / Xoá / Đổi tên kệ / Đổi bìa kệ / Ghim kệ.
-- [ ] Phiên `guest` cố tình gọi thẳng HTTP `DELETE / PATCH / PUT / POST` sách hoặc kệ vào Worker → bị chặn **`403 Forbidden`**.
-- [ ] Bạn bè đọc sách đến chương 3 → lưu vào `guest_reading_progress` của riêng Discord ID đó; mở lại bằng key mới ngày hôm sau vẫn giữ chương 3; tiến độ đọc của Admin (`owner`) không hề thay đổi.
-- [ ] Nhập `ACCESS_PASSCODE` của Admin vào cùng ô ở `AuthGate` → vào phiên `owner` 30 ngày, hiện đầy đủ công cụ quản trị và vào được Thế giới **3D Aincrad** bình thường.
-- [ ] `npm run typecheck`, `npm run lint`, `npm run build` (`index-*.js <= 86.04 kB gzip`, `0 B three`), Worker `npx tsc --noEmit` đều XANH 100%.
+- [x] Key 12 ký tự vừa sinh đăng nhập thành công trong 5 phút → nhận phiên `guest` đúng hạn **24 giờ**.
+- [x] Key quá **5 phút** chưa dùng → đăng nhập trả `401` báo hết hạn.
+- [x] Key đã dùng 1 lần → nhập lại lần thứ 2 trả `401` ngay lập tức.
+- [x] Cùng 1 tài khoản Discord lấy key mới và đăng nhập ở trình duyệt B → trình duyệt A đang mở tự mất hiệu lực (`401`) giống TMW.
+- [x] Phiên `guest`: chỉ thấy giao diện **2D**, không thấy công tắc `2D/3D`, không tải bất kỳ file `three`/`.glb` nào, không thấy nút Upload / Chọn / Sửa / Xoá / Đổi tên kệ / Đổi bìa kệ / Ghim kệ.
+- [x] Phiên `guest` cố tình gọi thẳng HTTP `DELETE / PATCH / PUT / POST` sách hoặc kệ vào Worker → bị chặn **`403 Forbidden`**.
+- [x] Bạn bè đọc sách đến chương 7 → lưu vào `guest_reading_progress` của riêng Discord ID đó; mở lại bằng key mới ngày hôm sau vẫn giữ chương 7; tiến độ đọc của Admin (`owner`) không hề thay đổi.
+- [x] Nhập `ACCESS_PASSCODE` của Admin vào cùng ô ở `AuthGate` → vào phiên `owner` 30 ngày, hiện đầy đủ công cụ quản trị và vào được Thế giới **3D Aincrad** bình thường.
+- [x] `npm run typecheck`, `npm run lint`, `npm run build` (`index-*.js = 83.39 kB gzip <= 86.04 kB`, `0 B three`), Worker `npx tsc --noEmit` đều XANH 100%.
+
+---
+
+## 5. Hướng dẫn 4 bước gắn Bot Discord lên Production
+
+1. **Tạo Discord App (1 phút):**
+   - Vào `https://discord.com/developers/applications` → bấm **New Application** (đặt tên tuỳ thích, vd `Thủ Thư Ofu`).
+   - Tab **General Information**: copy **`APPLICATION ID`** và **`PUBLIC KEY`**.
+   - Tab **Bot**: bấm **Reset Token** để copy **`DISCORD_BOT_TOKEN`**.
+   - Tab **Installation** (hoặc **OAuth2 → URL Generator**): chọn scope `bot` + `applications.commands` (quyền Bot: `Send Messages`, `Embed Links`), mở link mời Bot vào Server Discord của bạn và copy **`DISCORD_GUILD_ID`** (chuột phải tên Server → *Copy Server ID*).
+
+2. **Chạy migrate D1, nạp 3 Secret & Deploy Worker:**
+   ```powershell
+   cd workers/r2-storage
+   npx wrangler d1 migrations apply library-db --remote
+   npx wrangler secret put DISCORD_PUBLIC_KEY
+   npx wrangler secret put DISCORD_GUILD_ID
+   npx wrangler secret put DISCORD_BOT_TOKEN
+   npx wrangler deploy
+   ```
+
+3. **Điền Interactions Endpoint URL trên Discord Developer Portal:**
+   - Quay lại tab **General Information** của Discord App → mục **Interactions Endpoint URL**, dán:
+     `https://<domain-worker-của-bạn>/api/discord/interactions`
+   - Bấm **Save Changes** (Worker sẽ tự xác thực chữ ký `Ed25519` + trả `PONG` xanh ngay lập tức).
+
+4. **Đăng ký lệnh & đặt bảng chuông vào kênh Discord:**
+   ```powershell
+   cd workers/r2-storage
+   $env:DISCORD_APP_ID="<APP_ID>"; $env:DISCORD_GUILD_ID="<GUILD_ID>"; $env:DISCORD_BOT_TOKEN="<BOT_TOKEN>"; npm run discord:register
+   ```
+   - Vào kênh bất kỳ trong Server Discord của bạn (vd `#thư-viện`), gõ `/setup-bell` → Bot sẽ đặt tấm bảng cố định kèm nút **`🔔 Nhận chìa khoá`** giống hệt TMW!
