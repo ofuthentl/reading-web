@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react';
 import {
   BookMarked,
   BookOpen,
@@ -15,6 +16,12 @@ import { BookCard } from '@/components/BookCard';
 import { LibraryHeader } from '@/components/LibraryHeader';
 import type { LibraryViewState } from '@/hooks/useLibraryViewState';
 import type { AppTheme } from '@/hooks/useTheme';
+
+const LazyLibraryCatalogView = lazy(() =>
+  import('@/components/LibraryCatalogView').then((mod) => ({
+    default: mod.LibraryCatalogView,
+  })),
+);
 
 interface Library2DViewProps {
   books: Book[];
@@ -35,6 +42,23 @@ interface Library2DViewProps {
   onRenameShelf?: (shelfName: string) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
+}
+
+function LibraryGridSkeleton() {
+  return (
+    <section aria-label="Đang tải thư viện" className="space-y-4">
+      <div className="h-5 w-44 animate-pulse rounded bg-subtle" />
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <div key={index} className="space-y-2.5">
+            <div className="aspect-[3/4] w-full animate-pulse rounded-lg border border-line bg-subtle" />
+            <div className="h-3.5 w-4/5 animate-pulse rounded bg-subtle" />
+            <div className="h-3 w-1/2 animate-pulse rounded bg-subtle" />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 export function Library2DView({
@@ -59,6 +83,11 @@ export function Library2DView({
 }: Library2DViewProps) {
   const isDark = theme !== 'light';
   const {
+    activeTab,
+    setActiveTab,
+    openedLibraryShelf,
+    openLibraryShelf,
+    closeLibraryShelf,
     searchQuery,
     setSearchQuery,
     activeShelfKey,
@@ -66,6 +95,7 @@ export function Library2DView({
     selectionMode,
     selectedIds,
     allShelves,
+    libraryShelves,
     continueReadingBooks,
     filteredBooks,
     visibleShelves,
@@ -74,9 +104,12 @@ export function Library2DView({
     toggleSelectionMode,
     toggleSelectBook,
     selectAllVisible,
+    selectBookIds,
     clearSelection,
     clearFilters,
   } = viewState;
+
+  const isLibraryGridMode = activeTab === 'library' && !openedLibraryShelf;
 
   return (
     <div className="theme-canvas min-h-screen text-ink transition-colors duration-200">
@@ -87,6 +120,9 @@ export function Library2DView({
         theme={theme}
         selectionMode={selectionMode}
         selectedCount={selectedIds.size}
+        showSelectionToggle={!isLibraryGridMode}
+        activeTab={activeTab}
+        onChangeTab={setActiveTab}
         canUse3D={canUse3D}
         viewMode={viewMode}
         onChangeViewMode={onChangeViewMode}
@@ -98,154 +134,9 @@ export function Library2DView({
       />
 
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6 sm:py-8">
-        {/* Thanh tìm kiếm & lọc kệ */}
-        {books.length > 0 && (
-          <section aria-label="Tìm kiếm và lọc thư viện" className="space-y-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="relative flex-1 sm:max-w-md">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
-                <input
-                  type="text"
-                  inputMode="search"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Tìm theo tên sách, tác giả hoặc tên kệ..."
-                  aria-label="Tìm theo tên sách, tác giả hoặc tên kệ"
-                  className="w-full rounded-xl border border-line bg-surface py-2.5 pl-10 pr-9 text-sm text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-accent"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    aria-label="Xoá từ khoá tìm kiếm"
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-ink-faint transition-colors hover:bg-subtle hover:text-ink"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-
-              {isFiltering && (
-                <div className="flex items-center gap-2 text-xs text-ink-muted">
-                  <span>
-                    Hiển thị <strong className="text-ink">{filteredBooks.length}</strong> /{' '}
-                    {books.length} cuốn
-                  </span>
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    className="rounded-lg border border-line bg-surface px-2.5 py-1 font-medium text-accent transition-colors hover:border-line-strong hover:bg-subtle"
-                  >
-                    Xoá lọc
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {allShelves.length > 1 && (
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hover">
-                <button
-                  type="button"
-                  onClick={() => setActiveShelfKey(null)}
-                  className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                    activeShelfKey === null
-                      ? 'border-accent bg-accent text-accent-foreground'
-                      : 'border-line bg-surface text-ink-muted hover:border-line-strong hover:text-ink'
-                  }`}
-                >
-                  Tất cả kệ ({books.length})
-                </button>
-                {allShelves.map((shelf) => {
-                  const active = activeShelfKey === shelf.key;
-                  return (
-                    <button
-                      key={shelf.key}
-                      type="button"
-                      onClick={() => setActiveShelfKey(active ? null : shelf.key)}
-                      className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                        active
-                          ? 'border-accent bg-accent text-accent-foreground'
-                          : 'border-line bg-surface text-ink-muted hover:border-line-strong hover:text-ink'
-                      }`}
-                    >
-                      {shelf.name} ({shelf.books.length})
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* Thanh thao tác khi bật chế độ chọn nhiều */}
-        {selectionMode && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/40 bg-surface px-4 py-3 shadow-sm">
-            <p className="text-sm text-ink">
-              Đã chọn <strong className="text-accent">{selectedIds.size}</strong> /{' '}
-              {filteredBooks.length} cuốn sách
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={
-                  selectedIds.size === filteredBooks.length && filteredBooks.length > 0
-                    ? clearSelection
-                    : selectAllVisible
-                }
-                disabled={filteredBooks.length === 0}
-                className="rounded-lg border border-line bg-canvas px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-line-strong disabled:opacity-50"
-              >
-                {selectedIds.size === filteredBooks.length && filteredBooks.length > 0
-                  ? 'Bỏ chọn tất cả'
-                  : 'Chọn tất cả'}
-              </button>
-              {onMoveSelectedToShelf && (
-                <button
-                  type="button"
-                  disabled={selectedBooks.length === 0}
-                  onClick={() => onMoveSelectedToShelf(selectedBooks)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-45"
-                >
-                  <FolderInput className="h-3.5 w-3.5" />
-                  Chuyển kệ ({selectedBooks.length})
-                </button>
-              )}
-              {onDeleteSelected && (
-                <button
-                  type="button"
-                  disabled={selectedBooks.length === 0}
-                  onClick={() => onDeleteSelected(selectedBooks)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-700/30 bg-red-600/10 px-3 py-1.5 text-xs font-medium text-red-800 transition-colors hover:bg-red-600/20 disabled:opacity-45 dark:border-red-400/30 dark:text-red-300"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Xoá đã chọn ({selectedBooks.length})
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={toggleSelectionMode}
-                className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
-              >
-                Xong
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Trạng thái đang tải lần đầu */}
         {loading && books.length === 0 ? (
-          <section aria-label="Đang tải thư viện" className="space-y-4">
-            <div className="h-5 w-44 animate-pulse rounded bg-subtle" />
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-              {Array.from({ length: 6 }).map((_, index) => (
-                <div key={index} className="space-y-2.5">
-                  <div className="aspect-[3/4] w-full animate-pulse rounded-lg border border-line bg-subtle" />
-                  <div className="h-3.5 w-4/5 animate-pulse rounded bg-subtle" />
-                  <div className="h-3 w-1/2 animate-pulse rounded bg-subtle" />
-                </div>
-              ))}
-            </div>
-          </section>
+          <LibraryGridSkeleton />
         ) : books.length === 0 ? (
           /* Trạng thái thư viện trống */
           <section className="moonlit-card mx-auto flex max-w-md flex-col items-center rounded-2xl border border-line bg-surface px-6 py-14 text-center shadow-sm dark:border-line-strong/60">
@@ -268,8 +159,166 @@ export function Library2DView({
               Tải sách đầu tiên
             </button>
           </section>
+        ) : activeTab === 'library' ? (
+          /* Tab Thư viện (nạp lười giữ nhẹ bundle khởi đầu) */
+          <Suspense fallback={<LibraryGridSkeleton />}>
+            <LazyLibraryCatalogView
+              allShelvesCount={allShelves.length}
+              libraryShelves={libraryShelves}
+              openedLibraryShelf={openedLibraryShelf}
+              progress={progress}
+              searchQuery={searchQuery}
+              selectionMode={selectionMode}
+              selectedIds={selectedIds}
+              onSearchChange={setSearchQuery}
+              onOpenShelf={openLibraryShelf}
+              onCloseShelf={closeLibraryShelf}
+              onOpenBook={onOpenBook}
+              onToggleSelect={toggleSelectBook}
+              onSelectBookIds={selectBookIds}
+              onClearSelection={clearSelection}
+              onToggleSelectionMode={toggleSelectionMode}
+              onEditBook={onEditBook}
+              onRenameShelf={onRenameShelf}
+              onMoveSelectedToShelf={onMoveSelectedToShelf}
+              onDeleteSelected={onDeleteSelected}
+            />
+          </Suspense>
         ) : (
+          /* Tab Trang chủ */
           <>
+            {/* Thanh tìm kiếm & lọc kệ */}
+            <section aria-label="Tìm kiếm và lọc thư viện" className="space-y-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="relative flex-1 sm:max-w-md">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
+                  <input
+                    type="text"
+                    inputMode="search"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Tìm theo tên sách, tác giả hoặc tên kệ..."
+                    aria-label="Tìm theo tên sách, tác giả hoặc tên kệ"
+                    className="w-full rounded-xl border border-line bg-surface py-2.5 pl-10 pr-9 text-sm text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-accent"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      aria-label="Xoá từ khoá tìm kiếm"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-ink-faint transition-colors hover:bg-subtle hover:text-ink"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {isFiltering && (
+                  <div className="flex items-center gap-2 text-xs text-ink-muted">
+                    <span>
+                      Hiển thị <strong className="text-ink">{filteredBooks.length}</strong> /{' '}
+                      {books.length} cuốn
+                    </span>
+                    <button
+                      type="button"
+                      onClick={clearFilters}
+                      className="rounded-lg border border-line bg-surface px-2.5 py-1 font-medium text-accent transition-colors hover:border-line-strong hover:bg-subtle"
+                    >
+                      Xoá lọc
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {allShelves.length > 1 && (
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hover">
+                  <button
+                    type="button"
+                    onClick={() => setActiveShelfKey(null)}
+                    className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                      activeShelfKey === null
+                        ? 'border-accent bg-accent text-accent-foreground'
+                        : 'border-line bg-surface text-ink-muted hover:border-line-strong hover:text-ink'
+                    }`}
+                  >
+                    Tất cả kệ ({books.length})
+                  </button>
+                  {allShelves.map((shelf) => {
+                    const active = activeShelfKey === shelf.key;
+                    return (
+                      <button
+                        key={shelf.key}
+                        type="button"
+                        onClick={() => setActiveShelfKey(active ? null : shelf.key)}
+                        className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                          active
+                            ? 'border-accent bg-accent text-accent-foreground'
+                            : 'border-line bg-surface text-ink-muted hover:border-line-strong hover:text-ink'
+                        }`}
+                      >
+                        {shelf.name} ({shelf.books.length})
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {/* Thanh thao tác khi bật chế độ chọn nhiều */}
+            {selectionMode && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/40 bg-surface px-4 py-3 shadow-sm">
+                <p className="text-sm text-ink">
+                  Đã chọn <strong className="text-accent">{selectedIds.size}</strong> /{' '}
+                  {filteredBooks.length} cuốn sách
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={
+                      selectedIds.size === filteredBooks.length && filteredBooks.length > 0
+                        ? clearSelection
+                        : selectAllVisible
+                    }
+                    disabled={filteredBooks.length === 0}
+                    className="rounded-lg border border-line bg-canvas px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-line-strong disabled:opacity-50"
+                  >
+                    {selectedIds.size === filteredBooks.length && filteredBooks.length > 0
+                      ? 'Bỏ chọn tất cả'
+                      : 'Chọn tất cả'}
+                  </button>
+                  {onMoveSelectedToShelf && (
+                    <button
+                      type="button"
+                      disabled={selectedBooks.length === 0}
+                      onClick={() => onMoveSelectedToShelf(selectedBooks)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-45"
+                    >
+                      <FolderInput className="h-3.5 w-3.5" />
+                      Chuyển kệ ({selectedBooks.length})
+                    </button>
+                  )}
+                  {onDeleteSelected && (
+                    <button
+                      type="button"
+                      disabled={selectedBooks.length === 0}
+                      onClick={() => onDeleteSelected(selectedBooks)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-700/30 bg-red-600/10 px-3 py-1.5 text-xs font-medium text-red-800 transition-colors hover:bg-red-600/20 disabled:opacity-45 dark:border-red-400/30 dark:text-red-300"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Xoá đã chọn ({selectedBooks.length})
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={toggleSelectionMode}
+                    className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
+                  >
+                    Xong
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Khối Tiếp tục đọc */}
             {!isFiltering && continueReadingBooks.length > 0 && (
               <section aria-labelledby="continue-reading-heading" className="space-y-3.5">

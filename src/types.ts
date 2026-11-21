@@ -71,3 +71,4 @@ export type ReaderSettings = {
 };
 
 export type ViewMode = '3d' | '2d';
+export type LibraryTab = 'home' | 'library';

@@ -149,16 +149,21 @@ export default function App() {
     if (nextStorage) setStorage(nextStorage);
   }, []);
 
-  const handleShelfRenamed = useCallback((oldName: string, newName: string) => {
-    const oldKey = oldName.trim().toLocaleLowerCase('vi');
-    setBooks((prev) =>
-      prev.map((item) =>
-        (item.shelf || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi') === oldKey
-          ? { ...item, shelf: newName }
-          : item,
-      ),
-    );
-  }, []);
+  const { syncRenamedShelf } = libraryViewState;
+  const handleShelfRenamed = useCallback(
+    (oldName: string, newName: string) => {
+      const oldKey = oldName.trim().toLocaleLowerCase('vi');
+      setBooks((prev) =>
+        prev.map((item) =>
+          (item.shelf || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi') === oldKey
+            ? { ...item, shelf: newName }
+            : item,
+        ),
+      );
+      syncRenamedShelf(oldName, newName);
+    },
+    [syncRenamedShelf],
+  );
 
   const handleBooksShelfMoved = useCallback((bookIds: string[], targetShelf: string) => {
     const idSet = new Set(bookIds);

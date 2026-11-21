@@ -1,6 +1,28 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Book, ReadingProgress, ShelfGroup } from '@/types';
+import type { Book, LibraryTab, ReadingProgress, ShelfGroup } from '@/types';
 import { groupBooksIntoShelves } from '@/lib/api';
+import { computeBookProgressPercent } from '@/lib/bookMetadata';
+
+export { computeBookProgressPercent };
+
+export const LIBRARY_TAB_STORAGE_KEY = 'ofu-library-active-tab';
+
+function readStoredLibraryTab(): LibraryTab {
+  try {
+    const raw = localStorage.getItem(LIBRARY_TAB_STORAGE_KEY);
+    return raw === 'library' ? 'library' : 'home';
+  } catch {
+    return 'home';
+  }
+}
+
+function writeStoredLibraryTab(tab: LibraryTab) {
+  try {
+    localStorage.setItem(LIBRARY_TAB_STORAGE_KEY, tab);
+  } catch {
+    // Ignore storage quota or private mode errors
+  }
+}
 
 export function normalizeSearchText(input: string): string {
   return input
@@ -11,23 +33,14 @@ export function normalizeSearchText(input: string): string {
     .trim();
 }
 
-export function computeBookProgressPercent(book: Book, progress?: ReadingProgress): number | null {
-  if (!progress) return null;
-  if (progress.completed) return 100;
-  const clamped = Math.min(1, Math.max(0, progress.scrollRatio || 0));
-  if (progress.totalChapters && progress.totalChapters > 0) {
-    if (book.file_type === 'pdf') {
-      return Math.min(100, Math.round(((progress.chapterIndex + 1) / progress.totalChapters) * 100));
-    }
-    return Math.min(
-      100,
-      Math.round(((progress.chapterIndex + clamped) / progress.totalChapters) * 100),
-    );
-  }
-  return Math.round(clamped * 100);
-}
-
 export interface LibraryViewState {
+  activeTab: LibraryTab;
+  setActiveTab: (tab: LibraryTab) => void;
+  openedLibraryShelfKey: string | null;
+  openedLibraryShelf: ShelfGroup | null;
+  openLibraryShelf: (shelfKey: string) => void;
+  closeLibraryShelf: () => void;
+  syncRenamedShelf: (oldName: string, newName: string) => void;
   searchQuery: string;
   setSearchQuery: (value: string) => void;
   activeShelfKey: string | null;
@@ -35,6 +48,7 @@ export interface LibraryViewState {
   selectionMode: boolean;
   selectedIds: Set<string>;
   allShelves: ShelfGroup[];
+  libraryShelves: ShelfGroup[];
   continueReadingBooks: Book[];
   filteredBooks: Book[];
   visibleShelves: ShelfGroup[];
@@ -43,6 +57,7 @@ export interface LibraryViewState {
   toggleSelectionMode: () => void;
   toggleSelectBook: (bookId: string) => void;
   selectAllVisible: () => void;
+  selectBookIds: (ids: string[]) => void;
   clearSelection: () => void;
   clearFilters: () => void;
 }
@@ -52,6 +67,8 @@ export function useLibraryViewState(
   progress: Record<string, ReadingProgress>,
   selectionResetKey?: number,
 ): LibraryViewState {
+  const [activeTab, setActiveTabState] = useState<LibraryTab>(readStoredLibraryTab);
+  const [openedLibraryShelfKey, setOpenedLibraryShelfKey] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeShelfKey, setActiveShelfKey] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -91,6 +108,52 @@ export function useLibraryViewState(
     }
   }, [activeShelfKey, allShelves]);
 
+  useEffect(() => {
+    if (
+      openedLibraryShelfKey &&
+      !allShelves.some((shelf) => shelf.key === openedLibraryShelfKey)
+    ) {
+      setOpenedLibraryShelfKey(null);
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+    }
+  }, [openedLibraryShelfKey, allShelves]);
+
+  const openedLibraryShelf = useMemo(() => {
+    if (!openedLibraryShelfKey) return null;
+    return allShelves.find((shelf) => shelf.key === openedLibraryShelfKey) ?? null;
+  }, [allShelves, openedLibraryShelfKey]);
+
+  const setActiveTab = useCallback((tab: LibraryTab) => {
+    setActiveTabState(tab);
+    writeStoredLibraryTab(tab);
+    setOpenedLibraryShelfKey(null);
+    if (tab === 'library') {
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+    }
+  }, []);
+
+  const openLibraryShelf = useCallback((shelfKey: string) => {
+    setOpenedLibraryShelfKey(shelfKey);
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  const closeLibraryShelf = useCallback(() => {
+    setOpenedLibraryShelfKey(null);
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  const syncRenamedShelf = useCallback((oldName: string, newName: string) => {
+    const oldKey = oldName.trim().toLocaleLowerCase('vi');
+    const newKey = newName.trim().toLocaleLowerCase('vi');
+    if (!oldKey || !newKey || oldKey === newKey) return;
+    setOpenedLibraryShelfKey((prev) => (prev === oldKey ? newKey : prev));
+    setActiveShelfKey((prev) => (prev === oldKey ? newKey : prev));
+  }, []);
+
   const continueReadingBooks = useMemo(() => {
     return books
       .filter((book) => Boolean(progress[book.id]))
@@ -99,6 +162,17 @@ export function useLibraryViewState(
   }, [books, progress]);
 
   const normalizedQuery = useMemo(() => normalizeSearchText(searchQuery), [searchQuery]);
+
+  // Lọc kệ cho Tab Thư viện: giữ nguyên đủ tập & ảnh bìa Tập 1 ngay cả khi từ khoá khớp tên 1 tập
+  const libraryShelves = useMemo(() => {
+    if (!normalizedQuery) return allShelves;
+    return allShelves.filter((shelf) => {
+      if (normalizeSearchText(shelf.name).includes(normalizedQuery)) return true;
+      return shelf.books.some((book) =>
+        normalizeSearchText(`${book.title} ${book.author}`).includes(normalizedQuery),
+      );
+    });
+  }, [allShelves, normalizedQuery]);
 
   const filteredBooks = useMemo(() => {
     return books.filter((book) => {
@@ -134,6 +208,10 @@ export function useLibraryViewState(
     setSelectedIds(new Set(filteredBooks.map((book) => book.id)));
   }, [filteredBooks]);
 
+  const selectBookIds = useCallback((ids: string[]) => {
+    setSelectedIds(new Set(ids));
+  }, []);
+
   const clearSelection = useCallback(() => {
     setSelectedIds(new Set());
   }, []);
@@ -151,6 +229,13 @@ export function useLibraryViewState(
   const isFiltering = Boolean(normalizedQuery || activeShelfKey);
 
   return {
+    activeTab,
+    setActiveTab,
+    openedLibraryShelfKey,
+    openedLibraryShelf,
+    openLibraryShelf,
+    closeLibraryShelf,
+    syncRenamedShelf,
     searchQuery,
     setSearchQuery,
     activeShelfKey,
@@ -158,6 +243,7 @@ export function useLibraryViewState(
     selectionMode,
     selectedIds,
     allShelves,
+    libraryShelves,
     continueReadingBooks,
     filteredBooks,
     visibleShelves,
@@ -166,6 +252,7 @@ export function useLibraryViewState(
     toggleSelectionMode,
     toggleSelectBook,
     selectAllVisible,
+    selectBookIds,
     clearSelection,
     clearFilters,
   };
