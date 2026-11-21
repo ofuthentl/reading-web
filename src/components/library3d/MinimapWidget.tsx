@@ -401,7 +401,7 @@ export function MinimapWidget({
         />
 
         {/* North compass badge */}
-        <span className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 rounded-full border border-line-strong/80 bg-surface px-1.5 py-0.2 text-[9px] font-bold tracking-wider text-accent shadow-sm">
+        <span className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 rounded-full border border-line-strong bg-surface px-1.5 py-[1px] text-[9px] font-bold tracking-wider text-accent shadow-sm">
           N
         </span>
 

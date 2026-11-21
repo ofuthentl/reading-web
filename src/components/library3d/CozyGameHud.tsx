@@ -87,7 +87,7 @@ export function CozyGameHud({
 
       <section
         aria-label="Trạng thái độc giả & mục tiêu Phòng Boss"
-        className="pointer-events-auto w-[224px] rounded-2xl border border-line-strong/80 bg-surface/92 px-3 py-2.5 shadow-lg backdrop-blur-md xl:w-[238px]"
+        className="pointer-events-auto w-[224px] rounded-2xl border border-line-strong bg-surface/95 px-3 py-2.5 shadow-xl backdrop-blur-md xl:w-[238px]"
       >
         {/* Top row: Level badge + Time-of-day quick pill + Minimap toggle */}
         <div className="flex items-center justify-between gap-1.5">
@@ -245,7 +245,7 @@ export function CozyGameHud({
                   style={{ width: `${Math.max(bossProgressPct > 0 ? 5 : 0, bossProgressPct)}%` }}
                 />
               </div>
-              <p className="text-[10px] leading-snug text-ink-faint">
+              <p className="text-[10px] leading-snug text-ink-muted">
                 {inBossRoom
                   ? 'Đi tới Cửa Xanh phía sau để quay lại tầng.'
                   : bossUnlock.unlocked

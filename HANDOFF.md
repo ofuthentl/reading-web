@@ -1,6 +1,6 @@
 # HANDOFF
-Cập nhật: 2026-11-21 18:38 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 84.77 kB gzip, 0 B three) · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: Triển khai **PR 4A — Aincrad Reading Tower** (vừa hoàn tất trọn **Sub-phase 4A-T4** — Minimap tự co giãn, Cozy Game HUD, Dropdown 10–100+ tầng, Web Audio môi trường nội bộ & Vòng sáng trạm tương tác 3D → chuyển sang **Sub-phase 4A-T5** kiểm thử tổng thể & mở PR vào `main`)
+Cập nhật: 2026-11-21 19:19 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 84.77 kB gzip, 0 B three) · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: Triển khai **PR 4A — Aincrad Reading Tower** (vừa sửa dứt điểm lỗi nền trong suốt HUD/Dropdown do opacity ngoài thang Tailwind v3 `/92`/`/98`/`/12` → đang chờ chốt có dùng `battle_boss.glb` hay giữ `boss-arena.glb` cho Phòng Boss)
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/phase-4-aincrad-tower.md
 
 ## Đang làm dở

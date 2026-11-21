@@ -127,7 +127,7 @@ export function WorldQuickBar({
   return (
     <div
       ref={barRef}
-      className="pointer-events-auto relative flex flex-wrap items-center justify-end gap-1.5 rounded-2xl border border-line-strong/80 bg-surface/92 px-2.5 py-1.5 shadow-lg backdrop-blur-md"
+      className="pointer-events-auto relative flex flex-wrap items-center justify-end gap-1.5 rounded-2xl border border-line-strong bg-surface/95 px-2.5 py-1.5 shadow-xl backdrop-blur-md"
     >
       {/* Scalable Floor Dropdown Trigger */}
       <div className="relative">
@@ -142,8 +142,8 @@ export function WorldQuickBar({
           title={inBossRoom ? `Phòng Boss Tầng ${activeFloor.floorNumber} · ${bossUnlock.bossName}` : activeFloor.title}
           className={`inline-flex max-w-[240px] items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
             inBossRoom
-              ? 'border-amber-500/60 bg-amber-500/12 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300'
-              : 'border-line bg-canvas/90 text-ink hover:border-line-strong hover:bg-subtle'
+              ? 'border-amber-500/60 bg-amber-500/15 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300'
+              : 'border-line bg-canvas text-ink hover:border-line-strong hover:bg-subtle'
           }`}
         >
           {inBossRoom ? (
@@ -167,7 +167,7 @@ export function WorldQuickBar({
           <div
             role="listbox"
             aria-label="Chọn tầng Aincrad Reading Tower"
-            className="absolute right-0 top-[calc(100%+8px)] z-20 w-72 overflow-hidden rounded-2xl border border-line-strong/85 bg-surface/98 shadow-2xl backdrop-blur-md"
+            className="absolute right-0 top-[calc(100%+8px)] z-20 w-72 overflow-hidden rounded-2xl border border-line-strong bg-surface shadow-2xl"
           >
             <div className="border-b border-line/75 px-3 py-2">
               <div className="flex items-center justify-between gap-2">
@@ -263,8 +263,8 @@ export function WorldQuickBar({
           title="Tìm kiếm sách & nhảy thẳng tới kệ"
           className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-2 py-1.5 text-xs font-medium transition-colors ${
             hasSearch || searchOpen
-              ? 'border-accent/60 bg-accent/12 text-accent'
-              : 'border-line bg-canvas/90 text-ink-muted hover:border-line-strong hover:bg-subtle hover:text-ink'
+              ? 'border-accent/60 bg-accent/15 text-accent'
+              : 'border-line bg-canvas text-ink-muted hover:border-line-strong hover:bg-subtle hover:text-ink'
           }`}
         >
           <Search className="h-3.5 w-3.5" />
@@ -272,7 +272,7 @@ export function WorldQuickBar({
         </button>
 
         {searchOpen && (
-          <div className="absolute right-0 top-[calc(100%+8px)] z-20 w-72 overflow-hidden rounded-2xl border border-line-strong/85 bg-surface/98 p-2.5 shadow-2xl backdrop-blur-md">
+          <div className="absolute right-0 top-[calc(100%+8px)] z-20 w-72 overflow-hidden rounded-2xl border border-line-strong bg-surface p-2.5 shadow-2xl">
             <div className="relative flex items-center">
               <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-ink-faint" />
               <input
@@ -341,8 +341,8 @@ export function WorldQuickBar({
         title={audioEnabled ? 'Đang bật âm thanh môi trường (bấm để tắt)' : 'Bật âm thanh môi trường dịu nhẹ'}
         className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium transition-colors ${
           audioEnabled
-            ? 'border-emerald-500/55 bg-emerald-500/12 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300'
-            : 'border-line bg-canvas/90 text-ink-muted hover:border-line-strong hover:bg-subtle hover:text-ink'
+            ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300'
+            : 'border-line bg-canvas text-ink-muted hover:border-line-strong hover:bg-subtle hover:text-ink'
         }`}
       >
         {audioEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
