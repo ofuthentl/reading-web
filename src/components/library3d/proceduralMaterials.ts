@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { AppTheme } from '@/hooks/useTheme';
+import { attachLocalWoodAlbedo } from './furnitureGlbHelpers';
 
 export interface Library3DLightingRig {
   hemisphere: { skyColor: string; groundColor: string; intensity: number };
@@ -512,6 +513,14 @@ export function createLibraryMaterialBundle(initialTheme: AppTheme): LibraryMate
 
   applyTheme(initialTheme);
   let disposed = false;
+  let pbrWoodAlbedo: THREE.Texture | null = null;
+  attachLocalWoodAlbedo(
+    [materials.woodCabinet, materials.woodCrown, materials.woodBackPanel],
+    () => disposed,
+    (tex) => {
+      pbrWoodAlbedo = tex;
+    },
+  );
 
   return {
     get theme() {
@@ -530,6 +539,7 @@ export function createLibraryMaterialBundle(initialTheme: AppTheme): LibraryMate
       woodAlbedo.dispose();
       woodBump.dispose();
       paper.dispose();
+      pbrWoodAlbedo?.dispose();
     },
   };
 }
