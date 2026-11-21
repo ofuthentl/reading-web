@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { FolderEdit } from 'lucide-react';
+import { FolderEdit, Image, Star } from 'lucide-react';
 import { pickClothCoverColor } from '@/lib/bookMetadata';
 import type { ShelfSummary } from '@/lib/shelfSummary';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
@@ -8,15 +8,27 @@ interface ShelfCoverCardProps {
   summary: ShelfSummary;
   onOpenShelf: (shelfKey: string) => void;
   onRenameShelf?: (shelfName: string) => void;
+  onChangeShelfCover?: (summary: ShelfSummary) => void;
+  onToggleFavorite?: (shelfName: string, nextFavorite: boolean) => void;
 }
 
 export function ShelfCoverCard({
   summary,
   onOpenShelf,
   onRenameShelf,
+  onChangeShelfCover,
+  onToggleFavorite,
 }: ShelfCoverCardProps) {
-  const { shelf, coverBook, authorLabel, bookCount, completedCount, readingStatus, progressPercent } =
-    summary;
+  const {
+    shelf,
+    coverBook,
+    isFavorite,
+    authorLabel,
+    bookCount,
+    completedCount,
+    readingStatus,
+    progressPercent,
+  } = summary;
 
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [isNearViewport, setIsNearViewport] = useState(
@@ -129,19 +141,58 @@ export function ShelfCoverCard({
           </div>
         )}
 
-        {/* Nút đổi tên kệ kín đáo khi hover */}
-        {onRenameShelf && (
+        {/* Nhóm nút thao tác kệ kín đáo khi hover */}
+        {(onRenameShelf || onChangeShelfCover) && (
+          <div className="absolute left-2 top-2 flex items-center gap-1 opacity-85 transition-opacity focus-within:opacity-100 group-hover:opacity-100 sm:opacity-0">
+            {onRenameShelf && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRenameShelf(shelf.name);
+                }}
+                aria-label={`Đổi tên kệ ${shelf.name}`}
+                title="Đổi tên kệ"
+                className="rounded-lg border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] transition-colors hover:bg-[#16120f]"
+              >
+                <FolderEdit className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {onChangeShelfCover && shelf.books.some((b) => Boolean(b.cover_key)) && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onChangeShelfCover(summary);
+                }}
+                aria-label={`Chọn ảnh bìa cho kệ ${shelf.name}`}
+                title="Chọn ảnh bìa kệ"
+                className="rounded-lg border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] transition-colors hover:bg-[#16120f]"
+              >
+                <Image className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Nút ghim kệ yêu thích góc trên-phải (luôn nổi khi đã yêu thích) */}
+        {onToggleFavorite && (
           <button
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              onRenameShelf(shelf.name);
+              onToggleFavorite(shelf.name, !isFavorite);
             }}
-            aria-label={`Đổi tên kệ ${shelf.name}`}
-            title="Đổi tên kệ"
-            className="absolute left-2 top-2 rounded-lg border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] opacity-85 transition-opacity hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0"
+            aria-label={isFavorite ? `Bỏ yêu thích kệ ${shelf.name}` : `Yêu thích kệ ${shelf.name}`}
+            aria-pressed={isFavorite}
+            title={isFavorite ? 'Bỏ yêu thích kệ' : 'Ghim kệ yêu thích lên đầu'}
+            className={`absolute right-2 top-2 rounded-lg border p-1.5 transition-all ${
+              isFavorite
+                ? 'border-amber-400/50 bg-[#16120f]/85 text-amber-400 opacity-100 shadow-sm hover:bg-[#16120f]'
+                : 'border-[#f3e9d7]/20 bg-[#16120f]/75 text-[#f3e9d7] opacity-85 hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0'
+            }`}
           >
-            <FolderEdit className="h-3.5 w-3.5" />
+            <Star className={`h-3.5 w-3.5 ${isFavorite ? 'fill-amber-400' : ''}`} />
           </button>
         )}
 

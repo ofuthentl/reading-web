@@ -141,15 +141,25 @@ function WorldSceneContent({
     ),
   }));
 
+  const requestRender = useCallback(() => {
+    if (pausedRef.current) return;
+    invalidate();
+  }, [invalidate]);
+  const requestRenderRef = useRef(requestRender);
+  requestRenderRef.current = requestRender;
+
   // Create reusable procedural material bundles once per mount; update in-place across themes/biomes
   const initialThemeRef = useRef(theme);
   const initialBiomeRef = useRef(floor.biomeId);
   const libraryMaterials = useMemo(
-    () => createLibraryMaterialBundle(initialThemeRef.current),
+    () => createLibraryMaterialBundle(initialThemeRef.current, () => requestRenderRef.current()),
     [],
   );
   const worldMaterials = useMemo(
-    () => createWorldMaterialBundle(initialBiomeRef.current, initialThemeRef.current),
+    () =>
+      createWorldMaterialBundle(initialBiomeRef.current, initialThemeRef.current, () =>
+        requestRenderRef.current(),
+      ),
     [],
   );
 
@@ -159,11 +169,6 @@ function WorldSceneContent({
       worldMaterials.dispose();
     };
   }, [libraryMaterials, worldMaterials]);
-
-  const requestRender = useCallback(() => {
-    if (pausedRef.current) return;
-    invalidate();
-  }, [invalidate]);
 
   useEffect(() => {
     libraryMaterials.applyTheme(theme);

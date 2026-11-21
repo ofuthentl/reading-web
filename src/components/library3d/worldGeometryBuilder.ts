@@ -211,7 +211,7 @@ function buildSakuraTerrain(
   bridgeRed: THREE.BufferGeometry[],
   water: THREE.BufferGeometry[],
 ): void {
-  // South grass bank (Z: 4.8..24), North shrine bank (Z: -20..-4.8) & Summit hill (stops flush at Z = -22.5, never cuts mountain-stairs.glb!)
+  // South grass bank (Z: 4.8..24), North shrine bank (Z: -20..-4.8) & Summit hill (stops flush at Z = -22.5 beside prop-mossy-stairs.glb)
   ground.push(
     createScaledBox(56, 0.8, 21, 0, -0.4, 15.3, 0.08),
     createScaledBox(56, 0.8, 17, 0, -0.4, -13.3, 0.08),
@@ -226,7 +226,7 @@ function buildSakuraTerrain(
   // Lakebed & shimmering Sakura Lake water plane
   stone.push(
     createScaledBox(56, 0.3, 12, 0, -0.95, 0, 0.15),
-    // Embankment stones along lake edges & cliff flanks beside mountain-stairs.glb
+    // Embankment stones along lake edges & cliff flanks beside prop-mossy-stairs.glb
     createScaledBox(18.2, 0.45, 0.55, -12.0, 0.12, 4.8, 0.35),
     createScaledBox(18.2, 0.45, 0.55, 12.0, 0.12, 4.8, 0.35),
     createScaledBox(18.2, 0.45, 0.55, -12.0, 0.12, -4.8, 0.35),
@@ -280,7 +280,7 @@ function buildStarlightRuinsTerrain(
     createScaledBox(7.2, 0.08, 34.5, 0, -0.015, 2.0, 0.16),
     createScaledBox(18.0, 2.5, 8.5, 0, 1.15, -25.0, 0.16),
   );
-  // Flanking cliff stonework beside mountain-stairs.glb + island rim stones
+  // Flanking cliff stonework beside prop-mossy-stairs.glb + island rim stones
   stone.push(
     createScaledBox(13.0, 2.55, 5.4, -8.38, 1.25, -18.15, 0.25),
     createScaledBox(13.0, 2.55, 5.4, 8.38, 1.25, -18.15, 0.25),

@@ -34,6 +34,13 @@ export interface ProgressRow {
   updated_at: number;
 }
 
+export interface ShelfPrefRow {
+  shelf_key: string;
+  cover_book_id: string | null;
+  is_favorite: number;
+  updated_at: number;
+}
+
 export const DEFAULT_HARD_LIMIT_BYTES = 9 * 1024 * 1024 * 1024; // 9.0 GiB safety cap under 10 GB Free Tier
 export const MAX_SINGLE_FILE_BYTES = 350 * 1024 * 1024; // 350 MiB
 export const MAX_COVER_BYTES = 5 * 1024 * 1024; // 5 MiB
@@ -101,10 +108,26 @@ export function assertQuota(usedBytes: number, incomingBytes: number, limitBytes
   }
 }
 
+async function ensureShelfPrefsTable(env: Env): Promise<void> {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS shelf_prefs (
+       shelf_key TEXT PRIMARY KEY,
+       cover_book_id TEXT,
+       is_favorite INTEGER NOT NULL DEFAULT 0,
+       updated_at INTEGER NOT NULL
+     )`,
+  ).run();
+}
+
 export async function listBooksAndProgress(env: Env) {
-  const [booksRes, progressRes, storage] = await Promise.all([
+  const [booksRes, progressRes, shelfPrefsRes, storage] = await Promise.all([
     env.DB.prepare('SELECT * FROM books ORDER BY created_at DESC').all<BookRow>(),
     env.DB.prepare('SELECT * FROM reading_progress').all<ProgressRow>(),
+    env.DB.prepare('SELECT shelf_key, cover_book_id, is_favorite FROM shelf_prefs')
+      .all<Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite'>>()
+      .catch(() => ({
+        results: [] as Array<Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite'>>,
+      })),
     getStorageStats(env),
   ]);
 
@@ -137,7 +160,15 @@ export async function listBooksAndProgress(env: Env) {
     };
   }
 
-  return { books: booksRes.results || [], progress: progressMap, storage };
+  const shelfCovers: Record<string, string> = {};
+  const favoriteShelves: string[] = [];
+  for (const row of shelfPrefsRes.results || []) {
+    if (!row.shelf_key) continue;
+    if (row.cover_book_id) shelfCovers[row.shelf_key] = row.cover_book_id;
+    if (row.is_favorite === 1) favoriteShelves.push(row.shelf_key);
+  }
+
+  return { books: booksRes.results || [], progress: progressMap, shelfCovers, favoriteShelves, storage };
 }
 
 export async function deleteSingleBook(env: Env, bookId: string) {
@@ -156,6 +187,10 @@ export async function deleteSingleBook(env: Env, bookId: string) {
     env.DB.prepare('DELETE FROM reading_progress WHERE book_id = ?').bind(bookId),
     env.DB.prepare('DELETE FROM books WHERE id = ?').bind(bookId),
   ]);
+  await env.DB.batch([
+    env.DB.prepare('UPDATE shelf_prefs SET cover_book_id = NULL WHERE cover_book_id = ?').bind(bookId),
+    env.DB.prepare('DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0'),
+  ]).catch(() => undefined);
 
   const storage = await getStorageStats(env);
   return { deletedId: bookId, storage };
@@ -196,6 +231,15 @@ export async function bulkDeleteBooks(env: Env, rawIds: unknown) {
     );
   }
   await env.DB.batch(deleteStatements);
+  for (const chunk of idChunks) {
+    const placeholders = chunk.map(() => '?').join(', ');
+    await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE shelf_prefs SET cover_book_id = NULL WHERE cover_book_id IN (${placeholders})`,
+      ).bind(...chunk),
+      env.DB.prepare('DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0'),
+    ]).catch(() => undefined);
+  }
 
   const storage = await getStorageStats(env);
   return { deletedIds: ids, storage };
@@ -232,6 +276,7 @@ export async function renameShelfCaseInsensitive(env: Env, rawOldName: unknown, 
   }
 
   const targetKey = oldName.toLocaleLowerCase('vi');
+  const newKey = newName.toLocaleLowerCase('vi');
   const rows = await env.DB.prepare('SELECT DISTINCT shelf FROM books').all<{ shelf: string }>();
   const matchedShelves = (rows.results || [])
     .map((r) => r.shelf)
@@ -239,21 +284,106 @@ export async function renameShelfCaseInsensitive(env: Env, rawOldName: unknown, 
 
   if (matchedShelves.length === 0) {
     await env.DB.prepare('UPDATE books SET shelf = ? WHERE shelf = ?').bind(newName, oldName).run();
-    return { ok: true };
+  } else {
+    const statements: D1PreparedStatement[] = [];
+    for (const chunk of chunkArray(matchedShelves, BULK_D1_CHUNK_SIZE)) {
+      const placeholders = chunk.map(() => '?').join(', ');
+      statements.push(
+        env.DB.prepare(`UPDATE books SET shelf = ? WHERE shelf IN (${placeholders})`).bind(
+          newName,
+          ...chunk,
+        ),
+      );
+    }
+    await env.DB.batch(statements);
   }
 
-  const statements: D1PreparedStatement[] = [];
-  for (const chunk of chunkArray(matchedShelves, BULK_D1_CHUNK_SIZE)) {
-    const placeholders = chunk.map(() => '?').join(', ');
-    statements.push(
-      env.DB.prepare(`UPDATE books SET shelf = ? WHERE shelf IN (${placeholders})`).bind(
-        newName,
-        ...chunk,
-      ),
-    );
+  if (targetKey !== newKey) {
+    await (async () => {
+      const existingRows = await env.DB.prepare(
+        'SELECT shelf_key, cover_book_id, is_favorite FROM shelf_prefs WHERE shelf_key IN (?, ?)',
+      )
+        .bind(targetKey, newKey)
+        .all<Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite'>>();
+      const list = existingRows.results || [];
+      const src = list.find((r) => r.shelf_key === targetKey);
+      if (!src) return;
+      const dest = list.find((r) => r.shelf_key === newKey);
+      const mergedCover = dest?.cover_book_id || src.cover_book_id || null;
+      const mergedFav = dest?.is_favorite === 1 || src.is_favorite === 1 ? 1 : 0;
+      await env.DB.batch([
+        env.DB.prepare(
+          `INSERT INTO shelf_prefs (shelf_key, cover_book_id, is_favorite, updated_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(shelf_key) DO UPDATE SET
+             cover_book_id = excluded.cover_book_id,
+             is_favorite = excluded.is_favorite,
+             updated_at = excluded.updated_at`,
+        ).bind(newKey, mergedCover, mergedFav, Date.now()),
+        env.DB.prepare('DELETE FROM shelf_prefs WHERE shelf_key = ?').bind(targetKey),
+      ]);
+    })().catch(() => undefined);
   }
-  await env.DB.batch(statements);
+
   return { ok: true };
+}
+
+export async function upsertShelfCover(env: Env, rawShelfName: unknown, rawBookId: unknown) {
+  const shelfName = typeof rawShelfName === 'string' ? rawShelfName.trim() : '';
+  if (!shelfName || shelfName.length > MAX_SHELF_NAME_LENGTH) {
+    throw new HttpError('Tên kệ sách không hợp lệ.', 400);
+  }
+  const shelfKey = shelfName.toLocaleLowerCase('vi');
+  const nextBookId = rawBookId === null || rawBookId === '' ? null : rawBookId;
+  if (nextBookId !== null && (typeof nextBookId !== 'string' || !isValidId(nextBookId))) {
+    throw new HttpError('ID sách làm ảnh bìa không hợp lệ.', 400);
+  }
+
+  await ensureShelfPrefsTable(env);
+  const updatedAt = Date.now();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO shelf_prefs (shelf_key, cover_book_id, is_favorite, updated_at)
+       VALUES (?, ?, 0, ?)
+       ON CONFLICT(shelf_key) DO UPDATE SET
+         cover_book_id = excluded.cover_book_id,
+         updated_at = excluded.updated_at`,
+    ).bind(shelfKey, nextBookId, updatedAt),
+    env.DB.prepare(
+      'DELETE FROM shelf_prefs WHERE shelf_key = ? AND cover_book_id IS NULL AND is_favorite = 0',
+    ).bind(shelfKey),
+  ]);
+
+  return { ok: true, shelfKey, bookId: nextBookId, updatedAt };
+}
+
+export async function upsertShelfFavorite(env: Env, rawShelfName: unknown, rawFavorite: unknown) {
+  const shelfName = typeof rawShelfName === 'string' ? rawShelfName.trim() : '';
+  if (!shelfName || shelfName.length > MAX_SHELF_NAME_LENGTH) {
+    throw new HttpError('Tên kệ sách không hợp lệ.', 400);
+  }
+  if (typeof rawFavorite !== 'boolean') {
+    throw new HttpError('Trạng thái yêu thích không hợp lệ.', 400);
+  }
+  const shelfKey = shelfName.toLocaleLowerCase('vi');
+  const isFav = rawFavorite ? 1 : 0;
+
+  await ensureShelfPrefsTable(env);
+  const updatedAt = Date.now();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO shelf_prefs (shelf_key, cover_book_id, is_favorite, updated_at)
+       VALUES (?, NULL, ?, ?)
+       ON CONFLICT(shelf_key) DO UPDATE SET
+         is_favorite = excluded.is_favorite,
+         updated_at = excluded.updated_at`,
+    ).bind(shelfKey, isFav, updatedAt),
+    env.DB.prepare(
+      'DELETE FROM shelf_prefs WHERE shelf_key = ? AND cover_book_id IS NULL AND is_favorite = 0',
+    ).bind(shelfKey),
+  ]);
+
+  return { ok: true, shelfKey, favorite: rawFavorite, updatedAt };
 }
 
 export async function upsertReadingProgress(

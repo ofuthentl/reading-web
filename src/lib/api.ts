@@ -1,21 +1,19 @@
 import type { Book, BookFileType, ReadingProgress, ShelfGroup, StorageStats } from '@/types';
 import {
-  deleteCachedBookBlob,
-  deleteCachedCoverBlob,
-  deleteLocalBook,
-  deleteLocalProgress,
-  getAllLocalProgress,
-  getCachedBookBlob,
-  getCachedCoverBlob,
-  getLocalBooks,
-  putLocalBook,
-  putLocalProgress,
-  setCachedBookBlob,
-  setCachedCoverBlob,
+  deleteCachedBookBlob, deleteCachedCoverBlob, deleteLocalBook, deleteLocalProgress,
+  getAllLocalProgress, getCachedBookBlob, getCachedCoverBlob, getLocalBooks,
+  putLocalBook, putLocalProgress, setCachedBookBlob, setCachedCoverBlob,
 } from '@/lib/cache';
 import { getBookSortTitle, parseFileMetadata, pickCoverColor } from '@/lib/bookMetadata';
 import { isChunkLoadError } from '@/lib/chunkReload';
 import { compressCoverBlob } from '@/lib/coverImage';
+import {
+  type ShelfPrefsState,
+  pruneDeletedBooksFromPrefs,
+  readLocalShelfPrefs,
+  renameShelfPrefs,
+  writeLocalShelfPrefs,
+} from '@/lib/shelfPrefs';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
 const TOKEN_STORAGE_KEY = 'arcane-library-auth-token';
@@ -26,7 +24,7 @@ export const isMissingProductionApi = !import.meta.env.DEV && !API_BASE;
 export const isLocalDevMode = import.meta.env.DEV && !API_BASE;
 export const isCloudMode = Boolean(API_BASE);
 
-function assertApiConfigured() {
+export function assertApiConfigured() {
   if (isMissingProductionApi) {
     throw new Error(
       'Thiếu cấu hình VITE_API_URL trên bản production. Vui lòng thiết lập secret VITE_API_URL trỏ về Cloudflare Worker và deploy lại.',
@@ -122,7 +120,7 @@ export function isAuthError(err: unknown): boolean {
   return err instanceof ApiAuthError;
 }
 
-async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   const token = getAuthToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -162,29 +160,39 @@ export async function loginWithPasscode(passcode: string): Promise<void> {
 export async function fetchLibraryState(): Promise<{
   books: Book[];
   progress: Record<string, ReadingProgress>;
+  shelfPrefs: ShelfPrefsState;
   storage: StorageStats;
 }> {
   assertApiConfigured();
+  const localPrefs = readLocalShelfPrefs();
   if (!isCloudMode) {
     const [books, progress] = await Promise.all([getLocalBooks(), getAllLocalProgress()]);
     const sorted = sortBooksByTitle(books);
     const storage = await computeLocalStorageStats(sorted);
-    return { books: sorted, progress, storage };
+    return { books: sorted, progress, shelfPrefs: localPrefs, storage };
   }
 
   const response = await apiFetch('/api/books');
   const data = (await response.json().catch(() => ({}))) as {
     books?: Book[];
     progress?: Record<string, ReadingProgress>;
+    shelfCovers?: Record<string, string>;
+    favoriteShelves?: string[];
     storage?: StorageStats;
     error?: string;
   };
   if (!response.ok) {
     throw new Error(data.error || 'Không thể tải dữ liệu thư viện.');
   }
+  const nextPrefs: ShelfPrefsState = {
+    covers: data.shelfCovers ?? localPrefs.covers,
+    favorites: data.favoriteShelves ?? localPrefs.favorites,
+  };
+  writeLocalShelfPrefs(nextPrefs);
   return {
     books: sortBooksByTitle(data.books || []),
     progress: data.progress || {},
+    shelfPrefs: nextPrefs,
     storage: data.storage || {
       usedBytes: 0,
       limitBytes: HARD_LIMIT_BYTES,
@@ -387,6 +395,7 @@ export async function renameShelfAll(oldName: string, newName: string): Promise<
         await putLocalBook({ ...b, shelf: trimmedNew });
       }
     }
+    writeLocalShelfPrefs(renameShelfPrefs(readLocalShelfPrefs(), oldName, trimmedNew));
     return;
   }
 
@@ -399,6 +408,7 @@ export async function renameShelfAll(oldName: string, newName: string): Promise<
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(data.error || 'Không thể đổi tên kệ sách.');
   }
+  writeLocalShelfPrefs(renameShelfPrefs(readLocalShelfPrefs(), oldName, trimmedNew));
 }
 
 export async function bulkUpdateBooksShelf(bookIds: string[], targetShelf: string): Promise<void> {
@@ -466,6 +476,9 @@ export async function deleteBooks(booksToDelete: Book[]): Promise<StorageStats> 
     await deleteCachedBookBlob(b.file_key);
     if (b.cover_key) await deleteCachedCoverBlob(b.cover_key);
   }
+  writeLocalShelfPrefs(
+    pruneDeletedBooksFromPrefs(readLocalShelfPrefs(), new Set(booksToDelete.map((b) => b.id))),
+  );
   return nextStorage;
 }
 

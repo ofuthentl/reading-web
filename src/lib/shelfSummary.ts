@@ -2,7 +2,7 @@ import type { Book, ReadingProgress, ShelfGroup } from '@/types';
 import {
   computeBookProgressPercent,
   getBookSortTitle,
-  VOLUME_SEGMENT_RE,
+  isVolumeOrSubtitleSegment,
 } from '@/lib/bookMetadata';
 import { extractSeriesName, isKnownAuthor } from '@/lib/shelfPlacement';
 
@@ -65,6 +65,9 @@ export type ShelfReadingStatus = 'unread' | 'reading' | 'completed';
 export interface ShelfSummary {
   shelf: ShelfGroup;
   coverBook: Book | null;
+  /** ID tập được người dùng ghim thủ công làm bìa kệ (null nếu đang dùng mặc định Tập 1) */
+  customCoverBookId: string | null;
+  isFavorite: boolean;
   authorLabel: string;
   bookCount: number;
   completedCount: number;
@@ -152,8 +155,15 @@ interface CoverCandidate {
  * 3. Cuốn đầu tiên có ảnh bìa (kể cả tập 0 hoặc tác phẩm lẻ không đánh số).
  * 4. Fallback về Tập 1 / tập nhỏ nhất / cuốn đầu tiên để vẽ bìa vải cổ điển.
  */
-export function pickShelfCoverBook(shelf: ShelfGroup): Book | null {
+export function pickShelfCoverBook(
+  shelf: ShelfGroup,
+  preferredBookId?: string | null,
+): Book | null {
   if (shelf.books.length === 0) return null;
+  if (preferredBookId) {
+    const preferred = shelf.books.find((book) => book.id === preferredBookId && Boolean(book.cover_key));
+    if (preferred) return preferred;
+  }
   if (shelf.books.length === 1) return shelf.books[0];
 
   const shelfKey = normalizeKey(shelf.name);
@@ -205,7 +215,7 @@ function compareCandidates(a: CoverCandidate, b: CoverCandidate): number {
 
 function isDisplayableAuthor(author: string): boolean {
   const clean = author.trim();
-  return isKnownAuthor(clean) && !VOLUME_SEGMENT_RE.test(clean);
+  return isKnownAuthor(clean) && !isVolumeOrSubtitleSegment(clean);
 }
 
 function buildAuthorLabel(books: Book[], coverBook: Book | null): string {
@@ -297,8 +307,17 @@ function pickResumeAction(
 export function summarizeShelf(
   shelf: ShelfGroup,
   progress: Record<string, ReadingProgress>,
+  shelfCovers?: Readonly<Record<string, string>>,
+  favoriteShelfKeys?: ReadonlySet<string>,
 ): ShelfSummary {
-  const coverBook = pickShelfCoverBook(shelf);
+  const rawPreferredId = shelfCovers?.[shelf.key] ?? null;
+  const validCustomBook = rawPreferredId
+    ? shelf.books.find((b) => b.id === rawPreferredId && Boolean(b.cover_key)) ?? null
+    : null;
+  const customCoverBookId = validCustomBook?.id ?? null;
+  const isFavorite = Boolean(favoriteShelfKeys?.has(shelf.key));
+  const coverBook = validCustomBook ?? pickShelfCoverBook(shelf);
+  const autoStartBook = pickShelfCoverBook(shelf);
   const bookCount = shelf.books.length;
   let completedCount = 0;
   let startedCount = 0;
@@ -332,11 +351,17 @@ export function summarizeShelf(
         ? 100
         : Math.round(totalPercent / bookCount);
 
-  const { resumeBook, resumeActionLabel } = pickResumeAction(shelf.books, progress, coverBook);
+  const { resumeBook, resumeActionLabel } = pickResumeAction(
+    shelf.books,
+    progress,
+    autoStartBook,
+  );
 
   return {
     shelf,
     coverBook,
+    customCoverBookId,
+    isFavorite,
     authorLabel: buildAuthorLabel(shelf.books, coverBook),
     bookCount,
     completedCount,

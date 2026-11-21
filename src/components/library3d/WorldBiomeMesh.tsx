@@ -50,7 +50,8 @@ export function WorldBiomeMesh({
 }: WorldBiomeMeshProps) {
   const { gl, scene } = useThree();
   const internalBundle = useMemo(
-    () => (externalWorldMaterials ? null : createWorldMaterialBundle(floor.biomeId, theme)),
+    () =>
+      externalWorldMaterials ? null : createWorldMaterialBundle(floor.biomeId, theme, requestRender),
     // Created once when no external bundle is injected; updated in place via applyBiomeTheme
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [externalWorldMaterials],

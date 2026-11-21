@@ -7,6 +7,7 @@ import {
   FolderInput,
   Library,
   Search,
+  Star,
   Trash2,
   Upload,
   X,
@@ -16,6 +17,7 @@ import { BookCard } from '@/components/BookCard';
 import { LibraryHeader } from '@/components/LibraryHeader';
 import type { LibraryViewState } from '@/hooks/useLibraryViewState';
 import type { AppTheme } from '@/hooks/useTheme';
+import type { ToastType } from '@/hooks/useToast';
 
 const LazyLibraryCatalogView = lazy(() =>
   import('@/components/LibraryCatalogView').then((mod) => ({
@@ -26,6 +28,8 @@ const LazyLibraryCatalogView = lazy(() =>
 interface Library2DViewProps {
   books: Book[];
   progress: Record<string, ReadingProgress>;
+  shelfCovers?: Readonly<Record<string, string>>;
+  favoriteShelfKeys?: ReadonlySet<string>;
   storage: StorageStats | null;
   loading: boolean;
   theme: AppTheme;
@@ -40,8 +44,12 @@ interface Library2DViewProps {
   onUploadClick: () => void;
   onEditBook?: (book: Book) => void;
   onRenameShelf?: (shelfName: string) => void;
+  onShelfCoverChanged?: (shelfName: string, bookId: string | null) => void;
+  onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
+  onNotify?: (message: string, type?: ToastType) => void;
 }
 
 function LibraryGridSkeleton() {
@@ -64,6 +72,8 @@ function LibraryGridSkeleton() {
 export function Library2DView({
   books,
   progress,
+  shelfCovers,
+  favoriteShelfKeys,
   storage,
   loading,
   theme,
@@ -78,8 +88,12 @@ export function Library2DView({
   onUploadClick,
   onEditBook,
   onRenameShelf,
+  onShelfCoverChanged,
+  onToggleFavoriteShelf,
   onMoveSelectedToShelf,
   onDeleteSelected,
+  onApiError,
+  onNotify,
 }: Library2DViewProps) {
   const isDark = theme !== 'light';
   const {
@@ -165,6 +179,8 @@ export function Library2DView({
               libraryShelves={libraryShelves}
               openedLibraryShelf={openedLibraryShelf}
               progress={progress}
+              shelfCovers={shelfCovers}
+              favoriteShelfKeys={favoriteShelfKeys}
               searchQuery={searchQuery}
               selectionMode={selectionMode}
               selectedIds={selectedIds}
@@ -178,8 +194,12 @@ export function Library2DView({
               onToggleSelectionMode={toggleSelectionMode}
               onEditBook={onEditBook}
               onRenameShelf={onRenameShelf}
+              onShelfCoverChanged={onShelfCoverChanged}
+              onToggleFavoriteShelf={onToggleFavoriteShelf}
               onMoveSelectedToShelf={onMoveSelectedToShelf}
               onDeleteSelected={onDeleteSelected}
+              onApiError={onApiError}
+              onNotify={onNotify}
             />
           </Suspense>
         ) : (
@@ -341,49 +361,80 @@ export function Library2DView({
               </section>
             ) : (
               <div className="space-y-9">
-                {visibleShelves.map((shelf) => (
-                  <section key={shelf.key} aria-label={`Kệ ${shelf.name}`} className="space-y-4">
-                    <div className="flex items-center justify-between gap-3 border-b border-line pb-2.5">
-                      <div className="flex min-w-0 items-center gap-2.5">
-                        <Library className="h-4 w-4 shrink-0 text-accent" />
-                        <h2 className="truncate font-display text-lg font-semibold text-ink">
-                          {shelf.name}
-                        </h2>
-                        <span className="shrink-0 rounded-full border border-line bg-surface px-2 py-0.5 text-xs text-ink-muted">
-                          {shelf.books.length} cuốn
-                        </span>
+                {visibleShelves.map((shelf) => {
+                  const isFav = Boolean(favoriteShelfKeys?.has(shelf.key));
+                  return (
+                    <section key={shelf.key} aria-label={`Kệ ${shelf.name}`} className="space-y-4">
+                      <div className="flex items-center justify-between gap-3 border-b border-line pb-2.5">
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          {isFav ? (
+                            <Star className="h-4 w-4 shrink-0 fill-amber-500 text-amber-500 dark:fill-amber-400 dark:text-amber-400" />
+                          ) : (
+                            <Library className="h-4 w-4 shrink-0 text-accent" />
+                          )}
+                          <h2 className="truncate font-display text-lg font-semibold text-ink">
+                            {shelf.name}
+                          </h2>
+                          <span className="shrink-0 rounded-full border border-line bg-surface px-2 py-0.5 text-xs text-ink-muted">
+                            {shelf.books.length} cuốn
+                          </span>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-1">
+                          {onToggleFavoriteShelf && (
+                            <button
+                              type="button"
+                              onClick={() => onToggleFavoriteShelf(shelf.name, !isFav)}
+                              aria-label={isFav ? `Bỏ yêu thích kệ ${shelf.name}` : `Yêu thích kệ ${shelf.name}`}
+                              aria-pressed={isFav}
+                              title={isFav ? 'Bỏ yêu thích kệ' : 'Ghim kệ yêu thích lên đầu'}
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                                isFav
+                                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:border-amber-400/40 dark:text-amber-300'
+                                  : 'border-transparent text-ink-muted hover:border-line hover:bg-surface hover:text-ink'
+                              }`}
+                            >
+                              <Star
+                                className={`h-3.5 w-3.5 ${
+                                  isFav ? 'fill-amber-500 text-amber-500 dark:fill-amber-400 dark:text-amber-400' : ''
+                                }`}
+                              />
+                              <span className="hidden sm:inline">{isFav ? 'Đã yêu thích' : 'Yêu thích'}</span>
+                            </button>
+                          )}
+
+                          {onRenameShelf && (
+                            <button
+                              type="button"
+                              onClick={() => onRenameShelf(shelf.name)}
+                              aria-label={`Đổi tên kệ ${shelf.name}`}
+                              title="Đổi tên kệ"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-transparent px-2.5 py-1 text-xs font-medium text-ink-muted transition-colors hover:border-line hover:bg-surface hover:text-ink"
+                            >
+                              <FolderEdit className="h-3.5 w-3.5" />
+                              <span className="hidden sm:inline">Đổi tên kệ</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
 
-                      {onRenameShelf && (
-                        <button
-                          type="button"
-                          onClick={() => onRenameShelf(shelf.name)}
-                          aria-label={`Đổi tên kệ ${shelf.name}`}
-                          title="Đổi tên kệ"
-                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-transparent px-2.5 py-1 text-xs font-medium text-ink-muted transition-colors hover:border-line hover:bg-surface hover:text-ink"
-                        >
-                          <FolderEdit className="h-3.5 w-3.5" />
-                          <span className="hidden sm:inline">Đổi tên kệ</span>
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-                      {shelf.books.map((book) => (
-                        <BookCard
-                          key={book.id}
-                          book={book}
-                          progress={progress[book.id]}
-                          selectionMode={selectionMode}
-                          selected={selectedIds.has(book.id)}
-                          onOpen={onOpenBook}
-                          onToggleSelect={toggleSelectBook}
-                          onEdit={onEditBook}
-                        />
-                      ))}
-                    </div>
-                  </section>
-                ))}
+                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                        {shelf.books.map((book) => (
+                          <BookCard
+                            key={book.id}
+                            book={book}
+                            progress={progress[book.id]}
+                            selectionMode={selectionMode}
+                            selected={selectedIds.has(book.id)}
+                            onOpen={onOpenBook}
+                            onToggleSelect={toggleSelectBook}
+                            onEdit={onEditBook}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  );
+                })}
               </div>
             )}
           </>

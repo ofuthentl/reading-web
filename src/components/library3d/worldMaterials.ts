@@ -256,6 +256,7 @@ export function createSoftParticleTexture(
 export function createWorldMaterialBundle(
   initialBiome: BiomeId,
   initialTheme: AppTheme,
+  onTextureReady?: () => void,
 ): WorldMaterialBundle {
   const cobble = createCobbleTexture();
   const grass = createGrassTexture();
@@ -371,6 +372,7 @@ export function createWorldMaterialBundle(
             tex.needsUpdate = true;
             target[slot] = tex;
             syncCobbleMaterials(currentBiome);
+            onTextureReady?.();
           },
           undefined,
           () => undefined,

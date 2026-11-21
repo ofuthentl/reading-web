@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Book, LibraryTab, ReadingProgress, ShelfGroup } from '@/types';
 import { groupBooksIntoShelves } from '@/lib/api';
 import { computeBookProgressPercent } from '@/lib/bookMetadata';
+import { sortShelvesFavoriteFirst } from '@/lib/shelfPrefs';
 
 export { computeBookProgressPercent };
 
@@ -80,6 +81,7 @@ export function useLibraryViewState(
   books: Book[],
   progress: Record<string, ReadingProgress>,
   selectionResetKey?: number,
+  favoriteShelfKeys?: ReadonlySet<string>,
 ): LibraryViewState {
   const [activeTab, setActiveTabState] = useState<LibraryTab>(readStoredLibraryTab);
   const [openedLibraryShelfKey, setOpenedLibraryShelfKey] = useState<string | null>(null);
@@ -114,7 +116,10 @@ export function useLibraryViewState(
     });
   }, [books]);
 
-  const allShelves = useMemo(() => groupBooksIntoShelves(books), [books]);
+  const allShelves = useMemo(
+    () => sortShelvesFavoriteFirst(groupBooksIntoShelves(books), favoriteShelfKeys),
+    [books, favoriteShelfKeys],
+  );
 
   useEffect(() => {
     if (activeShelfKey && !allShelves.some((shelf) => shelf.key === activeShelfKey)) {
@@ -198,7 +203,10 @@ export function useLibraryViewState(
     });
   }, [books, activeShelfKey, normalizedQuery]);
 
-  const visibleShelves = useMemo(() => groupBooksIntoShelves(filteredBooks), [filteredBooks]);
+  const visibleShelves = useMemo(
+    () => sortShelvesFavoriteFirst(groupBooksIntoShelves(filteredBooks), favoriteShelfKeys),
+    [filteredBooks, favoriteShelfKeys],
+  );
 
   const toggleSelectionMode = useCallback(() => {
     setSelectionMode((prev) => {

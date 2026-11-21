@@ -1,6 +1,6 @@
 # Kế hoạch Phase 4 — Aincrad Reading Tower (`ofu.lol`)
 
-> **Trạng thái:** Đã hoàn tất kiểm thử **PR 4A (`Sub-phase 4A-T1 → 4A-T5`)** trên `feat/library-3d` (2026-11-21) — sẵn sàng push & mở Pull Request vào `main`.
+> **Trạng thái:** **PR 4A (`feat/library-3d`)** đã merge vào `main` qua PR #5 và deploy lên `https://ofu.lol` (2026-11-21); đang thực hiện bản vá hậu kỳ `fix/post-4a-cleanup` trước khi bắt đầu **PR 4B (`feat/book-spread-reader`)**.
 > **Quyết định nền tảng:** `D-008`, `D-009`, `D-010` (Hybrid nội bộ), `D-011`, `D-012`, `D-013` (ưu tiên độ đẹp máy cá nhân, giữ entry 2D/mobile `0 B three`), `D-014`, `D-015`, `D-016`, `D-017` (Mỗi tầng = 1 World Biome + Render tầng chủ động + NPC).
 > **Bất biến:** Mọi file `<= 500` dòng hiệu dụng (`eslint` `max-lines`), **0 CDN bên thứ 3**, **0 byte `three`** trong entry `index-*.js` (`<= 86.04 kB gzip`), bản **2D trên `ofu.lol`** không bị phá vỡ, mọi `ObjectURL`/texture/geometry/audio đều `dispose()` sạch khi unmount.
 

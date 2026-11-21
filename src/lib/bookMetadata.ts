@@ -1,5 +1,15 @@
 import type { Book, BookFileType, ReadingProgress } from '@/types';
-import { inferSingleBookShelf } from '@/lib/shelfPlacement';
+import {
+  VOLUME_SEGMENT_RE,
+  VOLUME_WITH_SUBTITLE_RE,
+  cleanShelfLabel,
+  inferSingleBookShelf,
+  isVolumeOrSubtitleSegment,
+} from '@/lib/shelfPlacement';
+
+export { VOLUME_SEGMENT_RE, VOLUME_WITH_SUBTITLE_RE, isVolumeOrSubtitleSegment };
+
+const UNKNOWN_AUTHOR = 'Không rõ tác giả';
 
 const ARCANE_COVER_PALETTE = [
   '#4338ca', // Indigo
@@ -25,27 +35,44 @@ const CLOTH_COVER_PALETTE = [
   '#3a473d', // Sage Moss
 ];
 
-export const VOLUME_SEGMENT_RE =
-  /^(?:(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|book|part|ch|c|v|#)\.?\s*)?\d+(?:[.,]\d+)?(?:\s*[-–~]\s*\d+(?:[.,]\d+)?)?$/i;
-
 /**
- * Trích nhãn số tập lỡ bị tách sang trường `author` ở dữ liệu cũ
- * (VD `author = "Tập 6.5"` hoặc `"Tập 6.5 - Tác giả"` từ tệp `Tên - Tập 6.5.epub`).
+ * Trích nhãn số tập (kể cả kèm tiêu đề phụ như `Tập 1：Những Kẻ...`) lỡ bị tách sang trường `author`
+ * ở dữ liệu cũ để hiển thị, sắp xếp và nhận diện số tập chính xác mà không cần xoá sách tải lại.
  */
 export function extractMisplacedVolumeFromAuthor(author: string): string | null {
   const clean = author.trim();
   if (!clean) return null;
-  if (VOLUME_SEGMENT_RE.test(clean)) return clean;
-  const firstSegment = clean.split(/\s+-\s+/)[0]?.trim();
-  if (firstSegment && VOLUME_SEGMENT_RE.test(firstSegment)) {
+  if (isVolumeOrSubtitleSegment(clean)) return clean;
+  const firstSegment = clean.split(/\s+[-–—―−]\s+/)[0]?.trim();
+  if (firstSegment && isVolumeOrSubtitleSegment(firstSegment)) {
     return firstSegment;
   }
   return null;
 }
 
 /**
+ * Chuẩn hoá tên tác giả khi hiển thị lên thẻ sách / chi tiết sách:
+ * nếu trường `author` chứa nhầm tên tập (`Tập 1`, `Tập 1：...`), trả về `Không rõ tác giả`
+ * hoặc chỉ giữ phần tên tác giả thật đứng sau (nếu có).
+ */
+export function getDisplayAuthor(author: string): string {
+  const clean = author.trim();
+  if (!clean) return UNKNOWN_AUTHOR;
+  if (isVolumeOrSubtitleSegment(clean)) return UNKNOWN_AUTHOR;
+  const segments = clean
+    .split(/\s+[-–—―−]\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (segments.length > 1 && isVolumeOrSubtitleSegment(segments[0])) {
+    const rest = segments.slice(1).filter((s) => !isVolumeOrSubtitleSegment(s));
+    return rest.join(' - ').trim() || UNKNOWN_AUTHOR;
+  }
+  return clean;
+}
+
+/**
  * Tiêu đề đầy đủ dùng để sắp xếp và nhận diện số tập, tự ghép lại nhãn tập
- * nếu sách cũ bị tách nhầm số tập thập phân (`Tập 6.5`, `Vol 10.5`...) sang trường tác giả.
+ * nếu sách cũ bị tách nhầm số tập (`Tập 6.5`, `Tập 1：...`) sang trường tác giả.
  */
 export function getBookSortTitle(book: Pick<Book, 'title' | 'author'>): string {
   const cleanTitle = book.title.trim();
@@ -89,17 +116,17 @@ export function parseFileMetadata(fileName: string): {
   const extension = extMatch ? (extMatch[1].toLowerCase() as BookFileType) : null;
   const baseLabel = fileName.replace(/\.(epub|pdf|docx)$/i, '').trim() || 'Sách chưa đặt tên';
   const segments = baseLabel
-    .split(/\s+-\s+/)
+    .split(/\s+[-–—―−]\s+/)
     .map((part) => part.trim())
     .filter(Boolean);
-  const titleParts = segments.length > 0 ? [segments[0]] : [baseLabel];
+  const titleParts = segments.length > 0 ? [cleanShelfLabel(segments[0]) || segments[0]] : [baseLabel];
   let authorIndex = 1;
-  while (authorIndex < segments.length && VOLUME_SEGMENT_RE.test(segments[authorIndex])) {
+  while (authorIndex < segments.length && isVolumeOrSubtitleSegment(segments[authorIndex])) {
     titleParts.push(segments[authorIndex]);
     authorIndex += 1;
   }
   const title = titleParts.join(' - ').trim() || baseLabel;
-  const author = segments.slice(authorIndex).join(' - ').trim() || 'Không rõ tác giả';
+  const author = segments.slice(authorIndex).join(' - ').trim() || UNKNOWN_AUTHOR;
   const shelf = inferShelfName(title, author);
   return { title, author, shelf, extension };
 }

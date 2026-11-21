@@ -14,7 +14,6 @@ import type { FloorWorldLayout3D } from './worldTypes';
 import {
   DragonMascotGlb,
   MossyStairsGlb,
-  MountainStairsGlb,
   ToriiGateGlb,
 } from './WorldGlbActors';
 import { WorldFurnitureGlbs } from './WorldFurnitureGlbs';
@@ -277,8 +276,8 @@ function BiomeParticles({
 
 /**
  * Renders decorative biome props, interactive station landmarks, local Meshopt/WebP `.glb`
- * hybrid assets (`mountain-stairs.glb`, `dragon-mascot.glb`, `stone-golem.glb`), and
- * drifting atmospheric particles synced to the active floor (`D-010`, `D-017`).
+ * hybrid assets (`prop-mossy-stairs.glb`, `dragon-mascot.glb`, `prop-torii-gate.glb`), and
+ * drifting atmospheric particles synced to the active floor (`D-010`, `D-017`, `D-023`).
  */
 export function BiomePropsMesh({
   floor,
@@ -311,10 +310,6 @@ export function BiomePropsMesh({
     };
   }, [propGeoms]);
 
-  const mountainStairsProps = useMemo(
-    () => floor.props.filter((p) => p.kind === 'mountain_stairs_glb'),
-    [floor.props],
-  );
   const mascotProps = useMemo(
     () => floor.props.filter((p) => p.kind === 'mascot_pedestal'),
     [floor.props],
@@ -365,14 +360,6 @@ export function BiomePropsMesh({
       )}
 
       {/* Local Hybrid GLB Assets (WebP 1024 + Meshopt, 0 CDN) */}
-      {mountainStairsProps.map((p) => (
-        <MountainStairsGlb
-          key={p.id}
-          prop={p}
-          fallbackMaterial={wm.stone}
-          requestRender={requestRender}
-        />
-      ))}
       {mascotProps.map((p) => (
         <DragonMascotGlb
           key={p.id}

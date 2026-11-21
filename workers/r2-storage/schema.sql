@@ -25,6 +25,13 @@ CREATE TABLE IF NOT EXISTS reading_progress (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS shelf_prefs (
+  shelf_key TEXT PRIMARY KEY,
+  cover_book_id TEXT,
+  is_favorite INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_books_shelf ON books(shelf);
 CREATE INDEX IF NOT EXISTS idx_books_created_at ON books(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_progress_updated_at ON reading_progress(updated_at DESC);
