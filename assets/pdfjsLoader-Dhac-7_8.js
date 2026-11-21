@@ -1,1 +1,0 @@
-import{_ as t,s}from"./index-Dfevyik0.js";const l="/pdfjs-wasm/";let o=null;function n(){return o||(o=t(()=>import("./pdf-TtSH7s3_.js"),[]).then(r=>(r.GlobalWorkerOptions.workerSrc=new URL("/assets/pdf.worker.min-Dswkl-cV.mjs",import.meta.url).toString(),r)).catch(r=>{throw o=null,s(r),r})),o}export{n as l,l as p};

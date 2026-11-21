@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f6f1e7" />
+    <title>Ofu's Library</title>
+    <link rel="icon" type="image/png" href="/title.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('ofu-library-theme');
+          var theme =
+            raw === 'light' || raw === 'dim' || raw === 'midnight'
+              ? raw
+              : raw === 'dark'
+                ? 'dim'
+                : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+                  ? 'dim'
+                  : 'light';
+          var root = document.documentElement;
+          root.dataset.theme = theme;
+          if (theme !== 'light') {
+            root.classList.add('dark');
+          }
+          var colors = { light: '#f6f1e7', dim: '#0d1117', midnight: '#060608' };
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', colors[theme] || '#f6f1e7');
+        } catch (_) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-Bnfig3M6.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BhFnEXL_.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
