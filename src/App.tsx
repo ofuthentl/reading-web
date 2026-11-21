@@ -19,7 +19,6 @@ import { BulkShelfModal } from '@/components/BulkShelfModal';
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal';
 import { Library2DView } from '@/components/Library2DView';
 import { Library3DHost } from '@/components/Library3DHost';
-import { ReaderView } from '@/components/ReaderView';
 import { ShelfRenameModal } from '@/components/ShelfRenameModal';
 import { ToastContainer } from '@/components/ToastContainer';
 import { useBookReader } from '@/hooks/useBookReader';
@@ -30,6 +29,14 @@ import { useToast } from '@/hooks/useToast';
 
 const LazyUploadDropzone = lazy(() =>
   import('@/components/UploadDropzone').then((mod) => ({ default: mod.UploadDropzone })),
+);
+
+const LazyReaderView = lazy(() =>
+  import('@/components/ReaderView').then((mod) => ({ default: mod.ReaderView })),
+);
+
+const LazyGuestCanvasReader = lazy(() =>
+  import('@/components/GuestCanvasReader').then((mod) => ({ default: mod.GuestCanvasReader })),
 );
 
 type IdleWindow = Window & { requestIdleCallback?: (cb: () => void) => number };
@@ -115,6 +122,7 @@ export default function App() {
 
   const reader = useBookReader({
     appTheme: theme,
+    sessionRole: session.role,
     onProgressUpdated: handleProgressUpdated,
     onApiError: handleApiError,
   });
@@ -303,7 +311,9 @@ export default function App() {
   const isOwner = session.role === 'owner';
   const effectiveCanUse3D = isOwner && canUse3D;
   const render3D = isOwner && effectiveMode === '3d';
-  const isReaderOpen = Boolean(reader.activeBook && reader.parsedBook);
+  const isReaderOpen = Boolean(
+    reader.activeBook && (reader.parsedBook || reader.guestSession),
+  );
   const is3DPaused = Boolean(reader.openingBook || isReaderOpen || modal.kind !== 'none');
   const is3DDimmed = Boolean(reader.openingBook || isReaderOpen);
 
@@ -392,17 +402,39 @@ export default function App() {
       )}
       {reader.activeBook && reader.parsedBook && (
         <div className="fixed inset-0 z-40">
-          <ReaderView
-            key={reader.activeBook.id}
-            book={reader.activeBook}
-            parsedBook={reader.parsedBook}
-            loadedFromCache={reader.loadedFromCache}
-            initialProgress={progress[reader.activeBook.id]}
-            settings={reader.settings}
-            onUpdateSettings={reader.updateSettings}
-            onSaveProgress={reader.handleSaveProgress}
-            onClose={reader.closeBook}
-          />
+          <Suspense fallback={null}>
+            <LazyReaderView
+              key={reader.activeBook.id}
+              book={reader.activeBook}
+              parsedBook={reader.parsedBook}
+              loadedFromCache={reader.loadedFromCache}
+              initialProgress={progress[reader.activeBook.id]}
+              settings={reader.settings}
+              onUpdateSettings={reader.updateSettings}
+              onSaveProgress={reader.handleSaveProgress}
+              onClose={reader.closeBook}
+            />
+          </Suspense>
+        </div>
+      )}
+      {reader.activeBook && reader.guestSession && (
+        <div className="fixed inset-0 z-40">
+          <Suspense fallback={null}>
+            <LazyGuestCanvasReader
+              key={reader.activeBook.id}
+              book={reader.activeBook}
+              tocChapters={reader.guestSession.chapters}
+              watermarkLabel={
+                session.watermarkLabel || reader.guestSession.watermarkLabel || 'Guest'
+              }
+              initialProgress={progress[reader.activeBook.id]}
+              settings={reader.settings}
+              onUpdateSettings={reader.updateSettings}
+              onSaveProgress={reader.handleSaveProgress}
+              onApiError={handleApiError}
+              onClose={reader.closeBook}
+            />
+          </Suspense>
         </div>
       )}
       {isOwner && modal.kind === 'upload' && (
