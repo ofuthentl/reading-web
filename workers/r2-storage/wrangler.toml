@@ -5,6 +5,7 @@ workers_dev = true
 
 [vars]
 APP_ORIGINS = "https://ofu.lol,http://localhost:5173,http://127.0.0.1:5173"
+PUBLIC_APP_URL = "https://ofu.lol"
 # Chốt chặn cứng 9.0 GiB (chừa 1 GB dự phòng dưới hạn mức 10 GB Free Tier của R2)
 STORAGE_LIMIT_BYTES = "9663676416"
 

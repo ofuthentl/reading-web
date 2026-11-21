@@ -5,6 +5,7 @@ import {
   requireOwner,
   verifyAuth,
 } from './auth';
+import { handleDiscordInteraction } from './discord';
 import {
   ACCEPTED_FILE_TYPES,
   type BookRow,
@@ -81,6 +82,11 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
       200,
       origin,
     );
+  }
+
+  // Discord HTTP Interactions webhook (verified via Ed25519 signature)
+  if (pathname === '/api/discord/interactions' && request.method === 'POST') {
+    return handleDiscordInteraction(request, env);
   }
 
   // Passcode (owner 30d) or Discord 12-char key (guest 24h) login
