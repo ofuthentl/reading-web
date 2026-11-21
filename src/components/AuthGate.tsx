@@ -199,8 +199,8 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
     <div className="theme-canvas relative flex min-h-screen flex-col justify-between overflow-hidden text-ink transition-colors duration-200">
       <GateBackdropArt isDark={isDark} isEntrance={isEntrance} />
 
-      {/* Thanh điều hướng tối giản sát lề trái/phải đồng trục với rìa ổ khoá bên dưới */}
-      <header className="relative z-10 flex w-full items-center justify-between px-6 pt-6 sm:px-10 md:px-14 md:pt-8 lg:px-20">
+      {/* Thanh điều hướng tối giản: lề trái dịch +8%, lề phải khoá thẳng trục ổ khoá */}
+      <header className="relative z-10 flex w-full items-center justify-between pl-6 pr-6 pt-6 sm:pl-10 sm:pr-10 md:pl-[calc(3.5rem+6%)] md:pr-14 md:pt-8 lg:pl-[calc(5rem+8%)] lg:pr-20">
         <div className="flex items-center gap-2.5 select-none">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-line-strong/70 bg-surface/70 text-accent backdrop-blur-sm">
             <BookOpen className="h-4 w-4" />
@@ -218,8 +218,8 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
         </div>
       </header>
 
-      {/* Bố cục không gian mở căn sát lề trái thoáng đãng */}
-      <main className="relative z-10 flex w-full flex-1 flex-col justify-center px-6 py-12 sm:px-10 md:px-14 lg:px-20">
+      {/* Bố cục không gian mở căn trái thoáng đãng (dịch vào 8% tạo khoảng thở cân đối) */}
+      <main className="relative z-10 flex w-full flex-1 flex-col justify-center py-12 pl-6 pr-6 sm:pl-10 sm:pr-10 md:pl-[calc(3.5rem+6%)] md:pr-14 lg:pl-[calc(5rem+8%)] lg:pr-20">
         {status === 'checking' ? (
           <div className="flex items-center gap-3 text-ink-muted">
             <Loader2 className="h-4 w-4 animate-spin text-accent" />
@@ -425,7 +425,7 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
         )}
       </main>
 
-      <footer className="relative z-10 w-full px-6 pb-6 text-xs text-ink-faint sm:px-10 md:px-14 md:pb-8 lg:px-20">
+      <footer className="relative z-10 w-full pb-6 pl-6 pr-6 text-xs text-ink-faint sm:pl-10 sm:pr-10 md:pb-8 md:pl-[calc(3.5rem+6%)] md:pr-14 lg:pl-[calc(5rem+8%)] lg:pr-20">
         <span>Ofu&apos;s Library · Kho sách đồng bộ</span>
       </footer>
     </div>
