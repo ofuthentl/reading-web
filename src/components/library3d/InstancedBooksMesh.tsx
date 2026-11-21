@@ -534,6 +534,9 @@ export function InstancedBooksMesh({
           >
             <meshStandardMaterial
               map={texture}
+              emissive="#ffffff"
+              emissiveMap={texture}
+              emissiveIntensity={theme === 'midnight' ? 0.18 : theme === 'dim' ? 0.09 : 0}
               roughness={0.52}
               metalness={0.04}
               polygonOffset

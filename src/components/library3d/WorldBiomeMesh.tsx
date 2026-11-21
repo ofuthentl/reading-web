@@ -99,6 +99,7 @@ export function WorldBiomeMesh({
       archGeometries.woodCrown.dispose();
       archGeometries.woodBackPanel.dispose();
       archGeometries.brassTrim.dispose();
+      archGeometries.bookcaseLampGlow.dispose();
     };
   }, [archGeometries]);
 
@@ -209,14 +210,38 @@ export function WorldBiomeMesh({
         <mesh geometry={archGeometries.glassDome} material={wm.glassDome} />
       )}
 
-      {/* Rotated Grand Bookcases & Batched Canvas2D Shelf Nameplates */}
+      {/* Rotated Grand Bookcases, Twin Brass Sconce Lamps & Batched Shelf Nameplates */}
       {floor.bookcases.length > 0 && (
         <group name="world-floor-bookcases">
-          <mesh geometry={archGeometries.woodBackPanel} material={lm.woodBackPanel} castShadow receiveShadow />
+          <mesh geometry={archGeometries.woodBackPanel} material={lm.woodBackPanel} receiveShadow />
           <mesh geometry={archGeometries.woodCabinet} material={lm.woodCabinet} castShadow receiveShadow />
-          <mesh geometry={archGeometries.woodCrown} material={lm.woodCrown} castShadow receiveShadow />
+          <mesh geometry={archGeometries.woodCrown} material={lm.woodCrown} receiveShadow />
           <mesh geometry={archGeometries.brassTrim} material={lm.brassTrim} />
+          {archGeometries.bookcaseLampGlow.attributes.position && (
+            <mesh geometry={archGeometries.bookcaseLampGlow} material={lm.lanternGlow} />
+          )}
           <mesh geometry={nameplateBatch.geometry} material={nameplateBatch.atlas.material} />
+          {floor.bookcases.map((bc) => {
+            const nx = Math.sin(bc.facingYaw);
+            const nz = Math.cos(bc.facingYaw);
+            const lightColor =
+              theme === 'midnight' ? '#ffd591' : theme === 'dim' ? '#ffcb7d' : '#ffebc2';
+            const lightIntensity = theme === 'midnight' ? 6.4 : theme === 'dim' ? 4.2 : 1.15;
+            return (
+              <pointLight
+                key={`lamp-${bc.id}`}
+                color={lightColor}
+                intensity={lightIntensity}
+                distance={7.8}
+                decay={1.48}
+                position={[
+                  bc.position[0] + nx * 0.95,
+                  bc.position[1] + 2.38,
+                  bc.position[2] + nz * 0.95,
+                ]}
+              />
+            );
+          })}
         </group>
       )}
     </group>

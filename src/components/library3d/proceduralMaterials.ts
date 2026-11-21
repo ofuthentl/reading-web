@@ -90,7 +90,7 @@ export const LIBRARY_3D_THEME_PALETTES: Record<AppTheme, Library3DThemePalette> 
       windowGlowIntensity: 0.95,
       brassTrim: '#d4a64a',
       lanternGlow: '#ffe5a8',
-      lanternGlowIntensity: 0.8,
+      lanternGlowIntensity: 0.95,
     },
     book: { pages: '#f4ebd9', selectedTint: '#f5c26b', hoveredTint: '#fff2cf' },
     nameplate: { bg: '#3c2516', border: '#d7aa55', text: '#fbf0d9', subtext: '#d8bc8b' },
@@ -113,7 +113,7 @@ export const LIBRARY_3D_THEME_PALETTES: Record<AppTheme, Library3DThemePalette> 
       windowGlowIntensity: 0.72,
       brassTrim: '#dca544',
       lanternGlow: '#ffb960',
-      lanternGlowIntensity: 1.45,
+      lanternGlowIntensity: 2.2,
     },
     book: { pages: '#ded1ba', selectedTint: '#f2b857', hoveredTint: '#ffe4ad' },
     nameplate: { bg: '#22150e', border: '#d9a441', text: '#f5e4c3', subtext: '#bfa273' },
@@ -128,7 +128,7 @@ export const LIBRARY_3D_THEME_PALETTES: Record<AppTheme, Library3DThemePalette> 
     theme: 'midnight',
     background: '#07090f',
     fog: { color: '#07090f', near: 12, far: 32 },
-    wood: { cabinet: '#433330', crown: '#2a2021', backPanel: '#1b1518', floor: '#221f29' },
+    wood: { cabinet: '#694738', crown: '#4a3128', backPanel: '#38251e', floor: '#221f29' },
     hall: {
       wall: '#121622',
       column: '#1f2536',
@@ -136,7 +136,7 @@ export const LIBRARY_3D_THEME_PALETTES: Record<AppTheme, Library3DThemePalette> 
       windowGlowIntensity: 0.85,
       brassTrim: '#d0be92',
       lanternGlow: '#ffd8a8',
-      lanternGlowIntensity: 1.2,
+      lanternGlowIntensity: 2.8,
     },
     book: { pages: '#c9c4d4', selectedTint: '#a6c6ff', hoveredTint: '#e4eeff' },
     nameplate: { bg: '#15131a', border: '#c8b68c', text: '#eceaf2', subtext: '#a7a3b5' },
@@ -432,7 +432,14 @@ export function createShelfNameplateAtlas(
   }
 
   const texture = buildCanvasTexture(surface?.canvas ?? null, false, true);
-  const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.42, metalness: 0.18 });
+  const material = new THREE.MeshStandardMaterial({
+    map: texture,
+    emissiveMap: texture,
+    emissive: new THREE.Color('#ffefc8'),
+    emissiveIntensity: theme === 'midnight' ? 0.5 : theme === 'dim' ? 0.3 : 0.08,
+    roughness: 0.42,
+    metalness: 0.18,
+  });
 
   let disposed = false;
   return {

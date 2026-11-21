@@ -16,6 +16,7 @@ export interface WorldArchitectureGeometries {
   woodCrown: THREE.BufferGeometry;
   woodBackPanel: THREE.BufferGeometry;
   brassTrim: THREE.BufferGeometry;
+  bookcaseLampGlow: THREE.BufferGeometry;
 }
 
 const NAMEPLATE_WIDTH = 1.48;
@@ -80,6 +81,7 @@ function buildRotatedBookcases(
   crownParts: THREE.BufferGeometry[],
   backParts: THREE.BufferGeometry[],
   brassParts: THREE.BufferGeometry[],
+  lampGlowParts: THREE.BufferGeometry[],
 ): void {
   const {
     BAY_INNER_WIDTH,
@@ -140,6 +142,33 @@ function buildRotatedBookcases(
       awning.translate(cx, by, cz);
       crownParts.push(awning);
     }
+
+    // Twin vintage brass bookshop sconce lamps flanking the nameplate + warm under-canopy strip
+    const plateHalfW = Math.min(NAMEPLATE_WIDTH, width - 0.34) * 0.5;
+    const sconceOffsetX = Math.min(width * 0.5 - 0.14, Math.max(plateHalfW + 0.14, width * 0.36));
+    for (const side of [-1, 1]) {
+      const lx = side * sconceOffsetX;
+      // Brass wall backplate + projecting swan-neck arm + shade hood
+      addLocalCabinetBox(brassParts, 0.08, 0.09, 0.03, lx, canopyTopY + 0.2, frontZ + 0.03, cx, by, cz, yaw);
+      addLocalCabinetBox(brassParts, 0.028, 0.028, 0.26, lx, canopyTopY + 0.23, frontZ + 0.16, cx, by, cz, yaw);
+      addLocalCabinetBox(brassParts, 0.15, 0.048, 0.15, lx, canopyTopY + 0.18, frontZ + 0.28, cx, by, cz, yaw);
+      // Warm frosted glass lantern bulb hanging beneath hood
+      addLocalCabinetBox(lampGlowParts, 0.085, 0.105, 0.085, lx, canopyTopY + 0.115, frontZ + 0.28, cx, by, cz, yaw);
+    }
+    // Concealed warm library strip light under the top shelf cornice illuminating book spines
+    addLocalCabinetBox(
+      lampGlowParts,
+      Math.max(0.8, width - 0.36),
+      0.024,
+      0.045,
+      0,
+      canopyTopY - PLANK_THICKNESS - 0.014,
+      frontZ - 0.03,
+      cx,
+      by,
+      cz,
+      yaw,
+    );
   }
 }
 
@@ -330,6 +359,7 @@ export function buildWorldArchitectureGeometries(
   const crown: THREE.BufferGeometry[] = [];
   const backPanel: THREE.BufferGeometry[] = [];
   const brass: THREE.BufferGeometry[] = [];
+  const bookcaseLampGlow: THREE.BufferGeometry[] = [];
 
   if (floor.biomeId === 'sakura_shrine') {
     buildSakuraTerrain(floor, ground, plaza, stone, bridgeWood, bridgeRed, water);
@@ -341,7 +371,7 @@ export function buildWorldArchitectureGeometries(
   // `town_of_beginnings` renders the real Parisian cobblestone scenery (`TownWorldGlb.tsx`, D-019)
   // instead of flat procedural ground/curb blocks, while still keeping rotated bookcases below.
 
-  buildRotatedBookcases(floor, cabinet, crown, backPanel, brass);
+  buildRotatedBookcases(floor, cabinet, crown, backPanel, brass, bookcaseLampGlow);
 
   return {
     ground: mergeSimpleGeometries(ground),
@@ -355,6 +385,7 @@ export function buildWorldArchitectureGeometries(
     woodCrown: mergeSimpleGeometries(crown),
     woodBackPanel: mergeSimpleGeometries(backPanel),
     brassTrim: mergeSimpleGeometries(brass),
+    bookcaseLampGlow: mergeSimpleGeometries(bookcaseLampGlow),
   };
 }
 
