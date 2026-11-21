@@ -16,7 +16,6 @@ const DISCORD_FLAG_EPHEMERAL = 64;
 
 const DISCORD_BUTTON_RING_BELL_ID = 'ring_library_bell';
 const KEY_ISSUE_COOLDOWN_MS = 15 * 1000; // 15s anti-spam per Discord user
-const MAX_SIGNATURE_AGE_SECONDS = 300; // 5 minutes replay guard
 
 const PERMISSION_ADMINISTRATOR = 0x8n;
 const PERMISSION_MANAGE_GUILD = 0x20n;
@@ -72,19 +71,23 @@ function hexToBytes(hex: string): Uint8Array | null {
   return bytes;
 }
 
+function cleanSecret(value: string | undefined): string {
+  return (value || '').trim().replace(/^['"]+|['"]+$/g, '').trim();
+}
+
+export function isValidDiscordPublicKeyFormat(publicKeyHex: string | undefined): boolean {
+  const clean = cleanSecret(publicKeyHex);
+  return clean.length === 64 && /^[0-9a-fA-F]{64}$/.test(clean);
+}
+
 export async function verifyDiscordSignature(
   rawBody: string,
   signatureHex: string | null,
   timestamp: string | null,
   publicKeyHex: string | undefined,
 ): Promise<boolean> {
-  const cleanPubKey = publicKeyHex?.trim();
-  if (!cleanPubKey || !signatureHex || !timestamp) return false;
-
-  const tsNum = Number(timestamp);
-  if (!Number.isFinite(tsNum)) return false;
-  const nowSec = Math.floor(Date.now() / 1000);
-  if (Math.abs(nowSec - tsNum) > MAX_SIGNATURE_AGE_SECONDS) return false;
+  const cleanPubKey = cleanSecret(publicKeyHex);
+  if (!cleanPubKey || !signatureHex || timestamp === null) return false;
 
   const pubKeyBytes = hexToBytes(cleanPubKey);
   const sigBytes = hexToBytes(signatureHex.trim());
@@ -242,7 +245,7 @@ export async function handleDiscordInteraction(request: Request, env: Env): Prom
     return discordJson({ type: DISCORD_RESPONSE_PONG });
   }
 
-  const allowedGuildId = env.DISCORD_GUILD_ID?.trim();
+  const allowedGuildId = cleanSecret(env.DISCORD_GUILD_ID);
   if (!allowedGuildId) {
     return ephemeralMessage('⚠️ Máy chủ chưa cấu hình `DISCORD_GUILD_ID`.');
   }
@@ -274,7 +277,7 @@ export async function handleDiscordInteraction(request: Request, env: Env): Prom
 
       const appUrl = resolvePublicAppUrl(env);
       const panelPayload = buildBellPanelPayload(appUrl);
-      const botToken = env.DISCORD_BOT_TOKEN?.trim();
+      const botToken = cleanSecret(env.DISCORD_BOT_TOKEN);
 
       if (botToken && interaction.channel_id && /^\d{5,32}$/.test(interaction.channel_id)) {
         const postRes = await fetch(

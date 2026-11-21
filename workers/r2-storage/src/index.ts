@@ -5,7 +5,7 @@ import {
   requireOwner,
   verifyAuth,
 } from './auth';
-import { handleDiscordInteraction } from './discord';
+import { handleDiscordInteraction, isValidDiscordPublicKeyFormat } from './discord';
 import {
   ACCEPTED_FILE_TYPES,
   type BookRow,
@@ -75,17 +75,24 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     return new Response(null, { status: 204, headers });
   }
 
+  const normalizedPath = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+
   // Public health check
-  if (pathname === '/api/health' && request.method === 'GET') {
+  if (normalizedPath === '/api/health' && request.method === 'GET') {
     return jsonResponse(
-      { ok: true, authRequired: isAuthRequired(env), limitBytes: getLimitBytes(env) },
+      {
+        ok: true,
+        authRequired: isAuthRequired(env),
+        discordReady: isValidDiscordPublicKeyFormat(env.DISCORD_PUBLIC_KEY),
+        limitBytes: getLimitBytes(env),
+      },
       200,
       origin,
     );
   }
 
   // Discord HTTP Interactions webhook (verified via Ed25519 signature)
-  if (pathname === '/api/discord/interactions' && request.method === 'POST') {
+  if (normalizedPath === '/api/discord/interactions' && request.method === 'POST') {
     return handleDiscordInteraction(request, env);
   }
 

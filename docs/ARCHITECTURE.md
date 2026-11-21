@@ -143,7 +143,7 @@ flowchart LR
 | Method | Path | Auth? | Mô tả |
 |---|---|---|---|
 | `OPTIONS` | `*` | Không | CORS preflight theo `APP_ORIGINS` (trả `204`) |
-| `GET` | `/api/health` | Không | Kiểm tra sống, trả `{ ok, authRequired, limitBytes }` |
+| `GET` | `/api/health` | Không | Kiểm tra sống, trả `{ ok, authRequired, discordReady, limitBytes }` |
 | `POST` | `/api/discord/interactions` | Chữ ký `Ed25519` | Webhook Discord HTTP Interactions: xử lý `PING`, lệnh `/setup-bell` (Admin Discord), lệnh `/key` & nút `🔔 Nhận chìa khoá` cấp mã 12 ký tự ẩn hạn 5 phút (`D-026`) |
 | `POST` | `/api/auth/login` | Không | Nhận `passcode` Admin (cấp `owner` 30 ngày) **hoặc** mã key Discord 12 ký tự hạn 5 phút dùng 1 lần (cấp `guest` 24 giờ & đóng phiên cũ của cùng Discord user), trả `{ token, role, expiresAt }` |
 | `GET` | `/api/auth/session` | Có (Owner + Guest) | Kiểm tra phiên hiện hành, trả `{ ok, role, expiresAt }` |
