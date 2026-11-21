@@ -241,7 +241,10 @@ async function parseEpubBlob(blob: Blob, book: Book): Promise<ParsedBook> {
 
     const imageUrlByZipPath = new Map<string, string>();
 
-    async function getZipImageUrl(docPath: string, rawSrc: string): Promise<string | null> {
+    async function getZipImageEntry(
+      docPath: string,
+      rawSrc: string,
+    ): Promise<{ url: string; zipPath: string } | null> {
       const cleanSrc = safeDecodeUri(rawSrc.split('#')[0].split('?')[0]);
       const docDir = docPath.includes('/') ? docPath.slice(0, docPath.lastIndexOf('/')) : '';
       const candidates = [
@@ -253,7 +256,7 @@ async function parseEpubBlob(blob: Blob, book: Book): Promise<ParsedBook> {
       if (!matchedPath) return null;
 
       const existingUrl = imageUrlByZipPath.get(matchedPath);
-      if (existingUrl) return existingUrl;
+      if (existingUrl) return { url: existingUrl, zipPath: matchedPath };
 
       const zipFile = zip.file(matchedPath);
       if (!zipFile) return null;
@@ -262,7 +265,7 @@ async function parseEpubBlob(blob: Blob, book: Book): Promise<ParsedBook> {
       const url = URL.createObjectURL(new Blob([imgBlob], { type: mediaType }));
       createdUrls.push(url);
       imageUrlByZipPath.set(matchedPath, url);
-      return url;
+      return { url, zipPath: matchedPath };
     }
 
     const rawSections: RawEpubSection[] = [];
@@ -283,10 +286,11 @@ async function parseEpubBlob(blob: Blob, book: Book): Promise<ParsedBook> {
         img.style.removeProperty('width');
         img.style.removeProperty('height');
         if (src.startsWith('data:')) continue;
-        const resolvedUrl = await getZipImageUrl(path, src);
-        if (resolvedUrl) {
-          img.src = resolvedUrl;
+        const resolved = await getZipImageEntry(path, src);
+        if (resolved) {
+          img.src = resolved.url;
           img.loading = 'lazy';
+          img.setAttribute('data-zip-path', resolved.zipPath);
         } else {
           img.remove();
         }
@@ -295,9 +299,10 @@ async function parseEpubBlob(blob: Blob, book: Book): Promise<ParsedBook> {
       for (const svgImg of Array.from(doc.querySelectorAll<SVGImageElement>('svg image'))) {
         const src = svgImg.getAttribute('href') || svgImg.getAttribute('xlink:href');
         if (!src || src.startsWith('data:')) continue;
-        const resolvedUrl = await getZipImageUrl(path, src);
-        if (resolvedUrl) {
-          svgImg.setAttribute('href', resolvedUrl);
+        const resolved = await getZipImageEntry(path, src);
+        if (resolved) {
+          svgImg.setAttribute('href', resolved.url);
+          svgImg.setAttribute('data-zip-path', resolved.zipPath);
           svgImg.removeAttribute('xlink:href');
         } else {
           svgImg.remove();

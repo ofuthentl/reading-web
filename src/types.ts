@@ -13,6 +13,7 @@ export type Book = {
   file_size: number;
   cover_size: number;
   created_at: string;
+  guest_ready?: boolean;
 };
 
 export type Chapter = {
@@ -78,4 +79,33 @@ export type AuthRole = 'owner' | 'guest';
 export type AuthSessionInfo = {
   role: AuthRole;
   expiresAt: number | null;
+  watermarkLabel?: string | null;
+};
+
+export type GuestInlineSpan = {
+  t: string;
+  b?: 1;
+  i?: 1;
+};
+
+export type GuestBlock =
+  | { kind: 'h'; level: 1 | 2 | 3; spans: GuestInlineSpan[] }
+  | { kind: 'p'; spans: GuestInlineSpan[] }
+  | { kind: 'quote'; spans: GuestInlineSpan[] }
+  | { kind: 'list'; ordered?: 1; items: GuestInlineSpan[][] }
+  | { kind: 'hr' }
+  | { kind: 'img'; mediaIndex: number; alt?: string };
+
+export type GuestTocItem = {
+  id: string;
+  title: string;
+  chapterNumber: number;
+};
+
+export type GuestChapterPayload = {
+  id: string;
+  title: string;
+  chapterNumber: number;
+  watermarkLabel: string;
+  blocks: GuestBlock[];
 };
