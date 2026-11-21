@@ -5,8 +5,7 @@ Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · d
 
 ## Đang làm dở
 - **Sub-phase 4A-T3 hoàn tất & kiểm định XANH 100% (đã chạy thử trực tiếp được trên web qua `npm run dev`):**
-  - `KiritoAvatar.tsx` (390 dòng): Black Swordsman đúng ảnh mẫu `image.png` (tóc mái nhọn phân lớp, mặt anime Canvas2D, áo khoác cổ cao viền bạc + 2 tà áo bay theo tốc độ, dây chéo + khoá 3 chấu, huy hiệu vai trái, bốt cổ xám, kiếm Elucidator đeo sau vai phải), ẩn khi `firstPerson`, có cổng `customModelUrl`.
-  - `AmbientNpcs.tsx` (268 dòng): NPC Thủ thư / Độc giả ngồi / Người đi dạo theo waypoint sạch va chạm, tự quay nhìn Kirito, cập nhật `npcPositionsRef` live.
+  - `KiritoAvatar.tsx` (395 dòng) & `AmbientNpcs.tsx` (297 dòng): đã vá sạch lỗi hình ảnh (vẽ mặt anime trực tiếp lên UV cầu cong không còn bị chìm, lật mái tóc rủ xuống, thân/tay/chân bo tròn `CapsuleGeometry`/`CylinderGeometry`, tông áo xám-than có khối, khoá 3 chấu xoay đúng mặt trước, thêm bóng tiếp xúc chân) + `worldMaterials.ts` thêm sprite cánh hoa/lá/đom đóm mượt (bỏ hạt ô vuông).
   - `PlayerRig.tsx` (381 dòng): `WASD` + `Shift`, kéo chuột xoay 360° (ngưỡng 5px tách drag/click), zoom, `V` Thứ 3 ↔ Thứ 1, `E` tương tác Cổng/Trạm/NPC, vật lý `worldPhysics3d.ts`.
   - Xử lý trọn vẹn 3 điểm lưu ý: `LibraryCanvas.tsx` chuyển `frameloop` thông minh (`'always'` khi đi dạo, `'demand'` khi giảm chuyển động, **`'never'` = 0 FPS** khi mở sách/modal/ẩn tab), `FantasyLibrary3D.tsx` gọi **`clearLocalGlbCache()`** khi unmount 3D, `BiomePropsMesh.tsx` tự trừ `template.bbox.min[1]` căn sát đất cho cả 3 `.glb`.
   - Gỡ bỏ `CameraRig.tsx` & `LibraryRoomMesh.tsx` cũ; thêm `WorldQuickBar.tsx` (chuyển nhanh Tầng 1..N, nút Thứ 3/1, pill `[E]` & thoại NPC).

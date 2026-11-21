@@ -6,6 +6,7 @@ import { mergeSimpleGeometries } from './geometryUtils';
 import { cloneGlbTemplate, useLocalGlb } from './gltfLoader';
 import type { LibraryMaterialBundle } from './proceduralMaterials';
 import {
+  createSoftParticleTexture,
   getWorldBiomePalette,
   type WorldMaterialBundle,
 } from './worldMaterials';
@@ -334,6 +335,16 @@ function BiomeParticles({
   prefersReducedMotion: boolean;
 }) {
   const pointsRef = useRef<THREE.Points | null>(null);
+  const spriteTexture = useMemo(
+    () => createSoftParticleTexture(floor.biomeMeta.particleKind),
+    [floor.biomeMeta.particleKind],
+  );
+  useEffect(() => {
+    return () => {
+      spriteTexture.dispose();
+    };
+  }, [spriteTexture]);
+
   const particleData = useMemo(() => {
     const positions = new Float32Array(PARTICLE_COUNT * 3);
     const speeds = new Float32Array(PARTICLE_COUNT);
@@ -386,9 +397,11 @@ function BiomeParticles({
     <points ref={pointsRef} geometry={particleData.geometry} frustumCulled={false}>
       <pointsMaterial
         color={color}
-        size={risesUp ? 0.14 : 0.18}
+        map={spriteTexture}
+        alphaTest={0.05}
+        size={risesUp ? 0.24 : 0.3}
         transparent
-        opacity={0.82}
+        opacity={0.88}
         depthWrite={false}
       />
     </points>

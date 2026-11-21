@@ -259,6 +259,53 @@ function paintSkyCanvas(canvas: HTMLCanvasElement, palette: WorldBiomeVisualPale
   }
 }
 
+export function createContactShadowTexture(): THREE.CanvasTexture {
+  const size = 64;
+  const surf = makeCanvas(size, size);
+  if (!surf) return toTexture(null, false, false);
+  const { canvas, ctx } = surf;
+  const grad = ctx.createRadialGradient(32, 32, 2, 32, 32, 30);
+  grad.addColorStop(0, 'rgba(10, 14, 24, 0.42)');
+  grad.addColorStop(0.6, 'rgba(10, 14, 24, 0.18)');
+  grad.addColorStop(1, 'rgba(10, 14, 24, 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  return toTexture(canvas, false, false);
+}
+
+export function createSoftParticleTexture(
+  kind: 'leaves' | 'petals' | 'dust_motes' | 'fireflies',
+): THREE.CanvasTexture {
+  const size = 64;
+  const surf = makeCanvas(size, size);
+  if (!surf) return toTexture(null, false, false);
+  const { canvas, ctx } = surf;
+
+  ctx.clearRect(0, 0, size, size);
+  if (kind === 'petals' || kind === 'leaves') {
+    ctx.save();
+    ctx.translate(32, 32);
+    ctx.rotate(-0.45);
+    const grad = ctx.createRadialGradient(0, -4, 2, 0, 0, 26);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    grad.addColorStop(0.75, 'rgba(255, 255, 255, 0.85)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 14, 23, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  } else {
+    const grad = ctx.createRadialGradient(32, 32, 2, 32, 32, 28);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    grad.addColorStop(0.45, 'rgba(255, 255, 255, 0.65)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+  }
+  return toTexture(canvas, false, false);
+}
+
 export function createWorldMaterialBundle(
   initialBiome: BiomeId,
   initialTheme: AppTheme,

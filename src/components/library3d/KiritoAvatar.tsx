@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { cloneGlbTemplate, useLocalGlb } from './gltfLoader';
+import { createContactShadowTexture } from './worldMaterials';
 
 export interface PlayerMotionState {
   position: [number, number, number];
@@ -21,90 +22,106 @@ export interface KiritoAvatarProps {
   customModelUrl?: string | null;
 }
 
-function createKiritoFaceTexture(): THREE.CanvasTexture {
-  const size = 256;
+/**
+ * Paints an equirectangular anime head texture mapped onto `SphereGeometry(r, 24, 18, -Math.PI/2)`:
+ * `u = 0.5` maps directly to `+Z` (front face center), so eyes, brows, nose, mouth, and back hair
+ * wrap smoothly around the curved 3D head with zero z-fighting or buried planes.
+ */
+function createKiritoHeadTexture(): THREE.CanvasTexture {
+  const w = 512;
+  const h = 256;
   const canvas =
     typeof document !== 'undefined'
-      ? Object.assign(document.createElement('canvas'), { width: size, height: size })
-      : ({ width: size, height: size } as unknown as HTMLCanvasElement);
+      ? Object.assign(document.createElement('canvas'), { width: w, height: h })
+      : ({ width: w, height: h } as unknown as HTMLCanvasElement);
 
   const ctx = typeof document !== 'undefined' ? canvas.getContext('2d') : null;
   if (ctx) {
-    // Warm anime skin base
-    ctx.fillStyle = '#f6d6be';
-    ctx.fillRect(0, 0, size, size);
+    // Warm anime skin base across face area
+    ctx.fillStyle = '#f6d7bf';
+    ctx.fillRect(0, 0, w, h);
 
-    // Subtle cheek warmth
-    for (const cx of [74, 182]) {
-      const blush = ctx.createRadialGradient(cx, 162, 2, cx, 162, 22);
-      blush.addColorStop(0, 'rgba(244, 146, 134, 0.28)');
-      blush.addColorStop(1, 'rgba(244, 146, 134, 0)');
+    // Back & crown dark blue-charcoal hair coverage (u < 0.28 and u > 0.72, plus top crown)
+    ctx.fillStyle = '#232836';
+    ctx.fillRect(0, 0, w, 66);
+    ctx.fillRect(0, 0, 148, h);
+    ctx.fillRect(w - 148, 0, 148, h);
+
+    // Soft hairline fringe shadow on forehead
+    ctx.fillStyle = 'rgba(35, 40, 54, 0.22)';
+    ctx.fillRect(148, 66, w - 296, 20);
+
+    // Soft cheek blush
+    for (const cx of [210, 302]) {
+      const blush = ctx.createRadialGradient(cx, 152, 2, cx, 152, 16);
+      blush.addColorStop(0, 'rgba(240, 138, 126, 0.34)');
+      blush.addColorStop(1, 'rgba(240, 138, 126, 0)');
       ctx.fillStyle = blush;
-      ctx.fillRect(cx - 24, 138, 48, 48);
+      ctx.fillRect(cx - 18, 134, 36, 36);
     }
 
-    // Crisp SAO-style eyebrows
-    ctx.strokeStyle = '#1b1d24';
-    ctx.lineWidth = 4.5;
+    // SAO sharp eyebrows (centered around u = 0.5 -> x = 256)
+    ctx.strokeStyle = '#1b1f2a';
+    ctx.lineWidth = 3.5;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(56, 102);
-    ctx.quadraticCurveTo(84, 93, 108, 104);
-    ctx.moveTo(200, 102);
-    ctx.quadraticCurveTo(172, 93, 148, 104);
+    ctx.moveTo(204, 108);
+    ctx.quadraticCurveTo(222, 102, 240, 110);
+    ctx.moveTo(308, 108);
+    ctx.quadraticCurveTo(290, 102, 272, 110);
     ctx.stroke();
 
-    // Expressive dark charcoal-grey eyes with upper lash & specular catchlights
+    // Expressive charcoal-silver Kirito anime eyes
     for (const [ex, flip] of [
-      [84, 1],
-      [172, -1],
+      [223, 1],
+      [289, -1],
     ] as const) {
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.ellipse(ex, 132, 21, 17, 0, 0, Math.PI * 2);
+      ctx.ellipse(ex, 130, 16, 13, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      const iris = ctx.createLinearGradient(ex, 117, ex, 148);
-      iris.addColorStop(0, '#1e222d');
-      iris.addColorStop(0.65, '#3b4254');
-      iris.addColorStop(1, '#6c778f');
+      const iris = ctx.createLinearGradient(ex, 118, ex, 142);
+      iris.addColorStop(0, '#1e2433');
+      iris.addColorStop(0.65, '#434d63');
+      iris.addColorStop(1, '#7c8aa6');
       ctx.fillStyle = iris;
       ctx.beginPath();
-      ctx.ellipse(ex, 133, 13.5, 14.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(ex, 131, 10.5, 11.5, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = '#0f1117';
+      ctx.fillStyle = '#0e1118';
       ctx.beginPath();
-      ctx.arc(ex, 133, 6.2, 0, Math.PI * 2);
+      ctx.arc(ex, 131, 4.8, 0, Math.PI * 2);
       ctx.fill();
 
-      // Anime highlights
+      // Crisp specular anime catchlights
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.arc(ex - 5 * flip, 126, 4.2, 0, Math.PI * 2);
-      ctx.arc(ex + 5 * flip, 139, 2.2, 0, Math.PI * 2);
+      ctx.arc(ex - 4 * flip, 125, 3.4, 0, Math.PI * 2);
+      ctx.arc(ex + 3.5 * flip, 136, 1.8, 0, Math.PI * 2);
       ctx.fill();
 
-      // Bold upper eyelash arc
-      ctx.strokeStyle = '#14161c';
-      ctx.lineWidth = 5.5;
+      // Bold upper eyelash
+      ctx.strokeStyle = '#141720';
+      ctx.lineWidth = 4.2;
       ctx.beginPath();
-      ctx.moveTo(ex - 23, 128);
-      ctx.quadraticCurveTo(ex, 110, ex + 23, 128);
+      ctx.moveTo(ex - 17, 127);
+      ctx.quadraticCurveTo(ex, 113, ex + 17, 127);
       ctx.stroke();
     }
 
-    // Minimal anime nose & gentle confident smile
-    ctx.fillStyle = '#cfa389';
+    // Minimal anime nose dot & subtle warm smile
+    ctx.fillStyle = '#c8997e';
     ctx.beginPath();
-    ctx.arc(128, 160, 2.2, 0, Math.PI * 2);
+    ctx.arc(256, 151, 1.8, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = '#996a57';
-    ctx.lineWidth = 3.2;
+    ctx.strokeStyle = '#996754';
+    ctx.lineWidth = 2.6;
     ctx.beginPath();
-    ctx.moveTo(114, 184);
-    ctx.quadraticCurveTo(128, 193, 142, 184);
+    ctx.moveTo(244, 169);
+    ctx.quadraticCurveTo(256, 177, 268, 169);
     ctx.stroke();
   }
 
@@ -123,10 +140,11 @@ function CustomPlayerGlb({ url }: { url: string }) {
 }
 
 /**
- * Articulated Black Swordsman (Kirito) 3D avatar matching the reference sheet (`D-015`):
- * spiky layered black hair, Canvas2D anime face, high-collared Coat of Midnight with silver
- * piping, diagonal strap + 3-pronged chest clasp, left shoulder emblem, billowing split coat
- * tails, grey-cuffed boots, and Elucidator slung diagonally across the back.
+ * Stylized articulated Black Swordsman (Kirito) 3D avatar (`D-015`):
+ * curved equirectangular anime head texture (zero clipping), downward-sweeping spiky
+ * black bangs, rounded capsule limbs, slate-obsidian Coat of Midnight with crisp silver
+ * piping, diagonal chest strap + 3-pronged buckle, flowing A-line coat tails, contact
+ * ground shadow, and Elucidator slung behind the right shoulder.
  */
 export function KiritoAvatar({
   motionRef,
@@ -147,27 +165,32 @@ export function KiritoAvatar({
   const walkCycleRef = useRef(0);
   const idleTimeRef = useRef(0);
 
-  const faceTexture = useMemo(() => createKiritoFaceTexture(), []);
+  const headTexture = useMemo(() => createKiritoHeadTexture(), []);
+  const shadowTexture = useMemo(() => createContactShadowTexture(), []);
   useEffect(() => {
     return () => {
-      faceTexture.dispose();
+      headTexture.dispose();
+      shadowTexture.dispose();
     };
-  }, [faceTexture]);
+  }, [headTexture, shadowTexture]);
 
   const mats = useMemo(
     () => ({
-      coat: new THREE.MeshStandardMaterial({ color: '#1d2029', roughness: 0.72, metalness: 0.08 }),
-      shirt: new THREE.MeshStandardMaterial({ color: '#2b2f3a', roughness: 0.84, metalness: 0.04 }),
-      trim: new THREE.MeshStandardMaterial({ color: '#b4bccb', roughness: 0.36, metalness: 0.55 }),
-      buckle: new THREE.MeshStandardMaterial({ color: '#8d98aa', roughness: 0.28, metalness: 0.72 }),
-      hair: new THREE.MeshStandardMaterial({ color: '#181b22', roughness: 0.58, metalness: 0.08 }),
-      skin: new THREE.MeshStandardMaterial({ color: '#f6d6be', roughness: 0.76, metalness: 0.02 }),
-      face: new THREE.MeshStandardMaterial({ map: faceTexture, roughness: 0.65, metalness: 0.02 }),
-      boot: new THREE.MeshStandardMaterial({ color: '#15181f', roughness: 0.62, metalness: 0.12 }),
-      swordBlade: new THREE.MeshStandardMaterial({ color: '#141720', roughness: 0.22, metalness: 0.82 }),
-      swordSilver: new THREE.MeshStandardMaterial({ color: '#d4dce8', roughness: 0.24, metalness: 0.85 }),
+      // Readable dark slate-charcoal so contours & folds stay crisp in Day/Dusk/Night
+      coat: new THREE.MeshStandardMaterial({ color: '#2b3140', roughness: 0.68, metalness: 0.1 }),
+      coatDark: new THREE.MeshStandardMaterial({ color: '#1f2430', roughness: 0.72, metalness: 0.08 }),
+      shirt: new THREE.MeshStandardMaterial({ color: '#394052', roughness: 0.82, metalness: 0.04 }),
+      trim: new THREE.MeshStandardMaterial({ color: '#cbd5e1', roughness: 0.34, metalness: 0.55 }),
+      buckle: new THREE.MeshStandardMaterial({ color: '#9aa5b8', roughness: 0.28, metalness: 0.72 }),
+      hair: new THREE.MeshStandardMaterial({ color: '#232836', roughness: 0.55, metalness: 0.1 }),
+      skin: new THREE.MeshStandardMaterial({ color: '#f6d7bf', roughness: 0.74, metalness: 0.02 }),
+      head: new THREE.MeshStandardMaterial({ map: headTexture, roughness: 0.64, metalness: 0.02 }),
+      boot: new THREE.MeshStandardMaterial({ color: '#1d222d', roughness: 0.58, metalness: 0.14 }),
+      swordBlade: new THREE.MeshStandardMaterial({ color: '#1b202c', roughness: 0.24, metalness: 0.82 }),
+      swordSilver: new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.22, metalness: 0.86 }),
+      shadow: new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false }),
     }),
-    [faceTexture],
+    [headTexture, shadowTexture],
   );
 
   useEffect(() => {
@@ -192,22 +215,21 @@ export function KiritoAvatar({
     const isMoving = state.speed > 0.08;
 
     if (isMoving && !prefersReducedMotion) {
-      walkCycleRef.current += dt * (state.isRunning ? 12.5 : 8.2);
+      walkCycleRef.current += dt * (state.isRunning ? 12.2 : 8.0);
     }
 
     const phase = walkCycleRef.current;
-    const swingAmp = isMoving && !prefersReducedMotion ? (state.isRunning ? 0.78 : 0.52) * speedRatio : 0;
-    const breath = prefersReducedMotion ? 0 : Math.sin(idleTimeRef.current * 2.4) * 0.014;
-    const bounce = isMoving && !prefersReducedMotion ? Math.abs(Math.sin(phase)) * (state.isRunning ? 0.065 : 0.035) : 0;
+    const swingAmp = isMoving && !prefersReducedMotion ? (state.isRunning ? 0.72 : 0.48) * speedRatio : 0;
+    const breath = prefersReducedMotion ? 0 : Math.sin(idleTimeRef.current * 2.4) * 0.012;
+    const bounce = isMoving && !prefersReducedMotion ? Math.abs(Math.sin(phase)) * (state.isRunning ? 0.06 : 0.03) : 0;
 
     if (bodyRef.current) {
       bodyRef.current.position.y = bounce + breath;
-      // Forward anime sprint lean
-      const targetLean = isMoving ? (state.isRunning ? 0.22 : 0.08) * speedRatio : 0;
+      const targetLean = isMoving ? (state.isRunning ? 0.2 : 0.07) * speedRatio : 0;
       bodyRef.current.rotation.x += (targetLean - bodyRef.current.rotation.x) * Math.min(1, dt * 10);
     }
     if (headRef.current) {
-      headRef.current.rotation.y = prefersReducedMotion ? 0 : Math.sin(idleTimeRef.current * 0.9) * 0.06;
+      headRef.current.rotation.y = prefersReducedMotion ? 0 : Math.sin(idleTimeRef.current * 0.9) * 0.05;
     }
     if (leftLegRef.current && rightLegRef.current) {
       leftLegRef.current.rotation.x = Math.sin(phase) * swingAmp;
@@ -215,16 +237,16 @@ export function KiritoAvatar({
     }
     if (leftArmRef.current && rightArmRef.current) {
       leftArmRef.current.rotation.x = -Math.sin(phase) * swingAmp * 0.85;
-      const interactLift = state.interactPulse > 0 ? -Math.sin(state.interactPulse * Math.PI) * 0.95 : 0;
+      const interactLift = state.interactPulse > 0 ? -Math.sin(state.interactPulse * Math.PI) * 0.9 : 0;
       rightArmRef.current.rotation.x = Math.sin(phase) * swingAmp * 0.85 + interactLift;
     }
-    // Dynamic coat-tail flutter trailing backward when running
-    const tailFlutter = isMoving && !prefersReducedMotion
-      ? (state.isRunning ? 0.42 : 0.18) * speedRatio + Math.sin(phase * 2) * 0.08
-      : 0.05 + Math.sin(idleTimeRef.current * 1.8) * 0.02;
+    const tailFlutter =
+      isMoving && !prefersReducedMotion
+        ? (state.isRunning ? 0.42 : 0.16) * speedRatio + Math.sin(phase * 2) * 0.07
+        : 0.06 + Math.sin(idleTimeRef.current * 1.8) * 0.018;
     if (coatTailBackRef.current) coatTailBackRef.current.rotation.x = -tailFlutter;
-    if (coatTailLRef.current) coatTailLRef.current.rotation.z = 0.08 + tailFlutter * 0.32;
-    if (coatTailRRef.current) coatTailRRef.current.rotation.z = -(0.08 + tailFlutter * 0.32);
+    if (coatTailLRef.current) coatTailLRef.current.rotation.z = 0.12 + tailFlutter * 0.24;
+    if (coatTailRRef.current) coatTailRRef.current.rotation.z = -(0.12 + tailFlutter * 0.24);
   });
 
   if (customModelUrl) {
@@ -237,203 +259,200 @@ export function KiritoAvatar({
 
   return (
     <group ref={rootRef} name="kirito-avatar">
+      {/* Ground contact shadow disc */}
+      <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]} material={mats.shadow}>
+        <planeGeometry args={[0.92, 0.92]} />
+      </mesh>
+
       <group ref={bodyRef}>
-        {/* Torso & Coat of Midnight upper jacket */}
+        {/* Tapered athletic torso & Coat of Midnight upper jacket */}
         <group position={[0, 1.07, 0]}>
-          <mesh material={mats.shirt}>
-            <boxGeometry args={[0.31, 0.46, 0.18]} />
+          {/* Inner shirt */}
+          <mesh scale={[1.05, 1, 0.68]} material={mats.shirt}>
+            <cylinderGeometry args={[0.145, 0.125, 0.44, 12]} />
           </mesh>
-          {/* Left & right open trench coat front panels with iconic silver piping */}
-          <mesh position={[-0.125, -0.01, 0.012]} material={mats.coat}>
-            <boxGeometry args={[0.13, 0.48, 0.2]} />
+          {/* Coat torso shell */}
+          <mesh position={[0, 0, -0.018]} scale={[1.18, 1, 0.72]} material={mats.coat}>
+            <cylinderGeometry args={[0.155, 0.132, 0.46, 12]} />
           </mesh>
-          <mesh position={[0.125, -0.01, 0.012]} material={mats.coat}>
-            <boxGeometry args={[0.13, 0.48, 0.2]} />
+          {/* Open-front coat lapel strips + crisp silver vertical piping */}
+          <mesh position={[-0.095, 0, 0.076]} material={mats.coat}>
+            <boxGeometry args={[0.085, 0.45, 0.04]} />
           </mesh>
-          <mesh position={[-0.068, -0.01, 0.114]} material={mats.trim}>
-            <boxGeometry args={[0.018, 0.47, 0.012]} />
+          <mesh position={[0.095, 0, 0.076]} material={mats.coat}>
+            <boxGeometry args={[0.085, 0.45, 0.04]} />
           </mesh>
-          <mesh position={[0.068, -0.01, 0.114]} material={mats.trim}>
-            <boxGeometry args={[0.018, 0.47, 0.012]} />
+          <mesh position={[-0.055, 0, 0.098]} material={mats.trim}>
+            <boxGeometry args={[0.014, 0.45, 0.01]} />
           </mesh>
-          {/* Back coat torso */}
-          <mesh position={[0, 0, -0.04]} material={mats.coat}>
-            <boxGeometry args={[0.36, 0.48, 0.14]} />
-          </mesh>
-
-          {/* High flared standing collar with silver trim */}
-          <mesh position={[0, 0.26, -0.03]} rotation={[-0.18, 0, 0]} material={mats.coat}>
-            <cylinderGeometry args={[0.17, 0.13, 0.14, 10, 1, true, Math.PI * 0.65, Math.PI * 1.7]} />
-          </mesh>
-          <mesh position={[0, 0.32, -0.04]} rotation={[-0.18, 0, 0]} material={mats.trim}>
-            <torusGeometry args={[0.165, 0.01, 6, 14, Math.PI * 1.4]} />
+          <mesh position={[0.055, 0, 0.098]} material={mats.trim}>
+            <boxGeometry args={[0.014, 0.45, 0.01]} />
           </mesh>
 
-          {/* Diagonal chest belt + iconic 3-pronged silver clasp on right chest */}
-          <mesh position={[0, 0.02, 0.116]} rotation={[0, 0, -0.58]} material={mats.coat}>
-            <boxGeometry args={[0.36, 0.048, 0.018]} />
+          {/* Flared high standing collar with silver trim */}
+          <mesh position={[0, 0.255, -0.015]} rotation={[-0.14, 0, 0]} material={mats.coatDark}>
+            <cylinderGeometry args={[0.155, 0.115, 0.12, 14, 1, true, Math.PI * 0.68, Math.PI * 1.64]} />
           </mesh>
-          <mesh position={[0, 0.02, 0.126]} rotation={[0, 0, -0.58]} material={mats.trim}>
-            <boxGeometry args={[0.36, 0.012, 0.008]} />
+          <mesh position={[0, 0.31, -0.025]} rotation={[Math.PI / 2 - 0.14, 0, Math.PI * 0.18]} material={mats.trim}>
+            <torusGeometry args={[0.152, 0.009, 6, 16, Math.PI * 1.64]} />
           </mesh>
-          <group position={[-0.085, 0.08, 0.128]}>
-            <mesh material={mats.buckle}>
-              <cylinderGeometry args={[0.048, 0.048, 0.018, 6]} />
+
+          {/* Diagonal chest strap + properly forward-facing 3-pronged silver clasp */}
+          <mesh position={[0, 0.01, 0.106]} rotation={[0, 0, -0.58]} material={mats.coatDark}>
+            <boxGeometry args={[0.32, 0.042, 0.016]} />
+          </mesh>
+          <mesh position={[0, 0.01, 0.115]} rotation={[0, 0, -0.58]} material={mats.trim}>
+            <boxGeometry args={[0.32, 0.01, 0.006]} />
+          </mesh>
+          <group position={[-0.072, 0.068, 0.118]}>
+            <mesh rotation={[Math.PI / 2, 0, 0]} material={mats.buckle}>
+              <cylinderGeometry args={[0.032, 0.032, 0.016, 10]} />
             </mesh>
-            {[0, 2.09, 4.18].map((ang) => (
+            {[0.3, 2.39, 4.48].map((ang) => (
               <mesh
                 key={ang}
-                position={[Math.cos(ang) * 0.042, Math.sin(ang) * 0.042, 0.004]}
+                position={[Math.cos(ang) * 0.036, Math.sin(ang) * 0.036, 0.002]}
                 rotation={[Math.PI / 2, 0, 0]}
                 material={mats.buckle}
               >
-                <cylinderGeometry args={[0.018, 0.018, 0.018, 8]} />
+                <cylinderGeometry args={[0.018, 0.018, 0.015, 8]} />
               </mesh>
             ))}
           </group>
 
-          {/* Waist belt + silver rectangular buckle */}
-          <mesh position={[0, -0.21, 0.005]} material={mats.boot}>
-            <boxGeometry args={[0.365, 0.062, 0.22]} />
+          {/* Waist belt + metallic rectangular buckle */}
+          <mesh position={[0, -0.21, 0]} scale={[1.16, 1, 0.78]} material={mats.boot}>
+            <cylinderGeometry args={[0.142, 0.146, 0.058, 12]} />
           </mesh>
-          <mesh position={[0, -0.21, 0.122]} material={mats.buckle}>
-            <boxGeometry args={[0.09, 0.055, 0.02]} />
+          <mesh position={[0, -0.21, 0.114]} material={mats.buckle}>
+            <boxGeometry args={[0.082, 0.05, 0.018]} />
           </mesh>
 
-          {/* Elucidator (Black Sword) slung diagonally behind the back, hilt over right shoulder */}
-          <group position={[-0.03, 0.04, -0.155]} rotation={[0.06, 0, 0.44]}>
-            {/* Dark sheath */}
-            <mesh position={[0, -0.1, 0]} material={mats.swordBlade}>
-              <boxGeometry args={[0.062, 0.92, 0.028]} />
+          {/* Elucidator (Black Sword) behind the back, hilt over right shoulder */}
+          <group position={[-0.03, 0.05, -0.14]} rotation={[0.05, 0, 0.42]}>
+            <mesh position={[0, -0.08, 0]} material={mats.swordBlade}>
+              <boxGeometry args={[0.055, 0.88, 0.024]} />
             </mesh>
-            <mesh position={[0, -0.54, 0]} material={mats.swordSilver}>
-              <boxGeometry args={[0.066, 0.06, 0.032]} />
+            <mesh position={[0, -0.51, 0]} material={mats.swordSilver}>
+              <boxGeometry args={[0.06, 0.055, 0.028]} />
             </mesh>
-            {/* Crossguard */}
-            <mesh position={[0, 0.37, 0]} material={mats.swordSilver}>
-              <boxGeometry args={[0.21, 0.042, 0.04]} />
+            <mesh position={[0, 0.36, 0]} material={mats.swordSilver}>
+              <boxGeometry args={[0.19, 0.036, 0.036]} />
             </mesh>
-            {/* Hilt & pommel */}
-            <mesh position={[0, 0.51, 0]} material={mats.swordBlade}>
-              <cylinderGeometry args={[0.02, 0.022, 0.24, 8]} />
+            <mesh position={[0, 0.49, 0]} material={mats.swordBlade}>
+              <cylinderGeometry args={[0.018, 0.02, 0.22, 8]} />
             </mesh>
-            <mesh position={[0, 0.64, 0]} material={mats.swordSilver}>
-              <octahedronGeometry args={[0.034, 0]} />
+            <mesh position={[0, 0.61, 0]} material={mats.swordSilver}>
+              <octahedronGeometry args={[0.03, 0]} />
             </mesh>
           </group>
         </group>
 
-        {/* Flowing split long-coat tails below waist */}
-        <group position={[0, 0.84, 0]}>
-          <group ref={coatTailBackRef} position={[0, 0, -0.095]}>
-            <mesh position={[0, -0.34, -0.02]} material={mats.coat}>
-              <boxGeometry args={[0.38, 0.68, 0.04]} />
+        {/* Sleek flared A-line coat tails below waist */}
+        <group position={[0, 0.85, 0]}>
+          <group ref={coatTailBackRef} position={[0, 0, -0.075]}>
+            <mesh position={[0, -0.32, -0.02]} material={mats.coat}>
+              <cylinderGeometry args={[0.145, 0.24, 0.64, 10, 1, true, Math.PI * 0.62, Math.PI * 0.76]} />
             </mesh>
-            <mesh position={[0, -0.68, -0.02]} material={mats.trim}>
-              <boxGeometry args={[0.38, 0.02, 0.044]} />
-            </mesh>
-          </group>
-          <group ref={coatTailLRef} position={[0.17, 0, 0.01]}>
-            <mesh position={[0.02, -0.33, 0]} material={mats.coat}>
-              <boxGeometry args={[0.06, 0.66, 0.21]} />
-            </mesh>
-            <mesh position={[0.024, -0.33, 0.106]} material={mats.trim}>
-              <boxGeometry args={[0.056, 0.66, 0.014]} />
+            <mesh position={[0, -0.63, -0.02]} material={mats.trim}>
+              <cylinderGeometry args={[0.24, 0.244, 0.022, 10, 1, true, Math.PI * 0.62, Math.PI * 0.76]} />
             </mesh>
           </group>
-          <group ref={coatTailRRef} position={[-0.17, 0, 0.01]}>
-            <mesh position={[-0.02, -0.33, 0]} material={mats.coat}>
-              <boxGeometry args={[0.06, 0.66, 0.21]} />
+          <group ref={coatTailLRef} position={[0.135, 0, 0.005]}>
+            <mesh position={[0.04, -0.31, 0]} rotation={[0, 0, 0.08]} material={mats.coat}>
+              <boxGeometry args={[0.024, 0.62, 0.19]} />
             </mesh>
-            <mesh position={[-0.024, -0.33, 0.106]} material={mats.trim}>
-              <boxGeometry args={[0.056, 0.66, 0.014]} />
+            <mesh position={[0.042, -0.31, 0.095]} rotation={[0, 0, 0.08]} material={mats.trim}>
+              <boxGeometry args={[0.026, 0.62, 0.012]} />
+            </mesh>
+          </group>
+          <group ref={coatTailRRef} position={[-0.135, 0, 0.005]}>
+            <mesh position={[-0.04, -0.31, 0]} rotation={[0, 0, -0.08]} material={mats.coat}>
+              <boxGeometry args={[0.024, 0.62, 0.19]} />
+            </mesh>
+            <mesh position={[-0.042, -0.31, 0.095]} rotation={[0, 0, -0.08]} material={mats.trim}>
+              <boxGeometry args={[0.026, 0.62, 0.012]} />
             </mesh>
           </group>
         </group>
 
-        {/* Neck & Head with Canvas2D anime face + spiky layered black hair */}
-        <mesh position={[0, 1.34, 0]} material={mats.skin}>
-          <cylinderGeometry args={[0.055, 0.062, 0.1, 8]} />
+        {/* Neck & Stylized Anime Head (equirectangular face mapped cleanly onto curved sphere) */}
+        <mesh position={[0, 1.33, 0]} material={mats.skin}>
+          <cylinderGeometry args={[0.048, 0.056, 0.1, 10]} />
         </mesh>
         <group ref={headRef} position={[0, 1.49, 0]}>
-          <mesh material={mats.skin}>
-            <sphereGeometry args={[0.155, 16, 14]} />
+          <mesh scale={[0.96, 1.03, 0.94]} material={mats.head}>
+            <sphereGeometry args={[0.155, 24, 18, -Math.PI / 2]} />
           </mesh>
-          {/* Anime Face Front Plane curved nicely onto face */}
-          <mesh position={[0, -0.01, 0.132]} material={mats.face}>
-            <circleGeometry args={[0.125, 18]} />
+          {/* Rounded anime hair crown cap (offset slightly back/up so face stays completely clear) */}
+          <mesh position={[0, 0.036, -0.022]} scale={[1.02, 0.96, 1.02]} material={mats.hair}>
+            <sphereGeometry args={[0.158, 16, 14]} />
           </mesh>
-          {/* Hair cap & layered anime spikes */}
-          <mesh position={[0, 0.035, -0.02]} material={mats.hair}>
-            <sphereGeometry args={[0.168, 14, 12]} />
-          </mesh>
-          {/* Center & side spiky bangs framing the eyes */}
+          {/* Downward-hanging spiky Kirito bangs & cheek-framing locks (cone tip points -Y!) */}
           {[
-            [0, 0.08, 0.145, 0.35, 0, 0, 0.05, 0.14],
-            [-0.075, 0.07, 0.132, 0.25, -0.25, 0.22, 0.048, 0.15],
-            [0.075, 0.07, 0.132, 0.25, 0.25, -0.22, 0.048, 0.15],
-            [-0.135, 0.01, 0.065, 0.1, -0.6, 0.28, 0.05, 0.18],
-            [0.135, 0.01, 0.065, 0.1, 0.6, -0.28, 0.05, 0.18],
-            [0, -0.01, -0.145, -0.25, 0, 0, 0.09, 0.2],
-            [-0.08, 0.02, -0.135, -0.2, 0.35, 0.15, 0.06, 0.18],
-            [0.08, 0.02, -0.135, -0.2, -0.35, -0.15, 0.06, 0.18],
+            [0, 0.115, 0.125, Math.PI - 0.34, 0, 0, 0.038, 0.105],
+            [-0.056, 0.112, 0.118, Math.PI - 0.3, 0, -0.22, 0.036, 0.11],
+            [0.056, 0.112, 0.118, Math.PI - 0.3, 0, 0.22, 0.036, 0.11],
+            [-0.128, 0.02, 0.068, Math.PI - 0.12, 0, -0.18, 0.038, 0.165],
+            [0.128, 0.02, 0.068, Math.PI - 0.12, 0, 0.18, 0.038, 0.165],
+            [0, -0.045, -0.14, Math.PI + 0.22, 0, 0, 0.07, 0.16],
+            [-0.085, -0.03, -0.125, Math.PI + 0.18, 0, -0.2, 0.05, 0.155],
+            [0.085, -0.03, -0.125, Math.PI + 0.18, 0, 0.2, 0.05, 0.155],
           ].map(([x, y, z, rx, ry, rz, rad, len], idx) => (
             <mesh key={idx} position={[x, y, z]} rotation={[rx, ry, rz]} material={mats.hair}>
-              <coneGeometry args={[rad, len, 5]} />
+              <coneGeometry args={[rad, len, 6]} />
             </mesh>
           ))}
         </group>
 
-        {/* Left Arm (with iconic round metallic-grey shoulder badge on upper sleeve) */}
-        <group ref={leftArmRef} position={[0.235, 1.25, 0]}>
-          <mesh position={[0.042, -0.05, 0]} rotation={[0, 0, Math.PI / 2]} material={mats.buckle}>
-            <cylinderGeometry args={[0.042, 0.042, 0.022, 10]} />
+        {/* Rounded Capsule Arms (left sleeve carries iconic metallic shoulder emblem) */}
+        <group ref={leftArmRef} position={[0.215, 1.24, 0]}>
+          <mesh position={[0.044, -0.04, 0]} rotation={[0, 0, Math.PI / 2]} material={mats.buckle}>
+            <cylinderGeometry args={[0.038, 0.038, 0.018, 10]} />
           </mesh>
-          <mesh position={[0, -0.21, 0]} material={mats.coat}>
-            <boxGeometry args={[0.105, 0.46, 0.115]} />
+          <mesh position={[0, -0.2, 0]} material={mats.coat}>
+            <capsuleGeometry args={[0.048, 0.34, 6, 10]} />
           </mesh>
-          <mesh position={[0, -0.41, 0]} material={mats.trim}>
-            <boxGeometry args={[0.112, 0.022, 0.12]} />
+          <mesh position={[0, -0.375, 0]} material={mats.trim}>
+            <cylinderGeometry args={[0.052, 0.052, 0.02, 10]} />
           </mesh>
-          <mesh position={[0, -0.47, 0]} material={mats.boot}>
-            <boxGeometry args={[0.086, 0.08, 0.09]} />
+          <mesh position={[0, -0.43, 0]} material={mats.boot}>
+            <sphereGeometry args={[0.044, 10, 8]} />
           </mesh>
-          <mesh position={[0, -0.52, 0]} material={mats.skin}>
-            <boxGeometry args={[0.072, 0.042, 0.075]} />
-          </mesh>
-        </group>
-
-        {/* Right Arm */}
-        <group ref={rightArmRef} position={[-0.235, 1.25, 0]}>
-          <mesh position={[0, -0.21, 0]} material={mats.coat}>
-            <boxGeometry args={[0.105, 0.46, 0.115]} />
-          </mesh>
-          <mesh position={[0, -0.41, 0]} material={mats.trim}>
-            <boxGeometry args={[0.112, 0.022, 0.12]} />
-          </mesh>
-          <mesh position={[0, -0.47, 0]} material={mats.boot}>
-            <boxGeometry args={[0.086, 0.08, 0.09]} />
-          </mesh>
-          <mesh position={[0, -0.52, 0]} material={mats.skin}>
-            <boxGeometry args={[0.072, 0.042, 0.075]} />
+          <mesh position={[0, -0.47, 0]} material={mats.skin}>
+            <sphereGeometry args={[0.034, 8, 8]} />
           </mesh>
         </group>
 
-        {/* Left & Right Legs + Silver-Grey Cuffed Boots */}
+        <group ref={rightArmRef} position={[-0.215, 1.24, 0]}>
+          <mesh position={[0, -0.2, 0]} material={mats.coat}>
+            <capsuleGeometry args={[0.048, 0.34, 6, 10]} />
+          </mesh>
+          <mesh position={[0, -0.375, 0]} material={mats.trim}>
+            <cylinderGeometry args={[0.052, 0.052, 0.02, 10]} />
+          </mesh>
+          <mesh position={[0, -0.43, 0]} material={mats.boot}>
+            <sphereGeometry args={[0.044, 10, 8]} />
+          </mesh>
+          <mesh position={[0, -0.47, 0]} material={mats.skin}>
+            <sphereGeometry args={[0.034, 8, 8]} />
+          </mesh>
+        </group>
+
+        {/* Rounded Legs + Silver-Grey Cuffed Boots grounded flush at Y = 0 */}
         {[
-          { ref: leftLegRef, x: 0.095, key: 'leg-l' },
-          { ref: rightLegRef, x: -0.095, key: 'leg-r' },
+          { ref: leftLegRef, x: 0.088, key: 'leg-l' },
+          { ref: rightLegRef, x: -0.088, key: 'leg-r' },
         ].map(({ ref, x, key }) => (
           <group key={key} ref={ref} position={[x, 0.82, 0]}>
-            <mesh position={[0, -0.3, 0]} material={mats.shirt}>
-              <boxGeometry args={[0.125, 0.56, 0.14]} />
+            <mesh position={[0, -0.29, 0]} material={mats.coatDark}>
+              <capsuleGeometry args={[0.058, 0.44, 6, 10]} />
             </mesh>
-            {/* Silver-grey boot cuff + dark leather boot touching exact Y = 0 */}
-            <mesh position={[0, -0.61, 0.005]} material={mats.buckle}>
-              <boxGeometry args={[0.142, 0.11, 0.155]} />
+            <mesh position={[0, -0.59, 0.004]} material={mats.buckle}>
+              <cylinderGeometry args={[0.068, 0.064, 0.1, 10]} />
             </mesh>
-            <mesh position={[0, -0.74, 0.032]} material={mats.boot}>
-              <boxGeometry args={[0.14, 0.16, 0.22]} />
+            <mesh position={[0, -0.735, 0.028]} material={mats.boot}>
+              <boxGeometry args={[0.12, 0.17, 0.21]} />
             </mesh>
           </group>
         ))}

@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { FloorWorldLayout3D, WorldNpcSpec3D } from './worldTypes';
 import type { PlayerMotionState } from './KiritoAvatar';
+import { createContactShadowTexture } from './worldMaterials';
 
 export interface AmbientNpcsProps {
   floor: FloorWorldLayout3D;
@@ -16,37 +17,53 @@ export interface AmbientNpcsProps {
 
 const NPC_WALK_SPEED = 1.45;
 
-function createNpcFaceTexture(eyeColor: string): THREE.CanvasTexture {
-  const size = 128;
+/**
+ * Equirectangular stylized anime NPC head texture mapped onto `SphereGeometry(r, 20, 14, -Math.PI/2)`
+ * so eyes & smile sit cleanly on the curved front `+Z` face with zero z-fighting or buried planes.
+ */
+function createNpcHeadTexture(eyeColor: string, hairColor: string): THREE.CanvasTexture {
+  const w = 256;
+  const h = 128;
   const canvas =
     typeof document !== 'undefined'
-      ? Object.assign(document.createElement('canvas'), { width: size, height: size })
-      : ({ width: size, height: size } as unknown as HTMLCanvasElement);
+      ? Object.assign(document.createElement('canvas'), { width: w, height: h })
+      : ({ width: w, height: h } as unknown as HTMLCanvasElement);
   const ctx = typeof document !== 'undefined' ? canvas.getContext('2d') : null;
 
   if (ctx) {
-    ctx.fillStyle = '#f8dcc6';
-    ctx.fillRect(0, 0, size, size);
-    for (const ex of [42, 86]) {
+    ctx.fillStyle = '#f8ddc7';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = hairColor;
+    ctx.fillRect(0, 0, w, 34);
+    ctx.fillRect(0, 0, 74, h);
+    ctx.fillRect(w - 74, 0, 74, h);
+
+    for (const ex of [111, 145]) {
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.ellipse(ex, 66, 10, 9, 0, 0, Math.PI * 2);
+      ctx.ellipse(ex, 65, 8.5, 7.2, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = eyeColor;
       ctx.beginPath();
-      ctx.arc(ex, 67, 6.2, 0, Math.PI * 2);
+      ctx.arc(ex, 66, 5.2, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.arc(ex - 2.2, 64, 2.2, 0, Math.PI * 2);
+      ctx.arc(ex - 2, 63, 2, 0, Math.PI * 2);
       ctx.fill();
+      ctx.strokeStyle = '#241e22';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(ex - 9, 63);
+      ctx.quadraticCurveTo(ex, 56, ex + 9, 63);
+      ctx.stroke();
     }
     ctx.strokeStyle = '#9e6f5c';
-    ctx.lineWidth = 2.4;
+    ctx.lineWidth = 1.8;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(54, 92);
-    ctx.quadraticCurveTo(64, 98, 74, 92);
+    ctx.moveTo(122, 85);
+    ctx.quadraticCurveTo(128, 90, 134, 85);
     ctx.stroke();
   }
 
@@ -67,6 +84,7 @@ function SingleAmbientNpc({
   spec,
   playerMotionRef,
   npcPositionsRef,
+  shadowTexture,
   paused,
   prefersReducedMotion,
   isDraggingRef,
@@ -75,6 +93,7 @@ function SingleAmbientNpc({
   spec: WorldNpcSpec3D;
   playerMotionRef: MutableRefObject<PlayerMotionState>;
   npcPositionsRef: MutableRefObject<Map<string, [number, number, number]>>;
+  shadowTexture: THREE.CanvasTexture;
   paused: boolean;
   prefersReducedMotion: boolean;
   isDraggingRef: MutableRefObject<boolean>;
@@ -96,26 +115,29 @@ function SingleAmbientNpc({
     phase: (spec.name.length * 1.37) % 6.28,
   });
 
-  const faceTexture = useMemo(() => createNpcFaceTexture(spec.accentColor), [spec.accentColor]);
+  const hairColor =
+    spec.role === 'librarian' ? '#4a3235' : spec.role === 'reader_sitting' ? '#6b452d' : '#323a52';
+
+  const headTexture = useMemo(
+    () => createNpcHeadTexture(spec.accentColor, hairColor),
+    [spec.accentColor, hairColor],
+  );
   useEffect(() => {
     return () => {
-      faceTexture.dispose();
+      headTexture.dispose();
     };
-  }, [faceTexture]);
+  }, [headTexture]);
 
   const mats = useMemo(
     () => ({
-      cloak: new THREE.MeshStandardMaterial({ color: spec.accentColor, roughness: 0.72, metalness: 0.06 }),
-      tunic: new THREE.MeshStandardMaterial({ color: '#e8e2d5', roughness: 0.82, metalness: 0.02 }),
-      hair: new THREE.MeshStandardMaterial({
-        color: spec.role === 'librarian' ? '#3d2c2e' : spec.role === 'reader_sitting' ? '#5c3c28' : '#2f364a',
-        roughness: 0.65,
-      }),
-      skin: new THREE.MeshStandardMaterial({ color: '#f8dcc6', roughness: 0.76 }),
-      face: new THREE.MeshStandardMaterial({ map: faceTexture, roughness: 0.65 }),
+      cloak: new THREE.MeshStandardMaterial({ color: spec.accentColor, roughness: 0.68, metalness: 0.06 }),
+      tunic: new THREE.MeshStandardMaterial({ color: '#ece6da', roughness: 0.8, metalness: 0.02 }),
+      hair: new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.6 }),
+      head: new THREE.MeshStandardMaterial({ map: headTexture, roughness: 0.64 }),
       book: new THREE.MeshStandardMaterial({ color: '#7c3aed', roughness: 0.7 }),
+      shadow: new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false }),
     }),
-    [spec.accentColor, spec.role, faceTexture],
+    [spec.accentColor, hairColor, headTexture, shadowTexture],
   );
 
   useEffect(() => {
@@ -136,7 +158,6 @@ function SingleAmbientNpc({
 
     if (spec.role === 'stroller' && spec.waypoints.length > 1 && !prefersReducedMotion) {
       if (distToPlayer < 2.6) {
-        // Politely pause and turn toward Kirito when nearby
         const lookYaw = Math.atan2(pPos[0] - nav.x, pPos[2] - nav.z);
         nav.yaw = lerpAngle(nav.yaw, lookYaw, Math.min(1, dt * 6));
       } else if (nav.pauseLeft > 0) {
@@ -165,13 +186,13 @@ function SingleAmbientNpc({
 
     nav.phase += dt * (walking ? 7.5 : 2.1);
     const sitDrop = spec.role === 'reader_sitting' ? -0.3 : 0;
-    const bob = prefersReducedMotion ? 0 : walking ? Math.abs(Math.sin(nav.phase)) * 0.035 : Math.sin(nav.phase) * 0.012;
+    const bob = prefersReducedMotion ? 0 : walking ? Math.abs(Math.sin(nav.phase)) * 0.032 : Math.sin(nav.phase) * 0.01;
 
     grp.position.set(nav.x, nav.y + sitDrop + bob, nav.z);
     grp.rotation.y = nav.yaw;
     npcPositionsRef.current.set(spec.id, [nav.x, nav.y, nav.z]);
 
-    const swing = walking && !prefersReducedMotion ? Math.sin(nav.phase) * 0.48 : 0;
+    const swing = walking && !prefersReducedMotion ? Math.sin(nav.phase) * 0.45 : 0;
     if (leftLegRef.current && rightLegRef.current) {
       if (spec.role === 'reader_sitting') {
         leftLegRef.current.rotation.x = -1.25;
@@ -209,48 +230,56 @@ function SingleAmbientNpc({
         if (typeof document !== 'undefined') document.body.style.cursor = '';
       }}
     >
-      {/* Cloak & tunic body */}
-      <mesh position={[0, 1.0, 0]} material={mats.tunic}>
-        <boxGeometry args={[0.3, 0.48, 0.18]} />
+      {spec.role !== 'reader_sitting' && (
+        <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]} material={mats.shadow}>
+          <planeGeometry args={[0.84, 0.84]} />
+        </mesh>
+      )}
+
+      {/* Tapered tunic & cozy adventurer cloak */}
+      <mesh position={[0, 1.0, 0]} scale={[1.05, 1, 0.72]} material={mats.tunic}>
+        <cylinderGeometry args={[0.135, 0.12, 0.44, 12]} />
       </mesh>
-      <mesh position={[0, 0.86, -0.02]} material={mats.cloak}>
-        <cylinderGeometry args={[0.17, 0.27, 0.72, 10]} />
+      <mesh position={[0, 0.85, -0.02]} material={mats.cloak}>
+        <cylinderGeometry args={[0.155, 0.255, 0.7, 12]} />
       </mesh>
 
-      {/* Head, Canvas2D anime eyes & hair */}
-      <group position={[0, 1.41, 0]}>
-        <mesh material={mats.skin}>
-          <sphereGeometry args={[0.145, 14, 12]} />
+      {/* Curved equirectangular anime head + downward hair bangs */}
+      <group position={[0, 1.42, 0]}>
+        <mesh scale={[0.96, 1.02, 0.94]} material={mats.head}>
+          <sphereGeometry args={[0.145, 20, 14, -Math.PI / 2]} />
         </mesh>
-        <mesh position={[0, -0.01, 0.125]} material={mats.face}>
-          <circleGeometry args={[0.115, 16]} />
+        <mesh position={[0, 0.032, -0.02]} material={mats.hair}>
+          <sphereGeometry args={[0.148, 14, 12]} />
         </mesh>
-        <mesh position={[0, 0.04, -0.02]} material={mats.hair}>
-          <sphereGeometry args={[0.158, 12, 10]} />
+        <mesh position={[-0.048, 0.098, 0.11]} rotation={[Math.PI - 0.3, 0, -0.2]} material={mats.hair}>
+          <coneGeometry args={[0.036, 0.1, 6]} />
+        </mesh>
+        <mesh position={[0.048, 0.098, 0.11]} rotation={[Math.PI - 0.3, 0, 0.2]} material={mats.hair}>
+          <coneGeometry args={[0.036, 0.1, 6]} />
         </mesh>
       </group>
 
-      {/* Arms */}
-      <mesh ref={leftArmRef} position={[0.21, 1.02, 0]} material={mats.cloak}>
-        <boxGeometry args={[0.09, 0.42, 0.1]} />
+      {/* Rounded capsule arms */}
+      <mesh ref={leftArmRef} position={[0.19, 1.0, 0]} material={mats.cloak}>
+        <capsuleGeometry args={[0.042, 0.3, 5, 8]} />
       </mesh>
-      <mesh ref={rightArmRef} position={[-0.21, 1.02, 0]} material={mats.cloak}>
-        <boxGeometry args={[0.09, 0.42, 0.1]} />
+      <mesh ref={rightArmRef} position={[-0.19, 1.0, 0]} material={mats.cloak}>
+        <capsuleGeometry args={[0.042, 0.3, 5, 8]} />
       </mesh>
 
-      {/* Sitting reader holds an open book */}
       {spec.role === 'reader_sitting' && (
         <mesh position={[0, 1.02, 0.28]} rotation={[0.35, 0, 0]} material={mats.book}>
           <boxGeometry args={[0.24, 0.04, 0.18]} />
         </mesh>
       )}
 
-      {/* Legs */}
-      <mesh ref={leftLegRef} position={[0.085, 0.36, 0]} material={mats.hair}>
-        <boxGeometry args={[0.11, 0.68, 0.12]} />
+      {/* Rounded legs */}
+      <mesh ref={leftLegRef} position={[0.08, 0.36, 0]} material={mats.hair}>
+        <capsuleGeometry args={[0.05, 0.54, 5, 8]} />
       </mesh>
-      <mesh ref={rightLegRef} position={[-0.085, 0.36, 0]} material={mats.hair}>
-        <boxGeometry args={[0.11, 0.68, 0.12]} />
+      <mesh ref={rightLegRef} position={[-0.08, 0.36, 0]} material={mats.hair}>
+        <capsuleGeometry args={[0.05, 0.54, 5, 8]} />
       </mesh>
     </group>
   );
@@ -269,6 +298,13 @@ export function AmbientNpcs({
   isDraggingRef,
   onSelectNpc,
 }: AmbientNpcsProps) {
+  const shadowTexture = useMemo(() => createContactShadowTexture(), []);
+  useEffect(() => {
+    return () => {
+      shadowTexture.dispose();
+    };
+  }, [shadowTexture]);
+
   useEffect(() => {
     const map = npcPositionsRef.current;
     map.clear();
@@ -286,6 +322,7 @@ export function AmbientNpcs({
           spec={spec}
           playerMotionRef={playerMotionRef}
           npcPositionsRef={npcPositionsRef}
+          shadowTexture={shadowTexture}
           paused={paused}
           prefersReducedMotion={prefersReducedMotion}
           isDraggingRef={isDraggingRef}
