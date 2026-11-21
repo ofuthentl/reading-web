@@ -199,8 +199,8 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
     <div className="theme-canvas relative flex min-h-screen flex-col justify-between overflow-hidden text-ink transition-colors duration-200">
       <GateBackdropArt isDark={isDark} isEntrance={isEntrance} />
 
-      {/* Thanh điều hướng tối giản góc trên */}
-      <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 pt-6 sm:px-12 sm:pt-8">
+      {/* Thanh điều hướng tối giản sát lề trái/phải đồng trục với rìa ổ khoá bên dưới */}
+      <header className="relative z-10 flex w-full items-center justify-between px-6 pt-6 sm:px-10 md:px-14 md:pt-8 lg:px-20">
         <div className="flex items-center gap-2.5 select-none">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-line-strong/70 bg-surface/70 text-accent backdrop-blur-sm">
             <BookOpen className="h-4 w-4" />
@@ -210,16 +210,16 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
           </span>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="hidden rounded-full border border-line bg-surface/60 px-3 py-1 text-[11px] font-medium tracking-wide text-ink-muted backdrop-blur-sm sm:inline-flex">
+        <div className="flex items-center gap-2.5">
+          <span className="hidden rounded-full border border-line bg-surface/60 px-3 py-1.5 text-xs font-medium tracking-wide text-ink-muted backdrop-blur-sm sm:inline-flex">
             {isEntrance ? 'Cổng nhận khoá' : 'Kho lưu trữ riêng'}
           </span>
           {theme && onCycleTheme && <ThemeToggle theme={theme} onCycle={onCycleTheme} showLabel />}
         </div>
       </header>
 
-      {/* Bố cục không gian mở căn trái — thoáng đãng, không đóng khung hộp cứng nhắc */}
-      <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center px-6 py-12 sm:px-12">
+      {/* Bố cục không gian mở căn sát lề trái thoáng đãng */}
+      <main className="relative z-10 flex w-full flex-1 flex-col justify-center px-6 py-12 sm:px-10 md:px-14 lg:px-20">
         {status === 'checking' ? (
           <div className="flex items-center gap-3 text-ink-muted">
             <Loader2 className="h-4 w-4 animate-spin text-accent" />
@@ -425,7 +425,7 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
         )}
       </main>
 
-      <footer className="relative z-10 mx-auto w-full max-w-6xl px-6 pb-6 text-xs text-ink-faint sm:px-12 sm:pb-8">
+      <footer className="relative z-10 w-full px-6 pb-6 text-xs text-ink-faint sm:px-10 md:px-14 md:pb-8 lg:px-20">
         <span>Ofu&apos;s Library · Kho sách đồng bộ</span>
       </footer>
     </div>

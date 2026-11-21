@@ -1,5 +1,5 @@
 # HANDOFF
-Cập nhật: 2026-11-22 00:51 | Nhánh: fix/native-gate-ui | Build: 🟢 frontend (entry <= 86.04 kB gzip, 0 B three) · 🟢 worker (live) · 🟢 ESLint 0/0
+Cập nhật: 2026-11-22 00:58 | Nhánh: fix/native-gate-ui | Build: 🟢 frontend (entry 81.83 kB gzip <= 86.04 kB, 0 B three) · 🟢 worker (live) · 🟢 ESLint 0/0
 Nhiệm vụ hiện tại: **Thiết kế Cổng không gian mở nguyên bản của Ofu's Library cho `/entrance` & `/locked` (`fix/native-gate-ui`, `D-027`)** — sẵn sàng duyệt trên trình duyệt & merge PR vào `main`.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/entrance-and-locked-routes.md
 
