@@ -1,9 +1,9 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, type MutableRefObject } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { AppTheme } from '@/hooks/useTheme';
 import { cloneGlbTemplate, useLocalGlb } from './gltfLoader';
-import type { FloorWorldLayout3D } from './worldTypes';
+import type { FloorWorldLayout3D, PlayerMotionState } from './worldTypes';
 import { getWorldBiomePalette, type WorldMaterialBundle } from './worldMaterials';
 import { isSkyBattlefieldBossRoom } from './bossRoomLayout3d';
 import { WorldHorizonVista } from './WorldHorizonVista';
@@ -37,6 +37,7 @@ export interface BossArenaMeshProps {
   theme: AppTheme;
   skyGeometry: THREE.BufferGeometry;
   worldMaterials: WorldMaterialBundle;
+  playerMotionRef?: MutableRefObject<PlayerMotionState>;
   paused: boolean;
   prefersReducedMotion: boolean;
   requestRender?: () => void;
@@ -90,6 +91,7 @@ function SkyBattlefieldBossArena({
   theme,
   skyGeometry,
   worldMaterials,
+  playerMotionRef,
   paused,
   prefersReducedMotion,
   requestRender,
@@ -201,6 +203,7 @@ function SkyBattlefieldBossArena({
       {/* Stormterror hovering / perched dramatically at the center-north of the Sky Battlefield */}
       <FloorBossSentinelGlb
         floor={floor}
+        playerMotionRef={playerMotionRef}
         paused={paused}
         prefersReducedMotion={prefersReducedMotion}
         requestRender={requestRender}

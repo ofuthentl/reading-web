@@ -1,6 +1,6 @@
 # HANDOFF
-Cập nhật: 2026-11-21 19:34 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 84.77 kB gzip, 0 B three) · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: Triển khai **PR 4A — Aincrad Reading Tower** (vừa hoàn tất **Sub-phase 4A-T4** + sửa lỗi nền HUD trong suốt + triển khai **PA-2 Đấu trường Phòng Boss kép `D-024`** với `boss-battlefield.glb` cho Tầng 4 Stormterror → sẵn sàng sang **Sub-phase 4A-T5** kiểm thử tổng thể & mở PR vào `main`)
+Cập nhật: 2026-11-21 19:52 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 84.77 kB gzip, 0 B three) · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: Triển khai **PR 4A — Aincrad Reading Tower** (vừa hoàn tất **Sub-phase 4A-T4**, **PA-2 Phòng Boss kép `D-024`** và **Hoạt ảnh bay & vỗ 6 cánh GPU cho Boss Tầng 4 Stormterror** → sẵn sàng kiểm tra trực quan & sang **Sub-phase 4A-T5**)
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/phase-4-aincrad-tower.md
 
 ## Đang làm dở
@@ -17,5 +17,6 @@ Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · d
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
+- **Hoạt ảnh bay & vỗ 6 cánh GPU cho Boss Tầng 4 Stormterror (`feat/library-3d`):** `StormterrorBossGlb.tsx` (vertex shader `onBeforeCompile` đồng bộ 4 mesh theo không gian gốc rồng: vỗ 6 cánh lệch pha, quẫy đuôi, đảo cổ/đầu, lượn hình số 8, nghiêng cánh, quay theo Kirito & vòng gió Anemo; 0 FPS khi paused/reduced-motion).
 - **PA-2 Phòng Boss kép (`feat/library-3d`, D-024):** `public/models/boss-battlefield.glb` (`2.83 MB`), `bossRoomLayout3d.ts`, `BossArenaMesh.tsx`, `WorldBiomeMesh.tsx`, `InteractiveStations.tsx`.
 - **Sửa nền trong suốt HUD/Dropdown & trọn Sub-phase 4A-T4 (`feat/library-3d`):** `MinimapWidget.tsx`, `CozyGameHud.tsx`, `WorldQuickBar.tsx`, `ambientAudio.ts`, `InteractiveStations.tsx`.

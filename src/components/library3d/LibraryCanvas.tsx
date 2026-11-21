@@ -227,6 +227,7 @@ function WorldSceneContent({
         theme={theme}
         libraryMaterials={libraryMaterials}
         worldMaterials={worldMaterials}
+        playerMotionRef={playerMotionRef}
         paused={isRenderPaused}
         prefersReducedMotion={prefersReducedMotion}
         requestRender={requestRender}

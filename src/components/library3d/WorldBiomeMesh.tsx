@@ -1,8 +1,8 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, type MutableRefObject } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { AppTheme } from '@/hooks/useTheme';
-import type { FloorWorldLayout3D } from './worldTypes';
+import type { FloorWorldLayout3D, PlayerMotionState } from './worldTypes';
 import {
   createShelfNameplateAtlas,
   type LibraryMaterialBundle,
@@ -27,6 +27,7 @@ export interface WorldBiomeMeshProps {
   theme: AppTheme;
   libraryMaterials: LibraryMaterialBundle;
   worldMaterials?: WorldMaterialBundle;
+  playerMotionRef?: MutableRefObject<PlayerMotionState>;
   paused?: boolean;
   prefersReducedMotion?: boolean;
   requestRender?: () => void;
@@ -42,6 +43,7 @@ export function WorldBiomeMesh({
   theme,
   libraryMaterials,
   worldMaterials: externalWorldMaterials,
+  playerMotionRef,
   paused = false,
   prefersReducedMotion = false,
   requestRender,
@@ -150,6 +152,7 @@ export function WorldBiomeMesh({
         theme={theme}
         skyGeometry={skyGeometry}
         worldMaterials={worldBundle}
+        playerMotionRef={playerMotionRef}
         paused={paused}
         prefersReducedMotion={prefersReducedMotion}
         requestRender={requestRender}

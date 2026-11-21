@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { cloneGlbTemplate, useLocalGlb } from './gltfLoader';
-import type { BiomePropPlacement3D, FloorWorldLayout3D } from './worldTypes';
+import { StormterrorBossGlb } from './StormterrorBossGlb';
+import type { BiomePropPlacement3D, FloorWorldLayout3D, PlayerMotionState } from './worldTypes';
 
 const BASE = import.meta.env.BASE_URL ?? '/';
 const ACTOR_MODEL_URLS = {
@@ -219,10 +220,46 @@ function getBossRoomSentinelConfig(floor: FloorWorldLayout3D): BossConfig {
 }
 
 /**
- * Renders the Boss Guardian strictly INSIDE the dedicated 360° Boss Arena (`BossArenaMesh.tsx`).
- * Never rendered outdoors on normal library floors (`D-021`).
+ * Renders the Boss Guardian strictly INSIDE the dedicated Boss Arena (`BossArenaMesh.tsx`).
+ * Delegates Floor 4 (`starlight_ruins`) to `StormterrorBossGlb` for live GPU wingbeats, tail whip,
+ * aerial figure-8 hover, and gaze tracking toward Kirito. Never rendered outdoors (`D-021`).
  */
 export function FloorBossSentinelGlb({
+  floor,
+  playerMotionRef,
+  paused,
+  prefersReducedMotion,
+  requestRender,
+}: {
+  floor: FloorWorldLayout3D;
+  playerMotionRef?: MutableRefObject<PlayerMotionState>;
+  paused: boolean;
+  prefersReducedMotion: boolean;
+  requestRender?: () => void;
+}) {
+  if (floor.biomeId === 'starlight_ruins') {
+    return (
+      <StormterrorBossGlb
+        floor={floor}
+        playerMotionRef={playerMotionRef}
+        paused={paused}
+        prefersReducedMotion={prefersReducedMotion}
+        requestRender={requestRender}
+      />
+    );
+  }
+
+  return (
+    <StandardBossSentinelGlb
+      floor={floor}
+      paused={paused}
+      prefersReducedMotion={prefersReducedMotion}
+      requestRender={requestRender}
+    />
+  );
+}
+
+function StandardBossSentinelGlb({
   floor,
   paused,
   prefersReducedMotion,
