@@ -290,11 +290,12 @@ export function createWorldMaterialBundle(
     bark: new THREE.MeshStandardMaterial({ color: '#5c3f2b', roughness: 0.9, metalness: 0.02 }),
     lampGlow: new THREE.MeshStandardMaterial({ roughness: 0.2, metalness: 0.05 }),
     portalGlow: new THREE.MeshStandardMaterial({
-      roughness: 0.18,
-      metalness: 0.1,
+      roughness: 0.16,
+      metalness: 0.12,
       transparent: true,
-      opacity: 0.78,
+      opacity: 0.46,
       side: THREE.DoubleSide,
+      depthWrite: false,
     }),
     crystal: new THREE.MeshStandardMaterial({
       color: '#a78bfa',
@@ -408,7 +409,7 @@ export function createWorldMaterialBundle(
     materials.lampGlow.emissiveIntensity = pal.lampEmissiveIntensity;
     materials.portalGlow.color.set(pal.portalGlow);
     materials.portalGlow.emissive.set(pal.portalGlow);
-    materials.portalGlow.emissiveIntensity = 1.25;
+    materials.portalGlow.emissiveIntensity = 0.82;
     materials.crystal.emissiveIntensity =
       theme === 'midnight' ? 1.45 : theme === 'dim' ? 1.1 : 0.72;
     return pal;

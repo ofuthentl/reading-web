@@ -126,14 +126,13 @@ function prop(
 }
 
 /**
- * Exact non-uniform scale derived from measured decoded bbox & tread elevation map of
- * `public/models/mountain-stairs.glb`:
- * - Tread slope spans local Z `+0.48 -> -0.36` (0.84 m) and climbs local Y `0 -> 0.415 m`.
- * - Tread valley center sits at local X `-0.065 m` (shifted `+0.55 m` in world X at `sx = 8.4`).
- * - Matches `5.30 m` Z length & `2.40 m` Y rise of `sakura-mountain-stairs` / `ruins-ancient-stairs`.
+ * Exact 2-flight scale derived from measured decoded step profile of
+ * `public/models/prop-mossy-stairs.glb` (flat symmetric 4-step stone flight, zero side boulders!):
+ * - Local treads span X ∈ [-0.467, +0.467], Z: +0.50 -> -0.15 (run 0.65) rising Y: 0 -> 0.455,
+ *   plus solid flat landing Z: -0.15 -> -0.45 at Y = 0.455 (eliminates top-of-stair trench!).
+ * - Two back-to-back flights yield 8 crisp 0.30 m steps matching `5.30 m` run & `2.40 m` rise 1:1.
  */
-const MOUNTAIN_STAIRS_SCALE_VEC: [number, number, number] = [8.4, 5.783, 6.31];
-const MOUNTAIN_STAIRS_OFFSET_X = 0.55;
+const MOSSY_FLIGHT_SCALE_VEC: [number, number, number] = [4.12, 2.637, 4.08];
 
 function npc(
   id: string,
@@ -286,7 +285,8 @@ function buildSakuraBlueprint(): BiomeBlueprint3D {
       prop('p-lantern-3', 'stone_lantern', [-3.4, 0, -6.2]),
       prop('p-lantern-4', 'stone_lantern', [3.4, 0, -6.2]),
       prop('p-mascot', 'mascot_pedestal', [7.6, 0, -9.8], -Math.PI * 0.25),
-      prop('p-stairs-glb', 'mountain_stairs_glb', [MOUNTAIN_STAIRS_OFFSET_X, 0, -20.23], 0, 1, MOUNTAIN_STAIRS_SCALE_VEC),
+      prop('p-stairs-low', 'mossy_stairs_glb', [0, 0, -19.24], 0, 1, MOSSY_FLIGHT_SCALE_VEC),
+      prop('p-stairs-high', 'mossy_stairs_glb', [0, 1.2, -21.89], 0, 1, MOSSY_FLIGHT_SCALE_VEC),
     ],
     npcs: [
       npc('npc-sakura-librarian', 'Vu nữ Silica', 'librarian', 'schoolgirl', [4.2, 0, -10.5], -Math.PI * 0.3, 'Đi qua Cổng Torii đỏ và cầu gỗ vồng là lên tới Đỉnh Đền — nơi đặt Cửa Phòng Boss Tầng 2.', '#f472b6'),
@@ -445,7 +445,8 @@ function buildStarlightRuinsBlueprint(): BiomeBlueprint3D {
       prop('p-ruin-4', 'ruin_column', [13.2, 0, -13.0], 3.9, 1.05),
       prop('p-crystal-1', 'crystal_pillar', [-7.5, 2.4, -22.5], 0.2, 1.1),
       prop('p-crystal-2', 'crystal_pillar', [7.5, 2.4, -22.5], 1.4, 1.1),
-      prop('p-stairs-glb', 'mountain_stairs_glb', [MOUNTAIN_STAIRS_OFFSET_X, 0, -18.53], 0, 1, MOUNTAIN_STAIRS_SCALE_VEC),
+      prop('p-stairs-low', 'mossy_stairs_glb', [0, 0, -17.54], 0, 1, MOSSY_FLIGHT_SCALE_VEC),
+      prop('p-stairs-high', 'mossy_stairs_glb', [0, 1.2, -20.19], 0, 1, MOSSY_FLIGHT_SCALE_VEC),
     ],
     npcs: [
       npc('npc-ruins-keeper', 'Học giả Zhongli', 'librarian', 'zhongli', [5.8, 0, 7.8], -0.25, 'Phía trên bậc đá cổ là Cửa Phòng Boss của Phong Long Stormterror — hãy tích luỹ đủ trang sách để mở phong ấn!', '#a78bfa'),

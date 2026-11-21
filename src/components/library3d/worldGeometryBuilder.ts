@@ -231,8 +231,8 @@ function buildSakuraTerrain(
     createScaledBox(18.2, 0.45, 0.55, 12.0, 0.12, 4.8, 0.35),
     createScaledBox(18.2, 0.45, 0.55, -12.0, 0.12, -4.8, 0.35),
     createScaledBox(18.2, 0.45, 0.55, 12.0, 0.12, -4.8, 0.35),
-    createScaledBox(14.5, 2.6, 5.4, -10.8, 1.3, -19.85, 0.25),
-    createScaledBox(14.5, 2.6, 5.4, 10.8, 1.3, -19.85, 0.25),
+    createScaledBox(16.4, 2.6, 5.4, -10.08, 1.3, -19.85, 0.25),
+    createScaledBox(16.4, 2.6, 5.4, 10.08, 1.3, -19.85, 0.25),
   );
   const lake = new THREE.PlaneGeometry(60, 10.6);
   lake.rotateX(-Math.PI / 2);
@@ -282,8 +282,8 @@ function buildStarlightRuinsTerrain(
   );
   // Flanking cliff stonework beside mountain-stairs.glb + island rim stones
   stone.push(
-    createScaledBox(12.2, 2.55, 5.4, -9.8, 1.25, -18.15, 0.25),
-    createScaledBox(12.2, 2.55, 5.4, 9.8, 1.25, -18.15, 0.25),
+    createScaledBox(13.0, 2.55, 5.4, -8.38, 1.25, -18.15, 0.25),
+    createScaledBox(13.0, 2.55, 5.4, 8.38, 1.25, -18.15, 0.25),
     createScaledBox(0.55, 0.42, 36.0, -14.8, 0.18, 2.4, 0.35),
     createScaledBox(0.55, 0.42, 36.0, 14.8, 0.18, 2.4, 0.35),
     createScaledBox(0.55, 0.55, 8.6, -9.05, 2.65, -25.0, 0.35),
