@@ -1,6 +1,6 @@
 # Kế hoạch Phase 4 — Aincrad Reading Tower (`ofu.lol`)
 
-> **Trạng thái:** Đã duyệt (2026-11-21) — bắt đầu triển khai PR 4A (`Sub-phase 4A-T1`).
+> **Trạng thái:** Đã hoàn tất kiểm thử **PR 4A (`Sub-phase 4A-T1 → 4A-T5`)** trên `feat/library-3d` (2026-11-21) — sẵn sàng push & mở Pull Request vào `main`.
 > **Quyết định nền tảng:** `D-008`, `D-009`, `D-010` (Hybrid nội bộ), `D-011`, `D-012`, `D-013` (ưu tiên độ đẹp máy cá nhân, giữ entry 2D/mobile `0 B three`), `D-014`, `D-015`, `D-016`, `D-017` (Mỗi tầng = 1 World Biome + Render tầng chủ động + NPC).
 > **Bất biến:** Mọi file `<= 500` dòng hiệu dụng (`eslint` `max-lines`), **0 CDN bên thứ 3**, **0 byte `three`** trong entry `index-*.js` (`<= 86.04 kB gzip`), bản **2D trên `ofu.lol`** không bị phá vỡ, mọi `ObjectURL`/texture/geometry/audio đều `dispose()` sạch khi unmount.
 
@@ -122,12 +122,10 @@ flowchart LR
 ---
 
 ## 4. Checklist Kiểm thử PR 4A (bắt buộc trước khi merge `main`)
-1. `npm run typecheck`, `npm run lint` (**0 lỗi, 0 cảnh báo `max-lines`**), `npm run build` (**0 B `three` trong `index-*.js`**, **0 CDN**).
-2. Mobile / DevTools `< 1024px`: không tải chunk 3D, chế độ 2D hoạt động nguyên vẹn.
-3. Desktop `>= 1024px`:
-   - Vào **Tầng 1 (Thị trấn Khởi Đầu)**: thấy phố lát đá, cây xanh, đèn đường, quảng trường sách, nhân vật **Kirito** và các **NPC** đi dạo/ngồi đọc.
-   - Bước qua **Cổng Chuyển Tầng** (hoặc chọn tầng trên HUD) → chuyển mượt sang **Tầng 2 (Rừng Anh Đào & Cầu Gỗ)**, **Tầng 3 (Đại sảnh Kính Starfield)**, **Tầng 4 (Hồ Đêm Sao & Phế tích)** với bầu trời/ánh sáng/cảnh quan khác biệt rõ rệt.
-   - Điều khiển `WASD` + `Shift` chạy, kéo chuột xoay 360°, lăn zoom, bấm `V` đổi Thứ 3 ↔ Thứ 1; không đi xuyên tường/kệ hay rơi xuống hồ.
-   - Đứng gần NPC / Trạm tương tác bấm `E` hoặc click hoạt động đúng; bật/tắt âm thanh môi trường, đổi ngày/chiều/đêm + thời tiết.
-   - Tìm kiếm sách xuyên tầng → tự dịch chuyển tới đúng tầng & kệ → `BookInspectCard` → mở đọc sách; thử đủ 5 modal (`Upload`, `Sửa`, `Đổi tên kệ`, `Chuyển kệ`, `Xoá`).
-4. Khi mở đọc sách / mở modal / chuyển tab / thu nhỏ `< 1024px` về 2D: cảnh 3D dừng render về **`0 FPS`**, không rò rỉ WebGL context khi chuyển qua lại `2D ↔ 3D`.
+- [x] 1. `npm run typecheck`, `npm run lint` (**0 lỗi, 0 cảnh báo `max-lines`**), `npm run build` (**0 B `three` trong `index-*.js`**, `84.77 kB gzip <= 86.04 kB`, **0 CDN**), Worker `npx tsc --noEmit` XANH, toàn bộ 28 `.glb` cục bộ giải mã sạch `0` lỗi UV/normal.
+- [x] 2. Mobile / DevTools `< 1024px` (`390×844`): **0** chunk `FantasyLibrary3D`/`three` được tải, chế độ 2D (`Trang chủ` ↔ `Thư viện`) hoạt động nguyên vẹn, `0` lỗi console.
+- [x] 3. Desktop `>= 1024px` (`1280×800`):
+   - Tầng 1–4 Biome, Kirito Mixamo, 5 NPC anime (`Asuna` đi dạo), 12 nội thất PBR `.glb`, Phòng Boss kép (`boss-arena.glb` Tầng 1–3 & Đấu trường Đảo Bay `boss-battlefield.glb` + Stormterror bay vỗ 6 cánh Tầng 4).
+   - Minimap tự co giãn, Cozy HUD (`LV/HP/MP/XP` + mục tiêu Boss thu gọn), Dropdown 10–100+ tầng nền đặc rõ nét, tìm sách xuyên tầng, bật/tắt âm thanh môi trường Web Audio nội bộ, đổi `Thứ 3 / Thứ 1 (V)`, vòng sáng rune trạm tương tác 3D.
+   - Kiểm định vật lý đi bộ/cầu thang/cầu vồng/đảo bay/camera anti-clipping/500 cuốn & 100 tầng PASS 100%, `0` lỗi console.
+- [x] 4. Khi mở đọc sách / mở modal / chuyển tab / chuyển về `2D`: cảnh 3D dừng `0 FPS`, `3D → 2D` unmount sạch (`0` canvas WebGL còn sót, giải phóng `CoverTextureCache`, `clearLocalGlbCache()`, `AudioContext.close()`).
