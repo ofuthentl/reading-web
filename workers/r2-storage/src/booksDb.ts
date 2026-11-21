@@ -1,8 +1,12 @@
-import { type AuthEnv, HttpError } from './auth';
+import { type AuthContext, type AuthEnv, HttpError } from './auth';
 
 export interface Env extends AuthEnv {
   APP_ORIGINS: string;
+  PUBLIC_APP_URL?: string;
   STORAGE_LIMIT_BYTES?: string;
+  DISCORD_PUBLIC_KEY?: string;
+  DISCORD_GUILD_ID?: string;
+  DISCORD_BOT_TOKEN?: string;
   BOOKS_BUCKET: R2Bucket;
   DB: D1Database;
 }
@@ -119,10 +123,46 @@ async function ensureShelfPrefsTable(env: Env): Promise<void> {
   ).run();
 }
 
-export async function listBooksAndProgress(env: Env) {
+async function ensureGuestProgressTable(env: Env): Promise<void> {
+  await env.DB.batch([
+    env.DB.prepare(
+      `CREATE TABLE IF NOT EXISTS guest_reading_progress (
+         discord_user_id TEXT NOT NULL,
+         book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+         chapter_id TEXT NOT NULL,
+         chapter_index INTEGER NOT NULL DEFAULT 0,
+         chapter_title TEXT,
+         total_chapters INTEGER,
+         scroll_ratio REAL NOT NULL DEFAULT 0,
+         scroll_top REAL NOT NULL DEFAULT 0,
+         completed INTEGER NOT NULL DEFAULT 0,
+         updated_at INTEGER NOT NULL,
+         PRIMARY KEY (discord_user_id, book_id)
+       )`,
+    ),
+    env.DB.prepare(
+      `CREATE INDEX IF NOT EXISTS idx_guest_progress_user_updated
+       ON guest_reading_progress(discord_user_id, updated_at DESC)`,
+    ),
+  ]);
+}
+
+export async function listBooksAndProgress(env: Env, auth: AuthContext) {
+  const progressQuery =
+    auth.role === 'owner'
+      ? env.DB.prepare('SELECT * FROM reading_progress').all<ProgressRow>()
+      : env.DB.prepare(
+          `SELECT book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, updated_at
+           FROM guest_reading_progress
+           WHERE discord_user_id = ?`,
+        )
+          .bind(auth.userId)
+          .all<ProgressRow>()
+          .catch(() => ({ results: [] as ProgressRow[] }));
+
   const [booksRes, progressRes, shelfPrefsRes, storage] = await Promise.all([
     env.DB.prepare('SELECT * FROM books ORDER BY created_at DESC').all<BookRow>(),
-    env.DB.prepare('SELECT * FROM reading_progress').all<ProgressRow>(),
+    progressQuery,
     env.DB.prepare('SELECT shelf_key, cover_book_id, is_favorite FROM shelf_prefs')
       .all<Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite'>>()
       .catch(() => ({
@@ -168,7 +208,14 @@ export async function listBooksAndProgress(env: Env) {
     if (row.is_favorite === 1) favoriteShelves.push(row.shelf_key);
   }
 
-  return { books: booksRes.results || [], progress: progressMap, shelfCovers, favoriteShelves, storage };
+  return {
+    books: booksRes.results || [],
+    progress: progressMap,
+    shelfCovers,
+    favoriteShelves,
+    storage,
+    session: { role: auth.role, expiresAt: auth.expiresAt },
+  };
 }
 
 export async function deleteSingleBook(env: Env, bookId: string) {
@@ -191,6 +238,10 @@ export async function deleteSingleBook(env: Env, bookId: string) {
     env.DB.prepare('UPDATE shelf_prefs SET cover_book_id = NULL WHERE cover_book_id = ?').bind(bookId),
     env.DB.prepare('DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0'),
   ]).catch(() => undefined);
+  await env.DB.prepare('DELETE FROM guest_reading_progress WHERE book_id = ?')
+    .bind(bookId)
+    .run()
+    .catch(() => undefined);
 
   const storage = await getStorageStats(env);
   return { deletedId: bookId, storage };
@@ -239,6 +290,10 @@ export async function bulkDeleteBooks(env: Env, rawIds: unknown) {
       ).bind(...chunk),
       env.DB.prepare('DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0'),
     ]).catch(() => undefined);
+    await env.DB.prepare(`DELETE FROM guest_reading_progress WHERE book_id IN (${placeholders})`)
+      .bind(...chunk)
+      .run()
+      .catch(() => undefined);
   }
 
   const storage = await getStorageStats(env);
@@ -388,6 +443,7 @@ export async function upsertShelfFavorite(env: Env, rawShelfName: unknown, rawFa
 
 export async function upsertReadingProgress(
   env: Env,
+  auth: AuthContext,
   bookId: string,
   body: {
     chapterId?: string;
@@ -403,6 +459,11 @@ export async function upsertReadingProgress(
   if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
   if (!body?.chapterId) throw new HttpError('Thiếu thông tin chương đang đọc.', 400);
 
+  const existingBook = await env.DB.prepare('SELECT id FROM books WHERE id = ?')
+    .bind(bookId)
+    .first<{ id: string }>();
+  if (!existingBook) throw new HttpError('Không tìm thấy sách.', 404);
+
   const updatedAt = typeof body.updatedAt === 'number' ? body.updatedAt : Date.now();
   const chapterTitle =
     typeof body.chapterTitle === 'string' && body.chapterTitle.trim()
@@ -415,31 +476,76 @@ export async function upsertReadingProgress(
       ? Math.floor(body.totalChapters)
       : null;
 
-  await env.DB.prepare(
-    `INSERT INTO reading_progress (book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(book_id) DO UPDATE SET
-       chapter_id = excluded.chapter_id,
-       chapter_index = excluded.chapter_index,
-       chapter_title = COALESCE(excluded.chapter_title, reading_progress.chapter_title),
-       total_chapters = COALESCE(excluded.total_chapters, reading_progress.total_chapters),
-       scroll_ratio = excluded.scroll_ratio,
-       scroll_top = excluded.scroll_top,
-       completed = excluded.completed,
-       updated_at = excluded.updated_at`,
-  )
-    .bind(
-      bookId,
-      body.chapterId,
-      Number(body.chapterIndex ?? 0),
-      chapterTitle,
-      totalChapters,
-      Number(body.scrollRatio ?? 0),
-      Number(body.scrollTop ?? 0),
-      body.completed ? 1 : 0,
-      updatedAt,
+  if (auth.role === 'owner') {
+    await env.DB.prepare(
+      `INSERT INTO reading_progress (book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(book_id) DO UPDATE SET
+         chapter_id = excluded.chapter_id,
+         chapter_index = excluded.chapter_index,
+         chapter_title = COALESCE(excluded.chapter_title, reading_progress.chapter_title),
+         total_chapters = COALESCE(excluded.total_chapters, reading_progress.total_chapters),
+         scroll_ratio = excluded.scroll_ratio,
+         scroll_top = excluded.scroll_top,
+         completed = excluded.completed,
+         updated_at = excluded.updated_at`,
     )
-    .run();
+      .bind(
+        bookId,
+        body.chapterId,
+        Number(body.chapterIndex ?? 0),
+        chapterTitle,
+        totalChapters,
+        Number(body.scrollRatio ?? 0),
+        Number(body.scrollTop ?? 0),
+        body.completed ? 1 : 0,
+        updatedAt,
+      )
+      .run();
+  } else {
+    await ensureGuestProgressTable(env);
+    await env.DB.prepare(
+      `INSERT INTO guest_reading_progress (discord_user_id, book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(discord_user_id, book_id) DO UPDATE SET
+         chapter_id = excluded.chapter_id,
+         chapter_index = excluded.chapter_index,
+         chapter_title = COALESCE(excluded.chapter_title, guest_reading_progress.chapter_title),
+         total_chapters = COALESCE(excluded.total_chapters, guest_reading_progress.total_chapters),
+         scroll_ratio = excluded.scroll_ratio,
+         scroll_top = excluded.scroll_top,
+         completed = excluded.completed,
+         updated_at = excluded.updated_at`,
+    )
+      .bind(
+        auth.userId,
+        bookId,
+        body.chapterId,
+        Number(body.chapterIndex ?? 0),
+        chapterTitle,
+        totalChapters,
+        Number(body.scrollRatio ?? 0),
+        Number(body.scrollTop ?? 0),
+        body.completed ? 1 : 0,
+        updatedAt,
+      )
+      .run();
+  }
 
   return { ok: true, updatedAt };
+}
+
+export async function deleteReadingProgress(env: Env, auth: AuthContext, bookId: string) {
+  if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
+  if (auth.role === 'owner') {
+    await env.DB.prepare('DELETE FROM reading_progress WHERE book_id = ?').bind(bookId).run();
+  } else {
+    await env.DB.prepare(
+      'DELETE FROM guest_reading_progress WHERE discord_user_id = ? AND book_id = ?',
+    )
+      .bind(auth.userId, bookId)
+      .run()
+      .catch(() => undefined);
+  }
+  return { ok: true };
 }

@@ -1,24 +1,22 @@
 # HANDOFF
-Cập nhật: 2026-11-21 22:37 | Nhánh: feat/shelf-cover-and-metadata | Build: 🟢 frontend (entry <= 86.04 kB gzip, 0 B three) · 🟢 worker · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: **Hoàn tất sửa Metadata Tên Sách/Kệ, Chọn Ảnh Bìa Kệ & Ghim Kệ Yêu Thích (`feat/shelf-cover-and-metadata`, `D-025`)** — sẵn sàng chạy migrate/deploy Worker & mở PR vào `main`.
-Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/shelf-metadata-and-cover.md
+Cập nhật: 2026-11-21 23:42 | Nhánh: feat/discord-key-access | Build: 🟢 frontend · 🟢 worker · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: **Chia sẻ thư viện qua Bot Discord (`feat/discord-key-access`, `D-026`)** — đã xong Phase 1, chuyển sang Phase 2.
+Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/discord-key-access.md
 
 ## Đang làm dở
-- Đã hoàn tất trọn vẹn 4 hạng mục trên nhánh `feat/shelf-cover-and-metadata` (xếp trên `fix/post-4a-cleanup`):
-  1. **Sửa dư dấu `-` / `–` cuối tên kệ (`Chitose - Tập 1.epub` → kệ `"Chitose"`):** hỗ trợ đầy đủ dấu gạch/hai chấm Unicode (`cleanShelfLabel`, `extractSeriesName`, `inferBatchCommonShelf`).
-  2. **Sửa nhận nhầm `Tập X：Tên tập` thành tên tác giả (`Black Bullet：New World Order - Tập 1：...`):** bổ sung `VOLUME_WITH_SUBTITLE_RE` giữ trọn tên tập trong `title`, đặt `author = "Không rõ tác giả"` (và tự làm sạch hiển thị `getDisplayAuthor` / `getBookSortTitle` cho cả sách cũ đã tải lên).
-  3. **Chọn ảnh bìa kệ từ 1 tập bất kỳ (`ShelfCoverPickerModal.tsx`, `D-025`):** chọn trực tiếp trong `ShelfDetailView` hoặc trên thẻ `ShelfCoverCard` (có nút đặt lại Tập 1 mặc định, tốn `0 B` thêm trên R2).
-  4. **Yêu thích kệ sách (`Star` ghim lên đầu cả `Trang chủ` lẫn `Thư viện`, `D-025`):** đồng bộ đa thiết bị qua bảng `shelf_prefs` trên Cloudflare D1 (`PUT /api/shelves/cover`, `PUT /api/shelves/favorite`) kèm cache `localStorage`; nạp lười `UploadDropzone` giúp giảm mạnh dung lượng entry 2D.
+- **Phase 1 (XONG):**
+  - Thêm migration `0003_discord_guest_access.sql` + cập nhật `schema.sql` (`discord_access`, `guest_reading_progress`).
+  - Nâng cấp `workers/r2-storage/src/auth.ts`: phân quyền `owner` (30 ngày qua `ACCESS_PASSCODE`) vs `guest` (24 giờ qua key 12 ký tự hạn 5 phút dùng 1 lần, tự đóng phiên 24 giờ cũ của cùng Discord user).
+  - Nâng cấp `booksDb.ts` & `index.ts`: chặn `403` mọi API ghi/xoá sách và kệ với `guest`, tách riêng tiến độ đọc khách vào `guest_reading_progress`.
+- **Đang làm (Phase 2):** tạo `workers/r2-storage/src/discord.ts` xử lý `POST /api/discord/interactions` (`Ed25519` verify, `/setup-bell`, nút `🔔 Nhận chìa khoá`) + script đăng ký slash command.
 
 ## Bước tiếp theo
-1. Chạy migrate D1 & deploy Cloudflare Worker cho bảng `shelf_prefs`:
-   - `cd workers/r2-storage && npx wrangler d1 migrations apply library-db --remote && npx wrangler deploy`
-2. Merge PR `fix/post-4a-cleanup` → `main` (nếu chưa merge), sau đó mở & merge PR `feat/shelf-cover-and-metadata` → `main`.
-3. Chuyển sang chuẩn bị **PR 4B (`feat/book-spread-reader`)**: đọc mã nguồn `MengTo/sketchbook`, cập nhật `docs/plans/phase-4b-book-spread-reader.md` và chờ duyệt.
+1. Hoàn tất Phase 2 (`discord.ts`, nối route vào `index.ts`, script `register-discord-commands.mjs`).
+2. Triển khai Phase 3 (Frontend `authSession.ts`, `api.ts`, `AuthGate.tsx`, khoá cứng `guest` Chỉ Đọc 2D trong `App.tsx` / `LibraryHeader.tsx`).
+3. Triển khai Phase 4 (Unit/integration test toàn luồng + cập nhật `docs/ARCHITECTURE.md` + hướng dẫn gắn Discord App).
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **`feat/shelf-cover-and-metadata` (`D-025`):** sửa tách tên kệ/tác giả Unicode, thêm `shelf_prefs` D1 + Worker API, chọn ảnh bìa kệ từ tập bất kỳ & ghim kệ yêu thích lên đầu Trang chủ + Thư viện.
-- **Bước 0 (`fix/post-4a-cleanup`):** vá `paused`/giữ nền 3D khi mở sách & modal, dọn `mountain-stairs.glb` thừa.
+- **Phase 1 (`feat/discord-key-access`):** D1 schema, auth 2 vai trò `owner`/`guest`, khoá `403` và cách ly tiến độ đọc.
