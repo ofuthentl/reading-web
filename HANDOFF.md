@@ -1,28 +1,24 @@
 # HANDOFF
-Cập nhật: 2026-11-21 18:26 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 84.75 kB gzip, 0 B three) · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: Triển khai **PR 4A — Aincrad Reading Tower** (vừa hoàn tất **Đa dạng hoá nội thất PBR `.glb` theo từng tầng/vị trí: 12 asset thật + biến thể bàn trà Nhật/bàn đá cổ/ghế bành nhung & vân gỗ ảnh thật `pbr-wood-albedo.webp` `D-023`** → chờ kiểm tra trực quan, tiếp sang `Sub-phase 4A-T4`)
-Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/real-glb-furniture-and-grand-library.md · docs/plans/phase-4-aincrad-tower.md
+Cập nhật: 2026-11-21 18:38 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 84.77 kB gzip, 0 B three) · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: Triển khai **PR 4A — Aincrad Reading Tower** (vừa hoàn tất trọn **Sub-phase 4A-T4** — Minimap tự co giãn, Cozy Game HUD, Dropdown 10–100+ tầng, Web Audio môi trường nội bộ & Vòng sáng trạm tương tác 3D → chuyển sang **Sub-phase 4A-T5** kiểm thử tổng thể & mở PR vào `main`)
+Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/phase-4-aincrad-tower.md
 
 ## Đang làm dở
-- **Hoàn tất trọn bộ nâng cấp 12 Real PBR `.glb` đa dạng theo vị trí + sửa cầu thang Tầng 2/3 (`D-023`, XANH 100%):**
-  - **12 asset `.glb` thật nén WebP 1024 + Meshopt (tổng `5.3 MB`, 0 CDN):** `prop-bookcase-victorian`, `prop-library-table`, `prop-wooden-table` (`wooden-table-02`), `prop-artisan-table` (chuyển từ `Tabel.rar`), `prop-library-chair`, `prop-armchair` (`modern-arm-chair-01`), `prop-dragon-door`, `prop-library-stairs`, `prop-spiral-stairs`, `prop-book-pile`, `prop-stone-well`, `prop-stone-platform` + ảnh vân gỗ liền mạch thật `public/textures/pbr-wood-albedo.webp` nâng cấp toàn bộ tủ sách người dùng.
-  - **Phân bổ đa dạng theo từng tầng/vai trò (`furnitureGlbHelpers.ts`, `WorldFurnitureGlbs.tsx`, `GrandLibraryHallMesh.tsx`) — KHÔNG lặp 1 mẫu:**
-    - **Tầng 1:** Bàn sồi phố `prop-wooden-table` + ghế gỗ & ghế bành kem `prop-armchair`; Bục Thủ thư dùng `prop-artisan-table` + tủ thấp Victorian Archive (`Small`).
-    - **Tầng 2:** Bàn trà Nhật trầm thấp (`0.58 m` từ `wooden-table`) + đôi ghế trầm; Hiên Thủ thư dùng `artisan-table` gỗ đỏ + giếng đá cổ `prop-stone-well` & bệ đá đỉnh đền; thay cầu thang đá lệch tảng đá bằng **2 nhịp cầu thang đá rêu phẳng đối xứng (`prop-mossy-stairs.glb`, 8 bậc khít 100% dốc vật lý, 0 khe hở đỉnh & 0 xuyên đá)** cho cả Tầng 2 và Tầng 4.
-    - **Tầng 3 (Đại Thư Viện kín 4 vách):** 2 tầng tủ Victorian thật + cầu thang `prop-library-stairs` + đôi cầu thang xoắn `prop-spiral-stairs`; Bàn giữa `library-table`, Quầy Thủ thư `artisan-table` + tủ Victorian + ghế bành đỏ đô; 4 góc đọc & sảnh Đông phối riêng biệt (2 góc lounge ghế bành nhung đỏ đô/ngọc lục bảo + 2 góc học bàn cổ/artisan).
-    - **Tầng 4:** Bàn Đá Ánh Sao & Đài Thủ thư Cổ đại dựng từ khối đá chạm `prop-stone-platform` + chồng sách & ánh sao dịu; mọi Cửa Boss đều là **Cửa Đá Rồng (`prop-dragon-door`)** kèm đôi đài đuốc.
-  - Kiểm định: `typecheck`, `lint` (0/0), `build` (`84.55 kB gzip`, `0 B three`, `0 CDN`), 21/21 test 4A-T1 & 6/6 test 4A-T2.
+- **Hoàn tất trọn Sub-phase 4A-T4 (PA-3: giữ 4 tầng mặc định cho PR 4A, UI/Minimap sẵn sàng 10–100+ tầng & mọi cỡ map — XANH 100%):**
+  - **`MinimapWidget.tsx`:** minimap radar tròn HiDPI tự co giãn theo `floor.bounds` (hỗ trợ Phòng Boss 360° + tự bám Kirito với bản đồ `> 76 m`), vẽ Kirito + vùng nhìn 360°, tủ sách xoay, trạm tương tác, Cửa Phòng Boss, Cổng tầng và vị trí live của NPC (Asuna đang đi dạo), kèm bảng chú thích thu gọn và dừng RAF hoàn toàn khi paused/ẩn tab/reduced-motion.
+  - **`CozyGameHud.tsx` + `WorldQuickBar.tsx` + `Library3DOverlay.tsx`:** HUD gọn thoáng góc màn hình (`<= z-20`, vùng giữa `pointer-events-none`), bộ chọn tầng dạng dropdown/popover chịu được 10–100+ tầng (tự hiện ô lọc khi `> 6` tầng), tìm sách xuyên tầng nhảy thẳng tới cuốn sách (`findJumpTargetForBook`), thanh `LV / HP / MP / XP` tính từ tiến độ đọc (`computeReaderRpgStats`) + mục tiêu mở khoá Phòng Boss thu gọn được, nút bật/tắt âm thanh môi trường, giữ nguyên `Thứ 3 / Thứ 1 (V)` và `BookInspectCard`.
+  - **`ambientAudio.ts`:** âm thanh môi trường Web Audio API thuần nội bộ (0 file ngoài, 0 CDN) theo `4 Biome × 3 Theme` + `Phòng Boss` kèm bước chân nhẹ; mặc định TẮT cho tới thao tác bật, tự suspend khi đọc sách/mở modal/ẩn tab và gọi `AudioContext.close()` sạch khi unmount.
+  - **`InteractiveStations.tsx`:** vòng sáng rune ma thuật 3D dịu dưới chân toàn bộ trạm tương tác (`Bàn đọc`, `Bục Thủ thư`, `Trụ Thời tiết`, `Cổng tầng`, `Cửa Phòng Boss`, `Cửa rời Phòng Boss`) tự nổi sáng & dâng màn sáng nhẹ khi Kirito lại gần trong tầm `[E]`, hỗ trợ click trực tiếp và `dispose()` sạch GPU.
+  - Kiểm định: `npm run typecheck`, `npm run lint` (0 lỗi, 0 cảnh báo, mọi file `<= 500` dòng hiệu dụng), `npm run build` (`index-*.js` `84.77 kB gzip`, `0 B three`, `0 CDN`), 5/5 unit test 4A-T4 (RPG stats, audio profiles/lifecycle, 4/10/100 floors & Boss Room).
 
 ## Bước tiếp theo
-1. Người dùng chạy `npm run dev` kiểm tra trực quan: cầu thang Tầng 2 hết cỏ cắt, Đại Thư Viện Tầng 3 kín 4 vách với tủ Victorian + cầu thang thật + cầu thang xoắn, Cửa Rồng Boss + bàn ghế/chồng sách cổ thật trên cả 4 tầng.
-2. **Sub-phase 4A-T4**: `MinimapWidget.tsx`, `CozyGameHud.tsx` (HP/Mana/XP nền + Nhiệm vụ đọc thu gọn), `ambientAudio.ts` (âm thanh môi trường Web Audio API), `InteractiveStations.tsx` (vòng sáng trạm tương tác 3D).
-3. **Sub-phase 4A-T5**: kiểm thử toàn bộ checklist PR 4A → mở PR merge vào `main`.
+1. Người dùng chạy `npm run dev` kiểm tra trực quan Sub-phase 4A-T4: Minimap live (kể cả trong Phòng Boss 360°), Dropdown chọn tầng, Cozy HUD (`LV/HP/MP/XP` + mục tiêu Boss thu gọn), bật/tắt âm thanh môi trường + bước chân, vòng sáng rune trạm tương tác sáng lên khi tới gần tầm `[E]`.
+2. **Sub-phase 4A-T5:** rà toàn bộ checklist mục 4 trong `docs/plans/phase-4-aincrad-tower.md` (desktop `>= 1024px`, mobile `< 1024px`, 5 modal, 0 FPS khi đọc sách/ẩn tab) → mở Pull Request `feat/library-3d` → `main`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **Sửa sắp xếp thứ tự tập & nhận diện tập thập phân (`6.5`, `7.5`, `10.5`, `14.5`) (`feat/library-3d`):** mở rộng `VOLUME_SEGMENT_RE` + `getBookSortTitle` trong `src/lib/bookMetadata.ts`, nâng cấp `sortBooksByTitle` / `groupBooksIntoShelves` trong `src/lib/api.ts` (chuẩn hoá dấu phân cách, tie-break dấu thanh tiếng Việt `variant`, tự ghép nhãn tập lỡ rơi sang `author` cho sách đã tải lên trước đó) và cập nhật `shelfPlacement.ts` / `shelfSummary.ts`.
-- **Lọc bỏ sách đã hoàn thành khỏi "Tiếp tục đọc" (`feat/library-3d`):** tách & áp dụng `selectContinueReadingBooks` trong `src/hooks/useLibraryViewState.ts` để tự động ẩn mọi tập có `progress.completed === true` khỏi khối "Tiếp tục đọc" (đồng bộ cả 2D, HUD 3D và trạm bàn đọc 3D), vẫn giữ trạng thái `Đã đọc xong · 100%` trên kệ.
-- **9 Real PBR `.glb` Nội thất + Đại Thư Viện Tầng 3 & Sửa cầu thang Tầng 2 (`feat/library-3d`, D-023):** `WorldFurnitureGlbs.tsx`, `prop-bookcase-victorian`, `prop-library-table`, `prop-library-chair`, `prop-dragon-door`, `prop-library-stairs`, `prop-spiral-stairs`, `prop-book-pile`, `prop-stone-well`, `prop-stone-platform`.
-- **Background 360° Aincrad & Phòng Boss 360° (`feat/library-3d`, D-021/D-022):** `skyPanoramaPainter.ts` 2K, `WorldHorizonVista.tsx`, `BossArenaMesh.tsx`, `npc-asuna.glb` (`Idle`+`Walk`).
+- **Sub-phase 4A-T4 (`feat/library-3d`):** `MinimapWidget.tsx`, `CozyGameHud.tsx`, `ambientAudio.ts`, `InteractiveStations.tsx`, nâng cấp `WorldQuickBar.tsx`, `Library3DOverlay.tsx`, `LibraryCanvas.tsx`, `PlayerRig.tsx`, `FantasyLibrary3D.tsx`.
+- **Lọc bỏ sách đã hoàn thành khỏi "Tiếp tục đọc" (`feat/library-3d`):** `selectContinueReadingBooks` trong `src/hooks/useLibraryViewState.ts`.
+- **12 Real PBR `.glb` Nội thất đa dạng theo tầng & sửa cầu thang Tầng 2/3 (`feat/library-3d`, D-023):** `WorldFurnitureGlbs.tsx`, `GrandLibraryHallMesh.tsx`, `prop-mossy-stairs.glb`, `pbr-wood-albedo.webp`.

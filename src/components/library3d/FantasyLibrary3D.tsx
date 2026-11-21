@@ -4,11 +4,15 @@ import type { LibraryViewState } from '@/hooks/useLibraryViewState';
 import type { AppTheme } from '@/hooks/useTheme';
 import {
   buildTowerWorldLayout3D,
+  findJumpTargetForBook,
   findJumpTargetForShelf,
+  type PlayerMotionState,
   type WorldNpcSpec3D,
   type WorldStation3D,
+  type WorldTelemetryRefs,
 } from './floorWorldLayout3d';
 import { buildBossRoomFloorLayout, evaluateFloorBossUnlock } from './bossRoomLayout3d';
+import { createAmbientAudioEngine, type AmbientAudioEngine } from './ambientAudio';
 import { createCoverTextureCache } from './coverTextureCache';
 import { clearLocalGlbCache } from './gltfLoader';
 import { LibraryCanvas } from './LibraryCanvas';
@@ -72,6 +76,11 @@ export function FantasyLibrary3D({
   const [bossRoomFloorIndex, setBossRoomFloorIndex] = useState<number | null>(null);
   const [bossSealNotice, setBossSealNotice] = useState<string | null>(null);
   const [firstPerson, setFirstPerson] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const [isDocumentHidden, setIsDocumentHidden] = useState(
+    () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
+  );
+  const [minimapRedrawSignal, setMinimapRedrawSignal] = useState('');
   const [hoveredBook, setHoveredBook] = useState<Book | null>(null);
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [activePrompt, setActivePrompt] = useState<ActiveWorldPrompt | null>(null);
@@ -83,6 +92,21 @@ export function FantasyLibrary3D({
   const prevCoverKeysRef = useRef<Map<string, string | null>>(new Map());
   const fadeTimerRef = useRef<number | null>(null);
   const teleportNonceRef = useRef(0);
+  const ambientAudioRef = useRef<AmbientAudioEngine | null>(null);
+  const playerMotionRef = useRef<PlayerMotionState>({
+    position: [0, 0, 18],
+    yaw: Math.PI,
+    cameraYaw: Math.PI,
+    speed: 0,
+    isRunning: false,
+    firstPerson: false,
+    interactPulse: 0,
+  });
+  const npcPositionsRef = useRef<Map<string, [number, number, number]>>(new Map());
+  const telemetryRefs = useMemo<WorldTelemetryRefs>(
+    () => ({ playerMotionRef, npcPositionsRef }),
+    [],
+  );
 
   // Guarantee complete GPU/ImageBitmap AND cached GLB VRAM cleanup when leaving 3D
   useEffect(() => {
@@ -94,6 +118,26 @@ export function FantasyLibrary3D({
       clearLocalGlbCache();
     };
   }, [coverTextureCache]);
+
+  // StrictMode-safe procedural Web Audio lifecycle (default OFF; AudioContext.close() on unmount)
+  useEffect(() => {
+    const engine = createAmbientAudioEngine();
+    ambientAudioRef.current = engine;
+    return () => {
+      engine.dispose();
+      ambientAudioRef.current = null;
+    };
+  }, []);
+
+  // Track browser tab visibility so ambient audio suspends immediately when tab is hidden
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const onVisibilityChange = () => {
+      setIsDocumentHidden(document.visibilityState === 'hidden');
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, []);
 
   // Evict stale cover textures if a book's cover_key was updated via BookEditModal
   useEffect(() => {
@@ -130,6 +174,33 @@ export function FantasyLibrary3D({
     const srcFloor = tower.floors[bossRoomFloorIndex] ?? activeFloor;
     return buildBossRoomFloorLayout(srcFloor);
   }, [bossRoomFloorIndex, tower.floors, activeFloor]);
+
+  // Sync biome/day-night/boss-room & pause state into ambient Web Audio engine
+  useEffect(() => {
+    const engine = ambientAudioRef.current;
+    if (!engine) return;
+    engine.setEnvironment(renderedFloor.biomeId, theme, inBossRoom);
+    engine.setPaused(paused || isDocumentHidden);
+    engine.setEnabled(audioEnabled);
+  }, [renderedFloor.biomeId, theme, inBossRoom, paused, isDocumentHidden, audioEnabled]);
+
+  const handleToggleAudio = useCallback(() => {
+    setAudioEnabled((prev) => {
+      const next = !prev;
+      const engine = ambientAudioRef.current;
+      if (engine) {
+        engine.setEnvironment(renderedFloor.biomeId, theme, inBossRoom);
+        engine.setPaused(paused || isDocumentHidden);
+        // Trigger inside user click gesture so browser AudioContext autoplay policy passes immediately
+        engine.setEnabled(next);
+      }
+      return next;
+    });
+  }, [renderedFloor.biomeId, theme, inBossRoom, paused, isDocumentHidden]);
+
+  const handleFootstepTick = useCallback((dt: number, speed: number, isRunning: boolean) => {
+    ambientAudioRef.current?.stepFootstep(dt, speed, isRunning);
+  }, []);
 
   useEffect(() => {
     if (safeFloorIndex !== activeFloorIndex) {
@@ -211,6 +282,20 @@ export function FantasyLibrary3D({
         position: target.position,
         yaw: target.yaw,
       });
+    },
+    [tower, triggerFloorTransition],
+  );
+
+  const handleJumpToBook = useCallback(
+    (book: Book) => {
+      const target = findJumpTargetForBook(tower, book.id);
+      if (target) {
+        triggerFloorTransition(target.floorIndex, {
+          position: target.position,
+          yaw: target.yaw,
+        });
+      }
+      setSelectedBookId(book.id);
     },
     [tower, triggerFloorTransition],
   );
@@ -314,6 +399,9 @@ export function FantasyLibrary3D({
     onRefresh();
   }, [coverTextureCache, onRefresh]);
 
+  const activeStationId =
+    activePrompt?.kind === 'station' ? activePrompt.station.id : null;
+
   return (
     <div className="theme-canvas relative h-screen w-screen overflow-hidden text-ink select-none">
       <LibraryCanvas
@@ -322,6 +410,8 @@ export function FantasyLibrary3D({
         coverTextureCache={coverTextureCache}
         firstPerson={firstPerson}
         bossDoorUnlocked={activeBossUnlock.unlocked}
+        activeStationId={activeStationId}
+        telemetryRefs={telemetryRefs}
         teleportCommand={teleportCommand}
         hoveredBookId={hoveredBook?.id ?? null}
         selectedBookId={selectedBook?.id ?? null}
@@ -334,8 +424,10 @@ export function FantasyLibrary3D({
         onInteractStation={handleInteractStation}
         onInteractNpc={handleInteractNpc}
         onActivePromptChange={setActivePrompt}
+        onFootstepTick={handleFootstepTick}
         onHoverBook={setHoveredBook}
         onSelectBook={handleSelectBook}
+        onPlayerMoveArea={setMinimapRedrawSignal}
         onClearSelection={() => {
           setSelectedBookId(null);
           setActiveDialogue(null);
@@ -366,19 +458,26 @@ export function FantasyLibrary3D({
         canUse3D={canUse3D}
         viewMode={viewMode}
         paused={paused}
+        prefersReducedMotion={prefersReducedMotion}
         floors={tower.floors}
+        renderedFloor={renderedFloor}
         activeFloorIndex={safeFloorIndex}
         inBossRoom={inBossRoom}
         bossUnlock={activeBossUnlock}
         bossSealNotice={bossSealNotice}
         firstPerson={firstPerson}
+        audioEnabled={audioEnabled}
+        telemetryRefs={telemetryRefs}
+        minimapRedrawSignal={minimapRedrawSignal}
         activePrompt={activePrompt}
         activeDialogue={activeDialogue}
         selectedBook={selectedBook}
         hoveredBook={hoveredBook}
         onSelectFloor={(idx) => triggerFloorTransition(idx)}
+        onJumpToBook={handleJumpToBook}
         onExitBossRoom={exitBossRoom}
         onCloseBossNotice={() => setBossSealNotice(null)}
+        onToggleAudio={handleToggleAudio}
         onToggleFirstPerson={() => setFirstPerson((prev) => !prev)}
         onTriggerStation={handleInteractStation}
         onTriggerNpc={handleInteractNpc}

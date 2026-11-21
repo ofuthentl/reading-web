@@ -15,6 +15,80 @@ export interface LibraryReadingTotals {
   readPages: number;
 }
 
+export interface ReaderRpgStats {
+  level: number;
+  totalXp: number;
+  xpInLevel: number;
+  xpForNextLevel: number;
+  xpPercent: number;
+  hp: number;
+  maxHp: number;
+  mana: number;
+  maxMana: number;
+  completedBooks: number;
+  inProgressBooks: number;
+  readPages: number;
+}
+
+/**
+ * Computes baseline Cozy RPG stats (`LV / XP / HP / Mana`) from current library reading
+ * progress (client-side foundation for PR 4A; will sync with Cloudflare D1 in PR 4C).
+ */
+export function computeReaderRpgStats(
+  books: readonly Book[],
+  progress: Readonly<Record<string, ReadingProgress>>,
+): ReaderRpgStats {
+  const { completedBooks, readPages } = computeLibraryReadingTotals(books, progress);
+  let inProgressBooks = 0;
+  for (let i = 0; i < books.length; i += 1) {
+    const p = progress[books[i].id];
+    if (!p) continue;
+    const pct = computeBookProgressPercent(books[i], p);
+    if (!p.completed && pct !== 100 && (p.chapterIndex > 0 || p.scrollRatio > 0.01)) {
+      inProgressBooks += 1;
+    }
+  }
+
+  const totalXp = completedBooks * 250 + readPages * 4 + inProgressBooks * 25;
+
+  let level = 1;
+  let remainingXp = totalXp;
+  let xpForNextLevel = 250;
+  while (remainingXp >= xpForNextLevel) {
+    remainingXp -= xpForNextLevel;
+    level += 1;
+    xpForNextLevel = 150 + level * 100;
+  }
+
+  const xpPercent = Math.min(100, Math.round((remainingXp / Math.max(1, xpForNextLevel)) * 100));
+  const maxHp = 100 + (level - 1) * 20;
+  const hp = maxHp;
+  const maxMana = 60 + (level - 1) * 15;
+  // Cozy Focus Mana: starts warm at 55% and fills smoothly with reading momentum
+  const momentumRatio = Math.min(
+    1,
+    completedBooks > 0
+      ? 0.72 + Math.min(0.28, (readPages % 400) / 400 * 0.28 + inProgressBooks * 0.08)
+      : (readPages / 150) * 0.45 + inProgressBooks * 0.12,
+  );
+  const mana = Math.min(maxMana, Math.max(Math.round(maxMana * 0.55), Math.round(maxMana * (0.55 + 0.45 * momentumRatio))));
+
+  return {
+    level,
+    totalXp,
+    xpInLevel: remainingXp,
+    xpForNextLevel,
+    xpPercent,
+    hp,
+    maxHp,
+    mana,
+    maxMana,
+    completedBooks,
+    inProgressBooks,
+    readPages,
+  };
+}
+
 export function getFloorBossName(biomeId: BiomeId, floorNumber: number): string {
   if (biomeId === 'sakura_shrine') return 'Long Kỵ Sĩ Đền Đỏ (Drago Knight)';
   if (biomeId === 'starfield_atrium') return 'Cự Thần Hộ Pháp (Obsidian Golem)';

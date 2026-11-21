@@ -3,18 +3,11 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { AnimatedPlayerGlb } from './AnimatedPlayerGlb';
 import { createContactShadowTexture } from './worldMaterials';
+import type { PlayerMotionState } from './worldTypes';
+
+export type { PlayerMotionState };
 
 const DEFAULT_PLAYER_MODEL_URL = `${import.meta.env.BASE_URL ?? '/'}models/player.glb`;
-
-export interface PlayerMotionState {
-  position: [number, number, number];
-  yaw: number;
-  speed: number;
-  isRunning: boolean;
-  firstPerson: boolean;
-  /** Decrements toward 0 when player clicks a book or triggers `[E]` */
-  interactPulse: number;
-}
 
 export interface KiritoAvatarProps {
   motionRef: MutableRefObject<PlayerMotionState>;

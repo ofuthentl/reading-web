@@ -18,11 +18,13 @@ import { BiomePropsMesh } from './BiomePropsMesh';
 import { InstancedBooksMesh } from './InstancedBooksMesh';
 import { KiritoAvatar, type PlayerMotionState } from './KiritoAvatar';
 import { AmbientNpcs } from './AmbientNpcs';
+import { InteractiveStations } from './InteractiveStations';
 import {
   PlayerRig,
   type ActiveWorldPrompt,
   type TeleportCommand,
 } from './PlayerRig';
+import type { WorldTelemetryRefs } from './worldTypes';
 
 export interface LibraryCanvasProps {
   floor: FloorWorldLayout3D;
@@ -30,6 +32,8 @@ export interface LibraryCanvasProps {
   coverTextureCache: CoverTextureCache;
   firstPerson: boolean;
   bossDoorUnlocked?: boolean;
+  activeStationId?: string | null;
+  telemetryRefs?: WorldTelemetryRefs;
   teleportCommand: TeleportCommand | null;
   hoveredBookId: string | null;
   selectedBookId: string | null;
@@ -42,10 +46,12 @@ export interface LibraryCanvasProps {
   onInteractStation: (station: WorldStation3D) => void;
   onInteractNpc: (npc: WorldNpcSpec3D) => void;
   onActivePromptChange: (prompt: ActiveWorldPrompt | null) => void;
+  onFootstepTick?: (dt: number, speed: number, isRunning: boolean) => void;
   onHoverBook: (book: Book | null) => void;
   onSelectBook: (book: Book) => void;
   onClearSelection: () => void;
   onVisibleShelfChange?: (nearestShelfKey: string | null) => void;
+  onPlayerMoveArea?: (signature: string) => void;
   onFallbackTo2D: (reason: string) => void;
 }
 
@@ -57,6 +63,8 @@ interface WorldSceneContentProps {
   coverTextureCache: CoverTextureCache;
   firstPerson: boolean;
   bossDoorUnlocked?: boolean;
+  activeStationId?: string | null;
+  telemetryRefs?: WorldTelemetryRefs;
   teleportCommand: TeleportCommand | null;
   hoveredBookId: string | null;
   selectedBookId: string | null;
@@ -69,9 +77,11 @@ interface WorldSceneContentProps {
   onInteractStation: (station: WorldStation3D) => void;
   onInteractNpc: (npc: WorldNpcSpec3D) => void;
   onActivePromptChange: (prompt: ActiveWorldPrompt | null) => void;
+  onFootstepTick?: (dt: number, speed: number, isRunning: boolean) => void;
   onHoverBook: (book: Book | null) => void;
   onSelectBook: (book: Book) => void;
   onVisibleShelfChange?: (nearestShelfKey: string | null) => void;
+  onPlayerMoveArea?: (signature: string) => void;
 }
 
 function WorldSceneContent({
@@ -79,7 +89,9 @@ function WorldSceneContent({
   theme,
   coverTextureCache,
   firstPerson,
-  bossDoorUnlocked,
+  bossDoorUnlocked = false,
+  activeStationId = null,
+  telemetryRefs,
   teleportCommand,
   hoveredBookId,
   selectedBookId,
@@ -92,23 +104,28 @@ function WorldSceneContent({
   onInteractStation,
   onInteractNpc,
   onActivePromptChange,
+  onFootstepTick,
   onHoverBook,
   onSelectBook,
   onVisibleShelfChange,
+  onPlayerMoveArea,
 }: WorldSceneContentProps) {
   const { gl, invalidate, size } = useThree();
   const pausedRef = useRef(isRenderPaused);
   pausedRef.current = isRenderPaused;
 
-  const playerMotionRef = useRef<PlayerMotionState>({
+  const fallbackMotionRef = useRef<PlayerMotionState>({
     position: [...floor.spawnPoint],
     yaw: floor.spawnYaw,
+    cameraYaw: floor.spawnYaw,
     speed: 0,
     isRunning: false,
     firstPerson,
     interactPulse: 0,
   });
-  const npcPositionsRef = useRef<Map<string, [number, number, number]>>(new Map());
+  const fallbackNpcPositionsRef = useRef<Map<string, [number, number, number]>>(new Map());
+  const playerMotionRef = telemetryRefs?.playerMotionRef ?? fallbackMotionRef;
+  const npcPositionsRef = telemetryRefs?.npcPositionsRef ?? fallbackNpcPositionsRef;
 
   const [playerArea, setPlayerArea] = useState<{
     x: number;
@@ -172,8 +189,9 @@ function WorldSceneContent({
     ) => {
       setPlayerArea({ x: px, z: pz, visibleShelfKeys });
       onVisibleShelfChange?.(nearestShelfKey);
+      onPlayerMoveArea?.(`${floor.floorIndex}:${px.toFixed(1)},${pz.toFixed(1)}`);
     },
-    [onVisibleShelfChange],
+    [floor.floorIndex, onVisibleShelfChange, onPlayerMoveArea],
   );
 
   const handleSelectBookWithPulse = useCallback(
@@ -181,7 +199,7 @@ function WorldSceneContent({
       playerMotionRef.current.interactPulse = 1;
       onSelectBook(book);
     },
-    [onSelectBook],
+    [onSelectBook, playerMotionRef],
   );
 
   return (
@@ -200,6 +218,7 @@ function WorldSceneContent({
         onInteractStation={onInteractStation}
         onInteractNpc={onInteractNpc}
         onActivePromptChange={onActivePromptChange}
+        onFootstepTick={onFootstepTick}
         onPlayerAreaChange={handlePlayerAreaChange}
       />
 
@@ -225,6 +244,18 @@ function WorldSceneContent({
           requestRender={requestRender}
         />
       )}
+
+      <InteractiveStations
+        floor={floor}
+        theme={theme}
+        playerMotionRef={playerMotionRef}
+        bossDoorUnlocked={bossDoorUnlocked}
+        activeStationId={activeStationId}
+        paused={isRenderPaused}
+        prefersReducedMotion={prefersReducedMotion}
+        isDraggingRef={isDraggingRef}
+        onInteractStation={onInteractStation}
+      />
 
       <KiritoAvatar
         motionRef={playerMotionRef}
@@ -283,6 +314,8 @@ export function LibraryCanvas({
   coverTextureCache,
   firstPerson,
   bossDoorUnlocked = false,
+  activeStationId = null,
+  telemetryRefs,
   teleportCommand,
   hoveredBookId,
   selectedBookId,
@@ -295,10 +328,12 @@ export function LibraryCanvas({
   onInteractStation,
   onInteractNpc,
   onActivePromptChange,
+  onFootstepTick,
   onHoverBook,
   onSelectBook,
   onClearSelection,
   onVisibleShelfChange,
+  onPlayerMoveArea,
   onFallbackTo2D,
 }: LibraryCanvasProps) {
   const [isDocumentHidden, setIsDocumentHidden] = useState(
@@ -423,6 +458,8 @@ export function LibraryCanvas({
           coverTextureCache={coverTextureCache}
           firstPerson={firstPerson}
           bossDoorUnlocked={bossDoorUnlocked}
+          activeStationId={activeStationId}
+          telemetryRefs={telemetryRefs}
           teleportCommand={teleportCommand}
           hoveredBookId={hoveredBookId}
           selectedBookId={selectedBookId}
@@ -435,9 +472,11 @@ export function LibraryCanvas({
           onInteractStation={onInteractStation}
           onInteractNpc={onInteractNpc}
           onActivePromptChange={onActivePromptChange}
+          onFootstepTick={onFootstepTick}
           onHoverBook={onHoverBook}
           onSelectBook={onSelectBook}
           onVisibleShelfChange={onVisibleShelfChange}
+          onPlayerMoveArea={onPlayerMoveArea}
         />
       </Canvas>
     </div>

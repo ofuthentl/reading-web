@@ -19,11 +19,13 @@ import {
 } from '@/hooks/useLibraryViewState';
 import type { AppTheme } from '@/hooks/useTheme';
 import { BookInspectCard } from './BookInspectCard';
+import { CozyGameHud } from './CozyGameHud';
 import type {
   BossRoomUnlockStatus,
   FloorWorldLayout3D,
   WorldNpcSpec3D,
   WorldStation3D,
+  WorldTelemetryRefs,
 } from './worldTypes';
 import type { ActiveWorldPrompt } from './PlayerRig';
 import { WorldInteractToast, WorldQuickBar } from './WorldQuickBar';
@@ -74,19 +76,26 @@ export interface Library3DOverlayProps {
   canUse3D: boolean;
   viewMode: ViewMode;
   paused: boolean;
+  prefersReducedMotion: boolean;
   floors: readonly FloorWorldLayout3D[];
+  renderedFloor: FloorWorldLayout3D;
   activeFloorIndex: number;
   inBossRoom: boolean;
   bossUnlock: BossRoomUnlockStatus;
   bossSealNotice: string | null;
   firstPerson: boolean;
+  audioEnabled: boolean;
+  telemetryRefs: WorldTelemetryRefs;
+  minimapRedrawSignal?: string;
   activePrompt: ActiveWorldPrompt | null;
   activeDialogue: WorldNpcSpec3D | null;
   selectedBook: Book | null;
   hoveredBook: Book | null;
   onSelectFloor: (floorIndex: number) => void;
+  onJumpToBook: (book: Book) => void;
   onExitBossRoom: () => void;
   onCloseBossNotice: () => void;
+  onToggleAudio: () => void;
   onToggleFirstPerson: () => void;
   onTriggerStation: (station: WorldStation3D) => void;
   onTriggerNpc: (npc: WorldNpcSpec3D) => void;
@@ -117,19 +126,26 @@ export function Library3DOverlay({
   canUse3D,
   viewMode,
   paused,
+  prefersReducedMotion,
   floors,
+  renderedFloor,
   activeFloorIndex,
   inBossRoom,
   bossUnlock,
   bossSealNotice,
   firstPerson,
+  audioEnabled,
+  telemetryRefs,
+  minimapRedrawSignal,
   activePrompt,
   activeDialogue,
   selectedBook,
   hoveredBook,
   onSelectFloor,
+  onJumpToBook,
   onExitBossRoom,
   onCloseBossNotice,
+  onToggleAudio,
   onToggleFirstPerson,
   onTriggerStation,
   onTriggerNpc,
@@ -184,68 +200,90 @@ export function Library3DOverlay({
       />
 
       {!paused && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 top-16 z-20 flex flex-col justify-between p-4 sm:px-6">
-          {/* Top floating controls: compact floor switcher only (keeps 3D world view wide open) */}
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-2">
-            <WorldQuickBar
-              floors={floors}
-              activeFloorIndex={activeFloorIndex}
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 top-16 z-20 flex flex-col justify-between p-3.5 sm:px-5 sm:py-4">
+          {/* Top HUD row: Left = CozyGameHud (Minimap + LV/HP/MP/XP + Boss Goal) · Right = WorldQuickBar */}
+          <div className="flex w-full items-start justify-between gap-3">
+            <CozyGameHud
+              books={books}
+              progress={progress}
+              floor={renderedFloor}
+              theme={theme}
               inBossRoom={inBossRoom}
               bossUnlock={bossUnlock}
-              firstPerson={firstPerson}
-              onSelectFloor={onSelectFloor}
-              onExitBossRoom={onExitBossRoom}
-              onToggleFirstPerson={onToggleFirstPerson}
+              telemetryRefs={telemetryRefs}
+              paused={paused}
+              prefersReducedMotion={prefersReducedMotion}
+              redrawSignal={minimapRedrawSignal}
+              onCycleTheme={onCycleTheme}
             />
 
-            {/* Thanh thao tác chọn nhiều (dùng chung BulkShelfModal & DeleteConfirmModal) */}
-            {selectionMode && (
-              <div className="pointer-events-auto flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-accent/50 bg-surface/95 px-3.5 py-2 shadow-md backdrop-blur-md">
-                <p className="text-xs text-ink sm:text-sm">
-                  Đã chọn <strong className="text-accent">{selectedIds.size}</strong> /{' '}
-                  {filteredBooks.length} cuốn sách
-                </p>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <button
-                    type="button"
-                    disabled={filteredBooks.length === 0}
-                    onClick={allVisibleSelected ? clearSelection : selectAllVisible}
-                    className="rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-xs font-medium text-ink transition-colors hover:border-line-strong disabled:opacity-50"
-                  >
-                    {allVisibleSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
-                  </button>
-                  {onMoveSelectedToShelf && (
+            <div className="flex flex-col items-end gap-2">
+              <WorldQuickBar
+                floors={floors}
+                activeFloorIndex={activeFloorIndex}
+                inBossRoom={inBossRoom}
+                bossUnlock={bossUnlock}
+                firstPerson={firstPerson}
+                audioEnabled={audioEnabled}
+                searchQuery={viewState.searchQuery}
+                matchingBooks={filteredBooks}
+                onSearchQueryChange={viewState.setSearchQuery}
+                onJumpToBook={onJumpToBook}
+                onSelectFloor={onSelectFloor}
+                onExitBossRoom={onExitBossRoom}
+                onToggleAudio={onToggleAudio}
+                onToggleFirstPerson={onToggleFirstPerson}
+              />
+
+              {/* Thanh thao tác chọn nhiều (dùng chung BulkShelfModal & DeleteConfirmModal) */}
+              {selectionMode && (
+                <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-2 rounded-2xl border border-accent/50 bg-surface/95 px-3.5 py-2 shadow-md backdrop-blur-md">
+                  <p className="text-xs text-ink sm:text-sm">
+                    Đã chọn <strong className="text-accent">{selectedIds.size}</strong> /{' '}
+                    {filteredBooks.length} cuốn
+                  </p>
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       type="button"
-                      disabled={selectedBooks.length === 0}
-                      onClick={() => onMoveSelectedToShelf(selectedBooks)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-45"
+                      disabled={filteredBooks.length === 0}
+                      onClick={allVisibleSelected ? clearSelection : selectAllVisible}
+                      className="rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-xs font-medium text-ink transition-colors hover:border-line-strong disabled:opacity-50"
                     >
-                      <FolderInput className="h-3.5 w-3.5" />
-                      Chuyển kệ ({selectedBooks.length})
+                      {allVisibleSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
                     </button>
-                  )}
-                  {onDeleteSelected && (
+                    {onMoveSelectedToShelf && (
+                      <button
+                        type="button"
+                        disabled={selectedBooks.length === 0}
+                        onClick={() => onMoveSelectedToShelf(selectedBooks)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-45"
+                      >
+                        <FolderInput className="h-3.5 w-3.5" />
+                        Chuyển kệ ({selectedBooks.length})
+                      </button>
+                    )}
+                    {onDeleteSelected && (
+                      <button
+                        type="button"
+                        disabled={selectedBooks.length === 0}
+                        onClick={() => onDeleteSelected(selectedBooks)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-700/30 bg-red-600/10 px-2.5 py-1.5 text-xs font-medium text-red-800 transition-colors hover:bg-red-600/20 disabled:opacity-45 dark:border-red-400/30 dark:text-red-300"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Xoá đã chọn ({selectedBooks.length})
+                      </button>
+                    )}
                     <button
                       type="button"
-                      disabled={selectedBooks.length === 0}
-                      onClick={() => onDeleteSelected(selectedBooks)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-700/30 bg-red-600/10 px-2.5 py-1.5 text-xs font-medium text-red-800 transition-colors hover:bg-red-600/20 disabled:opacity-45 dark:border-red-400/30 dark:text-red-300"
+                      onClick={toggleSelectionMode}
+                      className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Xoá đã chọn ({selectedBooks.length})
+                      Xong
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={toggleSelectionMode}
-                    className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
-                  >
-                    Xong
-                  </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           {/* Center status states: initial loading, empty library, or empty filter */}

@@ -35,6 +35,7 @@ export interface PlayerRigProps {
   onInteractStation: (station: WorldStation3D) => void;
   onInteractNpc: (npc: WorldNpcSpec3D) => void;
   onActivePromptChange: (prompt: ActiveWorldPrompt | null) => void;
+  onFootstepTick?: (dt: number, speed: number, isRunning: boolean) => void;
   onPlayerAreaChange: (
     playerX: number,
     playerZ: number,
@@ -104,6 +105,7 @@ export function PlayerRig({
   onInteractStation,
   onInteractNpc,
   onActivePromptChange,
+  onFootstepTick,
   onPlayerAreaChange,
 }: PlayerRigProps) {
   const { camera, gl } = useThree();
@@ -124,6 +126,7 @@ export function PlayerRig({
     onInteractStation,
     onInteractNpc,
     onActivePromptChange,
+    onFootstepTick,
     onPlayerAreaChange,
     requestRender,
   });
@@ -132,6 +135,7 @@ export function PlayerRig({
     onInteractStation,
     onInteractNpc,
     onActivePromptChange,
+    onFootstepTick,
     onPlayerAreaChange,
     requestRender,
   };
@@ -147,6 +151,7 @@ export function PlayerRig({
     const y = resolveSurfaceY(floor.spawnPoint[0], floor.spawnPoint[2], floor).y;
     motionRef.current.position = [floor.spawnPoint[0], y, floor.spawnPoint[2]];
     motionRef.current.yaw = floor.spawnYaw;
+    motionRef.current.cameraYaw = floor.spawnYaw;
     motionRef.current.speed = 0;
     orbitRef.current.yaw = floor.spawnYaw;
     orbitRef.current.pitch = 0.28;
@@ -162,6 +167,7 @@ export function PlayerRig({
     const y = resolveSurfaceY(tx, tz, floor).y;
     motionRef.current.position = [tx, y, tz];
     motionRef.current.yaw = teleportCommand.yaw;
+    motionRef.current.cameraYaw = teleportCommand.yaw;
     motionRef.current.speed = 0;
     orbitRef.current.yaw = teleportCommand.yaw;
     lastAreaReportRef.current.x = NaN;
@@ -369,6 +375,10 @@ export function PlayerRig({
         callbacksRef.current.requestRender();
       }
     }
+
+    // Sync camera yaw into motionRef for live minimap FOV cone & drive gentle footsteps
+    motion.cameraYaw = orbit.yaw;
+    callbacksRef.current.onFootstepTick?.(dt, motion.speed, motion.isRunning);
 
     // Position camera: First-Person eye view OR Third-Person anti-clipping orbit
     const [px, py, pz] = motion.position;

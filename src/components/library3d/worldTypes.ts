@@ -297,3 +297,20 @@ export interface JumpTarget3D {
   shelfKey: string;
   bookId?: string;
 }
+
+export interface PlayerMotionState {
+  position: [number, number, number];
+  yaw: number;
+  /** Active camera orbit yaw in radians (falls back to `yaw` when unset) */
+  cameraYaw?: number;
+  speed: number;
+  isRunning: boolean;
+  firstPerson: boolean;
+  /** Decrements toward 0 when player clicks a book or triggers `[E]` */
+  interactPulse: number;
+}
+
+export interface WorldTelemetryRefs {
+  playerMotionRef: { current: PlayerMotionState };
+  npcPositionsRef: { current: Map<string, [number, number, number]> };
+}
