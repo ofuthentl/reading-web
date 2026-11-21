@@ -1,5 +1,5 @@
 # HANDOFF
-Cập nhật: 2026-11-21 18:03 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 84.57 kB gzip, 0 B three) · 🟢 ESLint 0/0
+Cập nhật: 2026-11-21 18:26 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 84.75 kB gzip, 0 B three) · 🟢 ESLint 0/0
 Nhiệm vụ hiện tại: Triển khai **PR 4A — Aincrad Reading Tower** (vừa hoàn tất **Đa dạng hoá nội thất PBR `.glb` theo từng tầng/vị trí: 12 asset thật + biến thể bàn trà Nhật/bàn đá cổ/ghế bành nhung & vân gỗ ảnh thật `pbr-wood-albedo.webp` `D-023`** → chờ kiểm tra trực quan, tiếp sang `Sub-phase 4A-T4`)
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/real-glb-furniture-and-grand-library.md · docs/plans/phase-4-aincrad-tower.md
 
@@ -22,6 +22,7 @@ Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · d
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
+- **Sửa sắp xếp thứ tự tập & nhận diện tập thập phân (`6.5`, `7.5`, `10.5`, `14.5`) (`feat/library-3d`):** mở rộng `VOLUME_SEGMENT_RE` + `getBookSortTitle` trong `src/lib/bookMetadata.ts`, nâng cấp `sortBooksByTitle` / `groupBooksIntoShelves` trong `src/lib/api.ts` (chuẩn hoá dấu phân cách, tie-break dấu thanh tiếng Việt `variant`, tự ghép nhãn tập lỡ rơi sang `author` cho sách đã tải lên trước đó) và cập nhật `shelfPlacement.ts` / `shelfSummary.ts`.
 - **Lọc bỏ sách đã hoàn thành khỏi "Tiếp tục đọc" (`feat/library-3d`):** tách & áp dụng `selectContinueReadingBooks` trong `src/hooks/useLibraryViewState.ts` để tự động ẩn mọi tập có `progress.completed === true` khỏi khối "Tiếp tục đọc" (đồng bộ cả 2D, HUD 3D và trạm bàn đọc 3D), vẫn giữ trạng thái `Đã đọc xong · 100%` trên kệ.
 - **9 Real PBR `.glb` Nội thất + Đại Thư Viện Tầng 3 & Sửa cầu thang Tầng 2 (`feat/library-3d`, D-023):** `WorldFurnitureGlbs.tsx`, `prop-bookcase-victorian`, `prop-library-table`, `prop-library-chair`, `prop-dragon-door`, `prop-library-stairs`, `prop-spiral-stairs`, `prop-book-pile`, `prop-stone-well`, `prop-stone-platform`.
 - **Background 360° Aincrad & Phòng Boss 360° (`feat/library-3d`, D-021/D-022):** `skyPanoramaPainter.ts` 2K, `WorldHorizonVista.tsx`, `BossArenaMesh.tsx`, `npc-asuna.glb` (`Idle`+`Walk`).

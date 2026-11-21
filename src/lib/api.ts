@@ -13,7 +13,7 @@ import {
   setCachedBookBlob,
   setCachedCoverBlob,
 } from '@/lib/cache';
-import { parseFileMetadata, pickCoverColor } from '@/lib/bookMetadata';
+import { getBookSortTitle, parseFileMetadata, pickCoverColor } from '@/lib/bookMetadata';
 import { isChunkLoadError } from '@/lib/chunkReload';
 import { compressCoverBlob } from '@/lib/coverImage';
 
@@ -63,10 +63,27 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(idx >= 2 ? 2 : 0)} ${units[idx]}`;
 }
 
+function normalizeSortKey(value: string): string {
+  return value
+    .trim()
+    .replace(/\s*[-–—_:|]+\s*/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+function compareVietnameseText(a: string, b: string): number {
+  const keyA = normalizeSortKey(a);
+  const keyB = normalizeSortKey(b);
+  const primary = keyA.localeCompare(keyB, 'vi', { numeric: true, sensitivity: 'base' });
+  if (primary !== 0) return primary;
+  return keyA.localeCompare(keyB, 'vi', { numeric: true, sensitivity: 'variant' });
+}
+
 export function sortBooksByTitle(books: Book[]): Book[] {
-  return [...books].sort((a, b) =>
-    a.title.localeCompare(b.title, 'vi', { numeric: true, sensitivity: 'base' }),
-  );
+  return [...books].sort((a, b) => {
+    const byTitle = compareVietnameseText(getBookSortTitle(a), getBookSortTitle(b));
+    if (byTitle !== 0) return byTitle;
+    return compareVietnameseText(a.author, b.author);
+  });
 }
 
 export function groupBooksIntoShelves(books: Book[]): ShelfGroup[] {
@@ -81,9 +98,7 @@ export function groupBooksIntoShelves(books: Book[]): ShelfGroup[] {
       map.set(key, { key, name: shelfName, books: [book] });
     }
   }
-  return Array.from(map.values()).sort((a, b) =>
-    a.name.localeCompare(b.name, 'vi', { numeric: true, sensitivity: 'base' }),
-  );
+  return Array.from(map.values()).sort((a, b) => compareVietnameseText(a.name, b.name));
 }
 
 async function computeLocalStorageStats(books: Book[]): Promise<StorageStats> {

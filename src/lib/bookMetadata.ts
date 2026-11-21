@@ -25,8 +25,39 @@ const CLOTH_COVER_PALETTE = [
   '#3a473d', // Sage Moss
 ];
 
-const VOLUME_SEGMENT_RE =
-  /^(?:(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|book|part|ch|c|v|#)\.?\s*)?\d+(?:\s*[-–]\s*\d+)?$/i;
+export const VOLUME_SEGMENT_RE =
+  /^(?:(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|book|part|ch|c|v|#)\.?\s*)?\d+(?:[.,]\d+)?(?:\s*[-–~]\s*\d+(?:[.,]\d+)?)?$/i;
+
+/**
+ * Trích nhãn số tập lỡ bị tách sang trường `author` ở dữ liệu cũ
+ * (VD `author = "Tập 6.5"` hoặc `"Tập 6.5 - Tác giả"` từ tệp `Tên - Tập 6.5.epub`).
+ */
+export function extractMisplacedVolumeFromAuthor(author: string): string | null {
+  const clean = author.trim();
+  if (!clean) return null;
+  if (VOLUME_SEGMENT_RE.test(clean)) return clean;
+  const firstSegment = clean.split(/\s+-\s+/)[0]?.trim();
+  if (firstSegment && VOLUME_SEGMENT_RE.test(firstSegment)) {
+    return firstSegment;
+  }
+  return null;
+}
+
+/**
+ * Tiêu đề đầy đủ dùng để sắp xếp và nhận diện số tập, tự ghép lại nhãn tập
+ * nếu sách cũ bị tách nhầm số tập thập phân (`Tập 6.5`, `Vol 10.5`...) sang trường tác giả.
+ */
+export function getBookSortTitle(book: Pick<Book, 'title' | 'author'>): string {
+  const cleanTitle = book.title.trim();
+  const misplacedVol = extractMisplacedVolumeFromAuthor(book.author);
+  if (
+    misplacedVol &&
+    !cleanTitle.toLocaleLowerCase('vi').includes(misplacedVol.toLocaleLowerCase('vi'))
+  ) {
+    return `${cleanTitle} - ${misplacedVol}`;
+  }
+  return cleanTitle;
+}
 
 function hashSeed(seed: string): number {
   let hash = 0;

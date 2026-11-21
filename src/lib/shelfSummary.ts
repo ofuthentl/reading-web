@@ -1,5 +1,9 @@
 import type { Book, ReadingProgress, ShelfGroup } from '@/types';
-import { computeBookProgressPercent } from '@/lib/bookMetadata';
+import {
+  computeBookProgressPercent,
+  getBookSortTitle,
+  VOLUME_SEGMENT_RE,
+} from '@/lib/bookMetadata';
 import { extractSeriesName, isKnownAuthor } from '@/lib/shelfPlacement';
 
 export { computeBookProgressPercent };
@@ -157,11 +161,12 @@ export function pickShelfCoverBook(shelf: ShelfGroup): Book | null {
 
   for (let index = 0; index < shelf.books.length; index += 1) {
     const book = shelf.books[index];
-    const volume = extractVolumeNumber(book.title);
+    const effectiveTitle = getBookSortTitle(book);
+    const volume = extractVolumeNumber(effectiveTitle);
     const hasCover = Boolean(book.cover_key);
     const isVol1 = volume === 1;
     const isPositiveVol = volume !== null && volume > 0;
-    const seriesName = extractSeriesName(book.title);
+    const seriesName = extractSeriesName(effectiveTitle);
     const matchesShelf = Boolean(seriesName && normalizeKey(seriesName) === shelfKey);
 
     let tier = 5;
@@ -198,10 +203,15 @@ function compareCandidates(a: CoverCandidate, b: CoverCandidate): number {
   return a.index - b.index;
 }
 
+function isDisplayableAuthor(author: string): boolean {
+  const clean = author.trim();
+  return isKnownAuthor(clean) && !VOLUME_SEGMENT_RE.test(clean);
+}
+
 function buildAuthorLabel(books: Book[], coverBook: Book | null): string {
   const counts = new Map<string, { label: string; count: number }>();
   for (const book of books) {
-    if (!isKnownAuthor(book.author)) continue;
+    if (!isDisplayableAuthor(book.author)) continue;
     const clean = book.author.trim();
     const key = normalizeKey(clean);
     const prev = counts.get(key);
@@ -211,7 +221,8 @@ function buildAuthorLabel(books: Book[], coverBook: Book | null): string {
 
   if (counts.size === 0) return UNKNOWN_AUTHOR;
 
-  const coverAuthor = coverBook && isKnownAuthor(coverBook.author) ? coverBook.author.trim() : null;
+  const coverAuthor =
+    coverBook && isDisplayableAuthor(coverBook.author) ? coverBook.author.trim() : null;
   let primary = coverAuthor;
   if (!primary) {
     let bestCount = -1;
