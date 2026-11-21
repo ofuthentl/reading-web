@@ -2,10 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Book, ReadingProgress, StorageStats, ViewMode } from '@/types';
 import type { LibraryViewState } from '@/hooks/useLibraryViewState';
 import type { AppTheme } from '@/hooks/useTheme';
-import { buildLibraryLayout3D } from './layout3d';
+import {
+  buildTowerWorldLayout3D,
+  findJumpTargetForShelf,
+  type WorldNpcSpec3D,
+  type WorldStation3D,
+} from './floorWorldLayout3d';
 import { createCoverTextureCache } from './coverTextureCache';
+import { clearLocalGlbCache } from './gltfLoader';
 import { LibraryCanvas } from './LibraryCanvas';
 import { Library3DOverlay } from './Library3DOverlay';
+import type { ActiveWorldPrompt, TeleportCommand } from './PlayerRig';
 
 export interface FantasyLibrary3DProps {
   books: Book[];
@@ -33,8 +40,9 @@ export interface FantasyLibrary3DProps {
 }
 
 /**
- * Full 3D Grand Classical Library view connecting the demand-rendered WebGL scene
- * (`LibraryCanvas`) with the shared-state HTML HUD (`Library3DOverlay` + `BookInspectCard`).
+ * Full 3D Aincrad Reading Tower experience (lazy chunk isolated from 2D entry):
+ * connects active-floor World Biomes, Kirito avatar, patrolling NPCs, and shared-state HUD
+ * while guaranteeing full CoverTextureCache & GLB VRAM cleanup on unmount.
  */
 export function FantasyLibrary3D({
   books,
@@ -60,21 +68,29 @@ export function FantasyLibrary3D({
   onMoveSelectedToShelf,
   onDeleteSelected,
 }: FantasyLibrary3DProps) {
+  const [activeFloorIndex, setActiveFloorIndex] = useState(0);
+  const [firstPerson, setFirstPerson] = useState(false);
   const [hoveredBook, setHoveredBook] = useState<Book | null>(null);
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [centerShelfKey, setCenterShelfKey] = useState<string | null>(null);
-  const [focusState, setFocusState] = useState<{ key: string | null; nonce: number }>({
-    key: null,
-    nonce: 0,
-  });
+  const [activePrompt, setActivePrompt] = useState<ActiveWorldPrompt | null>(null);
+  const [activeDialogue, setActiveDialogue] = useState<WorldNpcSpec3D | null>(null);
+  const [floorFadeLabel, setFloorFadeLabel] = useState<string | null>(null);
+  const [teleportCommand, setTeleportCommand] = useState<TeleportCommand | null>(null);
 
   const coverTextureCache = useMemo(() => createCoverTextureCache(), []);
   const prevCoverKeysRef = useRef<Map<string, string | null>>(new Map());
+  const fadeTimerRef = useRef<number | null>(null);
+  const teleportNonceRef = useRef(0);
 
-  // Guarantee complete GPU/ImageBitmap cleanup on unmount
+  // Guarantee complete GPU/ImageBitmap AND cached GLB VRAM cleanup when leaving 3D
   useEffect(() => {
     return () => {
+      if (fadeTimerRef.current !== null) {
+        window.clearTimeout(fadeTimerRef.current);
+      }
       coverTextureCache.disposeAll();
+      clearLocalGlbCache();
     };
   }, [coverTextureCache]);
 
@@ -93,42 +109,89 @@ export function FantasyLibrary3D({
     prevCoverKeysRef.current = nextMap;
   }, [books, coverTextureCache]);
 
-  const layout = useMemo(
-    () => buildLibraryLayout3D(viewState.visibleShelves),
+  const tower = useMemo(
+    () => buildTowerWorldLayout3D(viewState.visibleShelves),
     [viewState.visibleShelves],
   );
 
+  const safeFloorIndex = Math.min(activeFloorIndex, Math.max(0, tower.totalFloors - 1));
+  const activeFloor = tower.floors[safeFloorIndex] ?? tower.floors[0];
+
+  useEffect(() => {
+    if (safeFloorIndex !== activeFloorIndex) {
+      setActiveFloorIndex(safeFloorIndex);
+    }
+  }, [safeFloorIndex, activeFloorIndex]);
+
   const selectedBook = useMemo(() => {
     if (!selectedBookId) return null;
-    return layout.bookById.get(selectedBookId)?.book ?? null;
-  }, [layout.bookById, selectedBookId]);
+    return tower.bookById.get(selectedBookId)?.book ?? null;
+  }, [tower.bookById, selectedBookId]);
 
   useEffect(() => {
-    if (selectedBookId && !layout.bookById.has(selectedBookId)) {
+    if (selectedBookId && !tower.bookById.has(selectedBookId)) {
       setSelectedBookId(null);
     }
-  }, [layout.bookById, selectedBookId]);
+  }, [tower.bookById, selectedBookId]);
 
-  // Clear hover if book disappears after filtering/deleting
   useEffect(() => {
-    if (hoveredBook && !layout.bookById.has(hoveredBook.id)) {
+    if (hoveredBook && !tower.bookById.has(hoveredBook.id)) {
       setHoveredBook(null);
     }
-  }, [layout.bookById, hoveredBook]);
+  }, [tower.bookById, hoveredBook]);
 
-  // Fly camera to the first matching shelf when user types a search query or picks a shelf filter
-  const firstVisibleShelfKey = layout.shelves[0]?.key ?? null;
+  const triggerFloorTransition = useCallback(
+    (targetIdx: number, pendingTeleport?: Omit<TeleportCommand, 'nonce'>) => {
+      const clamped = Math.max(0, Math.min(tower.totalFloors - 1, targetIdx));
+      const targetFloor = tower.floors[clamped];
+      if (!targetFloor) return;
+
+      setActiveDialogue(null);
+      setActivePrompt(null);
+
+      if (clamped !== safeFloorIndex && !prefersReducedMotion) {
+        setFloorFadeLabel(targetFloor.title);
+        if (fadeTimerRef.current !== null) window.clearTimeout(fadeTimerRef.current);
+        fadeTimerRef.current = window.setTimeout(() => {
+          setFloorFadeLabel(null);
+          fadeTimerRef.current = null;
+        }, 420);
+      }
+
+      setActiveFloorIndex(clamped);
+      if (pendingTeleport) {
+        teleportNonceRef.current += 1;
+        setTeleportCommand({ ...pendingTeleport, nonce: teleportNonceRef.current });
+      }
+    },
+    [tower, safeFloorIndex, prefersReducedMotion],
+  );
+
+  const handleJumpToShelf = useCallback(
+    (shelfKey: string) => {
+      const target = findJumpTargetForShelf(tower, shelfKey);
+      if (!target) return;
+      triggerFloorTransition(target.floorIndex, {
+        position: target.position,
+        yaw: target.yaw,
+      });
+    },
+    [tower, triggerFloorTransition],
+  );
+
+  // Jump across floors automatically when filtering or typing a search query
+  const firstVisibleShelfKey = viewState.visibleShelves[0]?.key ?? null;
   useEffect(() => {
     if (viewState.activeShelfKey) {
-      setFocusState((prev) => ({ key: viewState.activeShelfKey, nonce: prev.nonce + 1 }));
+      handleJumpToShelf(viewState.activeShelfKey);
     } else if (viewState.searchQuery.trim() && firstVisibleShelfKey) {
-      setFocusState((prev) => ({ key: firstVisibleShelfKey, nonce: prev.nonce + 1 }));
+      handleJumpToShelf(firstVisibleShelfKey);
     }
-  }, [viewState.activeShelfKey, viewState.searchQuery, firstVisibleShelfKey]);
+  }, [viewState.activeShelfKey, viewState.searchQuery, firstVisibleShelfKey, handleJumpToShelf]);
 
-  // Close pinned BookInspectCard on Escape when not typing in an input
+  // Close pinned BookInspectCard / NPC Dialogue on Escape
   useEffect(() => {
-    if (!selectedBookId || paused) return undefined;
+    if ((!selectedBookId && !activeDialogue) || paused) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       const target = event.target;
@@ -141,10 +204,11 @@ export function FantasyLibrary3D({
         return;
       }
       setSelectedBookId(null);
+      setActiveDialogue(null);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedBookId, paused]);
+  }, [selectedBookId, activeDialogue, paused]);
 
   const handleSelectBook = useCallback(
     (book: Book) => {
@@ -157,30 +221,47 @@ export function FantasyLibrary3D({
     [viewState],
   );
 
-  const handleClearSelection = useCallback(() => {
-    setSelectedBookId(null);
-  }, []);
-
-  const handleJumpToShelf = useCallback((shelfKey: string) => {
-    setFocusState((prev) => ({ key: shelfKey, nonce: prev.nonce + 1 }));
-  }, []);
-
   const handleStepShelf = useCallback(
     (direction: -1 | 1) => {
-      if (layout.shelves.length <= 1) return;
-      const currentIndex = layout.shelves.findIndex((shelf) => shelf.key === centerShelfKey);
-      const baseIndex = currentIndex >= 0 ? currentIndex : 0;
-      const nextIndex = Math.min(
-        layout.shelves.length - 1,
-        Math.max(0, baseIndex + direction),
-      );
-      const target = layout.shelves[nextIndex];
-      if (target) {
-        setFocusState((prev) => ({ key: target.key, nonce: prev.nonce + 1 }));
+      const shelves = viewState.visibleShelves;
+      if (shelves.length <= 1) return;
+      const idx = shelves.findIndex((s) => s.key === centerShelfKey);
+      const base = idx >= 0 ? idx : 0;
+      const next = Math.min(shelves.length - 1, Math.max(0, base + direction));
+      const target = shelves[next];
+      if (target) handleJumpToShelf(target.key);
+    },
+    [viewState.visibleShelves, centerShelfKey, handleJumpToShelf],
+  );
+
+  const handleInteractStation = useCallback(
+    (station: WorldStation3D) => {
+      if (station.kind === 'portal_up' || station.kind === 'portal_down') {
+        if (station.targetFloorIndex !== undefined) {
+          triggerFloorTransition(station.targetFloorIndex);
+        }
+        return;
+      }
+      if (station.kind === 'librarian_desk') {
+        onUploadClick();
+        return;
+      }
+      if (station.kind === 'weather_shrine') {
+        onCycleTheme();
+        return;
+      }
+      if (station.kind === 'reading_table') {
+        const resumeBook = viewState.continueReadingBooks[0] ?? books[0];
+        if (resumeBook) onOpenBook(resumeBook);
+        else onUploadClick();
       }
     },
-    [layout.shelves, centerShelfKey],
+    [triggerFloorTransition, onUploadClick, onCycleTheme, viewState.continueReadingBooks, books, onOpenBook],
   );
+
+  const handleInteractNpc = useCallback((npc: WorldNpcSpec3D) => {
+    setActiveDialogue(npc);
+  }, []);
 
   const handleRefresh = useCallback(() => {
     coverTextureCache.clearFailedCache();
@@ -190,11 +271,11 @@ export function FantasyLibrary3D({
   return (
     <div className="theme-canvas relative h-screen w-screen overflow-hidden text-ink select-none">
       <LibraryCanvas
-        layout={layout}
+        floor={activeFloor}
         theme={theme}
         coverTextureCache={coverTextureCache}
-        focusShelfKey={focusState.key}
-        focusNonce={focusState.nonce}
+        firstPerson={firstPerson}
+        teleportCommand={teleportCommand}
         hoveredBookId={hoveredBook?.id ?? null}
         selectedBookId={selectedBook?.id ?? null}
         selectionMode={viewState.selectionMode}
@@ -202,12 +283,31 @@ export function FantasyLibrary3D({
         prefersReducedMotion={prefersReducedMotion}
         paused={paused}
         dimmed={dimmed}
+        onToggleFirstPerson={() => setFirstPerson((prev) => !prev)}
+        onInteractStation={handleInteractStation}
+        onInteractNpc={handleInteractNpc}
+        onActivePromptChange={setActivePrompt}
         onHoverBook={setHoveredBook}
         onSelectBook={handleSelectBook}
-        onClearSelection={handleClearSelection}
+        onClearSelection={() => {
+          setSelectedBookId(null);
+          setActiveDialogue(null);
+        }}
         onVisibleShelfChange={setCenterShelfKey}
         onFallbackTo2D={onFallbackTo2D}
       />
+
+      {/* Smooth 250ms transition veil when crossing Aincrad floor portals */}
+      {floorFadeLabel && (
+        <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center bg-black/55 backdrop-blur-sm transition-opacity duration-300">
+          <div className="rounded-2xl border border-white/20 bg-surface/95 px-6 py-3 text-center shadow-2xl">
+            <p className="text-[11px] font-medium uppercase tracking-widest text-accent">
+              Aincrad Reading Tower
+            </p>
+            <p className="mt-0.5 font-display text-lg font-semibold text-ink">{floorFadeLabel}</p>
+          </div>
+        </div>
+      )}
 
       <Library3DOverlay
         books={books}
@@ -219,12 +319,22 @@ export function FantasyLibrary3D({
         canUse3D={canUse3D}
         viewMode={viewMode}
         paused={paused}
+        floors={tower.floors}
+        activeFloorIndex={safeFloorIndex}
+        firstPerson={firstPerson}
+        activePrompt={activePrompt}
+        activeDialogue={activeDialogue}
         centerShelfKey={centerShelfKey}
         selectedBook={selectedBook}
         hoveredBook={hoveredBook}
+        onSelectFloor={(idx) => triggerFloorTransition(idx)}
+        onToggleFirstPerson={() => setFirstPerson((prev) => !prev)}
+        onTriggerStation={handleInteractStation}
+        onTriggerNpc={handleInteractNpc}
+        onCloseDialogue={() => setActiveDialogue(null)}
         onJumpToShelf={handleJumpToShelf}
         onStepShelf={handleStepShelf}
-        onClearSelectedBook={handleClearSelection}
+        onClearSelectedBook={() => setSelectedBookId(null)}
         onCycleTheme={onCycleTheme}
         onChangeViewMode={onChangeViewMode}
         onRefresh={handleRefresh}

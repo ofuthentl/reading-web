@@ -4,23 +4,32 @@ import * as THREE from 'three';
 import type { Book } from '@/types';
 import type { AppTheme } from '@/hooks/useTheme';
 import {
-  getVisibleShelfWindow,
-  LIBRARY_3D_CONSTANTS,
-  type LibraryLayout3D,
-  type VisibleShelfWindow,
-} from './layout3d';
+  getFloorActiveLibraryLayout,
+  getVisibleFloorBookcases,
+  type FloorWorldLayout3D,
+  type WorldNpcSpec3D,
+  type WorldStation3D,
+} from './floorWorldLayout3d';
 import type { CoverTextureCache } from './coverTextureCache';
 import { createLibraryMaterialBundle } from './proceduralMaterials';
-import { LibraryRoomMesh } from './LibraryRoomMesh';
+import { createWorldMaterialBundle } from './worldMaterials';
+import { WorldBiomeMesh } from './WorldBiomeMesh';
+import { BiomePropsMesh } from './BiomePropsMesh';
 import { InstancedBooksMesh } from './InstancedBooksMesh';
-import { CameraRig } from './CameraRig';
+import { KiritoAvatar, type PlayerMotionState } from './KiritoAvatar';
+import { AmbientNpcs } from './AmbientNpcs';
+import {
+  PlayerRig,
+  type ActiveWorldPrompt,
+  type TeleportCommand,
+} from './PlayerRig';
 
 export interface LibraryCanvasProps {
-  layout: LibraryLayout3D;
+  floor: FloorWorldLayout3D;
   theme: AppTheme;
   coverTextureCache: CoverTextureCache;
-  focusShelfKey: string | null;
-  focusNonce: number;
+  firstPerson: boolean;
+  teleportCommand: TeleportCommand | null;
   hoveredBookId: string | null;
   selectedBookId: string | null;
   selectionMode: boolean;
@@ -28,21 +37,25 @@ export interface LibraryCanvasProps {
   prefersReducedMotion: boolean;
   paused?: boolean;
   dimmed?: boolean;
+  onToggleFirstPerson: () => void;
+  onInteractStation: (station: WorldStation3D) => void;
+  onInteractNpc: (npc: WorldNpcSpec3D) => void;
+  onActivePromptChange: (prompt: ActiveWorldPrompt | null) => void;
   onHoverBook: (book: Book | null) => void;
   onSelectBook: (book: Book) => void;
   onClearSelection: () => void;
-  onVisibleShelfChange?: (centerShelfKey: string | null) => void;
+  onVisibleShelfChange?: (nearestShelfKey: string | null) => void;
   onFallbackTo2D: (reason: string) => void;
 }
 
 const CONTEXT_LOST_GRACE_MS = 2500;
 
-interface SceneContentProps {
-  layout: LibraryLayout3D;
+interface WorldSceneContentProps {
+  floor: FloorWorldLayout3D;
   theme: AppTheme;
   coverTextureCache: CoverTextureCache;
-  focusShelfKey: string | null;
-  focusNonce: number;
+  firstPerson: boolean;
+  teleportCommand: TeleportCommand | null;
   hoveredBookId: string | null;
   selectedBookId: string | null;
   selectionMode: boolean;
@@ -50,17 +63,21 @@ interface SceneContentProps {
   prefersReducedMotion: boolean;
   isRenderPaused: boolean;
   isDraggingRef: MutableRefObject<boolean>;
+  onToggleFirstPerson: () => void;
+  onInteractStation: (station: WorldStation3D) => void;
+  onInteractNpc: (npc: WorldNpcSpec3D) => void;
+  onActivePromptChange: (prompt: ActiveWorldPrompt | null) => void;
   onHoverBook: (book: Book | null) => void;
   onSelectBook: (book: Book) => void;
-  onVisibleShelfChange?: (centerShelfKey: string | null) => void;
+  onVisibleShelfChange?: (nearestShelfKey: string | null) => void;
 }
 
-function LibrarySceneContent({
-  layout,
+function WorldSceneContent({
+  floor,
   theme,
   coverTextureCache,
-  focusShelfKey,
-  focusNonce,
+  firstPerson,
+  teleportCommand,
   hoveredBookId,
   selectedBookId,
   selectionMode,
@@ -68,92 +85,165 @@ function LibrarySceneContent({
   prefersReducedMotion,
   isRenderPaused,
   isDraggingRef,
+  onToggleFirstPerson,
+  onInteractStation,
+  onInteractNpc,
+  onActivePromptChange,
   onHoverBook,
   onSelectBook,
   onVisibleShelfChange,
-}: SceneContentProps) {
+}: WorldSceneContentProps) {
   const { invalidate, size } = useThree();
   const pausedRef = useRef(isRenderPaused);
   pausedRef.current = isRenderPaused;
 
-  const lanternLightRef = useRef<THREE.PointLight | null>(null);
+  const playerMotionRef = useRef<PlayerMotionState>({
+    position: [...floor.spawnPoint],
+    yaw: floor.spawnYaw,
+    speed: 0,
+    isRunning: false,
+    firstPerson,
+    interactPulse: 0,
+  });
+  const npcPositionsRef = useRef<Map<string, [number, number, number]>>(new Map());
 
-  const initialCameraX = layout.shelves[0]?.centerX ?? layout.centerX;
-  const [cameraX, setCameraX] = useState(initialCameraX);
-  const [visibleShelfKeys, setVisibleShelfKeys] = useState<ReadonlySet<string>>(
-    () => getVisibleShelfWindow(initialCameraX, layout.shelves, 2).keySet,
-  );
+  const [playerArea, setPlayerArea] = useState<{
+    x: number;
+    z: number;
+    visibleShelfKeys: ReadonlySet<string>;
+  }>(() => ({
+    x: floor.spawnPoint[0],
+    z: floor.spawnPoint[2],
+    visibleShelfKeys: new Set(
+      getVisibleFloorBookcases(floor, floor.spawnPoint[0], floor.spawnPoint[2]).map(
+        (bc) => bc.shelfKey,
+      ),
+    ),
+  }));
 
-  // Create procedural textures & materials once per mount; switch themes in-place with 0 realloc
+  // Create reusable procedural material bundles once per mount; update in-place across themes/biomes
   const initialThemeRef = useRef(theme);
-  const materialBundle = useMemo(
+  const initialBiomeRef = useRef(floor.biomeId);
+  const libraryMaterials = useMemo(
     () => createLibraryMaterialBundle(initialThemeRef.current),
+    [],
+  );
+  const worldMaterials = useMemo(
+    () => createWorldMaterialBundle(initialBiomeRef.current, initialThemeRef.current),
     [],
   );
 
   useEffect(() => {
     return () => {
-      materialBundle.dispose();
+      libraryMaterials.dispose();
+      worldMaterials.dispose();
     };
-  }, [materialBundle]);
+  }, [libraryMaterials, worldMaterials]);
 
   const requestRender = useCallback(() => {
     if (pausedRef.current) return;
     invalidate();
   }, [invalidate]);
 
-  // Apply theme palette in-place and trigger 1 frame render
   useEffect(() => {
-    materialBundle.applyTheme(theme);
+    libraryMaterials.applyTheme(theme);
     requestRender();
-  }, [materialBundle, theme, requestRender]);
+  }, [libraryMaterials, theme, requestRender]);
 
-  // Render 1 sync frame when returning from paused/hidden state or on viewport resize
+  // Sync 1 frame when unpausing, returning to tab, or resizing viewport
   useEffect(() => {
     if (!isRenderPaused) {
       invalidate();
     }
   }, [isRenderPaused, size.width, size.height, invalidate]);
 
-  const handleVisibleWindowChange = useCallback(
-    (window: VisibleShelfWindow, nextCameraX: number) => {
-      setCameraX(nextCameraX);
-      setVisibleShelfKeys(window.keySet);
-      const centerShelf =
-        window.centerIndex >= 0 ? layout.shelves[window.centerIndex] : undefined;
-      onVisibleShelfChange?.(centerShelf?.key ?? null);
+  const activeFloorLayout = useMemo(() => getFloorActiveLibraryLayout(floor), [floor]);
+
+  const handlePlayerAreaChange = useCallback(
+    (
+      px: number,
+      pz: number,
+      visibleShelfKeys: ReadonlySet<string>,
+      nearestShelfKey: string | null,
+    ) => {
+      setPlayerArea({ x: px, z: pz, visibleShelfKeys });
+      onVisibleShelfChange?.(nearestShelfKey);
     },
-    [layout.shelves, onVisibleShelfChange],
+    [onVisibleShelfChange],
+  );
+
+  const handleSelectBookWithPulse = useCallback(
+    (book: Book) => {
+      playerMotionRef.current.interactPulse = 1;
+      onSelectBook(book);
+    },
+    [onSelectBook],
   );
 
   return (
     <>
-      <CameraRig
-        layout={layout}
-        focusShelfKey={focusShelfKey}
-        focusNonce={focusNonce}
-        prefersReducedMotion={prefersReducedMotion}
+      <PlayerRig
+        floor={floor}
+        motionRef={playerMotionRef}
+        npcPositionsRef={npcPositionsRef}
+        firstPerson={firstPerson}
+        teleportCommand={teleportCommand}
         paused={isRenderPaused}
+        prefersReducedMotion={prefersReducedMotion}
         isDraggingRef={isDraggingRef}
-        lanternLightRef={lanternLightRef}
         requestRender={requestRender}
-        onVisibleWindowChange={handleVisibleWindowChange}
+        onToggleFirstPerson={onToggleFirstPerson}
+        onInteractStation={onInteractStation}
+        onInteractNpc={onInteractNpc}
+        onActivePromptChange={onActivePromptChange}
+        onPlayerAreaChange={handlePlayerAreaChange}
       />
 
-      <LibraryRoomMesh
-        layout={layout}
+      <WorldBiomeMesh
+        floor={floor}
         theme={theme}
-        materialBundle={materialBundle}
-        lanternLightRef={lanternLightRef}
+        libraryMaterials={libraryMaterials}
+        worldMaterials={worldMaterials}
+        paused={isRenderPaused}
+        prefersReducedMotion={prefersReducedMotion}
+        requestRender={requestRender}
+      />
+
+      <BiomePropsMesh
+        floor={floor}
+        theme={theme}
+        libraryMaterials={libraryMaterials}
+        worldMaterials={worldMaterials}
+        paused={isRenderPaused}
+        prefersReducedMotion={prefersReducedMotion}
+        requestRender={requestRender}
+      />
+
+      <KiritoAvatar
+        motionRef={playerMotionRef}
+        paused={isRenderPaused}
+        prefersReducedMotion={prefersReducedMotion}
+      />
+
+      <AmbientNpcs
+        floor={floor}
+        playerMotionRef={playerMotionRef}
+        npcPositionsRef={npcPositionsRef}
+        paused={isRenderPaused}
+        prefersReducedMotion={prefersReducedMotion}
+        isDraggingRef={isDraggingRef}
+        onSelectNpc={onInteractNpc}
       />
 
       <InstancedBooksMesh
-        layout={layout}
+        layout={activeFloorLayout}
         theme={theme}
-        materialBundle={materialBundle}
+        materialBundle={libraryMaterials}
         coverTextureCache={coverTextureCache}
-        cameraX={cameraX}
-        visibleShelfKeys={visibleShelfKeys}
+        cameraX={playerArea.x}
+        cameraZ={playerArea.z}
+        activeFloorIndex={floor.floorIndex}
+        visibleShelfKeys={playerArea.visibleShelfKeys}
         hoveredBookId={hoveredBookId}
         selectedBookId={selectedBookId}
         selectionMode={selectionMode}
@@ -163,22 +253,25 @@ function LibrarySceneContent({
         isDraggingRef={isDraggingRef}
         requestRender={requestRender}
         onHoverBook={onHoverBook}
-        onSelectBook={onSelectBook}
+        onSelectBook={handleSelectBookWithPulse}
       />
     </>
   );
 }
 
 /**
- * Demand-rendered WebGL Canvas container (`frameloop="demand"`) with WebGL context-loss
- * recovery/fallback, tab-visibility & pause gating, and deterministic GPU cleanup.
+ * Aincrad Reading Tower WebGL Canvas container with smart `frameloop` gating:
+ * - `'always'` when exploring actively so water, sakura petals, fireflies, Stone Golem,
+ *   Kirito, and patrolling NPCs animate smoothly;
+ * - `'demand'` when `prefers-reduced-motion` is enabled;
+ * - `'never'` (strictly **0 FPS**) the instant `paused` (reading/modal) or tab hidden.
  */
 export function LibraryCanvas({
-  layout,
+  floor,
   theme,
   coverTextureCache,
-  focusShelfKey,
-  focusNonce,
+  firstPerson,
+  teleportCommand,
   hoveredBookId,
   selectedBookId,
   selectionMode,
@@ -186,6 +279,10 @@ export function LibraryCanvas({
   prefersReducedMotion,
   paused = false,
   dimmed = false,
+  onToggleFirstPerson,
+  onInteractStation,
+  onInteractNpc,
+  onActivePromptChange,
   onHoverBook,
   onSelectBook,
   onClearSelection,
@@ -195,6 +292,7 @@ export function LibraryCanvas({
   const [isDocumentHidden, setIsDocumentHidden] = useState(
     () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
   );
+  const [contextLost, setContextLost] = useState(false);
 
   const canvasCleanupRef = useRef<(() => void) | null>(null);
   const contextLossCountRef = useRef(0);
@@ -223,7 +321,7 @@ export function LibraryCanvas({
 
     const { gl, invalidate } = state;
     gl.toneMapping = THREE.ACESFilmicToneMapping;
-    gl.toneMappingExposure = 1.05;
+    gl.toneMappingExposure = 1.06;
 
     const domElement = gl.domElement;
     let restoreTimer: number | null = null;
@@ -237,6 +335,7 @@ export function LibraryCanvas({
 
     const handleContextLost = (event: Event) => {
       event.preventDefault();
+      setContextLost(true);
       contextLossCountRef.current += 1;
       clearRestoreTimer();
 
@@ -257,6 +356,7 @@ export function LibraryCanvas({
 
     const handleContextRestored = () => {
       clearRestoreTimer();
+      setContextLost(false);
       invalidate();
     };
 
@@ -270,29 +370,29 @@ export function LibraryCanvas({
     };
   }, []);
 
-  const isRenderPaused = paused || isDocumentHidden;
-  const initialCameraX = layout.shelves[0]?.centerX ?? layout.centerX;
+  const isRenderPaused = paused || isDocumentHidden || contextLost;
+  const frameloopMode: 'always' | 'demand' | 'never' = isRenderPaused
+    ? 'never'
+    : prefersReducedMotion
+      ? 'demand'
+      : 'always';
 
   return (
     <div
       className={`absolute inset-0 z-0 transition-[filter] duration-200 ${
         paused ? 'pointer-events-none' : 'pointer-events-auto'
       } ${dimmed ? 'blur-[6px] brightness-[0.65]' : ''}`}
-      aria-label="Không gian Thư viện 3D"
+      aria-label="Không gian Aincrad Reading Tower 3D"
     >
       <Canvas
-        frameloop="demand"
+        frameloop={frameloopMode}
         dpr={[1, 2]}
         shadows={false}
         camera={{
-          fov: 46,
+          fov: 50,
           near: 0.1,
-          far: 60,
-          position: [
-            initialCameraX,
-            LIBRARY_3D_CONSTANTS.EYE_LEVEL_Y,
-            LIBRARY_3D_CONSTANTS.CAMERA_Z,
-          ],
+          far: 180,
+          position: [floor.spawnPoint[0], 2.9, floor.spawnPoint[2] + 4.8],
         }}
         gl={{
           antialias: true,
@@ -305,12 +405,12 @@ export function LibraryCanvas({
           if (!isDraggingRef.current) onClearSelection();
         }}
       >
-        <LibrarySceneContent
-          layout={layout}
+        <WorldSceneContent
+          floor={floor}
           theme={theme}
           coverTextureCache={coverTextureCache}
-          focusShelfKey={focusShelfKey}
-          focusNonce={focusNonce}
+          firstPerson={firstPerson}
+          teleportCommand={teleportCommand}
           hoveredBookId={hoveredBookId}
           selectedBookId={selectedBookId}
           selectionMode={selectionMode}
@@ -318,6 +418,10 @@ export function LibraryCanvas({
           prefersReducedMotion={prefersReducedMotion}
           isRenderPaused={isRenderPaused}
           isDraggingRef={isDraggingRef}
+          onToggleFirstPerson={onToggleFirstPerson}
+          onInteractStation={onInteractStation}
+          onInteractNpc={onInteractNpc}
+          onActivePromptChange={onActivePromptChange}
           onHoverBook={onHoverBook}
           onSelectBook={onSelectBook}
           onVisibleShelfChange={onVisibleShelfChange}

@@ -24,6 +24,9 @@ import {
 } from '@/hooks/useLibraryViewState';
 import type { AppTheme } from '@/hooks/useTheme';
 import { BookInspectCard } from './BookInspectCard';
+import type { FloorWorldLayout3D, WorldNpcSpec3D, WorldStation3D } from './worldTypes';
+import type { ActiveWorldPrompt } from './PlayerRig';
+import { WorldInteractToast, WorldQuickBar } from './WorldQuickBar';
 
 interface ContinueReadingRowProps {
   book: Book;
@@ -71,9 +74,19 @@ export interface Library3DOverlayProps {
   canUse3D: boolean;
   viewMode: ViewMode;
   paused: boolean;
+  floors: readonly FloorWorldLayout3D[];
+  activeFloorIndex: number;
+  firstPerson: boolean;
+  activePrompt: ActiveWorldPrompt | null;
+  activeDialogue: WorldNpcSpec3D | null;
   centerShelfKey: string | null;
   selectedBook: Book | null;
   hoveredBook: Book | null;
+  onSelectFloor: (floorIndex: number) => void;
+  onToggleFirstPerson: () => void;
+  onTriggerStation: (station: WorldStation3D) => void;
+  onTriggerNpc: (npc: WorldNpcSpec3D) => void;
+  onCloseDialogue: () => void;
   onJumpToShelf: (shelfKey: string) => void;
   onStepShelf: (direction: -1 | 1) => void;
   onClearSelectedBook: () => void;
@@ -103,9 +116,19 @@ export function Library3DOverlay({
   canUse3D,
   viewMode,
   paused,
+  floors,
+  activeFloorIndex,
+  firstPerson,
+  activePrompt,
+  activeDialogue,
   centerShelfKey,
   selectedBook,
   hoveredBook,
+  onSelectFloor,
+  onToggleFirstPerson,
+  onTriggerStation,
+  onTriggerNpc,
+  onCloseDialogue,
   onJumpToShelf,
   onStepShelf,
   onClearSelectedBook,
@@ -172,8 +195,15 @@ export function Library3DOverlay({
 
       {!paused && (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 top-16 z-20 flex flex-col justify-between p-4 sm:px-6">
-          {/* Top floating controls: search + shelf chips + multi-select toolbar */}
+          {/* Top floating controls: active floor biome switcher + search/shelf chips */}
           <div className="mx-auto flex w-full max-w-6xl flex-col gap-2">
+            <WorldQuickBar
+              floors={floors}
+              activeFloorIndex={activeFloorIndex}
+              firstPerson={firstPerson}
+              onSelectFloor={onSelectFloor}
+              onToggleFirstPerson={onToggleFirstPerson}
+            />
             {books.length > 0 && (
               <div className="pointer-events-auto flex flex-col gap-2 rounded-2xl border border-line-strong/80 bg-surface/95 px-3 py-2.5 shadow-md backdrop-blur-md">
                 <div className="flex flex-wrap items-center gap-2">
@@ -442,9 +472,18 @@ export function Library3DOverlay({
               )}
             </div>
 
-            <p className="hidden rounded-full border border-line-strong/70 bg-surface/90 px-3.5 py-1 text-[11px] font-medium text-ink-muted shadow-sm backdrop-blur-sm xl:block">
-              Kéo chuột · Lăn con lăn · Phím ← / → để lướt kệ · Nhấn sách để xem chi tiết
-            </p>
+            <div className="flex flex-col items-center gap-2">
+              <WorldInteractToast
+                prompt={activePrompt}
+                activeDialogue={activeDialogue}
+                onTriggerStation={onTriggerStation}
+                onTriggerNpc={onTriggerNpc}
+                onCloseDialogue={onCloseDialogue}
+              />
+              <p className="hidden rounded-full border border-line-strong/70 bg-surface/90 px-3.5 py-1 text-[11px] font-medium text-ink-muted shadow-sm backdrop-blur-sm xl:block">
+                WASD đi dạo · Shift chạy · Kéo chuột xoay 360° · Cuộn zoom · V góc nhìn · E tương tác
+              </p>
+            </div>
 
             <div className="flex justify-end">
               {activeFocusBook && (

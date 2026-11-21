@@ -204,7 +204,7 @@ function MountainStairsGlb({
     if (instance) requestRender?.();
   }, [instance, requestRender]);
 
-  if (!instance) {
+  if (!instance || !template) {
     return (
       <mesh
         position={[0, 1.15, prop.position[2]]}
@@ -215,10 +215,11 @@ function MountainStairsGlb({
       </mesh>
     );
   }
+  const groundedY = prop.position[1] - template.bbox.min[1] * scale[1];
   return (
     <primitive
       object={instance}
-      position={prop.position}
+      position={[prop.position[0], groundedY, prop.position[2]]}
       rotation={[0, prop.rotationY, 0]}
       scale={scale}
     />
@@ -240,6 +241,10 @@ function DragonMascotGlb({
   const instance = useMemo(() => (template ? cloneGlbTemplate(template) : null), [template]);
   const groupRef = useRef<THREE.Group | null>(null);
   const phaseRef = useRef(0);
+  const mascotScale = 0.95;
+  const baseGroundedY = template
+    ? prop.position[1] + 0.62 - template.bbox.min[1] * mascotScale
+    : prop.position[1] + 0.62;
 
   useEffect(() => {
     if (instance) requestRender?.();
@@ -248,16 +253,16 @@ function DragonMascotGlb({
   useFrame((_, delta) => {
     if (paused || prefersReducedMotion || !groupRef.current) return;
     phaseRef.current += Math.min(delta, 0.05) * 2.1;
-    groupRef.current.position.y = prop.position[1] + 0.62 + Math.sin(phaseRef.current) * 0.035;
+    groupRef.current.position.y = baseGroundedY + Math.sin(phaseRef.current) * 0.035;
   });
 
-  if (!instance) return null;
+  if (!instance || !template) return null;
   return (
     <group
       ref={groupRef}
-      position={[prop.position[0], prop.position[1] + 0.62, prop.position[2]]}
+      position={[prop.position[0], baseGroundedY, prop.position[2]]}
       rotation={[0, prop.rotationY, 0]}
-      scale={[0.95, 0.95, 0.95]}
+      scale={[mascotScale, mascotScale, mascotScale]}
     >
       <primitive object={instance} />
     </group>
@@ -305,9 +310,15 @@ function StoneGolemSentinelGlb({
     mixerRef.current.update(Math.min(delta, 0.05));
   });
 
-  if (!instance) return null;
+  if (!instance || !template) return null;
+  const groundedY = position[1] - template.bbox.min[1];
   return (
-    <primitive object={instance} position={position} rotation={[0, rotationY, 0]} scale={[1, 1, 1]} />
+    <primitive
+      object={instance}
+      position={[position[0], groundedY, position[2]]}
+      rotation={[0, rotationY, 0]}
+      scale={[1, 1, 1]}
+    />
   );
 }
 
