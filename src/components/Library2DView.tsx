@@ -90,8 +90,6 @@ export function Library2DView({
     closeLibraryShelf,
     searchQuery,
     setSearchQuery,
-    activeShelfKey,
-    setActiveShelfKey,
     selectionMode,
     selectedIds,
     allShelves,
@@ -187,8 +185,8 @@ export function Library2DView({
         ) : (
           /* Tab Trang chủ */
           <>
-            {/* Thanh tìm kiếm & lọc kệ */}
-            <section aria-label="Tìm kiếm và lọc thư viện" className="space-y-3">
+            {/* Thanh tìm kiếm */}
+            <section aria-label="Tìm kiếm thư viện" className="space-y-3">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="relative flex-1 sm:max-w-md">
                   <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
@@ -229,39 +227,6 @@ export function Library2DView({
                   </div>
                 )}
               </div>
-
-              {allShelves.length > 1 && (
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hover">
-                  <button
-                    type="button"
-                    onClick={() => setActiveShelfKey(null)}
-                    className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                      activeShelfKey === null
-                        ? 'border-accent bg-accent text-accent-foreground'
-                        : 'border-line bg-surface text-ink-muted hover:border-line-strong hover:text-ink'
-                    }`}
-                  >
-                    Tất cả kệ ({books.length})
-                  </button>
-                  {allShelves.map((shelf) => {
-                    const active = activeShelfKey === shelf.key;
-                    return (
-                      <button
-                        key={shelf.key}
-                        type="button"
-                        onClick={() => setActiveShelfKey(active ? null : shelf.key)}
-                        className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                          active
-                            ? 'border-accent bg-accent text-accent-foreground'
-                            : 'border-line bg-surface text-ink-muted hover:border-line-strong hover:text-ink'
-                        }`}
-                      >
-                        {shelf.name} ({shelf.books.length})
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
             </section>
 
             {/* Thanh thao tác khi bật chế độ chọn nhiều */}

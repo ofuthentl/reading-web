@@ -64,7 +64,6 @@ export function FantasyLibrary3D({
   onOpenBook,
   onUploadClick,
   onEditBook,
-  onRenameShelf,
   onMoveSelectedToShelf,
   onDeleteSelected,
 }: FantasyLibrary3DProps) {
@@ -72,7 +71,6 @@ export function FantasyLibrary3D({
   const [firstPerson, setFirstPerson] = useState(false);
   const [hoveredBook, setHoveredBook] = useState<Book | null>(null);
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
-  const [centerShelfKey, setCenterShelfKey] = useState<string | null>(null);
   const [activePrompt, setActivePrompt] = useState<ActiveWorldPrompt | null>(null);
   const [activeDialogue, setActiveDialogue] = useState<WorldNpcSpec3D | null>(null);
   const [floorFadeLabel, setFloorFadeLabel] = useState<string | null>(null);
@@ -221,19 +219,6 @@ export function FantasyLibrary3D({
     [viewState],
   );
 
-  const handleStepShelf = useCallback(
-    (direction: -1 | 1) => {
-      const shelves = viewState.visibleShelves;
-      if (shelves.length <= 1) return;
-      const idx = shelves.findIndex((s) => s.key === centerShelfKey);
-      const base = idx >= 0 ? idx : 0;
-      const next = Math.min(shelves.length - 1, Math.max(0, base + direction));
-      const target = shelves[next];
-      if (target) handleJumpToShelf(target.key);
-    },
-    [viewState.visibleShelves, centerShelfKey, handleJumpToShelf],
-  );
-
   const handleInteractStation = useCallback(
     (station: WorldStation3D) => {
       if (station.kind === 'portal_up' || station.kind === 'portal_down') {
@@ -293,7 +278,6 @@ export function FantasyLibrary3D({
           setSelectedBookId(null);
           setActiveDialogue(null);
         }}
-        onVisibleShelfChange={setCenterShelfKey}
         onFallbackTo2D={onFallbackTo2D}
       />
 
@@ -324,7 +308,6 @@ export function FantasyLibrary3D({
         firstPerson={firstPerson}
         activePrompt={activePrompt}
         activeDialogue={activeDialogue}
-        centerShelfKey={centerShelfKey}
         selectedBook={selectedBook}
         hoveredBook={hoveredBook}
         onSelectFloor={(idx) => triggerFloorTransition(idx)}
@@ -332,8 +315,6 @@ export function FantasyLibrary3D({
         onTriggerStation={handleInteractStation}
         onTriggerNpc={handleInteractNpc}
         onCloseDialogue={() => setActiveDialogue(null)}
-        onJumpToShelf={handleJumpToShelf}
-        onStepShelf={handleStepShelf}
         onClearSelectedBook={() => setSelectedBookId(null)}
         onCycleTheme={onCycleTheme}
         onChangeViewMode={onChangeViewMode}
@@ -342,7 +323,6 @@ export function FantasyLibrary3D({
         onOpenBook={onOpenBook}
         onUploadClick={onUploadClick}
         onEditBook={onEditBook}
-        onRenameShelf={onRenameShelf}
         onMoveSelectedToShelf={onMoveSelectedToShelf}
         onDeleteSelected={onDeleteSelected}
       />

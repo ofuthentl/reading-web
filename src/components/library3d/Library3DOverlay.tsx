@@ -2,17 +2,12 @@ import { useState } from 'react';
 import {
   BookOpen,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ChevronUp,
   Clock,
-  FolderEdit,
   FolderInput,
   Loader2,
-  Search,
   Trash2,
   Upload,
-  X,
 } from 'lucide-react';
 import type { Book, ReadingProgress, StorageStats, ViewMode } from '@/types';
 import { pickCoverColor } from '@/lib/bookMetadata';
@@ -79,7 +74,6 @@ export interface Library3DOverlayProps {
   firstPerson: boolean;
   activePrompt: ActiveWorldPrompt | null;
   activeDialogue: WorldNpcSpec3D | null;
-  centerShelfKey: string | null;
   selectedBook: Book | null;
   hoveredBook: Book | null;
   onSelectFloor: (floorIndex: number) => void;
@@ -87,8 +81,6 @@ export interface Library3DOverlayProps {
   onTriggerStation: (station: WorldStation3D) => void;
   onTriggerNpc: (npc: WorldNpcSpec3D) => void;
   onCloseDialogue: () => void;
-  onJumpToShelf: (shelfKey: string) => void;
-  onStepShelf: (direction: -1 | 1) => void;
   onClearSelectedBook: () => void;
   onCycleTheme: (origin?: { x: number; y: number }) => void;
   onChangeViewMode: (mode: ViewMode) => void;
@@ -97,7 +89,6 @@ export interface Library3DOverlayProps {
   onOpenBook: (book: Book) => void;
   onUploadClick: () => void;
   onEditBook?: (book: Book) => void;
-  onRenameShelf?: (shelfName: string) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
 }
@@ -121,7 +112,6 @@ export function Library3DOverlay({
   firstPerson,
   activePrompt,
   activeDialogue,
-  centerShelfKey,
   selectedBook,
   hoveredBook,
   onSelectFloor,
@@ -129,8 +119,6 @@ export function Library3DOverlay({
   onTriggerStation,
   onTriggerNpc,
   onCloseDialogue,
-  onJumpToShelf,
-  onStepShelf,
   onClearSelectedBook,
   onCycleTheme,
   onChangeViewMode,
@@ -139,25 +127,17 @@ export function Library3DOverlay({
   onOpenBook,
   onUploadClick,
   onEditBook,
-  onRenameShelf,
   onMoveSelectedToShelf,
   onDeleteSelected,
 }: Library3DOverlayProps) {
   const [continueOpen, setContinueOpen] = useState(false);
 
   const {
-    searchQuery,
-    setSearchQuery,
-    activeShelfKey,
-    setActiveShelfKey,
     selectionMode,
     selectedIds,
-    allShelves,
     continueReadingBooks,
     filteredBooks,
-    visibleShelves,
     selectedBooks,
-    isFiltering,
     toggleSelectionMode,
     toggleSelectBook,
     selectAllVisible,
@@ -166,11 +146,6 @@ export function Library3DOverlay({
   } = viewState;
 
   const activeFocusBook = selectedBook ?? hoveredBook;
-  const renameTargetShelf =
-    (activeShelfKey
-      ? allShelves.find((shelf) => shelf.key === activeShelfKey)
-      : visibleShelves.find((shelf) => shelf.key === centerShelfKey) ?? visibleShelves[0]) ?? null;
-
   const allVisibleSelected =
     filteredBooks.length > 0 && selectedIds.size === filteredBooks.length;
 
@@ -195,7 +170,7 @@ export function Library3DOverlay({
 
       {!paused && (
         <div className="pointer-events-none fixed inset-x-0 bottom-0 top-16 z-20 flex flex-col justify-between p-4 sm:px-6">
-          {/* Top floating controls: active floor biome switcher + search/shelf chips */}
+          {/* Top floating controls: compact floor switcher only (keeps 3D world view wide open) */}
           <div className="mx-auto flex w-full max-w-6xl flex-col gap-2">
             <WorldQuickBar
               floors={floors}
@@ -204,136 +179,6 @@ export function Library3DOverlay({
               onSelectFloor={onSelectFloor}
               onToggleFirstPerson={onToggleFirstPerson}
             />
-            {books.length > 0 && (
-              <div className="pointer-events-auto flex flex-col gap-2 rounded-2xl border border-line-strong/80 bg-surface/95 px-3 py-2.5 shadow-md backdrop-blur-md">
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* Ô tìm kiếm không dấu dùng chung state với 2D */}
-                  <div className="relative min-w-[210px] flex-1 sm:max-w-sm">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-faint" />
-                    <input
-                      type="text"
-                      inputMode="search"
-                      value={searchQuery}
-                      onChange={(event) => setSearchQuery(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Escape') {
-                          event.currentTarget.blur();
-                        }
-                      }}
-                      placeholder="Tìm sách, tác giả hoặc tên kệ..."
-                      aria-label="Tìm theo tên sách, tác giả hoặc tên kệ"
-                      className="w-full rounded-xl border border-line bg-canvas py-1.5 pl-8 pr-8 text-xs text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-accent"
-                    />
-                    {searchQuery && (
-                      <button
-                        type="button"
-                        onClick={() => setSearchQuery('')}
-                        aria-label="Xoá từ khoá tìm kiếm"
-                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-ink-faint transition-colors hover:bg-subtle hover:text-ink"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-
-                  {isFiltering && (
-                    <div className="flex items-center gap-1.5 text-xs text-ink-muted">
-                      <span>
-                        <strong className="text-ink">{filteredBooks.length}</strong> / {books.length} cuốn
-                      </span>
-                      <button
-                        type="button"
-                        onClick={clearFilters}
-                        className="rounded-lg border border-line bg-canvas px-2 py-1 text-[11px] font-medium text-accent transition-colors hover:border-line-strong hover:bg-subtle"
-                      >
-                        Xoá lọc
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="ml-auto flex items-center gap-1.5">
-                    {visibleShelves.length > 1 && (
-                      <div className="flex items-center gap-0.5 rounded-xl border border-line bg-canvas p-0.5">
-                        <button
-                          type="button"
-                          onClick={() => onStepShelf(-1)}
-                          aria-label="Sang kệ bên trái"
-                          title="Kệ trước (←)"
-                          className="rounded-lg p-1 text-ink-muted transition-colors hover:bg-subtle hover:text-ink"
-                        >
-                          <ChevronLeft className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onStepShelf(1)}
-                          aria-label="Sang kệ bên phải"
-                          title="Kệ sau (→)"
-                          className="rounded-lg p-1 text-ink-muted transition-colors hover:bg-subtle hover:text-ink"
-                        >
-                          <ChevronRight className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    )}
-
-                    {onRenameShelf && renameTargetShelf && (
-                      <button
-                        type="button"
-                        onClick={() => onRenameShelf(renameTargetShelf.name)}
-                        title={`Đổi tên kệ "${renameTargetShelf.name}"`}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-canvas px-2.5 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink"
-                      >
-                        <FolderEdit className="h-3.5 w-3.5" />
-                        <span className="hidden md:inline">Đổi tên kệ</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Dải chips lọc & bay camera tới kệ */}
-                {allShelves.length > 1 && (
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-hover">
-                    <button
-                      type="button"
-                      onClick={() => setActiveShelfKey(null)}
-                      className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
-                        activeShelfKey === null
-                          ? 'border-accent bg-accent text-accent-foreground'
-                          : 'border-line bg-canvas text-ink-muted hover:border-line-strong hover:text-ink'
-                      }`}
-                    >
-                      Tất cả kệ ({books.length})
-                    </button>
-                    {allShelves.map((shelf) => {
-                      const isActiveFilter = activeShelfKey === shelf.key;
-                      const isInFront = activeShelfKey === null && centerShelfKey === shelf.key;
-                      return (
-                        <button
-                          key={shelf.key}
-                          type="button"
-                          onClick={() => {
-                            if (isActiveFilter) {
-                              setActiveShelfKey(null);
-                            } else {
-                              setActiveShelfKey(shelf.key);
-                              onJumpToShelf(shelf.key);
-                            }
-                          }}
-                          className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
-                            isActiveFilter
-                              ? 'border-accent bg-accent text-accent-foreground'
-                              : isInFront
-                                ? 'border-accent/60 bg-accent/10 text-ink'
-                                : 'border-line bg-canvas text-ink-muted hover:border-line-strong hover:text-ink'
-                          }`}
-                        >
-                          {shelf.name} ({shelf.books.length})
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Thanh thao tác chọn nhiều (dùng chung BulkShelfModal & DeleteConfirmModal) */}
             {selectionMode && (

@@ -1,14 +1,13 @@
 # HANDOFF
-Cập nhật: 2026-11-21 13:10 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 84.70 kB gzip, 0 B three) · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: Triển khai **PR 4A — Aincrad Reading Tower** (đã tinh chỉnh dáng đứng `Idle` Kirito & gắn đèn rọi kệ sách `D-019`, chờ kiểm tra trực quan → `Sub-phase 4A-T4`)
+Cập nhật: 2026-11-21 13:34 | Nhánh: feat/library-3d | Build: 🟢 frontend (entry 84.4 kB gzip, 0 B three) · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: Triển khai **PR 4A — Aincrad Reading Tower** (vừa gọn HUD 3D & bỏ chips lọc kệ 2D `Trang chủ`, đã rà soát toàn bộ 22 model trong `glb/{npc,monster,scene}` chờ duyệt phương án tích hợp)
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/library-series-tab.md · docs/plans/phase-4-aincrad-tower.md
 
 ## Đang làm dở
-- **Nâng cấp & tinh chỉnh Real GLB Kirito + Tầng 1 Phố Châu Âu (`D-019`) hoàn tất & XANH 100%:**
-  - **`public/models/player.glb` (269 KB)** + `AnimatedPlayerGlb.tsx` + `KiritoAvatar.tsx`: tổng hợp lại clip `Idle` đứng thẳng tự nhiên (hết chùng gối & hết đưa tay ra trước, hai tay thả thoải mái hai bên cách vạt áo ~3.5 cm, thở nhẹ & đảo mắt tự nhiên, giữ nguyên `Walk`/`Run`/`Sprint` Mixamo).
-  - **Đèn chiếu kệ sách toàn tháp:** thêm cặp đèn tường đồng cổ điển + dải đèn ấm dưới mái hiên cho mọi kệ (`worldGeometryBuilder.ts`), gắn `pointLight` vàng ấm rọi từng kệ (`WorldBiomeMesh.tsx`), tắt bóng tự che từ mái hiên `woodCrown`, tăng độ ấm gỗ & tự phát sáng nhẹ biển tên kệ/bìa tiêu điểm về đêm (`proceduralMaterials.ts`, `InstancedBooksMesh.tsx`).
-  - **`public/models/town-world.glb` (13.09 MiB)** + `TownWorldGlb.tsx` + `skyEnvironment.ts`: phố châu Âu lát đá thật cho Tầng 1, IBL `PMREMGenerator` 0 CDN, đổ bóng mềm `2048×2048`, 22 đèn đường bật sáng về Chiều/Đêm.
-  - Kiểm định: `typecheck`, `lint` (0/0), `build` (entry `84.70 kB gzip`, `0 B three`), 19/19 test 4A-T1 & 6/6 test 4A-T2.
+- **Gọn giao diện 2D & 3D hoàn tất & XANH 100%:**
+  - `Library3DOverlay.tsx` & `FantasyLibrary3D.tsx`: gỡ bỏ thanh tìm kiếm + dải chips kệ + `< >` + `Đổi tên kệ` chắn tầm nhìn phía trên 3D; chỉ giữ `WorldQuickBar` gọn nhẹ trên đỉnh.
+  - `Library2DView.tsx`: gỡ bỏ dải chips `Tất cả kệ (...)` ở tab `Trang chủ` (đã có tab `Thư viện` riêng theo `D-018`).
+- **Đã kiểm kê 22 file `.glb` mới trong `glb/npc/`, `glb/monster/`, `glb/scene/`** và sẵn sàng đề xuất lộ trình nén WebP+Meshopt / tích hợp NPC anime (`Asuna`, `Yui`, `Maid`, `Zhongli`, `Mint`...), Boss (`Stormterror`, `Stone Golem`, `Monster`, `Dragon`) & cảnh/đạo cụ (`stadtmodell`, `mossy stairs`, `vines`).
 
 ## Bước tiếp theo
 1. Người dùng tải lại `npm run dev` kiểm tra trực quan **Kirito thật** (`Idle`/`Walk`/`Run`/`Sprint` khi bấm `WASD` + `Shift`) và **Tầng 1 Thị trấn Khởi Đầu** (Ban ngày / Chiều tối / Đêm khuya + đèn đường sáng + bóng đổ + 6 kệ sách + khinh khí cầu), quyết định có đồng bộ thêm NPC `.glb` hay GLB cho tầng 2–4.
