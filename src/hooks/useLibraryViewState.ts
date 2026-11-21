@@ -33,6 +33,20 @@ export function normalizeSearchText(input: string): string {
     .trim();
 }
 
+export function selectContinueReadingBooks(
+  books: readonly Book[],
+  progress: Readonly<Record<string, ReadingProgress>>,
+  limit = 8,
+): Book[] {
+  return books
+    .filter((book) => {
+      const itemProgress = progress[book.id];
+      return Boolean(itemProgress) && !itemProgress.completed;
+    })
+    .sort((a, b) => (progress[b.id]?.updatedAt ?? 0) - (progress[a.id]?.updatedAt ?? 0))
+    .slice(0, limit);
+}
+
 export interface LibraryViewState {
   activeTab: LibraryTab;
   setActiveTab: (tab: LibraryTab) => void;
@@ -154,12 +168,10 @@ export function useLibraryViewState(
     setActiveShelfKey((prev) => (prev === oldKey ? newKey : prev));
   }, []);
 
-  const continueReadingBooks = useMemo(() => {
-    return books
-      .filter((book) => Boolean(progress[book.id]))
-      .sort((a, b) => (progress[b.id]?.updatedAt ?? 0) - (progress[a.id]?.updatedAt ?? 0))
-      .slice(0, 8);
-  }, [books, progress]);
+  const continueReadingBooks = useMemo(
+    () => selectContinueReadingBooks(books, progress),
+    [books, progress],
+  );
 
   const normalizedQuery = useMemo(() => normalizeSearchText(searchQuery), [searchQuery]);
 
