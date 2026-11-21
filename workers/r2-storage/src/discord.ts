@@ -130,6 +130,7 @@ function resolvePublicAppUrl(env: Env): string {
 }
 
 function buildBellPanelPayload(appUrl: string) {
+  const entranceUrl = `${appUrl}/entrance`;
   return {
     embeds: [
       {
@@ -138,7 +139,7 @@ function buildBellPanelPayload(appUrl: string) {
           `Kho sách đọc trực tuyến tại **[${appUrl.replace(/^https?:\/\//, '')}](${appUrl})**.`,
           '',
           'Cánh cửa luôn khép với người lạ. Bấm nút **Nhận chìa khoá** bên dưới để Thủ thư trao riêng cho bạn một mã khoá mật (chỉ mình bạn nhìn thấy):',
-          `• Nhập mã tại **[cổng thư viện](${appUrl})** trong vòng **5 phút** trước khi hiệu lực tan biến.`,
+          `• Nhập mã tại **[cổng thư viện](${entranceUrl})** trong vòng **5 phút** trước khi hiệu lực tan biến.`,
           '• Mỗi mã chỉ dùng **1 lần** và giữ quyền đọc thư viện trong **24 giờ**.',
         ].join('\n'),
         color: 0xc89b62,
@@ -195,6 +196,7 @@ async function issueKeyForDiscordMember(
   const expiresAt = now + DISCORD_KEY_TTL_MS;
   const expiresUnixSec = Math.floor(expiresAt / 1000);
   const appUrl = resolvePublicAppUrl(env);
+  const entranceUrl = `${appUrl}/entrance`;
 
   await env.DB.prepare(
     `INSERT INTO discord_access (discord_user_id, discord_username, key_hash, key_issued_at, key_expires_at, updated_at)
@@ -213,7 +215,7 @@ async function issueKeyForDiscordMember(
     [
       `🔑 **\`${rawKey}\`**`,
       '',
-      `Chìa khoá của bạn đây! Hãy nhập mã này tại **[cổng thư viện](${appUrl})** trong vòng **5 phút** (hết hạn <t:${expiresUnixSec}:R>) trước khi hiệu lực tan biến.`,
+      `Chìa khoá của bạn đây! Hãy nhập mã này tại **[cổng thư viện](${entranceUrl})** trong vòng **5 phút** (hết hạn <t:${expiresUnixSec}:R>) trước khi hiệu lực tan biến.`,
       '-# Mã chỉ xoay được 1 lần và giữ cửa mở trong 24 giờ (chế độ đọc 2D). Mọi cánh cửa cũ bạn đang mở ở nơi khác sẽ tự động khép lại.',
     ].join('\n'),
   );
