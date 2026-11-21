@@ -1,17 +1,18 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, BookOpen, Eye, EyeOff, Loader2, RefreshCw } from 'lucide-react';
+import type { AuthSessionInfo } from '@/types';
 import {
   checkHealth,
-  getAuthToken,
   isLocalDevMode,
   isMissingProductionApi,
   loginWithPasscode,
 } from '@/lib/api';
+import { DEFAULT_OWNER_SESSION, inspectStoredSession } from '@/lib/authSession';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import type { AppTheme } from '@/hooks/useTheme';
 
 interface AuthGateProps {
-  onAuthenticated: () => void;
+  onAuthenticated: (session: AuthSessionInfo) => void;
   authReason?: string | null;
   theme?: AppTheme;
   onCycleTheme?: (origin?: { x: number; y: number }) => void;
@@ -40,12 +41,20 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
     try {
       const health = await checkHealth();
       if (!health.authRequired) {
-        onAuthenticated();
+        onAuthenticated(DEFAULT_OWNER_SESSION);
         return;
       }
-      if (getAuthToken() && !authReason) {
-        onAuthenticated();
+      const stored = inspectStoredSession();
+      if (stored.status === 'active' && !authReason) {
+        onAuthenticated(stored.session);
         return;
+      }
+      if (stored.status === 'expired' && !authReason) {
+        setErrorMessage(
+          stored.role === 'guest'
+            ? 'Phiên truy cập 24 giờ đã hết hạn. Hãy bấm chuông trên Discord để lấy chìa khoá mới.'
+            : 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+        );
       }
       setStatus('login');
     } catch (err) {
@@ -64,16 +73,16 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
     event.preventDefault();
     const trimmed = passcode.trim();
     if (!trimmed) {
-      setErrorMessage('Vui lòng nhập mật mã thư viện.');
+      setErrorMessage('Vui lòng nhập chìa khoá truy cập hoặc mật mã.');
       return;
     }
 
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      await loginWithPasscode(trimmed);
+      const session = await loginWithPasscode(trimmed);
       setPasscode('');
-      onAuthenticated();
+      onAuthenticated(session);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Đăng nhập thất bại.');
     } finally {
@@ -130,7 +139,7 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
             <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
               Ofu&apos;s Library
             </h1>
-            <p className="text-xs text-ink-muted">Thư viện đọc sách cá nhân</p>
+            <p className="text-xs text-ink-muted">Kho sách đọc trực tuyến</p>
           </div>
         </div>
 
@@ -163,27 +172,28 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
             <p className="mb-5 text-sm text-ink-muted">
               {isLocalDevMode
                 ? 'Chế độ Local Dev (IndexedDB).'
-                : 'Nhập mật mã để truy cập thư viện đồng bộ của bạn.'}
+                : 'Nhập chìa khoá từ Discord (hạn 5 phút) hoặc mật mã quản trị để vào thư viện.'}
             </p>
 
             <label htmlFor="passcode-input" className="mb-4 block text-sm font-medium text-ink">
-              Mật mã thư viện
+              Chìa khoá truy cập
               <div className="relative mt-1.5">
                 <input
                   id="passcode-input"
                   type={showPasscode ? 'text' : 'password'}
                   value={passcode}
                   onChange={(e) => setPasscode(e.target.value)}
-                  autoComplete="current-password"
+                  autoComplete="off"
+                  spellCheck={false}
                   autoFocus
                   disabled={submitting}
-                  placeholder="Nhập mật mã..."
+                  placeholder="Nhập mã khoá hoặc mật mã..."
                   className="w-full rounded-xl border border-line-strong bg-canvas py-2.5 pl-3.5 pr-10 text-sm text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-accent disabled:opacity-60"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPasscode((prev) => !prev)}
-                  aria-label={showPasscode ? 'Ẩn mật mã' : 'Hiện mật mã'}
+                  aria-label={showPasscode ? 'Ẩn mã truy cập' : 'Hiện mã truy cập'}
                   className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-subtle hover:text-ink"
                 >
                   {showPasscode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

@@ -5,17 +5,20 @@
 ```mermaid
 flowchart LR
   Browser["Browser (React + Vite + TS)"]
+  Discord["Discord App / Bot\n(🔔 Nhận chìa khoá)"]
   Meta["bookMetadata.ts / coverImage.ts"]
+  Auth["src/lib/authSession.ts"]
   API["src/lib/api.ts"]
   Parsers["src/lib/parsers.ts\n(lazy: jszip, docxParser, dompurify)"]
   PdfLazy["PdfReader.tsx + pdfjsLoader.ts\n(React.lazy + pdfjs-dist)"]
   Cache["src/lib/cache.ts"]
   IDB[("IndexedDB\n(blobs, covers, local state)")]
   Worker["Cloudflare Worker\nworkers/r2-storage/src/index.ts"]
-  D1[("Cloudflare D1\n(books, reading_progress)")]
+  D1[("Cloudflare D1\n(books, reading_progress, shelf_prefs,\ndiscord_access, guest_reading_progress)")]
   R2[("Cloudflare R2\n(books/*, covers/*)")]
 
   Browser --> API
+  API --> Auth
   API --> Meta
   Browser -. "dynamic import()" .-> Parsers
   API -. "dynamic import()" .-> Parsers
@@ -23,7 +26,8 @@ flowchart LR
   Parsers -. "pdfjsLoader" .-> PdfLazy
   API --> Cache
   Cache <--> IDB
-  API -- "HTTPS + Bearer HMAC token" --> Worker
+  Auth -- "HTTPS + Bearer HMAC token" --> Worker
+  Discord -- "Ed25519 Webhook (/api/discord/interactions)" --> Worker
   Worker --> D1
   Worker -- "R2 Native Binding" --> R2
 ```
@@ -32,7 +36,8 @@ flowchart LR
 
 | File | Trách nhiệm | Export chính | Phụ thuộc vào |
 |---|---|---|---|
-| `src/types.ts` | Định nghĩa kiểu dữ liệu dùng chung (Book, Chapter, ParsedBook, Progress, Storage, ReaderSettings, ViewMode, LibraryTab) | `Book`, `BookFileType`, `Chapter`, `ParsedBook`, `ReadingProgress`, `StorageStats`, `ShelfGroup`, `ReaderSettings`, `ViewMode`, `LibraryTab` | — |
+| `src/types.ts` | Định nghĩa kiểu dữ liệu dùng chung (Book, Chapter, ParsedBook, Progress, Storage, ReaderSettings, ViewMode, LibraryTab, AuthRole, AuthSessionInfo) | `Book`, `BookFileType`, `Chapter`, `ParsedBook`, `ReadingProgress`, `StorageStats`, `ShelfGroup`, `ReaderSettings`, `ViewMode`, `LibraryTab`, `AuthRole`, `AuthSessionInfo` | — |
+| `src/lib/authSession.ts` | Quản lý token & vòng đời phiên 2 tầng (`owner` 30 ngày / `guest` 24 giờ từ Discord key, `D-026`), bảo vệ D-005, HTTP client gắn Bearer token (`apiFetch`), kiểm tra Worker (`checkHealth`), đăng nhập (`loginWithPasscode`) và định dạng thời gian phiên còn lại (`formatRemainingSessionTime`) | `DEFAULT_OWNER_SESSION`, `isMissingProductionApi`, `isLocalDevMode`, `isCloudMode`, `assertApiConfigured`, `parseTokenSession`, `getAuthToken`, `setAuthToken`, `inspectStoredSession`, `getActiveAuthSession`, `formatRemainingSessionTime`, `isAuthError`, `apiFetch`, `checkHealth`, `loginWithPasscode` | `src/types.ts`, `localStorage`, Fetch API |
 | `src/lib/cache.ts` | Lớp truy cập IndexedDB (`arcane-library-cache-v1`) lưu cache file sách/bìa và dữ liệu chế độ local | `getCachedBookBlob`, `setCachedBookBlob`, `deleteCachedBookBlob`, `getCachedCoverBlob`, `setCachedCoverBlob`, `deleteCachedCoverBlob`, `getLocalBooks`, `putLocalBook`, `deleteLocalBook`, `getAllLocalProgress`, `putLocalProgress`, `deleteLocalProgress` | `src/types.ts`, IndexedDB API |
 | `src/lib/shelfPlacement.ts` | Quy tắc phân bổ kệ thông minh: chuẩn hoá dấu gạch/hai chấm Unicode (`cleanShelfLabel`), nhận diện nhãn tập có tiêu đề phụ (`isVolumeOrSubtitleSegment`), trích tên bộ truyện (`extractSeriesName`), phát hiện kệ gốc chung cho cả lô tải lên (`inferBatchCommonShelf`), tác phẩm lẻ đứng kệ riêng và tự động gom chung về kệ tác giả khi có từ 2 tác phẩm lẻ cùng tác giả | `VOLUME_SEGMENT_RE`, `VOLUME_WITH_SUBTITLE_RE`, `isVolumeOrSubtitleSegment`, `cleanShelfLabel`, `extractSeriesName`, `isKnownAuthor`, `inferBatchCommonShelf`, `inferSingleBookShelf`, `resolveUploadShelfPlan`, `resolvePreviewShelfName` | `src/types.ts` |
 | `src/lib/shelfPrefs.ts` | Quản lý tuỳ chọn kệ sách đồng bộ đa thiết bị (`D-025`): lưu/nạp cache `localStorage`, cập nhật ảnh bìa kệ đại diện (`setShelfCoverBook` → `PUT /api/shelves/cover`), ghim kệ yêu thích (`setShelfFavorite` → `PUT /api/shelves/favorite`), hợp nhất khi đổi tên kệ (`renameShelfPrefs`), dọn `cover_book_id` khi xoá sách (`pruneDeletedBooksFromPrefs`) và sắp xếp kệ yêu thích lên đầu (`sortShelvesFavoriteFirst`) | `ShelfPrefsState`, `toShelfPrefKey`, `readLocalShelfPrefs`, `writeLocalShelfPrefs`, `patchShelfCover`, `patchShelfFavorite`, `renameShelfPrefs`, `pruneDeletedBooksFromPrefs`, `sortShelvesFavoriteFirst`, `setShelfCoverBook`, `setShelfFavorite` | `src/types.ts`, `src/lib/api.ts`, `localStorage` |
@@ -47,7 +52,7 @@ flowchart LR
 | `src/lib/docxParser.ts` | Trích ảnh bìa DOCX (duyệt ứng viên theo thứ tự `word/document.xml` → `word/media/*` → `docProps/thumbnail.*`, tự bỏ qua ảnh trắng trơn/icon quá nhỏ) và parse `word/document.xml` thành `ParsedBook` reflowable (giữ định dạng chữ, danh sách, bảng, ảnh `blob:` URL có `dispose()`, tự tách chương theo Heading 1/2 hoặc tiêu đề `Chương X`) | `extractDocxCover`, `parseDocxZip` | `jszip` (type-only), `src/types.ts`, `src/lib/coverImage.ts`, `src/lib/docxXml.ts`, `src/lib/sanitizeHtml.ts` |
 | `src/lib/parsers.ts` | Nạp lười `jszip` và `pdfjs-dist` (qua `pdfjsLoader`); tải trước `jszip` khi trình duyệt rảnh (`preloadCoreReaders`); trích ảnh bìa lúc upload và parse EPUB/PDF/DOCX thành `ParsedBook` kèm `dispose()` | `preloadCoreReaders`, `extractCoverAtUpload`, `parseBookBlob` | `jszip` (dynamic), `src/types.ts`, `src/lib/chunkReload.ts`, `src/lib/coverImage.ts`, `src/lib/docxParser.ts`, `src/lib/epubChapters.ts`, `src/lib/pdfjsLoader.ts`, `src/lib/sanitizeHtml.ts` |
 | `src/lib/readerConfig.ts` | Cấu hình trình đọc: 4 bảng màu đọc (`paper`/`sepia`/`dark`/`midnight`), font/width map, lưu & nạp `ReaderSettings` trong `localStorage` | `DEFAULT_READER_SETTINGS`, `READER_THEME_STYLES`, `READER_FONT_CLASS`, `READER_WIDTH_MAX`, `loadReaderSettings`, `saveReaderSettings`, `ReaderThemePalette` | `src/types.ts`, `localStorage` |
-| `src/lib/api.ts` | Giao tiếp HTTP với Worker, quản lý token, bảo vệ D-005 (chặn Local-First trên production), giới hạn 9.0 GiB, cache-first blob/cover, đồng bộ tiến độ đọc & chuyển kệ hàng loạt | `HARD_LIMIT_BYTES`, `MAX_SHELF_NAME_LENGTH`, `isMissingProductionApi`, `isLocalDevMode`, `isCloudMode`, `getAuthToken`, `setAuthToken`, `formatBytes`, `sortBooksByTitle`, `groupBooksIntoShelves`, `isAuthError`, `checkHealth`, `loginWithPasscode`, `fetchLibraryState`, `uploadBook`, `updateBookMetadata`, `updateBookCover`, `renameShelfAll`, `bulkUpdateBooksShelf`, `deleteBooks`, `fetchBookBlobCached`, `fetchCoverBlobCached`, `saveReadingProgress`, `clearReadingProgress` | `src/types.ts`, `src/lib/bookMetadata.ts`, `src/lib/cache.ts`, `src/lib/chunkReload.ts`, `src/lib/coverImage.ts`, `src/lib/parsers.ts` (dynamic) |
+| `src/lib/api.ts` | Tầng nghiệp vụ thư viện: tái xuất helper auth từ `authSession.ts`, giới hạn 9.0 GiB, gom/sắp xếp kệ sách, cache-first blob/cover qua IndexedDB, đồng bộ `fetchLibraryState` (kèm `session` xác thực từ Worker) & tiến độ đọc cách ly `owner`/`guest` (`D-026`) | `HARD_LIMIT_BYTES`, `MAX_SHELF_NAME_LENGTH`, `isMissingProductionApi`, `isLocalDevMode`, `isCloudMode`, `getAuthToken`, `setAuthToken`, `formatBytes`, `sortBooksByTitle`, `groupBooksIntoShelves`, `isAuthError`, `checkHealth`, `loginWithPasscode`, `fetchLibraryState`, `uploadBook`, `updateBookMetadata`, `updateBookCover`, `renameShelfAll`, `bulkUpdateBooksShelf`, `deleteBooks`, `fetchBookBlobCached`, `fetchCoverBlobCached`, `saveReadingProgress`, `clearReadingProgress` | `src/types.ts`, `src/lib/authSession.ts`, `src/lib/bookMetadata.ts`, `src/lib/cache.ts`, `src/lib/chunkReload.ts`, `src/lib/coverImage.ts`, `src/lib/shelfPrefs.ts`, `src/lib/parsers.ts` (dynamic) |
 | `src/hooks/useTheme.ts` | Quản lý 3 chế độ màu (`light` Ban ngày `#f6f1e7` → `dim` Chiều tối `#0d1117` + gradient sương nhẹ → `midnight` Đêm khuya `#060608`) lưu `localStorage`, hỗ trợ View Transitions API & `meta[name="theme-color"]` | `useTheme`, `AppTheme`, `THEME_ORDER`, `THEME_LABELS`, `getNextTheme` | React, `localStorage` |
 | `src/hooks/useCanUse3D.ts` | Ranh giới thiết bị D-008: kiểm tra tuần tự `min-width: 1024px`, `(hover: hover) and (pointer: fine)`, lazy probe WebGL `{ failIfMajorPerformanceCaveat: true }` (cache cấp module, giải phóng ngay context test), `prefers-reduced-motion: reduce`, lưu/đồng bộ đa tab `localStorage` (`ofu-library-view-mode`), debounce resize `200ms`, cờ chịu lỗi phiên (`session3DFailed`, `retryKey`) | `VIEW_MODE_STORAGE_KEY`, `CanUse3DState`, `useCanUse3D` | React, `src/types.ts`, `localStorage`, `matchMedia`, WebGL API |
 | `src/hooks/useLibraryViewState.ts` | Quản lý state giao diện thư viện dùng chung cho cả 2D và 3D (`searchQuery`, `activeShelfKey`, `selectionMode`, `selectedIds`, `allShelves`, `continueReadingBooks` tự loại sách đã `completed`, `filteredBooks`, `visibleShelves`, `selectedBooks`), đồng thời quản lý tab 2D `Trang chủ` / `Thư viện` (lưu `localStorage`), drill-down kệ đang mở (`openedLibraryShelf`), lọc kệ giữ nguyên số tập (`libraryShelves`) và đồng bộ đổi tên kệ (`syncRenamedShelf`) | `LIBRARY_TAB_STORAGE_KEY`, `normalizeSearchText`, `selectContinueReadingBooks`, `computeBookProgressPercent`, `LibraryViewState`, `useLibraryViewState` | React, `src/types.ts`, `src/lib/api.ts`, `src/lib/bookMetadata.ts` |
@@ -58,9 +63,9 @@ flowchart LR
 | `src/components/ViewModeToggle.tsx` | Công tắc chuyển đổi `2D` / `3D` trên `LibraryHeader`, chỉ render khi `canUse3D === true` (D-008) | `ViewModeToggle` | `lucide-react`, `src/types.ts` |
 | `src/components/ErrorBoundary.tsx` | React Error Boundary chống trắng trang, nhận prop tuỳ chọn `fallback?: ReactNode \| ((errorMessage: string) => ReactNode)` (boundary gốc ở `main.tsx` giữ fallback mặc định), tự gọi `recoverFromChunkError(error)` trong `componentDidCatch` | `ErrorBoundary` | `lucide-react`, `src/lib/chunkReload.ts` |
 | `src/components/ToastContainer.tsx` | Hiển thị stack thông báo không chặn UI góc dưới-phải, đồng bộ màu Sáng/Tối | `ToastContainer` | `lucide-react`, `src/hooks/useToast.ts` |
-| `src/components/AuthGate.tsx` | Màn hình kiểm tra kết nối Worker, đăng nhập 1 passcode (D-003), báo lỗi thiếu `VITE_API_URL` (D-005), hỗ trợ đổi Sáng/Tối | `AuthGate` | `lucide-react`, `src/lib/api.ts` |
+| `src/components/AuthGate.tsx` | Màn hình cổng thư viện giữ nguyên thiết kế hiện có: kiểm tra Worker, nhận chung cả **Chìa khoá Discord 12 ký tự** (`guest` 24 giờ) lẫn **Mật mã quản trị** (`owner` 30 ngày) tại cùng 1 ô nhập (`D-026`), báo hết hạn phiên 24 giờ, báo thiếu `VITE_API_URL` (`D-005`), đổi Sáng/Tối | `AuthGate` | `lucide-react`, `src/types.ts`, `src/lib/{api,authSession}.ts` |
 | `src/components/BookCard.tsx` | Thẻ sách 2D (dọc/ngang): bìa tỉ lệ `3/4` (ảnh lazy qua `IntersectionObserver` + `useCoverUrl` hoặc bìa vải cổ điển fallback), thanh tiến độ %, badge định dạng, chế độ chọn nhiều | `BookCard` | `lucide-react`, `src/types.ts`, `src/hooks/useCoverUrl.ts` |
-| `src/components/LibraryHeader.tsx` | Header thương hiệu **Ofu's Library**: thanh tab 2D tuỳ chọn (`Trang chủ` \| `Thư viện` — ẩn ở HUD 3D), thanh dung lượng `usedBytes / limitBytes` (`formatBytes`), công tắc `ViewModeToggle` (khi `canUse3D`), chuyển Sáng/Tối, upload, chọn nhiều (`showSelectionToggle`), làm mới, đăng xuất | `LibraryHeader` | `lucide-react`, `src/types.ts`, `src/lib/api.ts`, `src/components/ThemeToggle.tsx`, `src/components/ViewModeToggle.tsx` |
+| `src/components/LibraryHeader.tsx` | Header thương hiệu **Ofu's Library**: thanh tab 2D (`Trang chủ` \| `Thư viện`), phân nhánh theo vai trò (`owner`: thanh dung lượng `usedBytes / limitBytes`, `Tải sách`, `Chọn`, `ViewModeToggle`; `guest`: ẩn toàn bộ nút quản trị/3D và hiện huy hiệu đếm ngược thời gian phiên 24 giờ `D-026`), chuyển Sáng/Tối, làm mới, đăng xuất | `LibraryHeader` | `lucide-react`, `src/types.ts`, `src/lib/{api,authSession}.ts`, `src/components/ThemeToggle.tsx`, `src/components/ViewModeToggle.tsx` |
 | `src/components/ShelfCoverCard.tsx` | Thẻ Kệ / Bộ truyện trong Tab Thư viện (`D-018`/`D-025`): bìa `3/4` lấy từ tập đã chọn hoặc Tập 1 qua `IntersectionObserver` + `useCoverUrl` (fallback bìa vải cổ điển), nút `Yêu thích` (`Star`), nút nhanh `Đổi tên kệ` & `Chọn ảnh bìa kệ`, badge `N tập`, thanh tiến độ, tên kệ, tác giả & trạng thái đọc | `ShelfCoverCard` | `lucide-react`, `src/lib/bookMetadata.ts`, `src/lib/shelfSummary.ts`, `src/hooks/useCoverUrl.ts` |
 | `src/components/ShelfCoverPickerModal.tsx` | Modal chọn ảnh bìa đại diện cho kệ từ 1 tập bất kỳ có ảnh bìa trong kệ (hoặc đặt lại mặc định Tập 1) đồng bộ Cloudflare D1 qua `setShelfCoverBook` (`D-025`) | `ShelfCoverPickerModal`, `ShelfCoverPickerModalProps` | `lucide-react`, `src/types.ts`, `src/lib/{bookMetadata,shelfPrefs,shelfSummary}.ts`, `src/hooks/{useCoverUrl,useToast}.ts` |
 | `src/components/ShelfDetailView.tsx` | Màn hình chi tiết 1 kệ khi drill-down trong Tab Thư viện: thanh quay lại, hero bìa kệ + các nút `Đọc tiếp / Đọc từ tập 1`, `Yêu thích`, `Đổi tên kệ`, `Đổi ảnh bìa kệ`, lọc nhanh tập (khi `>= 8` cuốn), chế độ chọn nhiều khoanh vùng trong kệ & lưới `BookCard` | `ShelfDetailView` | `lucide-react`, `src/types.ts`, `src/lib/api.ts`, `src/lib/bookMetadata.ts`, `src/lib/shelfSummary.ts`, `src/components/BookCard.tsx`, `src/hooks/{useCoverUrl,useLibraryViewState}.ts` |
@@ -121,35 +126,41 @@ flowchart LR
 | `src/components/ReaderSettingsPopover.tsx` | Bảng tùy chỉnh trình đọc: 4 chế độ màu, kiểu chữ, cỡ chữ, giãn dòng, độ rộng cột, bật/tắt chạm lề & phím mũi tên | `ReaderSettingsPopover` | `lucide-react`, `src/types.ts`, `src/lib/readerConfig.ts` |
 | `src/components/ReaderTocDrawer.tsx` | Ngăn kéo mục lục chương/trang kèm ô lọc nhanh | `ReaderTocDrawer` | `lucide-react`, `src/types.ts`, `src/lib/readerConfig.ts` |
 | `src/components/ReaderView.tsx` | Trình đọc EPUB/DOCX/PDF gọn ≤ 500 dòng: điều hướng chương/trang, lưu & khôi phục vị trí cuộn theo tỉ lệ, phím `←`/`→` an toàn, nạp lười `PdfReader` bằng `React.lazy` + `Suspense` bọc trong `<ErrorBoundary fallback={...}>` (`PdfReaderFallback`) | `ReaderView` | `lucide-react`, `src/types.ts`, `src/lib/readerConfig.ts`, `src/components/ErrorBoundary.tsx`, `src/components/PdfReader.tsx` (lazy), `src/components/PdfReaderFallback.tsx`, `src/components/ReaderSettingsPopover.tsx`, `src/components/ReaderTocDrawer.tsx` |
-| `src/App.tsx` | Vỏ điều phối mỏng (~280 dòng): quản lý theme 3 chế độ, ranh giới 3D `useCanUse3D()`, state thư viện dùng chung `useLibraryViewState()`, auth state, xử lý `401` tập trung, tải thư viện, tải trước nền `preloadCoreReaders()`, điều phối `AuthGate` ↔ `Library2DView` / `Library3DHost` (giữ sống nền 3D ở `0 FPS` `paused`/`dimmed` khi mở sách hoặc mở 5 modal `z-40`) ↔ `ReaderView` (`fixed inset-0 z-40`) / `ToastContainer` (`z-50`) | `default App` | `src/types.ts`, `src/lib/api.ts`, `src/lib/parsers.ts` (dynamic idle preload), `src/components/*`, `src/hooks/{useBookReader,useCanUse3D,useLibraryViewState,useTheme,useToast}.ts` |
+| `src/App.tsx` | Vỏ điều phối mỏng: quản lý theme 3 chế độ, ranh giới 3D `useCanUse3D()`, state thư viện dùng chung `useLibraryViewState()`, phiên 2 tầng `owner`/`guest` (`D-026` — tự thoát khi hết 24 giờ, khoá cứng `guest` ở **Chỉ Đọc 2D** không tải `three` & không mount 5 modal quản trị), xử lý `401` tập trung, tải thư viện, tải trước nền `preloadCoreReaders()`, điều phối `AuthGate` ↔ `Library2DView` / `Library3DHost` ↔ `ReaderView` / `ToastContainer` | `default App` | `src/types.ts`, `src/lib/{api,authSession,shelfPrefs}.ts`, `src/lib/parsers.ts` (dynamic idle preload), `src/components/*`, `src/hooks/{useBookReader,useCanUse3D,useLibraryViewState,useTheme,useToast}.ts` |
 | `src/main.tsx` | Điểm khởi chạy React, bọc `<ErrorBoundary>` quanh `<App />` và lắng nghe `vite:preloadError` xử lý chunk cũ sau deploy | — | `src/components/ErrorBoundary.tsx`, `src/lib/chunkReload.ts`, `src/App.tsx` |
-| `workers/r2-storage/src/auth.ts` | Xác thực fail-closed cho Worker: so sánh timing-safe, ký & kiểm tra token HMAC-SHA256 30 ngày, `HttpError` | `HttpError`, `AuthEnv`, `isInsecureDevAuthDisabled`, `isAuthRequired`, `timingSafeEqual`, `signPayload`, `createAuthToken`, `authenticatePasscode`, `verifyAuth` | Web Crypto API (`crypto.subtle`) |
-| `workers/r2-storage/src/booksDb.ts` | Các hàm truy vấn D1/R2 & kiểm soát hạn mức 9.0 GiB cho Worker (chia lô `<= 50` ID mỗi câu SQL trong `env.DB.batch` cho xoá/chuyển kệ/đổi tên kệ hàng loạt) | `Env`, `BookRow`, `ProgressRow`, `getLimitBytes`, `getStorageStats`, `assertQuota`, `isValidId`, `safeDecodeHeader`, `listBooksAndProgress`, `deleteSingleBook`, `bulkDeleteBooks`, `bulkUpdateBooksShelf`, `renameShelfCaseInsensitive`, `upsertReadingProgress` | Cloudflare Workers Runtime (`D1Database`, `R2Bucket`), `workers/r2-storage/src/auth.ts` |
-| `workers/r2-storage/src/index.ts` | Cloudflare Worker HTTP Router: CORS, định tuyến REST API sách/kệ/tiến độ, stream upload/download R2 (hỗ trợ HTTP Range) | `default { fetch }` | Cloudflare Workers Runtime (`D1Database`, `R2Bucket`), `workers/r2-storage/src/auth.ts`, `workers/r2-storage/src/booksDb.ts` |
+| `workers/r2-storage/src/auth.ts` | Xác thực & phân quyền fail-closed 2 tầng (`D-026`): so sánh timing-safe `ACCESS_PASSCODE` cấp token `owner` (30 ngày); băm `SHA-256` đổi key Discord 12 ký tự (hạn 5 phút, dùng 1 lần) cấp token `guest` (24 giờ, tự đóng phiên cũ của cùng `discord_user_id`); `verifyAuth` & chốt chặn `requireOwner` (`403`) | `HttpError`, `AuthRole`, `AuthEnv`, `AuthContext`, `OWNER_TOKEN_TTL_MS`, `GUEST_SESSION_TTL_MS`, `DISCORD_KEY_TTL_MS`, `requireOwner`, `sha256Hex`, `normalizeDiscordAccessKey`, `generateDiscordAccessKey`, `ensureDiscordAccessTable`, `authenticatePasscodeOrKey`, `verifyAuth` | Web Crypto API (`crypto.subtle`), Cloudflare `D1Database` |
+| `workers/r2-storage/src/discord.ts` | Webhook Discord HTTP Interactions (`D-026`, 0 thư viện ngoài): xác thực chữ ký `Ed25519` (`crypto.subtle`), xử lý `PING`, kiểm tra `DISCORD_GUILD_ID`, lệnh `/setup-bell` (Admin Discord đặt bảng nút `🔔 Nhận chìa khoá`), lệnh `/key` & nút bấm cấp key ẩn (`flags: 64`, hạn 5 phút, cooldown `15s`) | `verifyDiscordSignature`, `handleDiscordInteraction` | Web Crypto API (`Ed25519`), `workers/r2-storage/src/{auth,booksDb}.ts` |
+| `workers/r2-storage/src/booksDb.ts` | Truy vấn D1/R2 & kiểm soát hạn mức 9.0 GiB: phân tách tiến độ đọc giữa `reading_progress` (`owner`) và `guest_reading_progress` (`guest`, theo `discord_user_id`), quản lý `shelf_prefs` (`D-025`) và chia lô `<= 50` ID trong `env.DB.batch` | `Env`, `BookRow`, `ProgressRow`, `ShelfPrefRow`, `getLimitBytes`, `getStorageStats`, `assertQuota`, `isValidId`, `safeDecodeHeader`, `listBooksAndProgress`, `deleteSingleBook`, `bulkDeleteBooks`, `bulkUpdateBooksShelf`, `renameShelfCaseInsensitive`, `upsertShelfCover`, `upsertShelfFavorite`, `upsertReadingProgress`, `deleteReadingProgress` | Cloudflare Workers Runtime (`D1Database`, `R2Bucket`), `workers/r2-storage/src/auth.ts` |
+| `workers/r2-storage/src/index.ts` | Cloudflare Worker HTTP Router: CORS, webhook Discord `/api/discord/interactions`, định tuyến REST API sách/kệ/tiến độ với chốt chặn `requireOwner` (`403` cho khách), stream upload/download R2 (hỗ trợ HTTP Range) | `default { fetch }` | Cloudflare Workers Runtime (`D1Database`, `R2Bucket`), `workers/r2-storage/src/{auth,booksDb,discord}.ts` |
+| `workers/r2-storage/scripts/register-discord-commands.mjs` | Script CLI chạy 1 lần (0 phụ thuộc ngoài) đăng ký lệnh `/setup-bell` (Admin) và `/key` vào Discord Guild chỉ định | — | Node.js `fetch` |
 
 ## 3. API của Cloudflare Worker
 
-> Auth `Có*`: bắt buộc `Authorization: Bearer <token>` (hoặc query `?token=`). Mặc định **fail-closed**: thiếu `ACCESS_PASSCODE` sẽ trả `503` (chỉ tắt auth khi chạy dev và đặt tường minh `ALLOW_INSECURE_DEV_NO_AUTH="true"` cùng với việc bỏ trống `ACCESS_PASSCODE`).
+> - **`Có (Owner + Guest)`**: yêu cầu Bearer token hợp lệ của `owner` (30 ngày) hoặc `guest` (24 giờ, khớp `active_session_id` hiện hành).
+> - **`Chỉ Owner`**: bắt buộc `auth.role === 'owner'`; token `guest` gọi vào sẽ bị chặn **`403 Forbidden`** (`D-026`).
+> - Mặc định **fail-closed**: thiếu `ACCESS_PASSCODE` trả `503` (chỉ tắt auth khi dev local và đặt tường minh `ALLOW_INSECURE_DEV_NO_AUTH="true"` kèm bỏ trống `ACCESS_PASSCODE`).
 
 | Method | Path | Auth? | Mô tả |
 |---|---|---|---|
 | `OPTIONS` | `*` | Không | CORS preflight theo `APP_ORIGINS` (trả `204`) |
-| `GET` | `/api/health` | Không | Kiểm tra sống, trả `{ ok, authRequired, limitBytes }` |
-| `POST` | `/api/auth/login` | Không | Kiểm tra `passcode` (so sánh timing-safe), cấp token HMAC-SHA256 hạn 30 ngày |
-| `GET` | `/api/storage` | Có* | Trả thống kê dung lượng `{ usedBytes, limitBytes, remainingBytes, bookCount }` |
-| `GET` | `/api/books` | Có* | Trả toàn bộ `books`, bản đồ `progress` và `storage` |
-| `PUT` | `/api/books/:id/file` | Có* | Stream file sách (tối đa 350 MB) lên R2, kiểm tra hạn mức 9.0 GiB trước & sau khi ghi, tạo bản ghi D1 |
-| `PUT` | `/api/books/:id/cover` | Có* | Stream ảnh bìa JPEG (< 5 MB) lên R2, xoá ảnh bìa cũ trên R2, cập nhật D1 |
-| `PATCH` | `/api/books/:id` | Có* | Cập nhật metadata sách (`title`, `author`, `shelf`, `description`, `cover_color`) |
-| `DELETE` | `/api/books/:id` | Có* | Xoá 1 sách: xoá object file + cover trên R2 và xoá dòng ở `reading_progress`, `books` |
-| `POST` | `/api/books/bulk-delete` | Có* | Xoá hàng loạt sách theo `ids` trên cả R2 và D1 (chia lô `<= 50` ID trong `DB.batch`) |
-| `POST` | `/api/books/bulk-shelf` | Có* | Chuyển kệ hàng loạt theo `{ ids, shelf }` (`shelf <= 120` ký tự, chia lô `<= 50` ID mỗi câu `UPDATE` trong `DB.batch`, trả `{ updatedIds, shelf }`) |
-| `POST` | `/api/shelves/rename` | Có* | Đổi tên kệ hàng loạt không phân biệt hoa/thường tiếng Việt (`oldName` → `newName`) và tự hợp nhất `shelf_prefs` |
-| `PUT` | `/api/shelves/cover` | Có* | Lưu hoặc đặt lại tập đại diện làm ảnh bìa kệ (`{ shelfName, bookId }`, `D-025`) |
-| `PUT` | `/api/shelves/favorite` | Có* | Ghim hoặc bỏ ghim kệ yêu thích lên đầu Trang chủ & Thư viện (`{ shelfName, favorite }`, `D-025`) |
-| `PUT` | `/api/progress/:bookId` | Có* | Upsert tiến độ đọc (`chapterId`, `chapterIndex`, `scrollRatio`, `scrollTop`, `completed`, `updatedAt`) |
-| `DELETE` | `/api/progress/:bookId` | Có* | Xoá tiến độ đọc của 1 sách |
-| `GET` / `HEAD` | `/api/files/:key` | Có* | Stream object `books/*` hoặc `covers/*` từ R2; hỗ trợ `Range` (`206`), `ETag`, `Cache-Control: private, max-age=31536000, immutable` |
+| `GET` | `/api/health` | Không | Kiểm tra sống, trả `{ ok, authRequired, discordReady, limitBytes }` |
+| `POST` | `/api/discord/interactions` | Chữ ký `Ed25519` | Webhook Discord HTTP Interactions: xử lý `PING`, lệnh `/setup-bell` (Admin Discord), lệnh `/key` & nút `🔔 Nhận chìa khoá` cấp mã 12 ký tự ẩn hạn 5 phút (`D-026`) |
+| `POST` | `/api/auth/login` | Không | Nhận `passcode` Admin (cấp `owner` 30 ngày) **hoặc** mã key Discord 12 ký tự hạn 5 phút dùng 1 lần (cấp `guest` 24 giờ & đóng phiên cũ của cùng Discord user), trả `{ token, role, expiresAt }` |
+| `GET` | `/api/auth/session` | Có (Owner + Guest) | Kiểm tra phiên hiện hành, trả `{ ok, role, expiresAt }` |
+| `GET` | `/api/storage` | Chỉ Owner | Trả thống kê dung lượng `{ usedBytes, limitBytes, remainingBytes, bookCount }` |
+| `GET` | `/api/books` | Có (Owner + Guest) | Trả `books`, `progress` (của riêng `owner` hoặc của riêng `discord_user_id`), `shelfCovers`, `favoriteShelves`, `storage` và `session: { role, expiresAt }` |
+| `PUT` | `/api/books/:id/file` | Chỉ Owner | Stream file sách (tối đa 350 MB) lên R2, kiểm tra hạn mức 9.0 GiB trước & sau khi ghi, tạo bản ghi D1 |
+| `PUT` | `/api/books/:id/cover` | Chỉ Owner | Stream ảnh bìa JPEG (< 5 MB) lên R2, xoá ảnh bìa cũ trên R2, cập nhật D1 |
+| `PATCH` | `/api/books/:id` | Chỉ Owner | Cập nhật metadata sách (`title`, `author`, `shelf`, `description`, `cover_color`) |
+| `DELETE` | `/api/books/:id` | Chỉ Owner | Xoá 1 sách: xoá object file + cover trên R2 và xoá dòng ở `reading_progress`, `guest_reading_progress`, `books` |
+| `POST` | `/api/books/bulk-delete` | Chỉ Owner | Xoá hàng loạt sách theo `ids` trên cả R2 và D1 (chia lô `<= 50` ID trong `DB.batch`) |
+| `POST` | `/api/books/bulk-shelf` | Chỉ Owner | Chuyển kệ hàng loạt theo `{ ids, shelf }` (`shelf <= 120` ký tự, chia lô `<= 50` ID mỗi câu `UPDATE` trong `DB.batch`, trả `{ updatedIds, shelf }`) |
+| `POST` | `/api/shelves/rename` | Chỉ Owner | Đổi tên kệ hàng loạt không phân biệt hoa/thường tiếng Việt (`oldName` → `newName`) và tự hợp nhất `shelf_prefs` |
+| `PUT` | `/api/shelves/cover` | Chỉ Owner | Lưu hoặc đặt lại tập đại diện làm ảnh bìa kệ (`{ shelfName, bookId }`, `D-025`) |
+| `PUT` | `/api/shelves/favorite` | Chỉ Owner | Ghim hoặc bỏ ghim kệ yêu thích lên đầu Trang chủ & Thư viện (`{ shelfName, favorite }`, `D-025`) |
+| `PUT` | `/api/progress/:bookId` | Có (Owner + Guest) | Upsert tiến độ đọc vào `reading_progress` (`owner`) hoặc `guest_reading_progress` (`guest` theo `discord_user_id`) |
+| `DELETE` | `/api/progress/:bookId` | Có (Owner + Guest) | Xoá tiến độ đọc của 1 sách trong bảng tương ứng vai trò |
+| `GET` / `HEAD` | `/api/files/:key` | Có (Owner + Guest) | Stream object `books/*` hoặc `covers/*` từ R2; hỗ trợ `Range` (`206`), `ETag`, `Cache-Control: private, max-age=31536000, immutable` |
 
 ## 4. Data Model (`workers/r2-storage/schema.sql`)
 
@@ -159,7 +170,7 @@ flowchart LR
   - `cover_color TEXT NOT NULL DEFAULT '#4f46e5'`, `cover_key TEXT`, `file_key TEXT NOT NULL`
   - `file_type TEXT NOT NULL CHECK (file_type IN ('epub', 'pdf', 'docx'))`
   - `file_size INTEGER NOT NULL DEFAULT 0`, `cover_size INTEGER NOT NULL DEFAULT 0`, `created_at TEXT NOT NULL`
-- **`reading_progress`**:
+- **`reading_progress`** *(dành riêng cho Admin/Owner)*:
   - `book_id TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE`
   - `chapter_id TEXT NOT NULL`, `chapter_index INTEGER NOT NULL DEFAULT 0`, `chapter_title TEXT`, `total_chapters INTEGER`
   - `scroll_ratio REAL NOT NULL DEFAULT 0`, `scroll_top REAL NOT NULL DEFAULT 0`
@@ -169,7 +180,14 @@ flowchart LR
   - `cover_book_id TEXT` (`NULL` = tự động lấy Tập 1)
   - `is_favorite INTEGER NOT NULL DEFAULT 0` (`1` = ghim lên đầu Trang chủ & Thư viện)
   - `updated_at INTEGER NOT NULL`
-- **Indexes**: `idx_books_shelf`, `idx_books_created_at`, `idx_progress_updated_at`.
+- **`discord_access`** (`migrations/0003_discord_guest_access.sql`, `D-026` — tối đa 1 dòng/tài khoản Discord):
+  - `discord_user_id TEXT PRIMARY KEY`, `discord_username TEXT NOT NULL`
+  - `key_hash TEXT` (băm `SHA-256` của mã key 12 ký tự, `NULL` ngay sau khi đổi key), `key_issued_at INTEGER`, `key_expires_at INTEGER` (hạn 5 phút)
+  - `active_session_id TEXT`, `session_expires_at INTEGER` (hạn 24 giờ; đổi key mới sẽ ghi đè đóng phiên cũ), `updated_at INTEGER NOT NULL`
+- **`guest_reading_progress`** (`migrations/0003_discord_guest_access.sql`, `D-026` — cách ly vật lý khỏi `reading_progress` của Admin):
+  - `discord_user_id TEXT NOT NULL`, `book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE`, `PRIMARY KEY (discord_user_id, book_id)`
+  - `chapter_id TEXT NOT NULL`, `chapter_index INTEGER NOT NULL DEFAULT 0`, `chapter_title TEXT`, `total_chapters INTEGER`, `scroll_ratio REAL NOT NULL DEFAULT 0`, `scroll_top REAL NOT NULL DEFAULT 0`, `completed INTEGER NOT NULL DEFAULT 0`, `updated_at INTEGER NOT NULL`
+- **Indexes**: `idx_books_shelf`, `idx_books_created_at`, `idx_progress_updated_at`, `idx_discord_access_key_hash`, `idx_guest_progress_user_updated`.
 
 ## 5. Biến môi trường & cấu hình
 
@@ -178,11 +196,15 @@ flowchart LR
 | `VITE_API_URL` | Frontend | Env var (public) | `.env.local` (dev), GitHub Actions Secret (deploy) | URL Cloudflare Worker. Khi trống: chỉ cho phép Local-First ở `DEV`; bản production báo lỗi cấu hình rõ ràng (D-005). |
 | `VITE_BASE_PATH` | Frontend | Env var (public) | `.github/workflows/deploy.yml` (`/`) | Base path của Vite build cho domain `ofu.lol`. |
 | `APP_ORIGINS` | Worker | Var | `workers/r2-storage/wrangler.toml` `[vars]` | Danh sách origin được phép CORS (`https://ofu.lol`, `http://localhost:5173`, `http://127.0.0.1:5173`). |
+| `PUBLIC_APP_URL` | Worker | Var | `workers/r2-storage/wrangler.toml` `[vars]` | URL cổng thư viện (`https://ofu.lol`) hiển thị trong tin nhắn Bot Discord trả key. |
 | `STORAGE_LIMIT_BYTES` | Worker | Var | `workers/r2-storage/wrangler.toml` `[vars]` | Chốt chặn cứng `9663676416` (9.0 GiB). |
 | `BOOKS_BUCKET` | Worker | R2 Binding | `workers/r2-storage/wrangler.toml` | Bucket R2 `arcane-library-books`. |
 | `DB` | Worker | D1 Binding | `workers/r2-storage/wrangler.toml` | D1 database `library-db` (`1718c115-0bad-4fd2-b1eb-43a2b63b4ce9`, region APAC). |
-| `ACCESS_PASSCODE` | Worker | Secret | `wrangler secret put` (prod) / `.dev.vars` (local) | Mật mã đăng nhập thư viện (thiếu sẽ trả `503` fail-closed). |
-| `AUTH_SECRET` | Worker | Secret | `wrangler secret put` (prod) / `.dev.vars` (local) | Khoá ký HMAC-SHA256 cho session token 30 ngày (nếu thiếu chỉ fallback về `ACCESS_PASSCODE`, không dùng chuỗi cố định). |
+| `ACCESS_PASSCODE` | Worker | Secret | `wrangler secret put` (prod) / `.dev.vars` (local) | Mật mã quản trị viên cấp quyền `owner` 30 ngày + mở khoá 3D (thiếu sẽ trả `503` fail-closed). |
+| `AUTH_SECRET` | Worker | Secret | `wrangler secret put` (prod) / `.dev.vars` (local) | Khoá ký HMAC-SHA256 cho session token (nếu thiếu chỉ fallback về `ACCESS_PASSCODE`, không dùng chuỗi cố định). |
+| `DISCORD_PUBLIC_KEY` | Worker | Secret | `wrangler secret put` (prod) / `.dev.vars` (local) | Public Key `Ed25519` của Discord Application dùng xác thực mọi webhook tới `/api/discord/interactions` (`D-026`). |
+| `DISCORD_GUILD_ID` | Worker | Secret | `wrangler secret put` (prod) / `.dev.vars` (local) | ID máy chủ Discord được phép bấm chuông nhận chìa khoá (`D-026`). |
+| `DISCORD_BOT_TOKEN` | Worker | Secret | `wrangler secret put` (prod) | Bot Token dùng khi chạy `/setup-bell` đăng bảng chuông cố định vào kênh Discord (và dùng 1 lần ở local với `npm run discord:register`). |
 | `ALLOW_INSECURE_DEV_NO_AUTH` | Worker | Var (tuỳ chọn dev) | `.dev.vars` (chỉ local dev) | Đặt `"true"` (và không đặt `ACCESS_PASSCODE`) để tắt auth khi dev local; tuyệt đối không đặt trên production. |
 
 ## 6. Công cụ đã có — cấm viết lại
@@ -192,8 +214,8 @@ flowchart LR
 | `formatBytes(bytes)` | `src/lib/api.ts` | Định dạng dung lượng byte sang `B / KB / MB / GB / TB`. |
 | `sortBooksByTitle(books)` | `src/lib/api.ts` | Sắp xếp danh sách sách theo bảng chữ cái tiếng Việt + số tự nhiên (`numeric: true`, chuẩn hoá dấu phân cách, tie-break `variant` và tự ghép nhãn tập thập phân lỡ rơi sang `author` qua `getBookSortTitle`). |
 | `groupBooksIntoShelves(books)` | `src/lib/api.ts` | Gom sách thành các `ShelfGroup` theo tên kệ (không phân biệt hoa thường tiếng Việt). |
-| `getAuthToken()` / `setAuthToken()` / `isAuthError()` | `src/lib/api.ts` | Quản lý token đăng nhập và nhận diện lỗi `401`. |
-| `checkHealth()` / `loginWithPasscode()` | `src/lib/api.ts` | Kiểm tra Worker & đăng nhập passcode. |
+| `getAuthToken()` / `setAuthToken()` / `inspectStoredSession()` / `getActiveAuthSession()` / `formatRemainingSessionTime()` / `isAuthError()` | `src/lib/authSession.ts` | Quản lý token đăng nhập, kiểm tra hết hạn phiên 24 giờ/30 ngày, nhận diện lỗi `401` và định dạng thời lượng phiên còn lại. |
+| `apiFetch()` / `checkHealth()` / `loginWithPasscode()` | `src/lib/authSession.ts` (tái xuất ở `src/lib/api.ts`) | HTTP client đính Bearer token, kiểm tra Worker & đăng nhập bằng cả mật mã Admin lẫn mã key Discord 12 ký tự. |
 | `fetchLibraryState()` / `uploadBook()` / `updateBookMetadata()` / `updateBookCover()` / `renameShelfAll()` / `bulkUpdateBooksShelf()` / `deleteBooks()` | `src/lib/api.ts` | Toàn bộ thao tác thư viện (tự động xử lý cache IndexedDB, chuyển kệ hàng loạt & hạn mức 9.0 GiB). |
 | `fetchBookBlobCached()` / `fetchCoverBlobCached()` | `src/lib/api.ts` | Tải sách/ảnh bìa ưu tiên IndexedDB (0ms), cache tự động khi tải từ R2. |
 | `saveReadingProgress()` / `clearReadingProgress()` | `src/lib/api.ts` | Lưu/xoá tiến độ đọc đồng thời local và D1. |
@@ -238,4 +260,7 @@ flowchart LR
   - **Thế giới 3D Aincrad (`D-019` → `D-024`) + bản vá `fix/post-4a-cleanup`:**
     - Thế giới 4 tầng mặc định (PA-3, sẵn sàng mở 10–100 tầng ở PR 4C) với **27 tài sản `.glb` thực dùng** cục bộ (WebP 1024 + Meshopt, **0 CDN**, đã dọn `mountain-stairs.glb` thừa), 12 nội thất PBR đa dạng theo tầng, 5 NPC anime 0 T-pose/A-pose (`Asuna` đi dạo thật `Idle`+`Walk`), Phòng Boss kép (`boss-arena.glb` Colosseum kín 360° cho Tầng 1–3 & Đấu trường Đảo Bay `boss-battlefield.glb` + Phong Long Stormterror bay vỗ 6 cánh GPU cho Tầng 4), bầu trời 2K + chân trời Aincrad 360°, IBL nội bộ 0 CDN.
     - `Library3DHost` giữ sống ở nền với `paused=true` (**0 FPS**, tạm ngưng âm thanh, ẩn HUD, khoá phím `PlayerRig`) khi mở bất kỳ modal nào hoặc khi mở đọc sách (đóng sách quay về đúng vị trí Kirito trong `0 ms` không giải mã lại GLB); tự kích hoạt `requestRender` ngay khi texture PBR tải xong ở chế độ `prefers-reduced-motion`.
-- **Kiểm định tổng thể XANH 100%**: `npm run typecheck`, `npm run lint` (0/0, mọi file `<= 500` dòng hiệu dụng), `npm run build` (`index-*.js` <= `86.04 kB gzip`, **0 B `three`**, **0 CDN**), Worker `tsc --noEmit` XANH.
+- **Chia sẻ Thư viện qua Bot Discord (`feat/discord-key-access`, `D-026`):**
+  - Webhook Discord HTTP Interactions `POST /api/discord/interactions` chạy trực tiếp trên Cloudflare Worker (`$0`, online 24/7, xác thực chữ ký `Ed25519` bằng `crypto.subtle` 0 thư viện ngoài): lệnh `/setup-bell` đặt bảng nút `🔔 Nhận chìa khoá`, thành viên thuộc `DISCORD_GUILD_ID` bấm nút nhận tin nhắn ẩn (`flags: 64`) chứa key 12 ký tự hạn **5 phút** dùng **1 lần**.
+  - Hệ thống 2 vai trò tại cùng 1 ô đăng nhập `AuthGate.tsx`: `ACCESS_PASSCODE` cấp `owner` **30 ngày** (toàn quyền kho sách/kệ + **3D Aincrad**); key Discord cấp `guest` **24 giờ** (tự đóng phiên cũ của cùng Discord user, **khoá cứng Chỉ Đọc 2D**, chặn `403` mọi API ghi kho chung và lưu tiến độ đọc riêng trong `guest_reading_progress`).
+- **Kiểm định tổng thể XANH 100%**: `npm run typecheck`, `npm run lint` (0/0, mọi file `<= 500` dòng hiệu dụng), `npm run build` (`index-*.js` = `83.41 kB gzip <= 86.04 kB`, **0 B `three`**, **0 CDN**), Worker `tsc --noEmit` & bộ 10 bài E2E `workerd + D1 + Ed25519` XANH.
