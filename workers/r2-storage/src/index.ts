@@ -25,6 +25,8 @@ import {
   renameShelfCaseInsensitive,
   safeDecodeHeader,
   upsertReadingProgress,
+  upsertShelfCover,
+  upsertShelfFavorite,
 } from './booksDb';
 
 function resolveAllowedOrigin(request: Request, env: Env): string | null {
@@ -332,6 +334,26 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
       newName?: unknown;
     } | null;
     const result = await renameShelfCaseInsensitive(env, body?.oldName, body?.newName);
+    return jsonResponse(result, 200, origin);
+  }
+
+  // Upsert or reset representative shelf cover book ID (D-025)
+  if (pathname === '/api/shelves/cover' && request.method === 'PUT') {
+    const body = (await request.json().catch(() => null)) as {
+      shelfName?: unknown;
+      bookId?: unknown;
+    } | null;
+    const result = await upsertShelfCover(env, body?.shelfName, body?.bookId);
+    return jsonResponse(result, 200, origin);
+  }
+
+  // Pin / unpin favorite shelf at top of Home & Library tabs (D-025)
+  if (pathname === '/api/shelves/favorite' && request.method === 'PUT') {
+    const body = (await request.json().catch(() => null)) as {
+      shelfName?: unknown;
+      favorite?: unknown;
+    } | null;
+    const result = await upsertShelfFavorite(env, body?.shelfName, body?.favorite);
     return jsonResponse(result, 200, origin);
   }
 

@@ -5,7 +5,9 @@ import {
   BookOpen,
   FolderEdit,
   FolderInput,
+  Image,
   Search,
+  Star,
   Trash2,
   X,
 } from 'lucide-react';
@@ -30,6 +32,8 @@ interface ShelfDetailViewProps {
   onToggleSelectionMode: () => void;
   onEditBook?: (book: Book) => void;
   onRenameShelf?: (shelfName: string) => void;
+  onChangeShelfCover?: (summary: ShelfSummary) => void;
+  onToggleFavorite?: (shelfName: string, nextFavorite: boolean) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
 }
@@ -47,12 +51,15 @@ export function ShelfDetailView({
   onToggleSelectionMode,
   onEditBook,
   onRenameShelf,
+  onChangeShelfCover,
+  onToggleFavorite,
   onMoveSelectedToShelf,
   onDeleteSelected,
 }: ShelfDetailViewProps) {
   const {
     shelf,
     coverBook,
+    isFavorite,
     authorLabel,
     bookCount,
     completedCount,
@@ -136,7 +143,7 @@ export function ShelfDetailView({
 
       {/* Hero thông tin kệ */}
       <section className="moonlit-card flex flex-col gap-5 rounded-2xl border border-line bg-surface p-4 shadow-sm sm:flex-row sm:items-start sm:p-5 dark:border-line-strong/60">
-        <div className="relative aspect-[3/4] w-28 shrink-0 self-center overflow-hidden rounded-xl border border-line bg-subtle shadow-sm sm:w-32 sm:self-start">
+        <div className="group relative aspect-[3/4] w-28 shrink-0 self-center overflow-hidden rounded-xl border border-line bg-subtle shadow-sm sm:w-32 sm:self-start">
           {showImage ? (
             <img
               src={coverUrl!}
@@ -158,6 +165,19 @@ export function ShelfDetailView({
               </p>
               <p className="truncate pl-2 text-[10px] text-[#e6d5b8]/85">{authorLabel}</p>
             </div>
+          )}
+
+          {onChangeShelfCover && shelf.books.some((b) => Boolean(b.cover_key)) && (
+            <button
+              type="button"
+              onClick={() => onChangeShelfCover(summary)}
+              aria-label="Chọn ảnh bìa kệ"
+              title="Chọn ảnh bìa từ một tập trong kệ"
+              className="absolute inset-x-1.5 bottom-1.5 inline-flex items-center justify-center gap-1 rounded-lg border border-white/20 bg-black/75 px-2 py-1 text-[11px] font-medium text-white opacity-90 backdrop-blur-sm transition-opacity hover:bg-black/90 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
+            >
+              <Image className="h-3 w-3 shrink-0" />
+              <span>Đổi bìa</span>
+            </button>
           )}
         </div>
 
@@ -205,6 +225,26 @@ export function ShelfDetailView({
               </button>
             )}
 
+            {onToggleFavorite && (
+              <button
+                type="button"
+                onClick={() => onToggleFavorite(shelf.name, !isFavorite)}
+                aria-pressed={isFavorite}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-medium transition-colors ${
+                  isFavorite
+                    ? 'border-amber-500/45 bg-amber-500/12 text-amber-700 hover:bg-amber-500/20 dark:border-amber-400/40 dark:text-amber-300'
+                    : 'border-line bg-canvas text-ink hover:border-line-strong hover:bg-subtle'
+                }`}
+              >
+                <Star
+                  className={`h-4 w-4 ${
+                    isFavorite ? 'fill-amber-500 text-amber-500 dark:fill-amber-400 dark:text-amber-400' : 'text-ink-muted'
+                  }`}
+                />
+                <span>{isFavorite ? 'Đã yêu thích' : 'Yêu thích'}</span>
+              </button>
+            )}
+
             {onRenameShelf && (
               <button
                 type="button"
@@ -213,6 +253,17 @@ export function ShelfDetailView({
               >
                 <FolderEdit className="h-4 w-4 text-ink-muted" />
                 <span>Đổi tên kệ</span>
+              </button>
+            )}
+
+            {onChangeShelfCover && shelf.books.some((b) => Boolean(b.cover_key)) && (
+              <button
+                type="button"
+                onClick={() => onChangeShelfCover(summary)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-canvas px-3.5 py-2 text-sm font-medium text-ink transition-colors hover:border-line-strong hover:bg-subtle"
+              >
+                <Image className="h-4 w-4 text-ink-muted" />
+                <span>Đổi ảnh bìa kệ</span>
               </button>
             )}
           </div>

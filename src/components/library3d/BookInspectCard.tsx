@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import type { Book, ReadingProgress } from '@/types';
 import { formatBytes } from '@/lib/api';
-import { pickCoverColor } from '@/lib/bookMetadata';
+import { getBookSortTitle, getDisplayAuthor, pickCoverColor } from '@/lib/bookMetadata';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 import { computeBookProgressPercent } from '@/hooks/useLibraryViewState';
 
@@ -57,6 +57,8 @@ export function BookInspectCard({
   }, [book.cover_key]);
 
   const showCover = Boolean(coverUrl && !imgFailed);
+  const displayTitle = getBookSortTitle(book);
+  const displayAuthor = getDisplayAuthor(book.author);
   const fallbackColor = book.cover_color || pickCoverColor(book.id);
   const percent = computeBookProgressPercent(book, progress);
   const chapterCaption = getChapterCaption(book, progress);
@@ -98,7 +100,7 @@ export function BookInspectCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-1.5">
             <h3 className="line-clamp-2 font-display text-sm font-semibold leading-snug text-ink">
-              {book.title}
+              {displayTitle}
             </h3>
             {pinned && (
               <button
@@ -113,7 +115,7 @@ export function BookInspectCard({
             )}
           </div>
 
-          <p className="mt-0.5 truncate text-xs text-ink-muted">{book.author}</p>
+          <p className="mt-0.5 truncate text-xs text-ink-muted">{displayAuthor}</p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-faint">
             <span className="max-w-[145px] truncate rounded-md border border-line bg-canvas px-1.5 py-0.5 text-ink-muted">
               {book.shelf}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, CheckCircle2, Pencil } from 'lucide-react';
 import type { Book, ReadingProgress } from '@/types';
-import { pickClothCoverColor } from '@/lib/bookMetadata';
+import { getBookSortTitle, getDisplayAuthor, pickClothCoverColor } from '@/lib/bookMetadata';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 import { computeBookProgressPercent } from '@/hooks/useLibraryViewState';
 
@@ -77,6 +77,8 @@ export function BookCard({
 
   const coverUrl = useCoverUrl(book.cover_key, isNearViewport);
   const showImage = Boolean(coverUrl && !imgFailed);
+  const displayTitle = getBookSortTitle(book);
+  const displayAuthor = getDisplayAuthor(book.author);
   const clothColor = pickClothCoverColor(`${book.id}-${book.title}`);
   const percent = computeBookProgressPercent(book, progress);
   const chapterLabel = getProgressChapterLabel(book, progress);
@@ -128,12 +130,12 @@ export function BookCard({
                 compact ? 'line-clamp-3 text-[10px]' : 'line-clamp-4 text-sm'
               }`}
             >
-              {book.title}
+              {displayTitle}
             </p>
             {!compact && <span className="mt-2 block h-px w-6 bg-[#e6d5b8]/45" />}
           </div>
           {!compact && (
-            <p className="truncate pl-2.5 pb-1 text-[11px] text-[#e6d5b8]/85">{book.author}</p>
+            <p className="truncate pl-2.5 pb-1 text-[11px] text-[#e6d5b8]/85">{displayAuthor}</p>
           )}
         </div>
       )}
@@ -215,9 +217,9 @@ export function BookCard({
         {renderCover(true)}
         <div className="min-w-0 flex-1">
           <h3 className="line-clamp-2 font-display text-sm font-semibold leading-snug text-ink transition-colors group-hover:text-accent">
-            {book.title}
+            {displayTitle}
           </h3>
-          <p className="mt-0.5 truncate text-xs text-ink-muted">{book.author}</p>
+          <p className="mt-0.5 truncate text-xs text-ink-muted">{displayAuthor}</p>
 
           {progress && (
             <div className="mt-2.5 space-y-1.5">
@@ -271,9 +273,9 @@ export function BookCard({
 
       <div className="mt-2.5 space-y-0.5 px-0.5">
         <h3 className="line-clamp-2 text-sm font-medium leading-snug text-ink transition-colors group-hover:text-accent">
-          {book.title}
+          {displayTitle}
         </h3>
-        <p className="truncate text-xs text-ink-muted">{book.author}</p>
+        <p className="truncate text-xs text-ink-muted">{displayAuthor}</p>
         {percent !== null && (
           <div className="flex items-center justify-between gap-1.5 pt-0.5 text-[11px] font-medium text-accent">
             <span className="truncate">{isCompleted ? 'Đã đọc xong' : chapterLabel}</span>
