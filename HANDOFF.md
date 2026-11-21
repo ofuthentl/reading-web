@@ -1,23 +1,23 @@
 # HANDOFF
-Cập nhật: 2026-11-22 00:35 | Nhánh: feat/entrance-and-locked-routes | Build: 🟢 frontend (entry <= 86.04 kB gzip, 0 B three) · 🟢 worker (live) · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: **Hoàn tất cổng `/entrance` & `/locked` (`feat/entrance-and-locked-routes`, `D-027`)** — sẵn sàng mở & merge PR vào `main`.
-Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/entrance-and-locked-routes.md
+Cập nhật: 2026-11-22 02:05 | Nhánh: feat/guest-content-protection | Build: 🟢 frontend (entry 83.41 kB <= 86.04 kB gzip, 0 B three) · 🟢 worker · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: **Lập kế hoạch chống Crawl / Đánh cắp nội dung ở chế độ `guest` (`feat/guest-content-protection`, `D-028`)** — chờ người dùng duyệt plan trước khi code Phase 1.
+Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/guest-content-protection.md
 
 ## Đang làm dở
-- Đã hoàn tất trọn vẹn cả 2 Phase trên nhánh `feat/entrance-and-locked-routes` (`D-027`):
-  1. **Định tuyến tĩnh GitHub Pages (`src/lib/gateRoutes.ts`, `vite.config.ts`, `index.html`):** xuất `dist/entrance/index.html`, `dist/locked/index.html` và `dist/404.html` (`HTTP 200 OK` khi mở thẳng `/entrance` từ Discord hoặc F5, tốn `0 B` thư viện ngoài).
-  2. **Giao diện cổng tối giản kiểu TMW (`src/components/AuthGate.tsx`, `src/App.tsx`):**
-     - **`/locked` (`Ofu's Library Closed.`):** tự động đón mọi lượt truy cập chưa đăng nhập vào `/`, đăng xuất, hết hạn 24 giờ hoặc đóng phiên `401`; hoàn toàn không có ô nhập hay nút sang `/entrance`.
-     - **`/entrance` (`Ofu's Library Entrance.`):** nền giấy kẻ dọc + chữ chìm `書庫` + dấu triện đỏ, khung `ACCESS CODE` 12 ô nhận cả key Discord 12 ký tự lẫn `ACCESS_PASSCODE` Admin độ dài bất kỳ, đồng bộ đủ 3 chế độ Sáng/Chiều/Đêm; đăng nhập thành công tự đưa về `/`.
-  3. **Cloudflare Worker (`discord.ts`):** đã deploy live bản cập nhật trỏ link `[cổng thư viện]` về `https://ofu.lol/entrance`.
+- Đã tách nhánh mới `feat/guest-content-protection` từ `main` (sau khi PR #8 `feat/entrance-and-locked-routes` đã merge vào `main`).
+- Đã ghi quyết định kiến trúc **`D-028`** vào `docs/DECISIONS.md` và hoàn tất bản kế hoạch chi tiết 4 Phase tại `docs/plans/guest-content-protection.md`:
+  - **Phase 1:** Hạ tầng Worker (`0004_guest_protection.sql`, khoá `403` `/api/files/books/*` với `guest`, Token Bucket chống bot không giới hạn tổng chương/ngày, cắt byte-range chương/ảnh từ R2 mã hoá `AES-256-GCM`, nhúng & truy vết thuỷ vân ẩn 32-bit theo `discord_user_id`).
+  - **Phase 2:** Bộ đóng gói `GuestPack` cho `EPUB` & `DOCX` (`0 B` nhân bản ảnh nhờ bảng offset ZIP) + tự tạo khi Admin upload sách & ngắt IndexedDB sách cho `guest`.
+  - **Phase 3:** Trình đọc `<canvas>` 2D nhiễu vân giấy + thuỷ vân nổi `discord_username` (`GuestCanvasReader` nạp lười `0 B` ở entry; Admin giữ nguyên 100% `ReaderView` DOM + Cache `0ms`).
+  - **Phase 4:** Modal Bảo mật Admin (`AdminProtectionModal`: đồng bộ 1 chạm cho sách cũ trên R2 + quét văn bản truy vết thủ phạm Discord + khoá/mở khoá tài khoản) & kiểm thử E2E.
 
 ## Bước tiếp theo
-1. Mở & merge Pull Request `feat/entrance-and-locked-routes` → `main` để xuất bản `/entrance` và `/locked` lên `ofu.lol`.
-2. *(Tuỳ chọn)* Xoá bảng chuông cũ trong kênh Discord và gõ lại `/setup-bell` 1 lần để bảng cố định cũng cập nhật link sang `https://ofu.lol/entrance` (các tin nhắn ẩn trả key mới đã tự trỏ về `/entrance` rồi).
+1. Chờ người dùng duyệt `docs/plans/guest-content-protection.md`.
+2. Sau khi được duyệt: triển khai lần lượt Phase 1 → Phase 4, mỗi Phase commit riêng kèm kiểm định xanh và cập nhật `HANDOFF.md`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **`feat/entrance-and-locked-routes` (`D-027`):** tách cổng `Ofu's Library Entrance.` (`/entrance`) và `Ofu's Library Closed.` (`/locked`).
+- **PR #8 (`feat/entrance-and-locked-routes`, `D-027`):** đã merge vào `main` (tách cổng `/entrance` & `/locked`).
 - **PR #7 (`feat/discord-key-access`, `D-026`):** đã merge vào `main`.
