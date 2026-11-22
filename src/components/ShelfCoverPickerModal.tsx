@@ -43,7 +43,7 @@ function VolumeCoverThumb({
           : 'hover:bg-subtle'
       }`}
     >
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-lg border border-line bg-subtle shadow-sm">
+      <div className="relative aspect-[7/10] w-full overflow-hidden rounded-lg border border-line bg-subtle shadow-sm">
         {coverUrl && !imgFailed ? (
           <img
             src={coverUrl}
@@ -164,18 +164,18 @@ export function ShelfCoverPickerModal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
               {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Image className="h-5 w-5" />}
             </div>
-            <div>
+            <div className="min-w-0 flex-1">
               <h2
                 id="shelf-cover-picker-title"
                 className="font-display text-lg font-semibold text-ink"
               >
                 Chọn ảnh bìa kệ
               </h2>
-              <p className="text-xs text-ink-muted">
+              <p className="mt-0.5 line-clamp-2 text-xs text-ink-muted" title={shelf.name}>
                 Chọn bìa của một tập bất kỳ trong kệ <strong className="text-ink">{shelf.name}</strong>
               </p>
             </div>
@@ -186,7 +186,7 @@ export function ShelfCoverPickerModal({
             disabled={saving}
             onClick={onClose}
             aria-label="Đóng cửa sổ chọn ảnh bìa kệ"
-            className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink disabled:opacity-40"
+            className="shrink-0 rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink disabled:opacity-40"
           >
             <X className="h-4 w-4" />
           </button>

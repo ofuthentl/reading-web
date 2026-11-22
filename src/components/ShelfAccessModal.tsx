@@ -232,12 +232,13 @@ export function ShelfAccessModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-crimson-accent">
               PHÂN QUYỀN ĐỌC THEO BỘ
             </p>
             <h2
               id="shelf-access-modal-title"
+              title={shelf.name}
               className="mt-0.5 truncate font-display text-lg font-semibold text-ink sm:text-xl"
             >
               {shelf.name}
@@ -251,7 +252,7 @@ export function ShelfAccessModal({
             disabled={saving}
             onClick={onClose}
             aria-label="Đóng cửa sổ phân quyền"
-            className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink disabled:opacity-45"
+            className="shrink-0 rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink disabled:opacity-45"
           >
             <X className="h-4 w-4" />
           </button>

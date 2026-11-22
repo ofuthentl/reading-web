@@ -117,7 +117,7 @@ export function BookInfoModal({
 
         <div className="scrollbar-thin flex-1 overflow-y-auto px-5 py-5">
           <div className="grid gap-5 sm:grid-cols-[9.25rem_1fr]">
-            <div className="relative mx-auto aspect-[3/4] w-36 overflow-hidden rounded-xl border border-line bg-subtle shadow-sm sm:mx-0 sm:w-full">
+            <div className="relative mx-auto aspect-[7/10] w-36 overflow-hidden rounded-xl border border-line bg-subtle shadow-sm sm:mx-0 sm:w-full">
               {coverUrl ? (
                 <img src={coverUrl} alt={book.title} className="h-full w-full object-cover" />
               ) : (

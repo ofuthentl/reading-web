@@ -342,7 +342,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     const storage = await getStorageStats(env);
     assertQuota(storage.usedBytes - existing.cover_size, declaredSize, storage.limitBytes);
 
-    const coverKey = `covers/${bookId}-${Date.now()}.jpg`;
+    const coverKey = `covers/${bookId}-${Date.now()}-v2.jpg`;
     const putResult = await env.BOOKS_BUCKET.put(coverKey, request.body, {
       httpMetadata: { contentType: 'image/jpeg' },
     });

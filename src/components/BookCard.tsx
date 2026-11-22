@@ -98,7 +98,7 @@ export function BookCard({
       onPointerMove={compact ? undefined : handleCoverTiltMove}
       onPointerLeave={compact ? undefined : handleCoverTiltLeave}
       onPointerCancel={compact ? undefined : handleCoverTiltLeave}
-      className={`relative aspect-[3/4] overflow-hidden rounded-lg border border-line bg-subtle shadow-sm ${
+      className={`relative aspect-[7/10] overflow-hidden rounded-lg border border-line bg-subtle shadow-sm ${
         compact
           ? 'w-[4.5rem] shrink-0 transition-all duration-300 group-hover:-translate-y-0.5 group-hover:border-line-strong group-hover:shadow-md'
           : 'tilt-card w-full group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.32)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]'
@@ -111,7 +111,7 @@ export function BookCard({
           loading="lazy"
           decoding="async"
           onError={() => setImgFailed(true)}
-          className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.045]"
+          className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.03]"
         />
       ) : (
         <div
