@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   BarChart3,
-  BookOpen,
   CheckSquare,
   Clock,
   HardDrive,
@@ -132,9 +131,14 @@ export function LibraryHeader({
         {/* Thương hiệu + Thanh tab điều hướng (Desktop) */}
         <div className="flex min-w-0 items-center gap-2.5 sm:shrink-0 sm:gap-3 lg:gap-4">
           <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent sm:h-9 sm:w-9">
-              <BookOpen className="h-4 w-4 sm:h-5 sm:w-5" />
-            </div>
+            <img
+              src={`${import.meta.env.BASE_URL}logo-128.png`}
+              alt=""
+              width={40}
+              height={40}
+              decoding="async"
+              className="h-8 w-8 shrink-0 select-none object-contain sm:h-10 sm:w-10"
+            />
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="truncate whitespace-nowrap font-display text-base font-semibold tracking-tight text-ink sm:text-xl">
