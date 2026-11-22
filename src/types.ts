@@ -14,6 +14,7 @@ export type Book = {
   cover_size: number;
   created_at: string;
   guest_ready?: boolean;
+  guest_locked?: boolean;
 };
 
 export type Chapter = {
@@ -61,6 +62,7 @@ export type ShelfGroup = {
 export type ReaderTheme = 'paper' | 'sepia' | 'dark' | 'midnight';
 export type ReaderFont = 'serif' | 'sans' | 'mono';
 export type ReaderWidth = 'narrow' | 'medium' | 'wide';
+export type ReaderLayoutMode = 'scroll' | 'paginated';
 
 export type ReaderSettings = {
   theme: ReaderTheme;
@@ -68,11 +70,15 @@ export type ReaderSettings = {
   fontSizePx: number;
   lineHeight: number;
   width: ReaderWidth;
+  layoutMode: ReaderLayoutMode;
   sideTapNavigation: boolean;
 };
 
 export type ViewMode = '3d' | '2d';
-export type LibraryTab = 'home' | 'library';
+export type LibraryTab = 'home' | 'library' | 'support';
+export type LibraryStatusFilter = 'all' | 'reading' | 'unread' | 'completed';
+export type LibraryFormatFilter = 'all' | BookFileType;
+export type LibrarySortMode = 'title_asc' | 'recent_upload' | 'recent_read' | 'volume_desc';
 
 export type AuthRole = 'owner' | 'guest';
 
@@ -108,4 +114,44 @@ export type GuestChapterPayload = {
   chapterNumber: number;
   watermarkLabel: string;
   blocks: GuestBlock[];
+};
+
+export type BookBookmark = {
+  id: string;
+  bookId: string;
+  chapterId: string;
+  chapterIndex: number;
+  chapterTitle?: string;
+  scrollRatio: number;
+  label: string;
+  note: string | null;
+  createdAt: number;
+};
+
+export type GuestBookSearchMatch = {
+  chapterIndex: number;
+  chapterNumber: number;
+  chapterTitle: string;
+  matchCount: number;
+};
+
+export type ShelfAccessMode = 'public' | 'restricted';
+
+export type ShelfAccessSummary = {
+  mode: 'restricted';
+  allowedCount: number;
+};
+
+export type ShelfAccessGrantUser = {
+  discordUserId: string;
+  label: string | null;
+  discordUsername?: string | null;
+  createdAt?: number;
+};
+
+export type ShelfAccessRuleDetail = {
+  shelfKey: string;
+  mode: 'restricted';
+  updatedAt: number;
+  allowedUsers: ShelfAccessGrantUser[];
 };

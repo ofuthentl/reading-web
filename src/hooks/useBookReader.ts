@@ -91,6 +91,14 @@ export function useBookReader({
 
   const openBook = useCallback(
     async (book: Book) => {
+      if (sessionRole === 'guest' && book.guest_locked) {
+        onApiError(
+          new Error('🔒 Bộ truyện này chỉ mở quyền đọc cho thành viên Discord được chỉ định.'),
+          '🔒 Bộ truyện này chỉ mở quyền đọc cho thành viên Discord được chỉ định.',
+        );
+        return;
+      }
+
       if (isCloudMode && sessionRole === 'guest' && book.file_type === 'pdf') {
         onApiError(
           new Error('Định dạng PDF chỉ dành cho Quản trị viên thư viện.'),

@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import {
+  BarChart3,
   BookOpen,
   CheckSquare,
   Clock,
   HardDrive,
+  Heart,
   Home,
   Library,
   LogOut,
@@ -20,6 +22,7 @@ import type { AppTheme } from '@/hooks/useTheme';
 
 interface LibraryHeaderProps {
   storage: StorageStats | null;
+  hideStorage?: boolean;
   bookCount: number;
   loading: boolean;
   theme: AppTheme;
@@ -34,6 +37,7 @@ interface LibraryHeaderProps {
   viewMode?: ViewMode;
   onChangeViewMode?: (mode: ViewMode) => void;
   onCycleTheme: (origin?: { x: number; y: number }) => void;
+  onOpenStats?: () => void;
   onUploadClick?: () => void;
   onProtectionClick?: () => void;
   unprotectedBookCount?: number;
@@ -45,10 +49,12 @@ interface LibraryHeaderProps {
 const NAV_TABS: Array<{ id: LibraryTab; label: string; icon: typeof Home }> = [
   { id: 'home', label: 'Trang chủ', icon: Home },
   { id: 'library', label: 'Thư viện', icon: Library },
+  { id: 'support', label: 'Ủng hộ', icon: Heart },
 ];
 
 export function LibraryHeader({
   storage,
+  hideStorage = false,
   bookCount,
   loading,
   theme,
@@ -63,6 +69,7 @@ export function LibraryHeader({
   viewMode = '2d',
   onChangeViewMode,
   onCycleTheme,
+  onOpenStats,
   onUploadClick,
   onProtectionClick,
   unprotectedBookCount = 0,
@@ -90,7 +97,7 @@ export function LibraryHeader({
       ? 'bg-red-700 dark:bg-red-500'
       : usagePercent >= 75
         ? 'bg-amber-700 dark:bg-amber-500'
-        : 'bg-accent';
+        : 'bg-crimson-accent';
 
   const renderTabButtons = (compact: boolean) =>
     NAV_TABS.map(({ id, label, icon: Icon }) => {
@@ -109,7 +116,11 @@ export function LibraryHeader({
               : 'text-ink-muted hover:bg-subtle/70 hover:text-ink'
           }`}
         >
-          <Icon className={`${compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} ${isActive ? 'text-accent' : ''}`} />
+          <Icon
+            className={`${compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} ${
+              isActive ? (id === 'support' ? 'text-crimson-accent' : 'text-accent') : ''
+            }`}
+          />
           <span>{label}</span>
         </button>
       );
@@ -151,8 +162,8 @@ export function LibraryHeader({
           )}
         </div>
 
-        {/* Thanh dung lượng (Desktop — chỉ hiển thị cho Admin/Owner) */}
-        {isOwner && (
+        {/* Thanh dung lượng (Desktop — chỉ hiển thị cho Admin/Owner khi không dời xuống thân trang) */}
+        {isOwner && !hideStorage && (
           <div
             className={`hidden min-w-[160px] max-w-[240px] flex-1 flex-col gap-1.5 rounded-xl border border-line bg-canvas px-3 py-2 ${
               showTabs ? 'xl:flex' : 'lg:flex'
@@ -258,6 +269,18 @@ export function LibraryHeader({
 
           <ThemeToggle theme={theme} onCycle={onCycleTheme} />
 
+          {onOpenStats && bookCount > 0 && (
+            <button
+              type="button"
+              onClick={onOpenStats}
+              aria-label="Thống kê đọc sách"
+              title="Thống kê đọc sách"
+              className="rounded-xl border border-line bg-canvas p-2 text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink"
+            >
+              <BarChart3 className="h-4 w-4" />
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onRefresh}
@@ -287,14 +310,14 @@ export function LibraryHeader({
           aria-label="Điều hướng thư viện"
           className="border-t border-line/70 bg-surface/90 px-4 py-1.5 md:hidden"
         >
-          <div className="mx-auto grid max-w-7xl grid-cols-2 gap-1.5 rounded-xl border border-line bg-canvas p-1">
+          <div className="mx-auto grid max-w-7xl grid-cols-3 gap-1.5 rounded-xl border border-line bg-canvas p-1">
             {renderTabButtons(true)}
           </div>
         </nav>
       )}
 
-      {/* Thanh dung lượng gọn cho Mobile / Tablet (chỉ hiển thị cho Admin/Owner) */}
-      {isOwner && (
+      {/* Thanh dung lượng gọn cho Mobile / Tablet (chỉ hiển thị cho Admin/Owner khi không dời xuống thân trang) */}
+      {isOwner && !hideStorage && (
         <div
           className={`border-t border-line/70 bg-canvas/60 px-4 py-2 ${
             showTabs ? 'xl:hidden' : 'lg:hidden'

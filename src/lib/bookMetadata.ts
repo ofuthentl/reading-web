@@ -1,13 +1,21 @@
-import type { Book, BookFileType, ReadingProgress, ShelfGroup } from '@/types';
+import type { AuthRole, Book, BookFileType, ReadingProgress, ShelfGroup } from '@/types';
 import {
+  TITLE_ENDS_WITH_BARE_VOL_RE,
   VOLUME_SEGMENT_RE,
   VOLUME_WITH_SUBTITLE_RE,
   cleanShelfLabel,
   inferSingleBookShelf,
+  isLikelyVolumeSubtitle,
   isVolumeOrSubtitleSegment,
 } from '@/lib/shelfPlacement';
 
-export { VOLUME_SEGMENT_RE, VOLUME_WITH_SUBTITLE_RE, isVolumeOrSubtitleSegment };
+export {
+  TITLE_ENDS_WITH_BARE_VOL_RE,
+  VOLUME_SEGMENT_RE,
+  VOLUME_WITH_SUBTITLE_RE,
+  isLikelyVolumeSubtitle,
+  isVolumeOrSubtitleSegment,
+};
 
 const UNKNOWN_AUTHOR = 'Không rõ tác giả';
 
@@ -39,49 +47,82 @@ const CLOTH_COVER_PALETTE = [
  * Trích nhãn số tập (kể cả kèm tiêu đề phụ như `Tập 1：Những Kẻ...`) lỡ bị tách sang trường `author`
  * ở dữ liệu cũ để hiển thị, sắp xếp và nhận diện số tập chính xác mà không cần xoá sách tải lại.
  */
-export function extractMisplacedVolumeFromAuthor(author: string): string | null {
-  const clean = author.trim();
-  if (!clean) return null;
-  if (isVolumeOrSubtitleSegment(clean)) return clean;
-  const firstSegment = clean.split(/\s+[-–—―−]\s+/)[0]?.trim();
-  if (firstSegment && isVolumeOrSubtitleSegment(firstSegment)) {
-    return firstSegment;
-  }
-  return null;
-}
-
 /**
- * Chuẩn hoá tên tác giả khi hiển thị lên thẻ sách / chi tiết sách:
- * nếu trường `author` chứa nhầm tên tập (`Tập 1`, `Tập 1：...`), trả về `Không rõ tác giả`
- * hoặc chỉ giữ phần tên tác giả thật đứng sau (nếu có).
+ * Tách và khôi phục trọn vẹn phần nhãn tập + tiêu đề phụ lỡ bị cắt sang trường `author`
+ * (VD: `author = "Quyển i - Sự Hình Thành Của Ký Ức Là Sự Ngụy Tạo"` hoặc
+ * `title = "Unnamed Memory I"`, `author = "Phù Thủy Trăng Xanh Và Hoàng Tử Bị Nguyền Rủa"`).
  */
-export function getDisplayAuthor(author: string): string {
-  const clean = author.trim();
-  if (!clean) return UNKNOWN_AUTHOR;
-  if (isVolumeOrSubtitleSegment(clean)) return UNKNOWN_AUTHOR;
-  const segments = clean
+export function splitMisplacedTitleAndAuthor(
+  title: string,
+  author: string,
+): { extraTitle: string | null; realAuthor: string } {
+  const cleanTitle = title.trim();
+  const cleanAuthor = author.trim();
+  if (!cleanAuthor || cleanAuthor === UNKNOWN_AUTHOR) {
+    return { extraTitle: null, realAuthor: UNKNOWN_AUTHOR };
+  }
+
+  const parts = cleanAuthor
     .split(/\s+[-–—―−]\s+/)
-    .map((s) => s.trim())
+    .map((p) => p.trim())
     .filter(Boolean);
-  if (segments.length > 1 && isVolumeOrSubtitleSegment(segments[0])) {
-    const rest = segments.slice(1).filter((s) => !isVolumeOrSubtitleSegment(s));
-    return rest.join(' - ').trim() || UNKNOWN_AUTHOR;
+  if (parts.length === 0) {
+    return { extraTitle: null, realAuthor: UNKNOWN_AUTHOR };
   }
-  return clean;
+
+  const moved: string[] = [];
+
+  // 1. Nhặt toàn bộ các vế đầu là nhãn tập (`Quyển i`, `Tập 1`, `I`, `After the End`...)
+  while (parts.length > 0 && isVolumeOrSubtitleSegment(parts[0])) {
+    moved.push(parts.shift()!);
+  }
+
+  // 2. Nếu vừa nhặt nhãn tập trơn (hoặc `title` vốn kết thúc bằng nhãn tập trơn) và còn vế sau là tiêu đề phụ
+  const prevEnd = moved.length > 0 ? moved[moved.length - 1] : cleanTitle;
+  const afterBareVol = Boolean(prevEnd && TITLE_ENDS_WITH_BARE_VOL_RE.test(prevEnd));
+  if (parts.length > 0 && afterBareVol && (parts.length > 1 || isLikelyVolumeSubtitle(parts[0]))) {
+    moved.push(parts.shift()!);
+  } else if (moved.length === 0 && parts.length > 0 && isLikelyVolumeSubtitle(parts[0])) {
+    // 3. Kể cả khi `title` không có chữ `Tập/Quyển` (VD `Unnamed Memory`), nếu `parts[0]` rõ ràng là câu tiêu đề phụ
+    moved.push(parts.shift()!);
+  }
+
+  const extraTitle = moved.length > 0 ? moved.join(' - ') : null;
+  const remaining = parts.join(' - ').trim();
+  return {
+    extraTitle,
+    realAuthor: remaining || UNKNOWN_AUTHOR,
+  };
 }
 
-/**
- * Tiêu đề đầy đủ dùng để sắp xếp và nhận diện số tập, tự ghép lại nhãn tập
- * nếu sách cũ bị tách nhầm số tập (`Tập 6.5`, `Tập 1：...`) sang trường tác giả.
- */
+export function extractMisplacedVolumeFromAuthor(author: string): string | null {
+  return splitMisplacedTitleAndAuthor('', author).extraTitle;
+}
+
+export function extractMisplacedSubtitleFromAuthor(
+  title: string,
+  author: string,
+): { subtitle: string; realAuthor: string | null } | null {
+  const res = splitMisplacedTitleAndAuthor(title, author);
+  if (!res.extraTitle) return null;
+  return {
+    subtitle: res.extraTitle,
+    realAuthor: res.realAuthor === UNKNOWN_AUTHOR ? null : res.realAuthor,
+  };
+}
+
+export function getDisplayAuthor(author: string, title = ''): string {
+  return splitMisplacedTitleAndAuthor(title, author).realAuthor;
+}
+
 export function getBookSortTitle(book: Pick<Book, 'title' | 'author'>): string {
   const cleanTitle = book.title.trim();
-  const misplacedVol = extractMisplacedVolumeFromAuthor(book.author);
+  const { extraTitle } = splitMisplacedTitleAndAuthor(cleanTitle, book.author);
   if (
-    misplacedVol &&
-    !cleanTitle.toLocaleLowerCase('vi').includes(misplacedVol.toLocaleLowerCase('vi'))
+    extraTitle &&
+    !cleanTitle.toLocaleLowerCase('vi').includes(extraTitle.toLocaleLowerCase('vi'))
   ) {
-    return `${cleanTitle} - ${misplacedVol}`;
+    return `${cleanTitle} - ${extraTitle}`;
   }
   return cleanTitle;
 }
@@ -122,6 +163,16 @@ export function parseFileMetadata(fileName: string): {
   const titleParts = segments.length > 0 ? [cleanShelfLabel(segments[0]) || segments[0]] : [baseLabel];
   let authorIndex = 1;
   while (authorIndex < segments.length && isVolumeOrSubtitleSegment(segments[authorIndex])) {
+    titleParts.push(segments[authorIndex]);
+    authorIndex += 1;
+  }
+  const lastTitlePart = titleParts[titleParts.length - 1] || '';
+  if (
+    authorIndex < segments.length &&
+    ((TITLE_ENDS_WITH_BARE_VOL_RE.test(lastTitlePart) &&
+      (authorIndex < segments.length - 1 || isLikelyVolumeSubtitle(segments[authorIndex]))) ||
+      isLikelyVolumeSubtitle(segments[authorIndex]))
+  ) {
     titleParts.push(segments[authorIndex]);
     authorIndex += 1;
   }
@@ -205,4 +256,22 @@ export function groupBooksIntoShelves(books: Book[]): ShelfGroup[] {
     }
   }
   return Array.from(map.values()).sort((a, b) => compareVietnameseText(a.name, b.name));
+}
+
+const RECENT_UPLOAD_WINDOW_DAYS = 7;
+
+export function isRecentBookUpload(createdAt: string, withinDays = RECENT_UPLOAD_WINDOW_DAYS): boolean {
+  if (!createdAt) return false;
+  const ts = Date.parse(createdAt);
+  if (!Number.isFinite(ts)) return false;
+  const ageMs = Date.now() - ts;
+  return ageMs >= -60_000 && ageMs <= withinDays * 86_400_000;
+}
+
+export function getGuestLockLabel(book: Book, sessionRole?: AuthRole): string | null {
+  if (sessionRole !== 'guest') return null;
+  if (book.guest_locked) return 'Giới hạn';
+  if (book.file_type === 'pdf') return 'Chỉ Admin';
+  if (book.guest_ready === false) return 'Chờ đồng bộ';
+  return null;
 }

@@ -1,24 +1,10 @@
 import type {
-  AuthRole,
-  AuthSessionInfo,
-  Book,
-  BookFileType,
-  ReadingProgress,
-  StorageStats,
+  AuthRole, AuthSessionInfo, Book, BookFileType, ReadingProgress, ShelfAccessSummary, StorageStats,
 } from '@/types';
 import {
-  DEFAULT_OWNER_SESSION,
-  apiFetch,
-  assertApiConfigured,
-  checkHealth,
-  getActiveAuthSession,
-  getAuthToken,
-  isAuthError,
-  isCloudMode,
-  isLocalDevMode,
-  isMissingProductionApi,
-  loginWithPasscode,
-  setAuthToken,
+  DEFAULT_OWNER_SESSION, apiFetch, assertApiConfigured, checkHealth, getActiveAuthSession,
+  getAuthToken, isAuthError, isCloudMode, isLocalDevMode, isMissingProductionApi,
+  loginWithPasscode, setAuthToken,
 } from '@/lib/authSession';
 import {
   deleteCachedBookBlob, deleteCachedCoverBlob, deleteLocalBook, deleteLocalProgress,
@@ -26,36 +12,19 @@ import {
   putLocalBook, putLocalProgress, setCachedBookBlob, setCachedCoverBlob,
 } from '@/lib/cache';
 import {
-  formatBytes,
-  groupBooksIntoShelves,
-  parseFileMetadata,
-  pickCoverColor,
-  sortBooksByTitle,
+  formatBytes, groupBooksIntoShelves, parseFileMetadata, pickCoverColor, sortBooksByTitle,
 } from '@/lib/bookMetadata';
 import { isChunkLoadError } from '@/lib/chunkReload';
 import { compressCoverBlob } from '@/lib/coverImage';
 import {
-  type ShelfPrefsState,
-  pruneDeletedBooksFromPrefs,
-  readLocalShelfPrefs,
-  renameShelfPrefs,
-  writeLocalShelfPrefs,
+  type ShelfPrefsState, pruneDeletedBooksFromPrefs, readLocalShelfPrefs,
+  renameShelfPrefs, writeLocalShelfPrefs,
 } from '@/lib/shelfPrefs';
 
 export {
-  apiFetch,
-  assertApiConfigured,
-  checkHealth,
-  formatBytes,
-  getAuthToken,
-  groupBooksIntoShelves,
-  isAuthError,
-  isCloudMode,
-  isLocalDevMode,
-  isMissingProductionApi,
-  loginWithPasscode,
-  setAuthToken,
-  sortBooksByTitle,
+  apiFetch, assertApiConfigured, checkHealth, formatBytes, getAuthToken, groupBooksIntoShelves,
+  isAuthError, isCloudMode, isLocalDevMode, isMissingProductionApi, loginWithPasscode,
+  setAuthToken, sortBooksByTitle,
 };
 
 export const HARD_LIMIT_BYTES = 9 * 1024 * 1024 * 1024; // 9.0 GiB
@@ -71,9 +40,32 @@ async function computeLocalStorageStats(books: Book[]): Promise<StorageStats> {
   };
 }
 
+function computeLocalWeeklyPopularIds(
+  books: Book[],
+  progress: Record<string, ReadingProgress>,
+  limit = 10,
+): string[] {
+  const now = Date.now();
+  const since7d = now - 7 * 86_400_000;
+  const byCreatedDesc = [...books].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const recent = books
+    .filter((b) => (progress[b.id]?.updatedAt ?? 0) >= since7d)
+    .sort((a, b) => (progress[b.id]?.updatedAt ?? 0) - (progress[a.id]?.updatedAt ?? 0));
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const b of [...recent, ...byCreatedDesc]) {
+    if (out.length >= limit) break;
+    if (seen.has(b.id)) continue;
+    seen.add(b.id);
+    out.push(b.id);
+  }
+  return out;
+}
+
 export async function fetchLibraryState(): Promise<{
   books: Book[];
   progress: Record<string, ReadingProgress>;
+  weeklyPopularIds: string[];
   shelfPrefs: ShelfPrefsState;
   storage: StorageStats;
   session: AuthSessionInfo;
@@ -87,6 +79,7 @@ export async function fetchLibraryState(): Promise<{
     return {
       books: sorted,
       progress,
+      weeklyPopularIds: computeLocalWeeklyPopularIds(sorted, progress),
       shelfPrefs: localPrefs,
       storage,
       session: DEFAULT_OWNER_SESSION,
@@ -97,8 +90,10 @@ export async function fetchLibraryState(): Promise<{
   const data = (await response.json().catch(() => ({}))) as {
     books?: Book[];
     progress?: Record<string, ReadingProgress>;
+    weeklyPopular?: string[];
     shelfCovers?: Record<string, string>;
     favoriteShelves?: string[];
+    shelfAccess?: Record<string, ShelfAccessSummary>;
     storage?: StorageStats;
     session?: { role?: AuthRole; expiresAt?: number | null; watermarkLabel?: string | null };
     error?: string;
@@ -121,13 +116,20 @@ export async function fetchLibraryState(): Promise<{
   const nextPrefs: ShelfPrefsState = {
     covers: data.shelfCovers ?? localPrefs.covers,
     favorites: data.favoriteShelves ?? localPrefs.favorites,
+    ...(data.shelfAccess ? { access: data.shelfAccess } : {}),
   };
   if (resolvedSession.role === 'owner') {
     writeLocalShelfPrefs(nextPrefs);
   }
+  const sortedBooks = sortBooksByTitle(data.books || []);
+  const progressMap = data.progress || {};
+  const weeklyPopularIds = Array.isArray(data.weeklyPopular)
+    ? data.weeklyPopular
+    : computeLocalWeeklyPopularIds(sortedBooks, progressMap);
   return {
-    books: sortBooksByTitle(data.books || []),
-    progress: data.progress || {},
+    books: sortedBooks,
+    progress: progressMap,
+    weeklyPopularIds,
     shelfPrefs: nextPrefs,
     storage: data.storage || {
       usedBytes: 0,
@@ -436,6 +438,7 @@ export async function deleteBooks(booksToDelete: Book[]): Promise<StorageStats> 
 
 export async function fetchBookBlobCached(
   book: Book,
+  options?: { cacheOnFetch?: boolean; signal?: AbortSignal },
 ): Promise<{ blob: Blob; fromCache: boolean }> {
   assertApiConfigured();
   if (isCloudMode && getActiveAuthSession().role !== 'owner') {
@@ -451,13 +454,17 @@ export async function fetchBookBlobCached(
     throw new Error('Không tìm thấy tệp sách trong bộ nhớ cục bộ.');
   }
 
-  const res = await apiFetch(`/api/files/${encodeURIComponent(book.file_key)}`);
+  const res = await apiFetch(`/api/files/${encodeURIComponent(book.file_key)}`, {
+    signal: options?.signal,
+  });
   if (!res.ok) {
     const errBody = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(errBody.error || `Không thể tải sách từ R2 (HTTP ${res.status}).`);
   }
   const blob = await res.blob();
-  await setCachedBookBlob(book.file_key, blob);
+  if (options?.cacheOnFetch !== false) {
+    await setCachedBookBlob(book.file_key, blob);
+  }
   return { blob, fromCache: false };
 }
 

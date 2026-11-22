@@ -1,22 +1,31 @@
-import { useEffect, useRef, useState } from 'react';
-import { FolderEdit, Image, Star } from 'lucide-react';
+import { type CSSProperties, useEffect, useState } from 'react';
+import { FolderEdit, Image, Lock, Star } from 'lucide-react';
 import { pickClothCoverColor } from '@/lib/bookMetadata';
 import type { ShelfSummary } from '@/lib/shelfSummary';
+import {
+  handleCoverTiltLeave,
+  handleCoverTiltMove,
+  useCardReveal,
+} from '@/hooks/useCardReveal';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 
 interface ShelfCoverCardProps {
   summary: ShelfSummary;
+  staggerIndex?: number;
   onOpenShelf: (shelfKey: string) => void;
   onRenameShelf?: (shelfName: string) => void;
   onChangeShelfCover?: (summary: ShelfSummary) => void;
+  onManageAccess?: (summary: ShelfSummary) => void;
   onToggleFavorite?: (shelfName: string, nextFavorite: boolean) => void;
 }
 
 export function ShelfCoverCard({
   summary,
+  staggerIndex = 0,
   onOpenShelf,
   onRenameShelf,
   onChangeShelfCover,
+  onManageAccess,
   onToggleFavorite,
 }: ShelfCoverCardProps) {
   const {
@@ -28,46 +37,31 @@ export function ShelfCoverCard({
     completedCount,
     readingStatus,
     progressPercent,
+    isGuestLocked,
+    accessSummary,
   } = summary;
 
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const [isNearViewport, setIsNearViewport] = useState(
-    () => typeof IntersectionObserver === 'undefined',
-  );
+  const { cardRef, isNearViewport, isRevealed } = useCardReveal<HTMLDivElement>();
   const [imgFailed, setImgFailed] = useState(false);
 
   const coverKey = coverBook?.cover_key ?? null;
+  const staggerDelayMs = (staggerIndex % 6) * 48;
 
   useEffect(() => {
     setImgFailed(false);
   }, [coverKey]);
 
-  useEffect(() => {
-    if (isNearViewport) return;
-    const node = cardRef.current;
-    if (!node || typeof IntersectionObserver === 'undefined') {
-      setIsNearViewport(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setIsNearViewport(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: '280px' },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [isNearViewport]);
-
   const coverUrl = useCoverUrl(coverKey, isNearViewport);
   const showImage = Boolean(coverUrl && !imgFailed);
   const clothColor = pickClothCoverColor(`${shelf.key}-${shelf.name}`);
 
-  const statusMeta =
-    readingStatus === 'completed'
+  const statusMeta = isGuestLocked
+    ? {
+        dotClass: 'bg-crimson-accent',
+        textClass: 'text-crimson-accent',
+        label: 'Giới hạn quyền đọc',
+      }
+    : readingStatus === 'completed'
       ? {
           dotClass: 'bg-emerald-600 dark:bg-emerald-400',
           textClass: 'text-emerald-700 dark:text-emerald-400',
@@ -75,8 +69,8 @@ export function ShelfCoverCard({
         }
       : readingStatus === 'reading'
         ? {
-            dotClass: 'bg-accent',
-            textClass: 'text-accent',
+            dotClass: 'bg-crimson-accent',
+            textClass: 'text-crimson-accent',
             label:
               bookCount > 1
                 ? `Đang đọc · ${completedCount}/${bookCount}`
@@ -100,9 +94,17 @@ export function ShelfCoverCard({
           onOpenShelf(shelf.key);
         }
       }}
-      className="group flex cursor-pointer flex-col rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
+      style={{ ['--stagger-delay' as string]: `${staggerDelayMs}ms` } as CSSProperties}
+      className={`card-scroll-reveal group flex cursor-pointer flex-col rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas ${
+        isRevealed ? 'is-revealed' : ''
+      }`}
     >
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm transition-all duration-200 group-hover:-translate-y-0.5 group-hover:border-line-strong group-hover:shadow-md dark:group-hover:border-line-strong dark:group-hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.92),0_0_0_1px_rgba(244,244,245,0.14)]">
+      <div
+        onPointerMove={handleCoverTiltMove}
+        onPointerLeave={handleCoverTiltLeave}
+        onPointerCancel={handleCoverTiltLeave}
+        className="tilt-card relative aspect-[3/4] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.32)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]"
+      >
         {showImage ? (
           <>
             <img
@@ -111,7 +113,7 @@ export function ShelfCoverCard({
               loading="lazy"
               decoding="async"
               onError={() => setImgFailed(true)}
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+              className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.045]"
             />
             <span
               aria-hidden="true"
@@ -142,7 +144,7 @@ export function ShelfCoverCard({
         )}
 
         {/* Nhóm nút thao tác kệ kín đáo khi hover */}
-        {(onRenameShelf || onChangeShelfCover) && (
+        {(onRenameShelf || onChangeShelfCover || onManageAccess) && (
           <div className="absolute left-2 top-2 flex items-center gap-1 opacity-85 transition-opacity focus-within:opacity-100 group-hover:opacity-100 sm:opacity-0">
             {onRenameShelf && (
               <button
@@ -172,6 +174,20 @@ export function ShelfCoverCard({
                 <Image className="h-3.5 w-3.5" />
               </button>
             )}
+            {onManageAccess && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onManageAccess(summary);
+                }}
+                aria-label={`Phân quyền đọc kệ ${shelf.name}`}
+                title="Phân quyền thành viên Discord"
+                className="rounded-lg border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] transition-colors hover:bg-[#16120f]"
+              >
+                <Lock className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         )}
 
@@ -196,6 +212,37 @@ export function ShelfCoverCard({
           </button>
         )}
 
+        {/* Huy hiệu ổ khoá khi bộ sách bị giới hạn cho khách hoặc nhãn quản trị cho Admin */}
+        {isGuestLocked && (
+          <>
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 bg-black/15 transition-colors duration-300 group-hover:bg-black/28"
+            />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-[#120b0e]/78 text-[#fce7eb] shadow-lg backdrop-blur-md transition-transform duration-300 group-hover:scale-105"
+            >
+              <Lock className="h-4 w-4" />
+            </span>
+            <span className="pointer-events-none absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md border border-rose-300/40 bg-[#140b0e]/88 px-2 py-0.5 text-[10.5px] font-semibold tracking-tight text-rose-100 backdrop-blur-sm">
+              <Lock className="h-2.5 w-2.5 shrink-0" />
+              <span>Giới hạn</span>
+            </span>
+          </>
+        )}
+
+        {!isGuestLocked && accessSummary?.mode === 'restricted' && (
+          <span className="pointer-events-none absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md border border-rose-300/35 bg-[#140b0e]/85 px-2 py-0.5 text-[10.5px] font-medium tracking-tight text-rose-100 backdrop-blur-sm">
+            <Lock className="h-2.5 w-2.5 shrink-0" />
+            <span>
+              {accessSummary.allowedCount > 0
+                ? `${accessSummary.allowedCount} người`
+                : 'Chỉ Admin'}
+            </span>
+          </span>
+        )}
+
         {/* Badge số tập góc dưới-phải */}
         <span className="pointer-events-none absolute bottom-2 right-2 rounded-md border border-white/15 bg-[#111113]/85 px-2 py-0.5 text-[11px] font-semibold tracking-tight text-[#f4f4f5] backdrop-blur-sm">
           {bookCount} tập
@@ -205,7 +252,7 @@ export function ShelfCoverCard({
         {progressPercent !== null && (
           <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1 bg-black/40">
             <div
-              className="h-full bg-accent transition-all duration-300"
+              className="h-full bg-crimson-accent transition-all duration-300"
               style={{
                 width: `${Math.max(progressPercent, readingStatus === 'completed' ? 100 : 6)}%`,
               }}
@@ -215,7 +262,7 @@ export function ShelfCoverCard({
       </div>
 
       <div className="mt-2.5 space-y-0.5 px-0.5">
-        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-ink transition-colors group-hover:text-accent">
+        <h3 className="group-hover-crimson line-clamp-2 text-sm font-semibold leading-snug text-ink transition-colors duration-200">
           {shelf.name}
         </h3>
         <p className="truncate text-xs text-ink-muted">{authorLabel}</p>

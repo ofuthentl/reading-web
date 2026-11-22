@@ -1,4 +1,10 @@
-import type { ReaderFont, ReaderSettings, ReaderTheme, ReaderWidth } from '@/types';
+import type {
+  ReaderFont,
+  ReaderLayoutMode,
+  ReaderSettings,
+  ReaderTheme,
+  ReaderWidth,
+} from '@/types';
 import type { AppTheme } from '@/hooks/useTheme';
 
 const READER_SETTINGS_KEY = 'ofu-library-reader-settings';
@@ -15,6 +21,7 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   fontSizePx: 19,
   lineHeight: 1.8,
   width: 'medium',
+  layoutMode: 'scroll',
   sideTapNavigation: true,
 };
 
@@ -47,7 +54,7 @@ export const READER_THEME_STYLES: Record<ReaderTheme, ReaderThemePalette> = {
     hover: 'hover:bg-[#efe8da]',
     active: 'bg-[#8c5e35]/12 text-[#734b28] border-[#8c5e35]/35',
     accentRing: 'border-[#8c5e35] ring-2 ring-[#8c5e35]/25',
-    progressBar: 'bg-[#8c5e35]',
+    progressBar: 'bg-[#B22222]',
     isDark: false,
   },
   sepia: {
@@ -62,7 +69,7 @@ export const READER_THEME_STYLES: Record<ReaderTheme, ReaderThemePalette> = {
     hover: 'hover:bg-[#e6d6b4]',
     active: 'bg-[#8c5e35]/15 text-[#3c2f1e] border-[#8c5e35]/35',
     accentRing: 'border-[#8c5e35] ring-2 ring-[#8c5e35]/25',
-    progressBar: 'bg-[#8c5e35]',
+    progressBar: 'bg-[#B22222]',
     isDark: false,
   },
   dark: {
@@ -77,7 +84,7 @@ export const READER_THEME_STYLES: Record<ReaderTheme, ReaderThemePalette> = {
     hover: 'hover:bg-white/10',
     active: 'bg-white/12 text-[#eef2f6] border-white/25',
     accentRing: 'border-[#eef2f6] ring-2 ring-white/20',
-    progressBar: 'bg-[#eef2f6]',
+    progressBar: 'bg-[#dc3838]',
     isDark: true,
   },
   midnight: {
@@ -92,7 +99,7 @@ export const READER_THEME_STYLES: Record<ReaderTheme, ReaderThemePalette> = {
     hover: 'hover:bg-white/10',
     active: 'bg-white/12 text-[#f2f2f4] border-white/25',
     accentRing: 'border-[#f2f2f4] ring-2 ring-white/20',
-    progressBar: 'bg-[#f2f2f4]',
+    progressBar: 'bg-[#e04040]',
     isDark: true,
   },
 };
@@ -109,9 +116,29 @@ export const READER_WIDTH_MAX: Record<ReaderWidth, string> = {
   wide: '84.5rem',
 };
 
+export function resolvePaginatedSpreadWidth(
+  stageWidth: number,
+  widthMode: ReaderWidth,
+): number {
+  const safeStage = Math.max(260, Math.floor(stageWidth));
+  if (safeStage < 640) return safeStage;
+
+  const wideW = Math.min(safeStage, 1820);
+  if (widthMode === 'wide') return wideW;
+
+  const mediumRaw = Math.min(Math.round(wideW * 0.84), 1420);
+  const mediumW = wideW >= 900 ? Math.max(840, mediumRaw) : mediumRaw;
+  if (widthMode === 'medium') return Math.min(wideW, mediumW);
+
+  const narrowRaw = Math.min(Math.round(wideW * 0.68), 1080);
+  const narrowW = wideW >= 1040 ? Math.max(820, narrowRaw) : narrowRaw;
+  return Math.min(mediumW, narrowW);
+}
+
 const VALID_THEMES = new Set<ReaderTheme>(['paper', 'sepia', 'dark', 'midnight']);
 const VALID_FONTS = new Set<ReaderFont>(['serif', 'sans', 'mono']);
 const VALID_WIDTHS = new Set<ReaderWidth>(['narrow', 'medium', 'wide']);
+const VALID_LAYOUTS = new Set<ReaderLayoutMode>(['scroll', 'paginated']);
 
 export function loadReaderSettings(): ReaderSettings {
   try {
@@ -130,6 +157,10 @@ export function loadReaderSettings(): ReaderSettings {
           ? Math.min(2.3, Math.max(1.5, Number(parsed.lineHeight.toFixed(1))))
           : DEFAULT_READER_SETTINGS.lineHeight,
       width: parsed.width && VALID_WIDTHS.has(parsed.width) ? parsed.width : DEFAULT_READER_SETTINGS.width,
+      layoutMode:
+        parsed.layoutMode && VALID_LAYOUTS.has(parsed.layoutMode)
+          ? parsed.layoutMode
+          : DEFAULT_READER_SETTINGS.layoutMode,
       sideTapNavigation:
         typeof parsed.sideTapNavigation === 'boolean'
           ? parsed.sideTapNavigation

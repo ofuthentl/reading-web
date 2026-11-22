@@ -1,15 +1,24 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import {
-  AlertCircle, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight,
-  List, Loader2, RefreshCw, ShieldCheck, Type,
-} from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AlertCircle, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
 import type { Book, Chapter, GuestTocItem, ReaderSettings, ReadingProgress } from '@/types';
-import { ReaderSettingsPopover } from '@/components/ReaderSettingsPopover';
+import { GuestCanvasPaginatedView } from '@/components/GuestCanvasPaginatedView';
+import { ReaderChapterEndNav } from '@/components/ReaderChapterEndNav';
+import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
 import { ReaderTocDrawer } from '@/components/ReaderTocDrawer';
+import { ReaderTopBar } from '@/components/ReaderTopBar';
 import { useGuestChapterStream } from '@/hooks/useGuestChapterStream';
-import { computeChapterCanvasLayout } from '@/lib/guestCanvasLayout';
+import { useReaderController } from '@/hooks/useReaderController';
+import {
+  computeChapterCanvasLayout,
+  findCanvasLayoutImageAtPoint,
+  getInitialGuestStageBox,
+} from '@/lib/guestCanvasLayout';
 import { paintGuestViewportCanvas } from '@/lib/guestCanvasPaint';
 import { READER_THEME_STYLES } from '@/lib/readerConfig';
+
+const LazyReaderImageLightbox = lazy(() =>
+  import('@/components/ReaderImageLightbox').then((mod) => ({ default: mod.ReaderImageLightbox })),
+);
 
 const VIEWPORT_OVERSCAN_PX = 280;
 
@@ -18,17 +27,29 @@ export interface GuestCanvasReaderProps {
   tocChapters: GuestTocItem[];
   watermarkLabel: string;
   initialProgress?: ReadingProgress;
+  nextBook?: Book | null;
   settings: ReaderSettings;
   onUpdateSettings: (next: Partial<ReaderSettings>) => void;
   onSaveProgress: (progress: ReadingProgress) => void;
+  onOpenNextBook?: (nextBook: Book) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
   onClose: () => void;
 }
 
 export function GuestCanvasReader({
-  book, tocChapters, watermarkLabel, initialProgress,
-  settings, onUpdateSettings, onSaveProgress, onApiError, onClose,
+  book,
+  tocChapters,
+  watermarkLabel,
+  initialProgress,
+  nextBook,
+  settings,
+  onUpdateSettings,
+  onSaveProgress,
+  onOpenNextBook,
+  onApiError,
+  onClose,
 }: GuestCanvasReaderProps) {
+  const isPaginated = settings.layoutMode === 'paginated';
   const initialIdx = useMemo(() => {
     if (!initialProgress || tocChapters.length === 0) return 0;
     const byId = tocChapters.findIndex((c) => c.id === initialProgress.chapterId);
@@ -36,11 +57,15 @@ export function GuestCanvasReader({
     return Math.max(0, Math.min(initialProgress.chapterIndex || 0, tocChapters.length - 1));
   }, [initialProgress, tocChapters]);
 
+  const initialStartRatio =
+    initialProgress && initialProgress.chapterId === tocChapters[initialIdx]?.id
+      ? initialProgress.scrollRatio
+      : 0;
+
   const [chapterIndex, setChapterIndex] = useState(initialIdx);
-  const [tocOpen, setTocOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [chapterScrollPercent, setChapterScrollPercent] = useState(0);
-  const [stageBox, setStageBox] = useState({ width: 760, height: 720 });
+  const [chapterScrollRatio, setChapterScrollRatio] = useState(initialStartRatio);
+  const [paginatedStartRatio, setPaginatedStartRatio] = useState(initialStartRatio);
+  const [stageBox, setStageBox] = useState(getInitialGuestStageBox);
   const [pageHidden, setPageHidden] = useState(() =>
     typeof document !== 'undefined' ? document.visibilityState === 'hidden' : false,
   );
@@ -50,16 +75,33 @@ export function GuestCanvasReader({
   } = useGuestChapterStream({ bookId: book.id, chapterIndex, onApiError });
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const stageWrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const paginatedRef = useRef<PaginatedStageHandle>(null);
   const restoreTargetRatioRef = useRef<number | null>(
     initialProgress && initialProgress.chapterId === tocChapters[initialIdx]?.id
       ? initialProgress.scrollRatio
       : null,
   );
   const suppressSaveRef = useRef(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingProgressRef = useRef<ReadingProgress | null>(null);
-  const completedRef = useRef(Boolean(initialProgress?.completed));
+  const goPrevRef = useRef<() => void>(() => undefined);
+  const goNextRef = useRef<() => void>(() => undefined);
+
+  const ctrl = useReaderController({
+    initialCompleted: Boolean(initialProgress?.completed),
+    isPdf: false,
+    settings,
+    blockCopyShortcuts: true,
+    onSaveProgress,
+    onPrev: () => goPrevRef.current(),
+    onNext: () => goNextRef.current(),
+  });
+  const {
+    tocOpen, setTocOpen, drawerTab, settingsOpen, setSettingsOpen,
+    immersiveHidden, setImmersiveHidden, lightboxTarget, setLightboxTarget,
+    lastScrollTopRef, completedRef, flushProgress, queueProgressSave,
+    openDrawerTab, updateImmersiveOnScroll,
+  } = ctrl;
 
   const palette = READER_THEME_STYLES[settings.theme];
   const currentTocItem = tocChapters[chapterIndex];
@@ -67,30 +109,32 @@ export function GuestCanvasReader({
   const tocDrawerChapters = useMemo<Chapter[]>(
     () =>
       tocChapters.map((item) => ({
-        id: item.id,
-        book_id: book.id,
-        title: item.title,
-        content: '',
-        chapter_number: item.chapterNumber,
+        id: item.id, book_id: book.id, title: item.title, content: '', chapter_number: item.chapterNumber,
       })),
     [book.id, tocChapters],
   );
 
-  useEffect(() => {
+  const showScrollStage = !loadingChapter && !chapterError && !isPaginated;
+
+  useLayoutEffect(() => {
+    if (!showScrollStage) return;
     const el = scrollContainerRef.current;
     if (!el) return;
     const measure = () => {
       const padX = el.clientWidth >= 640 ? 56 : 28;
-      setStageBox({
-        width: Math.max(240, el.clientWidth - padX),
-        height: Math.max(280, el.clientHeight),
-      });
+      const nextWidth = Math.max(240, el.clientWidth - padX);
+      const nextHeight = Math.max(280, el.clientHeight);
+      setStageBox((prev) =>
+        prev.width === nextWidth && prev.height === nextHeight
+          ? prev
+          : { width: nextWidth, height: nextHeight },
+      );
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [showScrollStage]);
 
   useEffect(() => {
     const onVisChange = () => setPageHidden(document.visibilityState === 'hidden');
@@ -98,31 +142,8 @@ export function GuestCanvasReader({
     return () => document.removeEventListener('visibilitychange', onVisChange);
   }, []);
 
-  const flushProgress = useCallback(() => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-    if (pendingProgressRef.current) {
-      onSaveProgress(pendingProgressRef.current);
-      pendingProgressRef.current = null;
-    }
-  }, [onSaveProgress]);
-
-  const queueProgressSave = useCallback(
-    (progress: ReadingProgress, immediate = false) => {
-      pendingProgressRef.current = progress;
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      if (immediate) flushProgress();
-      else saveTimerRef.current = setTimeout(flushProgress, 600);
-    },
-    [flushProgress],
-  );
-
-  useEffect(() => () => flushProgress(), [flushProgress]);
-
   const layout = useMemo(() => {
-    if (!chapterData) return null;
+    if (!chapterData || isPaginated) return null;
     return computeChapterCanvasLayout({
       chapterTitle: chapterData.title,
       chapterIndex,
@@ -132,7 +153,7 @@ export function GuestCanvasReader({
       containerWidth: stageBox.width,
       imageSizes,
     });
-  }, [chapterData, chapterIndex, imageSizes, settings, stageBox.width, tocChapters.length]);
+  }, [chapterData, chapterIndex, imageSizes, isPaginated, settings, stageBox.width, tocChapters.length]);
 
   const effectiveWatermark = chapterData?.watermarkLabel || watermarkLabel || 'Guest';
 
@@ -143,10 +164,7 @@ export function GuestCanvasReader({
 
     const sliceHeight = Math.min(layout.totalHeight, stageBox.height + VIEWPORT_OVERSCAN_PX * 2);
     const maxSliceTop = Math.max(0, layout.totalHeight - sliceHeight);
-    const sliceTop = Math.max(
-      0,
-      Math.min(maxSliceTop, Math.floor(scrollEl.scrollTop - VIEWPORT_OVERSCAN_PX)),
-    );
+    const sliceTop = Math.max(0, Math.min(maxSliceTop, Math.floor(scrollEl.scrollTop - VIEWPORT_OVERSCAN_PX)));
 
     canvas.style.transform = `translateY(${sliceTop}px)`;
     canvas.style.width = `${stageBox.width}px`;
@@ -163,83 +181,108 @@ export function GuestCanvasReader({
   }, [bitmapsRef, effectiveWatermark, layout, settings.font, settings.theme, stageBox.height, stageBox.width]);
 
   useLayoutEffect(() => {
-    paintVisibleSlice();
-  }, [paintVisibleSlice]);
+    if (!isPaginated) paintVisibleSlice();
+  }, [isPaginated, paintVisibleSlice]);
+
+  const handleUpdateSettings = useCallback(
+    (patch: Partial<ReaderSettings>) => {
+      if (patch.layoutMode && patch.layoutMode !== settings.layoutMode) {
+        if (patch.layoutMode === 'paginated') setPaginatedStartRatio(chapterScrollRatio);
+        else restoreTargetRatioRef.current = chapterScrollRatio;
+      } else if (!isPaginated && (patch.width || patch.fontSizePx || patch.lineHeight || patch.font)) {
+        restoreTargetRatioRef.current = chapterScrollRatio;
+      }
+      onUpdateSettings(patch);
+    },
+    [chapterScrollRatio, isPaginated, onUpdateSettings, settings.layoutMode],
+  );
 
   const goToChapter = useCallback(
-    (nextIndex: number) => {
+    (nextIndex: number, targetRatio = 0) => {
       const clamped = Math.max(0, Math.min(nextIndex, tocChapters.length - 1));
       const target = tocChapters[clamped];
       if (!target) return;
 
-      suppressSaveRef.current = true;
-      restoreTargetRatioRef.current = 0;
-      setChapterIndex(clamped);
+      const safeRatio = Math.min(1, Math.max(0, targetRatio));
       setTocOpen(false);
-      setChapterScrollPercent(0);
+      setImmersiveHidden(false);
+
+      if (clamped === chapterIndex) {
+        setChapterScrollRatio(safeRatio);
+        if (isPaginated) {
+          paginatedRef.current?.jumpToRatio(safeRatio);
+        } else if (scrollContainerRef.current) {
+          const el = scrollContainerRef.current;
+          const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+          el.scrollTop = Math.round(maxScroll * safeRatio);
+          paintVisibleSlice();
+        }
+        return;
+      }
+
+      suppressSaveRef.current = true;
+      restoreTargetRatioRef.current = safeRatio;
+      lastScrollTopRef.current = 0;
+      setPaginatedStartRatio(safeRatio);
+      setChapterScrollRatio(safeRatio);
+      setChapterIndex(clamped);
 
       queueProgressSave(
         {
-          chapterId: target.id,
-          chapterIndex: clamped,
-          chapterTitle: target.title,
-          totalChapters: tocChapters.length,
-          scrollRatio: 0,
-          scrollTop: 0,
-          completed: completedRef.current,
-          updatedAt: Date.now(),
+          chapterId: target.id, chapterIndex: clamped, chapterTitle: target.title,
+          totalChapters: tocChapters.length, scrollRatio: safeRatio, scrollTop: 0,
+          completed: completedRef.current, updatedAt: Date.now(),
         },
         true,
       );
     },
-    [queueProgressSave, tocChapters],
+    [
+      chapterIndex, completedRef, isPaginated, lastScrollTopRef, paintVisibleSlice,
+      queueProgressSave, setImmersiveHidden, setTocOpen, tocChapters,
+    ],
   );
 
-  const goPrev = useCallback(() => {
-    if (chapterIndex > 0) goToChapter(chapterIndex - 1);
+  const goPrevChapter = useCallback(() => {
+    if (chapterIndex > 0) goToChapter(chapterIndex - 1, 0);
   }, [chapterIndex, goToChapter]);
 
-  const goNext = useCallback(() => {
-    if (chapterIndex < tocChapters.length - 1) goToChapter(chapterIndex + 1);
+  const goNextChapter = useCallback(() => {
+    if (chapterIndex < tocChapters.length - 1) goToChapter(chapterIndex + 1, 0);
   }, [chapterIndex, goToChapter, tocChapters.length]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && ['s', 'p', 'c', 'u'].includes(event.key.toLowerCase())) {
-        event.preventDefault();
-        return;
-      }
+  goPrevRef.current = isPaginated ? () => paginatedRef.current?.stepPrev() : goPrevChapter;
+  goNextRef.current = isPaginated ? () => paginatedRef.current?.stepNext() : goNextChapter;
 
-      const target = event.target as HTMLElement | null;
-      const isTyping =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target?.isContentEditable;
-
-      if (event.key === 'Escape') {
-        if (tocOpen) setTocOpen(false);
-        else if (settingsOpen) setSettingsOpen(false);
-        return;
-      }
-
-      if (isTyping || !settings.sideTapNavigation) return;
-      if (event.key === 'ArrowLeft') goPrev();
-      else if (event.key === 'ArrowRight') goNext();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [goNext, goPrev, settings.sideTapNavigation, settingsOpen, tocOpen]);
+  const handlePaginatedRatioChange = useCallback(
+    (ratio: number, isEndOfChapter: boolean) => {
+      if (!currentTocItem) return;
+      setChapterScrollRatio(ratio);
+      const reachedEnd = chapterIndex === tocChapters.length - 1 && isEndOfChapter;
+      if (reachedEnd) completedRef.current = true;
+      queueProgressSave(
+        {
+          chapterId: currentTocItem.id, chapterIndex, chapterTitle: currentTocItem.title,
+          totalChapters: tocChapters.length, scrollRatio: ratio, scrollTop: 0,
+          completed: completedRef.current, updatedAt: Date.now(),
+        },
+        reachedEnd,
+      );
+    },
+    [chapterIndex, completedRef, currentTocItem, queueProgressSave, tocChapters.length],
+  );
 
   const handleScroll = useCallback(() => {
+    if (isPaginated) return;
     paintVisibleSlice();
     const el = scrollContainerRef.current;
     if (!el || !currentTocItem || !layout) return;
 
-    const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
-    const ratio = maxScroll > 0 ? Math.min(1, Math.max(0, el.scrollTop / maxScroll)) : 1;
-    const nextPct = Math.round(ratio * 100);
-    setChapterScrollPercent((prev) => (prev === nextPct ? prev : nextPct));
+    const currentTop = el.scrollTop;
+    updateImmersiveOnScroll(currentTop, suppressSaveRef.current);
 
+    const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+    const ratio = maxScroll > 0 ? Math.min(1, Math.max(0, currentTop / maxScroll)) : 1;
+    setChapterScrollRatio(ratio);
     if (suppressSaveRef.current) return;
 
     const reachedEndOfBook =
@@ -248,182 +291,202 @@ export function GuestCanvasReader({
 
     queueProgressSave(
       {
-        chapterId: currentTocItem.id,
-        chapterIndex,
-        chapterTitle: currentTocItem.title,
-        totalChapters: tocChapters.length,
-        scrollRatio: ratio,
-        scrollTop: el.scrollTop,
-        completed: completedRef.current,
-        updatedAt: Date.now(),
+        chapterId: currentTocItem.id, chapterIndex, chapterTitle: currentTocItem.title,
+        totalChapters: tocChapters.length, scrollRatio: ratio, scrollTop: currentTop,
+        completed: completedRef.current, updatedAt: Date.now(),
       },
       reachedEndOfBook,
     );
   }, [
-    chapterIndex,
-    currentTocItem,
-    layout,
-    paintVisibleSlice,
-    queueProgressSave,
-    tocChapters.length,
+    chapterIndex, completedRef, currentTocItem, isPaginated, layout,
+    paintVisibleSlice, queueProgressSave, tocChapters.length, updateImmersiveOnScroll,
   ]);
 
   useLayoutEffect(() => {
-    if (!layout || !scrollContainerRef.current) return;
-    if (restoreTargetRatioRef.current === null) return;
-
+    if (isPaginated || !layout || !scrollContainerRef.current || restoreTargetRatioRef.current === null) return;
     suppressSaveRef.current = true;
-    const targetRatio = restoreTargetRatioRef.current;
     const el = scrollContainerRef.current;
     const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
-    el.scrollTop = Math.round(maxScroll * targetRatio);
+    el.scrollTop = Math.round(maxScroll * restoreTargetRatioRef.current);
+    lastScrollTopRef.current = el.scrollTop;
     restoreTargetRatioRef.current = null;
     suppressSaveRef.current = false;
     paintVisibleSlice();
-  }, [layout, paintVisibleSlice]);
+  }, [isPaginated, lastScrollTopRef, layout, paintVisibleSlice]);
+
+  const completeBook = useCallback(
+    (targetNextBook?: Book) => {
+      completedRef.current = true;
+      if (currentTocItem) {
+        queueProgressSave(
+          {
+            chapterId: currentTocItem.id, chapterIndex, chapterTitle: currentTocItem.title,
+            totalChapters: tocChapters.length, scrollRatio: 1,
+            scrollTop: scrollContainerRef.current?.scrollTop || 0,
+            completed: true, updatedAt: Date.now(),
+          },
+          true,
+        );
+      }
+      if (targetNextBook && onOpenNextBook) onOpenNextBook(targetNextBook);
+      else onClose();
+    },
+    [chapterIndex, completedRef, currentTocItem, onClose, onOpenNextBook, queueProgressSave, tocChapters.length],
+  );
 
   const overallPercent = useMemo(() => {
     if (tocChapters.length === 0) return 0;
-    const base = chapterIndex / tocChapters.length;
-    const intra = chapterScrollPercent / 100 / tocChapters.length;
-    return Math.min(100, Math.round((base + intra) * 100));
-  }, [chapterIndex, chapterScrollPercent, tocChapters.length]);
+    return Math.min(100, Math.round(((chapterIndex + chapterScrollRatio) / tocChapters.length) * 100));
+  }, [chapterIndex, chapterScrollRatio, tocChapters.length]);
+
+  const watermarkBadge = (
+    <span
+      className={`hidden items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] md:inline-flex ${palette.border} ${palette.textSecondary}`}
+      title="Chế độ đọc bảo vệ bản quyền — gắn thuỷ vân định danh phiên Discord"
+    >
+      <ShieldCheck className="h-3 w-3 text-emerald-500" />
+      {effectiveWatermark}
+    </span>
+  );
 
   return (
     <div
-      className={`guest-protected-reader flex h-screen select-none flex-col overflow-hidden transition-colors duration-200 ${palette.pageBg} ${palette.textPrimary}`}
+      className={`guest-protected-reader relative flex h-screen select-none flex-col overflow-hidden transition-colors duration-200 ${palette.pageBg} ${palette.textPrimary}`}
       onContextMenu={(e) => e.preventDefault()}
       onCopy={(e) => e.preventDefault()}
       onCut={(e) => e.preventDefault()}
       onDragStart={(e) => e.preventDefault()}
     >
-      <header
-        className={`relative z-30 flex h-[3.25rem] shrink-0 items-center justify-between border-b px-3 backdrop-blur-md sm:px-5 ${palette.headerBg} ${palette.border}`}
-      >
-        <div className="flex min-w-0 items-center gap-1.5 sm:gap-2.5">
-          <button
-            type="button"
-            onClick={() => {
-              flushProgress();
-              onClose();
-            }}
-            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition ${palette.hover}`}
-            title="Quay lại Thư viện"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span className="hidden sm:inline">Thư viện</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSettingsOpen(false);
-              setTocOpen(true);
-            }}
-            className={`rounded-lg p-2 transition ${palette.hover}`}
-            aria-label="Mở mục lục"
-            title="Mục lục chương"
-          >
-            <List className="h-4 w-4" />
-          </button>
-
-          <div className="min-w-0 pl-1">
-            <p className="truncate font-display text-sm font-semibold leading-tight">
-              {book.title}
-            </p>
-            <p className={`truncate text-[11px] ${palette.textSecondary}`}>
-              {currentTocItem?.title} · {overallPercent}%
-            </p>
-          </div>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1.5">
-          <span
-            className={`hidden items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] md:inline-flex ${palette.border} ${palette.textSecondary}`}
-            title="Chế độ đọc bảo vệ bản quyền — gắn thuỷ vân định danh phiên Discord"
-          >
-            <ShieldCheck className="h-3 w-3 text-emerald-500" />
-            {effectiveWatermark}
-          </span>
-
-          <button
-            type="button"
-            onClick={() => {
-              setTocOpen(false);
-              setSettingsOpen((v) => !v);
-            }}
-            className={`rounded-lg p-2 transition ${settingsOpen ? palette.active : palette.hover}`}
-            aria-label="Tùy chỉnh trình đọc"
-            title="Cài đặt đọc sách"
-          >
-            <Type className="h-4 w-4" />
-          </button>
-        </div>
-
-        {settingsOpen && (
-          <ReaderSettingsPopover
-            settings={settings}
-            palette={palette}
-            onUpdateSettings={onUpdateSettings}
-            onClose={() => setSettingsOpen(false)}
-          />
-        )}
-      </header>
+      <ReaderTopBar
+        bookTitle={book.title}
+        chapterTitle={currentTocItem?.title}
+        overallPercent={overallPercent}
+        immersiveHidden={immersiveHidden}
+        settingsOpen={settingsOpen}
+        settings={settings}
+        palette={palette}
+        statusBadge={watermarkBadge}
+        onBack={() => { flushProgress(); onClose(); }}
+        onOpenDrawerTab={openDrawerTab}
+        onHideToolbar={() => { setSettingsOpen(false); setImmersiveHidden(true); }}
+        onToggleSettings={() => { setTocOpen(false); setSettingsOpen((v) => !v); }}
+        onCloseSettings={() => setSettingsOpen(false)}
+        onUpdateSettings={handleUpdateSettings}
+      />
 
       {tocOpen && (
         <ReaderTocDrawer
           book={book}
           chapters={tocDrawerChapters}
           activeIndex={chapterIndex}
+          currentChapterId={currentTocItem?.id || ''}
+          currentChapterTitle={currentTocItem?.title || ''}
+          currentScrollRatio={chapterScrollRatio}
+          initialTab={drawerTab}
           isPdf={false}
           palette={palette}
-          onSelectChapter={goToChapter}
+          onSelectChapter={(idx) => goToChapter(idx, 0)}
+          onJumpToBookmark={goToChapter}
           onClose={() => setTocOpen(false)}
         />
       )}
 
-      <main
-        ref={scrollContainerRef}
-        onScroll={handleScroll}
-        onClick={(event) => {
-          if (settingsOpen) {
-            setSettingsOpen(false);
-            return;
+      {loadingChapter ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+          <Loader2 className="h-6 w-6 animate-spin opacity-70" />
+          <p className={`text-sm ${palette.textSecondary}`}>Đang mở trang sách...</p>
+        </div>
+      ) : chapterError ? (
+        <div className="mx-auto flex flex-1 max-w-md flex-col items-center justify-center gap-3 px-4 text-center">
+          <AlertCircle className="h-8 w-8 text-amber-500" />
+          <p className="text-sm font-medium">{chapterError}</p>
+          <button
+            type="button"
+            onClick={retryChapter}
+            className={`mt-1 inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-xs font-semibold transition ${palette.border} ${palette.hover}`}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Thử tải lại chương
+          </button>
+        </div>
+      ) : isPaginated && chapterData ? (
+        <GuestCanvasPaginatedView
+          ref={paginatedRef}
+          bookTitle={book.title}
+          chapterData={chapterData}
+          chapterIndex={chapterIndex}
+          totalChapters={tocChapters.length}
+          initialRatio={paginatedStartRatio}
+          watermarkLabel={effectiveWatermark}
+          imageSizes={imageSizes}
+          bitmapsRef={bitmapsRef}
+          nextBook={nextBook}
+          settings={settings}
+          palette={palette}
+          immersiveHidden={immersiveHidden}
+          pageHidden={pageHidden}
+          onToggleImmersive={() => setImmersiveHidden((prev) => !prev)}
+          onCloseSettings={() => {
+            if (settingsOpen) setSettingsOpen(false);
+          }}
+          onRatioChange={handlePaginatedRatioChange}
+          onPrevChapterEnd={() => {
+            if (chapterIndex > 0) goToChapter(chapterIndex - 1, 1);
+          }}
+          onNextChapterStart={() => {
+            if (chapterIndex < tocChapters.length - 1) goToChapter(chapterIndex + 1, 0);
+          }}
+          onCompleteBook={completeBook}
+          onOpenGuestImage={(bitmap, alt) =>
+            setLightboxTarget({ kind: 'guest-bitmap', bitmap, watermarkLabel: effectiveWatermark, alt })
           }
-          if (!settings.sideTapNavigation) return;
-          const target = event.target as HTMLElement | null;
-          if (target?.closest('button, a, input, select, textarea')) return;
-          const rect = event.currentTarget.getBoundingClientRect();
-          const ratio = (event.clientX - rect.left) / rect.width;
-          if (ratio < 0.16) goPrev();
-          else if (ratio > 0.84) goNext();
-        }}
-        className={`scrollbar-thin flex-1 overflow-y-auto px-3.5 py-6 transition-all sm:px-7 sm:py-10 ${
-          pageHidden ? 'blur-lg' : ''
-        }`}
-      >
-        {loadingChapter ? (
-          <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center">
-            <Loader2 className="h-6 w-6 animate-spin opacity-70" />
-            <p className={`text-sm ${palette.textSecondary}`}>Đang mở trang sách...</p>
-          </div>
-        ) : chapterError ? (
-          <div className="mx-auto flex min-h-[55vh] max-w-md flex-col items-center justify-center gap-3 text-center">
-            <AlertCircle className="h-8 w-8 text-amber-500" />
-            <p className="text-sm font-medium">{chapterError}</p>
-            <button
-              type="button"
-              onClick={retryChapter}
-              className={`mt-1 inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-xs font-semibold transition ${palette.border} ${palette.hover}`}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Thử tải lại chương
-            </button>
-          </div>
-        ) : (
-          layout && (
+        />
+      ) : (
+        <main
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          onClick={(event) => {
+            if (settingsOpen) {
+              setSettingsOpen(false);
+              return;
+            }
+            const target = event.target as HTMLElement | null;
+            if (target?.closest('button, a, input, select, textarea')) return;
+
+            if (layout && stageWrapRef.current) {
+              const stageRect = stageWrapRef.current.getBoundingClientRect();
+              const hitImg = findCanvasLayoutImageAtPoint(
+                layout,
+                stageBox.width,
+                event.clientX - stageRect.left,
+                event.clientY - stageRect.top,
+              );
+              const bitmap = hitImg ? bitmapsRef.current.get(hitImg.mediaIndex) : undefined;
+              if (hitImg && bitmap) {
+                setLightboxTarget({
+                  kind: 'guest-bitmap',
+                  bitmap,
+                  watermarkLabel: effectiveWatermark,
+                  alt: hitImg.alt || book.title,
+                });
+                return;
+              }
+            }
+
+            const rect = event.currentTarget.getBoundingClientRect();
+            const ratio = (event.clientX - rect.left) / rect.width;
+            if (settings.sideTapNavigation && ratio < 0.16) goPrevChapter();
+            else if (settings.sideTapNavigation && ratio > 0.84) goNextChapter();
+            else if (immersiveHidden && ratio >= 0.22 && ratio <= 0.78) setImmersiveHidden(false);
+          }}
+          className={`scrollbar-thin flex-1 overflow-y-auto px-3.5 pb-8 pt-16 transition-all sm:px-7 sm:pb-10 sm:pt-[4.5rem] ${
+            pageHidden ? 'blur-lg' : ''
+          }`}
+        >
+          {layout && (
             <div className="mx-auto" style={{ width: `${stageBox.width}px` }}>
               <div
+                ref={stageWrapRef}
                 className="relative w-full overflow-hidden rounded-lg"
                 style={{ height: `${layout.totalHeight}px` }}
               >
@@ -433,67 +496,20 @@ export function GuestCanvasReader({
                   className="pointer-events-none absolute left-0 top-0 block"
                 />
               </div>
-
-              <nav
-                className={`mt-10 flex items-center justify-between gap-3 border-t pb-8 pt-6 ${palette.border}`}
-              >
-                <button
-                  type="button"
-                  onClick={goPrev}
-                  disabled={chapterIndex === 0}
-                  className={`flex items-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-30 ${palette.border} ${palette.hover}`}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  <span>Trước</span>
-                </button>
-
-                {chapterIndex === tocChapters.length - 1 ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      completedRef.current = true;
-                      if (currentTocItem) {
-                        queueProgressSave(
-                          {
-                            chapterId: currentTocItem.id,
-                            chapterIndex,
-                            chapterTitle: currentTocItem.title,
-                            totalChapters: tocChapters.length,
-                            scrollRatio: 1,
-                            scrollTop: scrollContainerRef.current?.scrollTop || 0,
-                            completed: true,
-                            updatedAt: Date.now(),
-                          },
-                          true,
-                        );
-                      }
-                      onClose();
-                    }}
-                    className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-500"
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    <span>Hoàn thành cuốn này!</span>
-                  </button>
-                ) : (
-                  <span className={`text-xs tabular-nums ${palette.textSecondary}`}>
-                    {chapterIndex + 1} / {tocChapters.length}
-                  </span>
-                )}
-
-                <button
-                  type="button"
-                  onClick={goNext}
-                  disabled={chapterIndex === tocChapters.length - 1}
-                  className={`flex items-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-30 ${palette.border} ${palette.hover}`}
-                >
-                  <span>Sau</span>
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </nav>
+              <ReaderChapterEndNav
+                chapterIndex={chapterIndex}
+                totalChapters={tocChapters.length}
+                palette={palette}
+                nextBook={nextBook}
+                onPrev={goPrevChapter}
+                onNext={goNextChapter}
+                onCompleteAndClose={() => completeBook()}
+                onCompleteAndOpenNext={(nb) => completeBook(nb)}
+              />
             </div>
-          )
-        )}
-      </main>
+          )}
+        </main>
+      )}
 
       <div className="h-1 w-full shrink-0 bg-black/10">
         <div
@@ -501,6 +517,15 @@ export function GuestCanvasReader({
           style={{ width: `${overallPercent}%` }}
         />
       </div>
+
+      {lightboxTarget && (
+        <Suspense fallback={null}>
+          <LazyReaderImageLightbox
+            target={lightboxTarget}
+            onClose={() => setLightboxTarget(null)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

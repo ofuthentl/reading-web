@@ -1,34 +1,33 @@
-import { Suspense, lazy } from 'react';
-import {
-  BookMarked,
-  BookOpen,
-  Clock,
-  FolderEdit,
-  FolderInput,
-  Library,
-  Search,
-  Star,
-  Trash2,
-  Upload,
-  X,
-} from 'lucide-react';
-import type { AuthRole, Book, ReadingProgress, StorageStats, ViewMode } from '@/types';
+import { Suspense, lazy, useEffect } from 'react';
+import { BookMarked, BookOpen, Clock, FolderEdit, Library, Star, Upload } from 'lucide-react';
+import type {
+  AuthRole, Book, ReadingProgress, ShelfAccessSummary, StorageStats, ViewMode,
+} from '@/types';
 import { BookCard } from '@/components/BookCard';
+import { EditorialBookStrip } from '@/components/EditorialBookStrip';
+import { LibraryFilterBar } from '@/components/LibraryFilterBar';
 import { LibraryHeader } from '@/components/LibraryHeader';
 import type { LibraryViewState } from '@/hooks/useLibraryViewState';
 import type { AppTheme } from '@/hooks/useTheme';
 import type { ToastType } from '@/hooks/useToast';
 
+const LazyBulkSelectionBar = lazy(() =>
+  import('@/components/BulkSelectionBar').then((mod) => ({ default: mod.BulkSelectionBar })),
+);
+
 const LazyLibraryCatalogView = lazy(() =>
-  import('@/components/LibraryCatalogView').then((mod) => ({
-    default: mod.LibraryCatalogView,
-  })),
+  import('@/components/LibraryCatalogView').then((mod) => ({ default: mod.LibraryCatalogView })),
+);
+
+const LazySupportView = lazy(() =>
+  import('@/components/SupportView').then((mod) => ({ default: mod.SupportView })),
 );
 
 interface Library2DViewProps {
   books: Book[];
   progress: Record<string, ReadingProgress>;
   shelfCovers?: Readonly<Record<string, string>>;
+  shelfAccess?: Readonly<Record<string, ShelfAccessSummary>>;
   favoriteShelfKeys?: ReadonlySet<string>;
   storage: StorageStats | null;
   loading: boolean;
@@ -43,12 +42,17 @@ interface Library2DViewProps {
   onRefresh: () => void;
   onLogout: () => void;
   onOpenBook: (book: Book) => void;
+  onInspectBook?: (book: Book) => void;
+  onDismissContinue?: (book: Book) => void;
+  onOpenStats?: () => void;
   onUploadClick?: () => void;
   onProtectionClick?: () => void;
   unprotectedBookCount?: number;
   onEditBook?: (book: Book) => void;
+  onBooksUpdated?: (books: Book[]) => void;
   onRenameShelf?: (shelfName: string) => void;
   onShelfCoverChanged?: (shelfName: string, bookId: string | null) => void;
+  onShelfAccessChanged?: (shelfName: string, summary: ShelfAccessSummary | null) => void;
   onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
@@ -77,6 +81,7 @@ export function Library2DView({
   books,
   progress,
   shelfCovers,
+  shelfAccess,
   favoriteShelfKeys,
   storage,
   loading,
@@ -91,12 +96,17 @@ export function Library2DView({
   onRefresh,
   onLogout,
   onOpenBook,
+  onInspectBook,
+  onDismissContinue,
+  onOpenStats,
   onUploadClick,
   onProtectionClick,
   unprotectedBookCount = 0,
   onEditBook,
+  onBooksUpdated,
   onRenameShelf,
   onShelfCoverChanged,
+  onShelfAccessChanged,
   onToggleFavoriteShelf,
   onMoveSelectedToShelf,
   onDeleteSelected,
@@ -112,11 +122,19 @@ export function Library2DView({
     closeLibraryShelf,
     searchQuery,
     setSearchQuery,
+    statusFilter,
+    setStatusFilter,
+    formatFilter,
+    setFormatFilter,
+    sortMode,
+    setSortMode,
     selectionMode,
     selectedIds,
     allShelves,
     libraryShelves,
     continueReadingBooks,
+    weeklyPopularBooks,
+    recentlyAddedBooks,
     filteredBooks,
     visibleShelves,
     selectedBooks,
@@ -131,16 +149,42 @@ export function Library2DView({
 
   const isLibraryGridMode = activeTab === 'library' && !openedLibraryShelf;
 
+  // Phím tắt `/` hoặc `Ctrl+K` nhảy nhanh vào ô tìm kiếm thư viện 2D (D-029)
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector('[role="dialog"]')) return;
+      const target = event.target as HTMLElement | null;
+      const isTyping =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target?.isContentEditable;
+
+      const isModK = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k';
+      if (isModK || (!isTyping && event.key === '/')) {
+        const input = document.querySelector<HTMLInputElement>('[data-library-search-input="true"]');
+        if (input) {
+          event.preventDefault();
+          input.focus();
+          input.select();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   return (
     <div className="theme-canvas min-h-screen text-ink transition-colors duration-200">
       <LibraryHeader
         storage={storage}
+        hideStorage
         bookCount={books.length}
         loading={loading}
         theme={theme}
         selectionMode={selectionMode}
         selectedCount={selectedIds.size}
-        showSelectionToggle={!isLibraryGridMode}
+        showSelectionToggle={!isLibraryGridMode && activeTab !== 'support'}
         sessionRole={sessionRole}
         sessionExpiresAt={sessionExpiresAt}
         activeTab={activeTab}
@@ -149,6 +193,7 @@ export function Library2DView({
         viewMode={viewMode}
         onChangeViewMode={onChangeViewMode}
         onCycleTheme={onCycleTheme}
+        onOpenStats={onOpenStats}
         onUploadClick={onUploadClick}
         onProtectionClick={onProtectionClick}
         unprotectedBookCount={unprotectedBookCount}
@@ -157,12 +202,14 @@ export function Library2DView({
         onLogout={onLogout}
       />
 
-      <main className="mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6 sm:py-8">
-        {/* Trạng thái đang tải lần đầu */}
-        {loading && books.length === 0 ? (
+      <main className="mx-auto flex max-w-7xl flex-col gap-9 px-4 py-6 sm:px-6 sm:py-8">
+        {activeTab === 'support' ? (
+          <Suspense fallback={<LibraryGridSkeleton />}>
+            <LazySupportView onNotify={onNotify} />
+          </Suspense>
+        ) : loading && books.length === 0 ? (
           <LibraryGridSkeleton />
         ) : books.length === 0 ? (
-          /* Trạng thái thư viện trống */
           <section className="moonlit-card mx-auto flex max-w-md flex-col items-center rounded-2xl border border-line bg-surface px-6 py-14 text-center shadow-sm dark:border-line-strong/60">
             <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-line bg-subtle text-accent">
               <BookOpen className="h-7 w-7" />
@@ -187,29 +234,41 @@ export function Library2DView({
             )}
           </section>
         ) : activeTab === 'library' ? (
-          /* Tab Thư viện (nạp lười giữ nhẹ bundle khởi đầu) */
           <Suspense fallback={<LibraryGridSkeleton />}>
             <LazyLibraryCatalogView
-              allShelvesCount={allShelves.length}
+              allShelves={allShelves}
               libraryShelves={libraryShelves}
               openedLibraryShelf={openedLibraryShelf}
               progress={progress}
               shelfCovers={shelfCovers}
+              shelfAccess={shelfAccess}
               favoriteShelfKeys={favoriteShelfKeys}
+              sessionRole={sessionRole}
               searchQuery={searchQuery}
+              statusFilter={statusFilter}
+              formatFilter={formatFilter}
+              sortMode={sortMode}
+              isFiltering={isFiltering}
               selectionMode={selectionMode}
               selectedIds={selectedIds}
               onSearchChange={setSearchQuery}
+              onStatusChange={setStatusFilter}
+              onFormatChange={setFormatFilter}
+              onSortChange={setSortMode}
+              onClearFilters={clearFilters}
               onOpenShelf={openLibraryShelf}
               onCloseShelf={closeLibraryShelf}
               onOpenBook={onOpenBook}
+              onInspectBook={onInspectBook}
               onToggleSelect={toggleSelectBook}
               onSelectBookIds={selectBookIds}
               onClearSelection={clearSelection}
               onToggleSelectionMode={toggleSelectionMode}
               onEditBook={onEditBook}
+              onBooksUpdated={onBooksUpdated}
               onRenameShelf={onRenameShelf}
               onShelfCoverChanged={onShelfCoverChanged}
+              onShelfAccessChanged={onShelfAccessChanged}
               onToggleFavoriteShelf={onToggleFavoriteShelf}
               onMoveSelectedToShelf={onMoveSelectedToShelf}
               onDeleteSelected={onDeleteSelected}
@@ -218,105 +277,42 @@ export function Library2DView({
             />
           </Suspense>
         ) : (
-          /* Tab Trang chủ */
           <>
-            {/* Thanh tìm kiếm */}
-            <section aria-label="Tìm kiếm thư viện" className="space-y-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="relative flex-1 sm:max-w-md">
-                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
-                  <input
-                    type="text"
-                    inputMode="search"
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder="Tìm theo tên sách, tác giả hoặc tên kệ..."
-                    aria-label="Tìm theo tên sách, tác giả hoặc tên kệ"
-                    className="w-full rounded-xl border border-line bg-surface py-2.5 pl-10 pr-9 text-sm text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-accent"
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery('')}
-                      aria-label="Xoá từ khoá tìm kiếm"
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-ink-faint transition-colors hover:bg-subtle hover:text-ink"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </div>
+            <LibraryFilterBar
+              searchQuery={searchQuery}
+              statusFilter={statusFilter}
+              formatFilter={formatFilter}
+              hideSort
+              showStorage={sessionRole === 'owner'}
+              storage={storage}
+              isFiltering={isFiltering}
+              filteredCount={filteredBooks.length}
+              totalCount={books.length}
+              unitLabel="cuốn"
+              onSearchChange={setSearchQuery}
+              onStatusChange={setStatusFilter}
+              onFormatChange={setFormatFilter}
+              onClearFilters={clearFilters}
+            />
 
-                {isFiltering && (
-                  <div className="flex items-center gap-2 text-xs text-ink-muted">
-                    <span>
-                      Hiển thị <strong className="text-ink">{filteredBooks.length}</strong> /{' '}
-                      {books.length} cuốn
-                    </span>
-                    <button
-                      type="button"
-                      onClick={clearFilters}
-                      className="rounded-lg border border-line bg-surface px-2.5 py-1 font-medium text-accent transition-colors hover:border-line-strong hover:bg-subtle"
-                    >
-                      Xoá lọc
-                    </button>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {/* Thanh thao tác khi bật chế độ chọn nhiều */}
             {selectionMode && (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/40 bg-surface px-4 py-3 shadow-sm">
-                <p className="text-sm text-ink">
-                  Đã chọn <strong className="text-accent">{selectedIds.size}</strong> /{' '}
-                  {filteredBooks.length} cuốn sách
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={
-                      selectedIds.size === filteredBooks.length && filteredBooks.length > 0
-                        ? clearSelection
-                        : selectAllVisible
-                    }
-                    disabled={filteredBooks.length === 0}
-                    className="rounded-lg border border-line bg-canvas px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-line-strong disabled:opacity-50"
-                  >
-                    {selectedIds.size === filteredBooks.length && filteredBooks.length > 0
-                      ? 'Bỏ chọn tất cả'
-                      : 'Chọn tất cả'}
-                  </button>
-                  {onMoveSelectedToShelf && (
-                    <button
-                      type="button"
-                      disabled={selectedBooks.length === 0}
-                      onClick={() => onMoveSelectedToShelf(selectedBooks)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-45"
-                    >
-                      <FolderInput className="h-3.5 w-3.5" />
-                      Chuyển kệ ({selectedBooks.length})
-                    </button>
-                  )}
-                  {onDeleteSelected && (
-                    <button
-                      type="button"
-                      disabled={selectedBooks.length === 0}
-                      onClick={() => onDeleteSelected(selectedBooks)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-700/30 bg-red-600/10 px-3 py-1.5 text-xs font-medium text-red-800 transition-colors hover:bg-red-600/20 disabled:opacity-45 dark:border-red-400/30 dark:text-red-300"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Xoá đã chọn ({selectedBooks.length})
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={toggleSelectionMode}
-                    className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
-                  >
-                    Xong
-                  </button>
-                </div>
-              </div>
+              <Suspense fallback={null}>
+                <LazyBulkSelectionBar
+                  selectedCount={selectedIds.size}
+                  totalVisibleCount={filteredBooks.length}
+                  unitLabel="cuốn sách"
+                  allSelected={selectedIds.size === filteredBooks.length && filteredBooks.length > 0}
+                  selectedBooks={selectedBooks}
+                  onToggleSelectAll={
+                    selectedIds.size === filteredBooks.length && filteredBooks.length > 0
+                      ? clearSelection
+                      : selectAllVisible
+                  }
+                  onMoveSelected={onMoveSelectedToShelf}
+                  onDeleteSelected={onDeleteSelected}
+                  onDone={toggleSelectionMode}
+                />
+              </Suspense>
             )}
 
             {/* Khối Tiếp tục đọc */}
@@ -345,15 +341,53 @@ export function Library2DView({
                       key={`continue-${book.id}`}
                       book={book}
                       progress={progress[book.id]}
+                      sessionRole={sessionRole}
                       selectionMode={selectionMode}
                       selected={selectedIds.has(book.id)}
                       layout="horizontal"
                       onOpen={onOpenBook}
                       onToggleSelect={toggleSelectBook}
+                      onInspect={onInspectBook}
+                      onDismissContinue={onDismissContinue}
                     />
                   ))}
                 </div>
               </section>
+            )}
+
+            {/* Cặp 2 dải biên tập: 01 Thịnh hành tuần này & 02 Mới cập nhật gần đây */}
+            {!isFiltering && (
+              <>
+                <EditorialBookStrip
+                  eyebrow="01 · ĐỌC NHIỀU TRONG 7 NGÀY"
+                  leadTitle="Thịnh hành"
+                  accentTitle="tuần này"
+                  books={weeklyPopularBooks}
+                  progress={progress}
+                  selectionMode={selectionMode}
+                  selectedIds={selectedIds}
+                  sessionRole={sessionRole}
+                  isDark={isDark}
+                  onOpenBook={onOpenBook}
+                  onToggleSelect={toggleSelectBook}
+                  onInspectBook={onInspectBook}
+                />
+
+                <EditorialBookStrip
+                  eyebrow="02 · VỪA ĐƯA LÊN KỆ"
+                  leadTitle="Mới cập nhật"
+                  accentTitle="gần đây"
+                  books={recentlyAddedBooks}
+                  progress={progress}
+                  selectionMode={selectionMode}
+                  selectedIds={selectedIds}
+                  sessionRole={sessionRole}
+                  isDark={isDark}
+                  onOpenBook={onOpenBook}
+                  onToggleSelect={toggleSelectBook}
+                  onInspectBook={onInspectBook}
+                />
+              </>
             )}
 
             {/* Danh sách kệ sách */}
@@ -364,7 +398,7 @@ export function Library2DView({
                   Không tìm thấy cuốn sách nào
                 </h2>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Thử đổi từ khoá tìm kiếm hoặc xoá bộ lọc kệ hiện tại.
+                  Thử đổi từ khoá tìm kiếm hoặc xoá các bộ lọc trạng thái / định dạng hiện tại.
                 </p>
                 <button
                   type="button"
@@ -375,8 +409,26 @@ export function Library2DView({
                 </button>
               </section>
             ) : (
-              <div className="space-y-9">
-                {visibleShelves.map((shelf) => {
+              <section aria-label="03 Thư viện truyện" className="space-y-7">
+                {!isFiltering && (
+                  <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line-strong/70 pb-3">
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-crimson-accent">
+                        03 · TOÀN BỘ KHO TRUYỆN
+                      </p>
+                      <h2 className="font-display text-[1.75rem] font-normal leading-[1.08] tracking-[-0.015em] text-ink sm:text-[2.15rem]">
+                        <span>Thư viện </span>
+                        <span className="italic text-crimson-accent">truyện</span>
+                      </h2>
+                    </div>
+                    <span className="rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink-muted">
+                      {visibleShelves.length} kệ · {books.length} cuốn
+                    </span>
+                  </div>
+                )}
+
+                <div className="space-y-9">
+                  {visibleShelves.map((shelf) => {
                   const isFav = Boolean(favoriteShelfKeys?.has(shelf.key));
                   return (
                     <section key={shelf.key} aria-label={`Kệ ${shelf.name}`} className="space-y-4">
@@ -434,23 +486,27 @@ export function Library2DView({
                       </div>
 
                       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-                        {shelf.books.map((book) => (
+                        {shelf.books.map((book, index) => (
                           <BookCard
                             key={book.id}
                             book={book}
+                            staggerIndex={index}
                             progress={progress[book.id]}
+                            sessionRole={sessionRole}
                             selectionMode={selectionMode}
                             selected={selectedIds.has(book.id)}
                             onOpen={onOpenBook}
                             onToggleSelect={toggleSelectBook}
                             onEdit={onEditBook}
+                            onInspect={onInspectBook}
                           />
                         ))}
                       </div>
                     </section>
                   );
                 })}
-              </div>
+                </div>
+              </section>
             )}
           </>
         )}

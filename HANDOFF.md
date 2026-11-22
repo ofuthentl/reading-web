@@ -1,22 +1,20 @@
 # HANDOFF
-Cập nhật: 2026-11-22 10:32 | Nhánh: feat/guest-content-protection | Build: 🟢 frontend (entry <= 86.04 kB gzip, 0 B three) · 🟢 worker (live) · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: **Hoàn tất & đồng bộ `origin/main` (PR #9) vào `feat/guest-content-protection` (`D-028`)** — sẵn sàng bấm Merge PR trên GitHub.
-Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/guest-content-protection.md
+Cập nhật: 2026-11-22 22:22 | Nhánh: feat/shelf-member-access | Build: 🟢 frontend (`<= 86.04 kB` gzip, `0 B` three) · 🟢 worker · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: **Hoàn tất Phân quyền Đọc theo Bộ (`D-030`) & sửa dứt điểm lỗi treo `CompressionStream` khi đồng bộ gói bảo mật sách siêu dài (`20 Wazamonogatari`)**.
+Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/shelf-member-access.md
 
 ## Đang làm dở
-- Đã hợp nhất sạch `origin/main` (gồm PR #9 `fix/native-gate-ui` cổng vòm `GateBackdropArt`) vào nhánh `feat/guest-content-protection` (`D-028`) và đã deploy live Cloudflare Worker (`arcane-library-api`):
-  1. **Worker (`guestPack.ts`, `forensicWatermark.ts`, `progressDb.ts`):** khoá `403` `/api/files/books/*` với `guest`, ẩn `file_key`, gắn `ua_hash`, Token Bucket chống bot (`burst = 10`, hồi `1 chương / 6s`, không trần ngày), cắt byte-range từng chương & ảnh từ R2 mã hoá `AES-256-GCM` và nhúng thuỷ vân 32-bit theo `discord_user_id`.
-  2. **Đóng gói `GuestPack` (`zipDirectory.ts`, `guestPackBuilder.ts`, `guestCrypto.ts`):** trích toạ độ ảnh trực tiếp trong ZIP (`0 B` nhân bản ảnh), tự sinh gói khi upload `EPUB`/`DOCX` mới & ngắt lưu IndexedDB sách ở chế độ `guest`.
-  3. **Trình đọc `<canvas>` 2D (`GuestCanvasReader.tsx`):** DOM 0 chữ/ảnh, khoá `toDataURL`/`toBlob`, phủ vân giấy sóng độ sáng chống tách nền Tesseract OCR + thuỷ vân nổi `discord_username · #xxxx`; Admin giữ nguyên 100% `ReaderView` DOM + Cache `0ms`.
-  4. **Bảng Bảo mật Admin (`AdminProtectionModal.tsx`, `AdminModalsHost.tsx`):** nút Khiên trên `LibraryHeader` để đồng bộ 1 chạm sách `EPUB`/`DOCX` cũ trên R2, quét văn bản truy vết thủ phạm Discord & khoá/mở khoá tức thì.
+- Đã hoàn tất **Phase 1 → Phase 3 (`D-030`)** + bản vá tăng tốc đồng bộ gói bảo mật (`D-028`) trên nhánh `feat/shelf-member-access` (Worker & D1 đã deploy live):
+  1. **Worker & D1 (`0006_shelf_access.sql`, `shelfAccessDb.ts`, `adminRoutes.ts`, `booksDb.ts`):** bảng `shelf_access_rules` + `shelf_guest_grants` đã migrate trên `library-db` remote, trả `guest_locked` / `shelfAccess` và chặn cứng `403 Forbidden` ở mọi API khách.
+  2. **Giao diện Bìa gắn Ổ khoá & Cửa sổ Quản trị (`ShelfAccessModal.tsx`, `ShelfAccessMemberList.tsx`, `BookCard.tsx`, `EditorialBookStrip.tsx`, `ShelfCoverCard.tsx`, `ShelfDetailView.tsx`, `BookInfoModal.tsx`):** hiện bìa kèm ổ khoá `🔒 Giới hạn` cho khách không thuộc danh sách; Admin tick thành viên / dán `Discord User ID` / sao chép từ bộ khác 1 chạm.
+  3. **Sửa treo đóng gói bảo mật sách gộp chương lớn (`guestPackBuilder.ts`, `parsers.ts`, `AdminProtectionModal.tsx`):** đổi sang `Blob.stream().pipeThrough(CompressionStream)` chống deadlock Chromium khi chương > 500 KB, tự chia đoạn chương khổng lồ (`> 260` khối), bỏ giải nén ảnh thừa (`skipMediaBlobs`) & bỏ ghi tràn IndexedDB khi đồng bộ hàng loạt.
 
 ## Bước tiếp theo
-1. Bấm **Merge pull request** trên GitHub khi CI chạy lại xanh (đã hết conflict).
-2. Sau khi `ofu.lol` cập nhật, bấm nút **Khiên** trên Header → bấm **Đồng bộ sách chưa có gói** 1 lần cho các sách `EPUB`/`DOCX` cũ.
+1. Mở Pull Request `feat/shelf-member-access` vào `main` và bấm Merge khi CI xanh để đưa bản vá đồng bộ + phân quyền lên `ofu.lol`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **`feat/guest-content-protection` (`D-028`):** Hoàn tất 4 Phase + deploy live Worker + giải quyết conflict với PR #9 (`fix/native-gate-ui`).
-- **PR #9 (`fix/native-gate-ui`, `D-027`):** đã merge vào `main`.
+- **`feat/web-2d-enhancements` (`D-029`):** Hoàn tất 5 Phase nâng cấp giao diện & trình đọc 2D + sửa nhận diện tiêu đề phụ tập.
+- **PR #10 (`feat/guest-content-protection`, `D-028`):** đã merge vào `main`.

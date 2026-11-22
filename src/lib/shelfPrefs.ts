@@ -1,4 +1,4 @@
-import type { ShelfGroup } from '@/types';
+import type { ShelfAccessSummary, ShelfGroup } from '@/types';
 import { MAX_SHELF_NAME_LENGTH, apiFetch, assertApiConfigured, isCloudMode } from '@/lib/api';
 
 const SHELF_PREFS_STORAGE_KEY = 'ofu-library-shelf-prefs-v1';
@@ -6,6 +6,7 @@ const SHELF_PREFS_STORAGE_KEY = 'ofu-library-shelf-prefs-v1';
 export interface ShelfPrefsState {
   covers: Record<string, string>;
   favorites: string[];
+  access?: Record<string, ShelfAccessSummary>;
 }
 
 export function toShelfPrefKey(shelfName: string): string {
@@ -92,7 +93,34 @@ export function renameShelfPrefs(
     favSet.delete(oldKey);
     favSet.add(newKey);
   }
-  return { covers, favorites: Array.from(favSet) };
+
+  let access = prev.access;
+  if (access && oldKey in access) {
+    const nextAccess = { ...access };
+    const prevDest = nextAccess[newKey];
+    const src = nextAccess[oldKey];
+    nextAccess[newKey] = {
+      mode: 'restricted',
+      allowedCount: Math.max(prevDest?.allowedCount ?? 0, src.allowedCount),
+    };
+    delete nextAccess[oldKey];
+    access = nextAccess;
+  }
+
+  return { covers, favorites: Array.from(favSet), ...(access ? { access } : {}) };
+}
+
+export function patchShelfAccessSummary(
+  prev: ShelfPrefsState,
+  shelfName: string,
+  summary: ShelfAccessSummary | null,
+): ShelfPrefsState {
+  const key = toShelfPrefKey(shelfName);
+  if (!key) return prev;
+  const nextAccess = { ...(prev.access || {}) };
+  if (summary) nextAccess[key] = summary;
+  else delete nextAccess[key];
+  return { ...prev, access: nextAccess };
 }
 
 export function pruneDeletedBooksFromPrefs(

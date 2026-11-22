@@ -116,9 +116,16 @@ function convertChapterToGuestBlocks(
   const flushParagraph = (kind: 'p' | 'quote' = 'p') => {
     const normalized = normalizeParagraphSpans(pendingSpans);
     pendingSpans = [];
-    if (normalized.length > 0) {
-      blocks.push({ kind, spans: normalized });
+    if (normalized.length === 0) return;
+    if (kind === 'p' && normalized.length === 1) {
+      const mdHeading = normalized[0].t.match(/^(#{1,3})\s+(.{1,130})$/);
+      if (mdHeading) {
+        const level = Math.min(3, mdHeading[1].length) as 1 | 2 | 3;
+        blocks.push({ kind: 'h', level, spans: [{ t: mdHeading[2].trim(), b: 1 }] });
+        return;
+      }
     }
+    blocks.push({ kind, spans: normalized });
   };
 
   const collectInlineNode = (
@@ -292,12 +299,58 @@ function convertChapterToGuestBlocks(
   return blocks;
 }
 
+const MAX_BLOCKS_PER_PACK_CHAPTER = 260;
+const TARGET_BLOCKS_PER_SEGMENT = 210;
+
+function splitOversizedChapter(
+  chapterId: string,
+  chapterTitle: string,
+  blocks: GuestBlock[],
+): Array<{ id: string; title: string; blocks: GuestBlock[] }> {
+  if (blocks.length <= MAX_BLOCKS_PER_PACK_CHAPTER) {
+    return [{ id: chapterId, title: chapterTitle, blocks }];
+  }
+
+  const rawChunks: GuestBlock[][] = [];
+  let start = 0;
+  while (start < blocks.length) {
+    if (blocks.length - start <= MAX_BLOCKS_PER_PACK_CHAPTER) {
+      rawChunks.push(blocks.slice(start));
+      break;
+    }
+    let splitAt = start + TARGET_BLOCKS_PER_SEGMENT;
+    const searchFrom = Math.max(start + 90, splitAt - 45);
+    const searchTo = Math.min(blocks.length - 40, splitAt + 45);
+    for (let i = searchFrom; i <= searchTo; i += 1) {
+      if (blocks[i].kind === 'h' || blocks[i].kind === 'hr') {
+        splitAt = blocks[i].kind === 'hr' ? i + 1 : i;
+        break;
+      }
+    }
+    rawChunks.push(blocks.slice(start, splitAt));
+    start = splitAt;
+  }
+
+  return rawChunks.map((segBlocks, idx) => {
+    const first = segBlocks[0];
+    const headingLabel =
+      idx > 0 && first?.kind === 'h'
+        ? first.spans.map((s) => s.t).join('').trim().slice(0, 120)
+        : '';
+    const segTitle = headingLabel || `${chapterTitle} (${idx + 1}/${rawChunks.length})`;
+    return {
+      id: idx === 0 ? chapterId : `${chapterId}-p${idx + 1}`,
+      title: segTitle,
+      blocks: segBlocks,
+    };
+  });
+}
+
 async function gzipCompressBytes(raw: Uint8Array): Promise<Uint8Array> {
-  const cs = new CompressionStream('gzip');
-  const writer = cs.writable.getWriter();
-  void writer.write(raw as BufferSource);
-  void writer.close();
-  const ab = await new Response(cs.readable).arrayBuffer();
+  const stream = new Blob([raw as BlobPart])
+    .stream()
+    .pipeThrough(new CompressionStream('gzip'));
+  const ab = await new Response(stream).arrayBuffer();
   return new Uint8Array(ab);
 }
 
@@ -308,7 +361,9 @@ export async function buildGuestPackEnvelope(blob: Blob, book: Book): Promise<Ui
 
   const arrayBuffer = await blob.arrayBuffer();
   const zipMap = parseZipEntryOffsets(arrayBuffer);
-  const parsed = await parseBookBlob(new Blob([arrayBuffer], { type: blob.type }), book);
+  const parsed = await parseBookBlob(new Blob([arrayBuffer], { type: blob.type }), book, {
+    skipMediaBlobs: true,
+  });
 
   try {
     const mediaByZipPath = new Map<string, number>();
@@ -318,19 +373,23 @@ export async function buildGuestPackEnvelope(blob: Blob, book: Book): Promise<Ui
     let currentOffset = 0;
 
     for (const chapter of parsed.chapters) {
-      const blocks = convertChapterToGuestBlocks(chapter, zipMap, mediaByZipPath, mediaList);
-      const chapterJsonBytes = new TextEncoder().encode(
-        JSON.stringify({ title: chapter.title, blocks }),
-      );
-      const compressed = await gzipCompressBytes(chapterJsonBytes);
-      manifestChapters.push({
-        id: chapter.id,
-        title: chapter.title,
-        offset: currentOffset,
-        length: compressed.byteLength,
-      });
-      compressedChunks.push(compressed);
-      currentOffset += compressed.byteLength;
+      const rawBlocks = convertChapterToGuestBlocks(chapter, zipMap, mediaByZipPath, mediaList);
+      const segments = splitOversizedChapter(chapter.id, chapter.title, rawBlocks);
+
+      for (const seg of segments) {
+        const chapterJsonBytes = new TextEncoder().encode(
+          JSON.stringify({ title: seg.title, blocks: seg.blocks }),
+        );
+        const compressed = await gzipCompressBytes(chapterJsonBytes);
+        manifestChapters.push({
+          id: seg.id,
+          title: seg.title,
+          offset: currentOffset,
+          length: compressed.byteLength,
+        });
+        compressedChunks.push(compressed);
+        currentOffset += compressed.byteLength;
+      }
     }
 
     const manifest: PackManifest = {

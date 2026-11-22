@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Ban, CheckCircle2, Fingerprint, Loader2, LockOpen,
-  RefreshCw, Shield, ShieldAlert, Square, Users, X,
+  CheckCircle2, Fingerprint, Loader2, RefreshCw, Shield, ShieldAlert, Square, Users, X,
 } from 'lucide-react';
 import type { Book, StorageStats } from '@/types';
-import { fetchBookBlobCached, isCloudMode } from '@/lib/api';
+import { AdminDiscordGuestsPanel } from '@/components/AdminDiscordGuestsPanel';
+import { fetchBookBlobCached, formatBytes, isCloudMode } from '@/lib/api';
 import {
   type DiscordGuestRecord, type ForensicSuspectItem,
   fetchAdminDiscordGuests, runAdminForensicWatermarkCheck, setAdminDiscordGuestBan,
@@ -34,8 +34,10 @@ export function AdminProtectionModal({
     done: number;
     total: number;
     currentTitle: string;
+    stepLabel?: string;
   } | null>(null);
   const stopSyncRef = useRef(false);
+  const syncAbortRef = useRef<AbortController | null>(null);
 
   // State truy vết rò rỉ văn bản 32-bit
   const [sampleText, setSampleText] = useState('');
@@ -108,18 +110,36 @@ export function AdminProtectionModal({
     for (let i = 0; i < targets.length; i += 1) {
       if (stopSyncRef.current) break;
       const target = targets[i];
-      setSyncProgress({ done: i, total: targets.length, currentTitle: target.title });
+      const controller = new AbortController();
+      syncAbortRef.current = controller;
+      setSyncProgress({
+        done: i,
+        total: targets.length,
+        currentTitle: target.title,
+        stepLabel: `Đang tải tệp (${formatBytes(target.file_size)})...`,
+      });
       try {
-        const { blob } = await fetchBookBlobCached(target);
+        const { blob } = await fetchBookBlobCached(target, {
+          cacheOnFetch: false,
+          signal: controller.signal,
+        });
         if (stopSyncRef.current) break;
+        setSyncProgress({
+          done: i,
+          total: targets.length,
+          currentTitle: target.title,
+          stepLabel: 'Đang nén & tải gói bảo mật...',
+        });
         const res = await buildAndUploadGuestPack(blob, target);
         onBookPackSynced(target.id, res.storage);
         successCount += 1;
       } catch (err) {
+        if (stopSyncRef.current) break;
         failCount += 1;
         console.warn(`Lỗi tạo gói khách cho "${target.title}":`, err);
       }
     }
+    syncAbortRef.current = null;
 
     setSyncing(false);
     setSyncProgress(null);
@@ -267,7 +287,8 @@ export function AdminProtectionModal({
                   <div className="mt-4 space-y-2 rounded-lg border border-line bg-surface p-3">
                     <div className="flex items-center justify-between text-xs">
                       <span className="truncate font-medium">
-                        Đang đóng gói: {syncProgress.currentTitle}
+                        {syncProgress.currentTitle}
+                        {syncProgress.stepLabel ? ` — ${syncProgress.stepLabel}` : ''}
                       </span>
                       <span className="shrink-0 tabular-nums text-ink-muted">
                         {syncProgress.done} / {syncProgress.total}
@@ -290,11 +311,12 @@ export function AdminProtectionModal({
                       type="button"
                       onClick={() => {
                         stopSyncRef.current = true;
+                        syncAbortRef.current?.abort();
                       }}
                       className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-600 dark:text-red-300"
                     >
                       <Square className="h-3.5 w-3.5" />
-                      Dừng sau cuốn hiện tại
+                      Dừng đồng bộ
                     </button>
                   ) : missingBooks.length > 0 ? (
                     <button
@@ -423,98 +445,15 @@ export function AdminProtectionModal({
           )}
 
           {activeTab === 'guests' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-ink-muted">
-                  Danh sách thành viên Discord đã từng nhận chìa khoá ({guests.length})
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void loadGuests()}
-                  disabled={loadingGuests}
-                  className="inline-flex items-center gap-1 rounded-lg border border-line bg-canvas px-2.5 py-1 text-xs text-ink-muted hover:text-ink"
-                >
-                  <RefreshCw className={`h-3 w-3 ${loadingGuests ? 'animate-spin' : ''}`} />
-                  Làm mới
-                </button>
-              </div>
-
-              {loadingGuests ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="h-5 w-5 animate-spin text-accent" />
-                </div>
-              ) : guests.length === 0 ? (
-                <p className="py-8 text-center text-xs text-ink-muted">
-                  Chưa có thành viên Discord nào nhận chìa khoá.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {guests.map((g) => {
-                    const activeNow =
-                      !g.isBanned &&
-                      typeof g.sessionExpiresAt === 'number' &&
-                      g.sessionExpiresAt > Date.now();
-                    return (
-                      <div
-                        key={g.discordUserId}
-                        className="flex items-center justify-between gap-3 rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-xs"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 font-medium">
-                            <span className="truncate">{g.discordUsername}</span>
-                            <span className="font-mono text-[11px] text-ink-muted">
-                              #{g.discordUserId.slice(-4)}
-                            </span>
-                            {g.isBanned ? (
-                              <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-red-600 dark:text-red-300">
-                                Đã khoá
-                              </span>
-                            ) : activeNow ? (
-                              <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-300">
-                                Đang mở cửa
-                              </span>
-                            ) : null}
-                          </div>
-                          <p className="mt-0.5 text-[11px] text-ink-muted">
-                            ID: {g.discordUserId}
-                            {g.strikes > 0 ? ` · Cảnh báo tốc độ: ${g.strikes}` : ''}
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          disabled={togglingUserId === g.discordUserId}
-                          onClick={() =>
-                            void handleToggleBan(
-                              g.discordUserId,
-                              !g.isBanned,
-                              g.discordUsername,
-                            )
-                          }
-                          className={`inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${
-                            g.isBanned
-                              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                              : 'border-red-500/35 bg-red-500/10 text-red-600 dark:text-red-300'
-                          }`}
-                        >
-                          {g.isBanned ? (
-                            <>
-                              <LockOpen className="h-3 w-3" />
-                              Mở khoá
-                            </>
-                          ) : (
-                            <>
-                              <Ban className="h-3 w-3" />
-                              Khoá
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <AdminDiscordGuestsPanel
+              guests={guests}
+              loading={loadingGuests}
+              togglingUserId={togglingUserId}
+              onRefresh={() => void loadGuests()}
+              onToggleBan={(userId, nextBanned, username) =>
+                void handleToggleBan(userId, nextBanned, username)
+              }
+            />
           )}
         </div>
       </div>

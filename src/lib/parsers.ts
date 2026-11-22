@@ -146,7 +146,16 @@ function getFilenameChapterTitle(path: string): string | null {
   return null;
 }
 
-async function parseEpubBlob(blob: Blob, book: Book): Promise<ParsedBook> {
+export interface ParseBookOptions {
+  /** Bỏ qua giải nén nhị phân ảnh sang Blob URL khi chỉ cần đọc chữ & đường dẫn `data-zip-path` */
+  skipMediaBlobs?: boolean;
+}
+
+async function parseEpubBlob(
+  blob: Blob,
+  book: Book,
+  options?: ParseBookOptions,
+): Promise<ParsedBook> {
   const createdUrls: string[] = [];
   const dispose = () => {
     for (const url of createdUrls) URL.revokeObjectURL(url);
@@ -254,6 +263,10 @@ async function parseEpubBlob(blob: Blob, book: Book): Promise<ParsedBook> {
       ];
       const matchedPath = candidates.find((candidate) => Boolean(zip.file(candidate)));
       if (!matchedPath) return null;
+
+      if (options?.skipMediaBlobs) {
+        return { url: 'data:,', zipPath: matchedPath };
+      }
 
       const existingUrl = imageUrlByZipPath.get(matchedPath);
       if (existingUrl) return { url: existingUrl, zipPath: matchedPath };
@@ -368,10 +381,14 @@ async function parseDocxBlob(blob: Blob, book: Book): Promise<ParsedBook> {
   return parseDocxZip(zip, book);
 }
 
-export async function parseBookBlob(blob: Blob, book: Book): Promise<ParsedBook> {
+export async function parseBookBlob(
+  blob: Blob,
+  book: Book,
+  options?: ParseBookOptions,
+): Promise<ParsedBook> {
   switch (book.file_type) {
     case 'epub':
-      return parseEpubBlob(blob, book);
+      return parseEpubBlob(blob, book, options);
     case 'pdf':
       return parsePdfBlob(blob, book);
     case 'docx':
