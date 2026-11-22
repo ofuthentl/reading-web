@@ -33,6 +33,32 @@ export function isVolumeOrSubtitleSegment(segment: string): boolean {
   return Boolean(clean) && (VOLUME_SEGMENT_RE.test(clean) || VOLUME_WITH_SUBTITLE_RE.test(clean));
 }
 
+/**
+ * Nhận diện tiêu đề kết thúc bằng nhãn số tập trơn chưa kèm tiêu đề phụ
+ * (VD: `Mii-kun dối trá và Maa-chan hư hỏng - Quyển 1`, `SAO - Tập 2`, `Ngoại truyện`).
+ */
+export const TITLE_ENDS_WITH_BARE_VOL_RE =
+  /(?:^|\s[-–—―−_:|：]\s*)(?:(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|book|part|ep(?:isode)?|v|#)\.?\s*\d+(?:[.,]\d+)?(?:\s*[-–—~]\s*\d+(?:[.,]\d+)?)?|ngoại\s+truyện|ngoai\s+truyen|side\s+story|extra|ova|special)\s*$/i;
+
+const SUBTITLE_GRAMMAR_RE =
+  /(?:^|\s)(?:là|và|của|những|các|chiếc|cuộc|chuyện|đằng|giữa|dưới|với|nếu|vì|dù|nhưng|hoặc|không|chẳng|chưa|đừng|hãy|được|bị|phải|sẽ|đã|đang|vừa|vẫn|rất|quá|lắm|này|kia|ấy|nào|kẻ|đứa|thằng)(?=$|\s|[?!.,:;…])/i;
+
+/**
+ * Nhận diện vế đứng ngay sau `- Quyển 1 - ...` thực chất là tiêu đề phụ của tập
+ * (VD: `Đằng Sau Hạnh Phúc Là Bất Hạnh`) chứ không phải tên tác giả.
+ */
+export function isLikelyVolumeSubtitle(segment: string): boolean {
+  const clean = segment.trim();
+  if (!clean) return false;
+  if (/[?!…“”"~：]/.test(clean)) return true;
+  if (SUBTITLE_GRAMMAR_RE.test(clean)) return true;
+  if (!/[,&/]/.test(clean)) {
+    const wordCount = clean.split(/\s+/).filter(Boolean).length;
+    if (wordCount >= 5) return true;
+  }
+  return false;
+}
+
 function normalizeKey(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi');
 }

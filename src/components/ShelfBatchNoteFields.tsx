@@ -11,6 +11,7 @@ export interface ShelfBatchNoteFieldsProps {
   missingAuthorCount: number;
   targetAuthorCount: number;
   knownAuthorsInShelf: string[];
+  healedTitlePreview?: { oldTitle: string; newTitle: string } | null;
   listedVolumes: Book[];
   sharedText: string;
   overwriteExisting: boolean;
@@ -35,6 +36,7 @@ export function ShelfBatchNoteFields({
   missingAuthorCount,
   targetAuthorCount,
   knownAuthorsInShelf,
+  healedTitlePreview,
   listedVolumes,
   sharedText,
   overwriteExisting,
@@ -106,9 +108,16 @@ export function ShelfBatchNoteFields({
 
         <p className="text-xs leading-relaxed text-ink-muted">
           Sẽ cập nhật tên tác giả cho <strong className="text-ink">{targetAuthorCount}</strong> /{' '}
-          {totalBooksCount} tập trong kệ <strong>{shelfName}</strong> (giữ nguyên toàn bộ tên tập và
-          số tập của từng cuốn).
+          {totalBooksCount} tập trong kệ <strong>{shelfName}</strong> (tự động ghép trả lại tên phụ
+          tập nếu trước đó bị tách nhầm sang ô Tác giả).
         </p>
+
+        {healedTitlePreview && (
+          <div className="rounded-xl border border-line bg-canvas/70 px-3.5 py-2.5 text-xs text-ink-muted">
+            <span className="font-medium text-ink">Tự động khôi phục tên tập đầy đủ:</span>{' '}
+            <span>{healedTitlePreview.newTitle}</span>
+          </div>
+        )}
       </div>
     );
   }

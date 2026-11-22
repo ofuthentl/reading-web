@@ -57,7 +57,7 @@ export function BookInfoModal({
   if (!book) return null;
 
   const displayTitle = getBookSortTitle(book);
-  const displayAuthor = getDisplayAuthor(book.author);
+  const displayAuthor = getDisplayAuthor(book.author, book.title);
   const clothColor = pickClothCoverColor(`${book.id}-${book.title}`);
   const percent = computeBookProgressPercent(book, progress);
   const isCompleted = Boolean(progress?.completed);

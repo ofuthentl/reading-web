@@ -215,7 +215,7 @@ export function ReadingStatsModal({
                           {getBookSortTitle(book)}
                         </p>
                         <p className="truncate text-xs text-ink-muted">
-                          {getDisplayAuthor(book.author)} ·{' '}
+                          {getDisplayAuthor(book.author, book.title)} ·{' '}
                           {itemProg.completed
                             ? 'Hoàn thành'
                             : itemProg.chapterTitle || `Phần ${(itemProg.chapterIndex ?? 0) + 1}`}

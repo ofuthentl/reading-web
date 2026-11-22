@@ -48,7 +48,7 @@ function EditorialRankedCard({
   const coverUrl = useCoverUrl(book.cover_key, isNearViewport);
   const showImage = Boolean(coverUrl && !imgFailed);
   const displayTitle = getBookSortTitle(book);
-  const displayAuthor = getDisplayAuthor(book.author);
+  const displayAuthor = getDisplayAuthor(book.author, book.title);
   const clothColor = pickClothCoverColor(`${book.id}-${book.title}`);
   const percent = computeBookProgressPercent(book, progress);
   const isCompleted = Boolean(progress?.completed);

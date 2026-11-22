@@ -1,7 +1,9 @@
 import type { Book, ReadingProgress, ShelfGroup } from '@/types';
 import {
+  TITLE_ENDS_WITH_BARE_VOL_RE,
   computeBookProgressPercent,
   getBookSortTitle,
+  getDisplayAuthor,
   isVolumeOrSubtitleSegment,
 } from '@/lib/bookMetadata';
 import { extractSeriesName, isKnownAuthor } from '@/lib/shelfPlacement';
@@ -213,26 +215,40 @@ function compareCandidates(a: CoverCandidate, b: CoverCandidate): number {
   return a.index - b.index;
 }
 
-function isDisplayableAuthor(author: string): boolean {
-  const clean = author.trim();
-  return isKnownAuthor(clean) && !isVolumeOrSubtitleSegment(clean);
+function isDisplayableAuthor(author: string, title?: string): boolean {
+  const resolved = getDisplayAuthor(author, title);
+  return isKnownAuthor(resolved) && !isVolumeOrSubtitleSegment(resolved);
 }
 
 function buildAuthorLabel(books: Book[], coverBook: Book | null): string {
-  const counts = new Map<string, { label: string; count: number }>();
+  const counts = new Map<string, { label: string; count: number; allBareVol: boolean }>();
   for (const book of books) {
-    if (!isDisplayableAuthor(book.author)) continue;
-    const clean = book.author.trim();
+    if (!isDisplayableAuthor(book.author, book.title)) continue;
+    const clean = getDisplayAuthor(book.author, book.title);
     const key = normalizeKey(clean);
+    const bareVol = TITLE_ENDS_WITH_BARE_VOL_RE.test(book.title.trim());
     const prev = counts.get(key);
-    if (prev) prev.count += 1;
-    else counts.set(key, { label: clean, count: 1 });
+    if (prev) {
+      prev.count += 1;
+      prev.allBareVol = prev.allBareVol && bareVol;
+    } else {
+      counts.set(key, { label: clean, count: 1, allBareVol: bareVol });
+    }
+  }
+
+  // Nếu kệ nhiều tập mà mỗi tập `- Quyển X` lại mang 1 chuỗi "tác giả" rời rạc duy nhất (count === 1),
+  // đó là các tiêu đề phụ ngắn của từng tập chứ không phải đồng tác giả.
+  if (books.length >= 2 && counts.size >= 2) {
+    const repeated = Array.from(counts.entries()).filter(([, v]) => v.count >= 2 || !v.allBareVol);
+    if (repeated.length === 0) return UNKNOWN_AUTHOR;
+    counts.clear();
+    for (const [k, v] of repeated) counts.set(k, v);
   }
 
   if (counts.size === 0) return UNKNOWN_AUTHOR;
 
-  const coverAuthor =
-    coverBook && isDisplayableAuthor(coverBook.author) ? coverBook.author.trim() : null;
+  const coverResolved = coverBook ? getDisplayAuthor(coverBook.author, coverBook.title) : null;
+  const coverAuthor = coverResolved && counts.has(normalizeKey(coverResolved)) ? coverResolved : null;
   let primary = coverAuthor;
   if (!primary) {
     let bestCount = -1;

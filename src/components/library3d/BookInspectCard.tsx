@@ -58,7 +58,7 @@ export function BookInspectCard({
 
   const showCover = Boolean(coverUrl && !imgFailed);
   const displayTitle = getBookSortTitle(book);
-  const displayAuthor = getDisplayAuthor(book.author);
+  const displayAuthor = getDisplayAuthor(book.author, book.title);
   const fallbackColor = book.cover_color || pickCoverColor(book.id);
   const percent = computeBookProgressPercent(book, progress);
   const chapterCaption = getChapterCaption(book, progress);

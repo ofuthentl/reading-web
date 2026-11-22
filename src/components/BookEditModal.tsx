@@ -10,6 +10,11 @@ import {
 } from 'lucide-react';
 import type { Book, StorageStats } from '@/types';
 import { formatBytes, updateBookCover, updateBookMetadata } from '@/lib/api';
+import {
+  TITLE_ENDS_WITH_BARE_VOL_RE,
+  getBookSortTitle,
+  getDisplayAuthor,
+} from '@/lib/bookMetadata';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 import type { ToastType } from '@/hooks/useToast';
 
@@ -51,8 +56,8 @@ export function BookEditModal({
       setCoverError(null);
       return;
     }
-    setTitle(book.title);
-    setAuthor(book.author);
+    setTitle(getBookSortTitle(book));
+    setAuthor(getDisplayAuthor(book.author, book.title));
     setShelf(book.shelf);
     setDescription(book.description ?? '');
     setCoverFile(null);
@@ -305,9 +310,26 @@ export function BookEditModal({
                 </div>
 
                 <div className="space-y-1.5">
-                  <label htmlFor="edit-book-author" className="block text-xs font-medium text-ink-muted">
-                    Tác giả
-                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label htmlFor="edit-book-author" className="block text-xs font-medium text-ink-muted">
+                      Tác giả
+                    </label>
+                    {TITLE_ENDS_WITH_BARE_VOL_RE.test(title.trim()) &&
+                      author.trim() &&
+                      author.trim() !== 'Không rõ tác giả' && (
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => {
+                            setTitle(`${title.trim()} - ${author.trim()}`);
+                            setAuthor('Không rõ tác giả');
+                          }}
+                          className="text-[11px] font-medium text-ink-muted underline-offset-2 hover:text-ink hover:underline disabled:opacity-50"
+                        >
+                          ⇄ Chuyển sang Tên sách
+                        </button>
+                      )}
+                  </div>
                   <input
                     id="edit-book-author"
                     type="text"
