@@ -341,7 +341,7 @@ export function ShelfDetailView({
                 <FileText className="h-4 w-4 text-ink-muted" />
                 <span>{missingNoteCount > 0 ? 'Thêm ghi chú' : 'Ghi chú & Tác giả'}</span>
                 {missingNoteCount > 0 && (
-                  <span className="rounded-full border border-line bg-subtle px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-ink">
+                  <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full border border-line bg-subtle px-1.5 text-[11px] font-medium leading-none tabular-nums text-ink">
                     {missingNoteCount}
                   </span>
                 )}
