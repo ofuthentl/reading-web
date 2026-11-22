@@ -77,7 +77,7 @@ export function LibraryFilterBar({
       ? 'bg-red-700 dark:bg-red-500'
       : usagePercent >= 75
         ? 'bg-amber-700 dark:bg-amber-500'
-        : 'bg-accent';
+        : 'bg-crimson-accent';
   return (
     <section aria-label="Tìm kiếm và lọc thư viện" className="space-y-3">
       <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">

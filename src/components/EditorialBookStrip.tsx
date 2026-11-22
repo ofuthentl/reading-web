@@ -84,10 +84,10 @@ function EditorialRankedCard({
             handleActivate();
           }
         }}
-        className={`tilt-card group relative aspect-[3/4.15] w-[9.5rem] cursor-pointer overflow-hidden rounded-[4px] border bg-subtle text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-[11rem] md:w-[11.75rem] ${
+        className={`tilt-card group relative aspect-[3/4.15] w-[9.5rem] cursor-pointer overflow-hidden rounded-lg border bg-subtle text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-[11rem] md:w-[11.75rem] ${
           selected
             ? 'border-accent ring-2 ring-accent ring-offset-2 ring-offset-canvas'
-            : 'border-black/12 hover:shadow-[0_16px_30px_-12px_rgba(43,36,29,0.38)] dark:border-white/12 dark:hover:shadow-[0_18px_34px_-12px_rgba(0,0,0,0.9)]'
+            : 'border-line hover:border-line-strong hover:shadow-[0_16px_30px_-12px_rgba(43,36,29,0.38)] dark:hover:border-line-strong dark:hover:shadow-[0_18px_34px_-12px_rgba(0,0,0,0.9)]'
         }`}
       >
         {showImage ? (
@@ -195,7 +195,7 @@ function EditorialRankedCard({
       {percent !== null && (
         <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1 bg-white/15">
           <div
-            className="h-full bg-[#B22222] transition-all duration-300"
+            className="h-full bg-crimson-accent transition-all duration-300"
             style={{ width: `${Math.max(percent, isCompleted ? 100 : 6)}%` }}
           />
         </div>

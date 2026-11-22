@@ -97,7 +97,7 @@ export function LibraryHeader({
       ? 'bg-red-700 dark:bg-red-500'
       : usagePercent >= 75
         ? 'bg-amber-700 dark:bg-amber-500'
-        : 'bg-accent';
+        : 'bg-crimson-accent';
 
   const renderTabButtons = (compact: boolean) =>
     NAV_TABS.map(({ id, label, icon: Icon }) => {

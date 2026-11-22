@@ -118,7 +118,7 @@ export function ReadingStatsModal({
             </div>
             <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-subtle">
               <div
-                className="h-full rounded-full bg-accent transition-all duration-300"
+                className="h-full rounded-full bg-crimson-accent transition-all duration-300"
                 style={{ width: `${Math.max(rpg.xpPercent, rpg.totalXp > 0 ? 5 : 0)}%` }}
               />
             </div>

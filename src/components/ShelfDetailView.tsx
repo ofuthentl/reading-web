@@ -240,7 +240,7 @@ export function ShelfDetailView({
               <div className="max-w-md pt-1">
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-subtle">
                   <div
-                    className="h-full rounded-full bg-accent transition-all duration-300"
+                    className="h-full rounded-full bg-crimson-accent transition-all duration-300"
                     style={{
                       width: `${Math.max(progressPercent, readingStatus === 'completed' ? 100 : 6)}%`,
                     }}

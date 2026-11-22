@@ -342,6 +342,10 @@
     color: rgb(var(--color-crimson));
   }
 
+  .bg-crimson-accent {
+    background-color: rgb(var(--color-crimson));
+  }
+
   .group:hover .group-hover-crimson {
     color: rgb(var(--color-crimson));
   }

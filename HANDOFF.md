@@ -1,5 +1,5 @@
 # HANDOFF
-Cập nhật: 2026-11-22 20:08 | Nhánh: feat/web-2d-enhancements | Build: 🟢 frontend (`<= 86.04 kB` gzip, `0 B` three) · 🟢 worker · 🟢 ESLint 0/0
+Cập nhật: 2026-11-22 20:21 | Nhánh: feat/web-2d-enhancements | Build: 🟢 frontend (`<= 86.04 kB` gzip, `0 B` three) · 🟢 worker · 🟢 ESLint 0/0
 Nhiệm vụ hiện tại: **Hoàn tất trọn bộ 5 Phase Nâng cấp Web 2D (`D-029`) & bổ sung Tab Ủng hộ (`SupportView` + VietQR)** — sẵn sàng deploy Worker & mở PR vào `main`.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/web-2d-enhancements.md
 

@@ -131,7 +131,7 @@ export function SupportView({ onNotify }: SupportViewProps) {
             onPointerMove={(e) => handleCoverTiltMove(e, 7, 6)}
             onPointerLeave={handleCoverTiltLeave}
             onPointerCancel={handleCoverTiltLeave}
-            className="tilt-card w-full max-w-[310px] overflow-hidden rounded-2xl border border-black/10 bg-white shadow-[0_22px_50px_-16px_rgba(43,36,29,0.3)] dark:border-white/15 dark:shadow-[0_26px_60px_-16px_rgba(0,0,0,0.88)] lg:max-w-[344px]"
+            className="tilt-card w-full max-w-[310px] overflow-hidden rounded-2xl border border-line bg-white shadow-[0_22px_50px_-16px_rgba(43,36,29,0.3)] dark:shadow-[0_26px_60px_-16px_rgba(0,0,0,0.88)] lg:max-w-[344px]"
           >
             <img
               src={SUPPORT_INFO.qrPath}

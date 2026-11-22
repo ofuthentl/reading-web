@@ -168,7 +168,7 @@ export function BookInfoModal({
                   </div>
                   <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-subtle">
                     <div
-                      className="h-full rounded-full bg-accent transition-all"
+                      className="h-full rounded-full bg-crimson-accent transition-all"
                       style={{ width: `${Math.max(percent ?? 0, isCompleted ? 100 : 6)}%` }}
                     />
                   </div>

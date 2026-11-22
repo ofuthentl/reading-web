@@ -60,8 +60,8 @@ export function ShelfCoverCard({
         }
       : readingStatus === 'reading'
         ? {
-            dotClass: 'bg-accent',
-            textClass: 'text-accent',
+            dotClass: 'bg-crimson-accent',
+            textClass: 'text-crimson-accent',
             label:
               bookCount > 1
                 ? `Đang đọc · ${completedCount}/${bookCount}`
@@ -198,7 +198,7 @@ export function ShelfCoverCard({
         {progressPercent !== null && (
           <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1 bg-black/40">
             <div
-              className="h-full bg-accent transition-all duration-300"
+              className="h-full bg-crimson-accent transition-all duration-300"
               style={{
                 width: `${Math.max(progressPercent, readingStatus === 'completed' ? 100 : 6)}%`,
               }}

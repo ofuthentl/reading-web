@@ -228,7 +228,7 @@ export function BookCard({
       {percent !== null && (
         <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1 bg-black/40">
           <div
-            className="h-full bg-accent transition-all duration-300"
+            className="h-full bg-crimson-accent transition-all duration-300"
             style={{ width: `${Math.max(percent, isCompleted ? 100 : 6)}%` }}
           />
         </div>
@@ -264,7 +264,7 @@ export function BookCard({
           {progress && (
             <div className="mt-2.5 space-y-1.5">
               <div className="flex items-center justify-between gap-2 text-[11px]">
-                <span className="inline-flex min-w-0 items-center gap-1 font-medium text-accent">
+                <span className="inline-flex min-w-0 items-center gap-1 font-medium text-crimson-accent">
                   {isCompleted ? (
                     <>
                       <CheckCircle2 className="h-3 w-3 shrink-0" />
@@ -283,7 +283,7 @@ export function BookCard({
               </div>
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-subtle">
                 <div
-                  className="h-full rounded-full bg-accent transition-all duration-300"
+                  className="h-full rounded-full bg-crimson-accent transition-all duration-300"
                   style={{ width: `${Math.max(percent ?? 0, isCompleted ? 100 : 6)}%` }}
                 />
               </div>
@@ -353,7 +353,7 @@ export function BookCard({
         </h3>
         <p className="truncate text-xs text-ink-muted">{displayAuthor}</p>
         {percent !== null && (
-          <div className="flex items-center justify-between gap-1.5 pt-0.5 text-[11px] font-medium text-accent">
+          <div className="flex items-center justify-between gap-1.5 pt-0.5 text-[11px] font-medium text-crimson-accent">
             <span className="truncate">{isCompleted ? 'Đã đọc xong' : chapterLabel}</span>
             <span className="shrink-0">{percent}%</span>
           </div>

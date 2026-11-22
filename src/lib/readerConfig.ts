@@ -54,7 +54,7 @@ export const READER_THEME_STYLES: Record<ReaderTheme, ReaderThemePalette> = {
     hover: 'hover:bg-[#efe8da]',
     active: 'bg-[#8c5e35]/12 text-[#734b28] border-[#8c5e35]/35',
     accentRing: 'border-[#8c5e35] ring-2 ring-[#8c5e35]/25',
-    progressBar: 'bg-[#8c5e35]',
+    progressBar: 'bg-[#B22222]',
     isDark: false,
   },
   sepia: {
@@ -69,7 +69,7 @@ export const READER_THEME_STYLES: Record<ReaderTheme, ReaderThemePalette> = {
     hover: 'hover:bg-[#e6d6b4]',
     active: 'bg-[#8c5e35]/15 text-[#3c2f1e] border-[#8c5e35]/35',
     accentRing: 'border-[#8c5e35] ring-2 ring-[#8c5e35]/25',
-    progressBar: 'bg-[#8c5e35]',
+    progressBar: 'bg-[#B22222]',
     isDark: false,
   },
   dark: {
@@ -84,7 +84,7 @@ export const READER_THEME_STYLES: Record<ReaderTheme, ReaderThemePalette> = {
     hover: 'hover:bg-white/10',
     active: 'bg-white/12 text-[#eef2f6] border-white/25',
     accentRing: 'border-[#eef2f6] ring-2 ring-white/20',
-    progressBar: 'bg-[#eef2f6]',
+    progressBar: 'bg-[#dc3838]',
     isDark: true,
   },
   midnight: {
@@ -99,7 +99,7 @@ export const READER_THEME_STYLES: Record<ReaderTheme, ReaderThemePalette> = {
     hover: 'hover:bg-white/10',
     active: 'bg-white/12 text-[#f2f2f4] border-white/25',
     accentRing: 'border-[#f2f2f4] ring-2 ring-white/20',
-    progressBar: 'bg-[#f2f2f4]',
+    progressBar: 'bg-[#e04040]',
     isDark: true,
   },
 };
