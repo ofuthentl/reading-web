@@ -167,7 +167,7 @@ export function ShelfDetailView({
 
       {/* Hero thông tin kệ */}
       <section className="moonlit-card flex flex-col gap-5 rounded-2xl border border-line bg-surface p-4 shadow-sm sm:flex-row sm:items-start sm:p-5 dark:border-line-strong/60">
-        <div className="group relative aspect-[3/4] w-28 shrink-0 self-center overflow-hidden rounded-xl border border-line bg-subtle shadow-sm sm:w-32 sm:self-start">
+        <div className="group relative aspect-[7/10] w-28 shrink-0 self-center overflow-hidden rounded-xl border border-line bg-subtle shadow-sm sm:w-32 sm:self-start">
           {showImage ? (
             <img
               src={coverUrl!}

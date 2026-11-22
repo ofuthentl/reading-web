@@ -85,7 +85,7 @@ function EditorialRankedCard({
             handleActivate();
           }
         }}
-        className={`tilt-card group relative aspect-[3/4.15] w-[9.5rem] cursor-pointer overflow-hidden rounded-lg border bg-subtle text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-[11rem] md:w-[11.75rem] ${
+        className={`tilt-card group relative aspect-[7/10] w-[9.5rem] cursor-pointer overflow-hidden rounded-lg border bg-subtle text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-[11rem] md:w-[11.75rem] ${
           selected
             ? 'border-accent ring-2 ring-accent ring-offset-2 ring-offset-canvas'
             : 'border-line hover:border-line-strong hover:shadow-[0_16px_30px_-12px_rgba(43,36,29,0.38)] dark:hover:border-line-strong dark:hover:shadow-[0_18px_34px_-12px_rgba(0,0,0,0.9)]'
@@ -98,7 +98,7 @@ function EditorialRankedCard({
             loading="lazy"
             decoding="async"
             onError={() => setImgFailed(true)}
-            className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.05]"
+            className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.03]"
           />
         ) : (
         <div

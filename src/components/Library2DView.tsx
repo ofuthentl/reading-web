@@ -67,7 +67,7 @@ function LibraryGridSkeleton() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {Array.from({ length: 6 }).map((_, index) => (
           <div key={index} className="space-y-2.5">
-            <div className="aspect-[3/4] w-full animate-pulse rounded-lg border border-line bg-subtle" />
+            <div className="aspect-[7/10] w-full animate-pulse rounded-lg border border-line bg-subtle" />
             <div className="h-3.5 w-4/5 animate-pulse rounded bg-subtle" />
             <div className="h-3 w-1/2 animate-pulse rounded bg-subtle" />
           </div>

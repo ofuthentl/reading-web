@@ -42,6 +42,10 @@ function isNearlyUniformCanvas(
   return totalSamples > 0 && contrastingSamples / totalSamples < MIN_CONTRAST_SAMPLE_RATIO;
 }
 
+const MIN_SAFE_COVER_ASPECT = 0.56;
+const MAX_SAFE_COVER_ASPECT = 0.85;
+const TARGET_COVER_HEIGHT = 720;
+
 export async function compressCoverBlob(
   source: Blob,
   options?: CompressCoverOptions,
@@ -61,19 +65,31 @@ export async function compressCoverBlob(
       }
     }
 
-    const targetWidth = 480;
-    const targetHeight = 720;
+    // Giữ nguyên 100% tỉ lệ gốc cho mọi bìa sách thông thường (Light Novel A6 ~0.71, A4 ~0.707, 2:3 ~0.67, 3:4 ~0.75);
+    // chỉ kẹp biên an toàn nếu gặp ảnh banner ngang hoặc dải dọc bất thường.
+    const dstRatio = Math.min(MAX_SAFE_COVER_ASPECT, Math.max(MIN_SAFE_COVER_ASPECT, srcRatio));
+    const targetHeight = Math.min(TARGET_COVER_HEIGHT, Math.max(240, bitmap.height));
+    const targetWidth = Math.max(160, Math.round(targetHeight * dstRatio));
+
     const canvas = document.createElement('canvas');
     canvas.width = targetWidth;
     canvas.height = targetHeight;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Không thể khởi tạo canvas xử lý ảnh bìa.');
 
-    const dstRatio = targetWidth / targetHeight;
-    const srcW = srcRatio > dstRatio ? bitmap.height * dstRatio : bitmap.width;
-    const srcH = srcRatio > dstRatio ? bitmap.height : bitmap.width / dstRatio;
-    const srcX = (bitmap.width - srcW) / 2;
-    const srcY = (bitmap.height - srcH) / 2;
+    const isUncropped = Math.abs(srcRatio - dstRatio) < 0.002;
+    const srcW = isUncropped
+      ? bitmap.width
+      : srcRatio > dstRatio
+        ? bitmap.height * dstRatio
+        : bitmap.width;
+    const srcH = isUncropped
+      ? bitmap.height
+      : srcRatio > dstRatio
+        ? bitmap.height
+        : bitmap.width / dstRatio;
+    const srcX = isUncropped ? 0 : (bitmap.width - srcW) / 2;
+    const srcY = isUncropped ? 0 : (bitmap.height - srcH) / 2;
 
     // Fill warm neutral paper backdrop before drawing in case of transparent PNG covers
     ctx.fillStyle = '#f6f1e7';
@@ -87,7 +103,7 @@ export async function compressCoverBlob(
     }
 
     const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, 'image/jpeg', 0.82),
+      canvas.toBlob(resolve, 'image/jpeg', 0.84),
     );
     if (!blob) throw new Error('Không thể nén ảnh bìa.');
     return blob;

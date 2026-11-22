@@ -70,6 +70,13 @@ export function useLibraryDataStore({
     [books],
   );
 
+  const handleBookUpdated = useCallback((updatedBook: Book, nextStorage?: StorageStats) => {
+    setBooks((prev) =>
+      sortBooksByTitle(prev.map((item) => (item.id === updatedBook.id ? updatedBook : item))),
+    );
+    if (nextStorage) setStorage(nextStorage);
+  }, []);
+
   const loadLibrary = useCallback(async () => {
     setLoading(true);
     try {
@@ -85,27 +92,32 @@ export function useLibraryDataStore({
         setSelectionResetKey((prev) => prev + 1);
       }
 
-      if (
-        !coreReadersPreloadedRef.current &&
-        canPreloadOnIdle() &&
-        state.session.role === 'owner'
-      ) {
-        coreReadersPreloadedRef.current = true;
+      if (canPreloadOnIdle() && state.session.role === 'owner') {
         const schedule =
           (window as IdleWindow).requestIdleCallback ??
           ((cb: () => void) => window.setTimeout(cb, 1500));
-        schedule(() => {
-          if (canPreloadOnIdle()) {
-            void import('@/lib/parsers').then((m) => m.preloadCoreReaders()).catch(() => undefined);
-          }
-        });
+        if (!coreReadersPreloadedRef.current) {
+          coreReadersPreloadedRef.current = true;
+          schedule(() => {
+            if (canPreloadOnIdle()) {
+              void import('@/lib/parsers').then((m) => m.preloadCoreReaders()).catch(() => undefined);
+            }
+          });
+        }
+        if (state.books.some((b) => Boolean(b.file_key) && !b.cover_key?.endsWith('-v2.jpg'))) {
+          window.setTimeout(() => {
+            void import('@/lib/legacyCoverSync')
+              .then((m) => m.syncLegacyCoversInBackground(state.books, handleBookUpdated, addToast))
+              .catch(() => undefined);
+          }, 1200);
+        }
       }
     } catch (err) {
       onApiError(err, 'Không thể tải dữ liệu thư viện.');
     } finally {
       setLoading(false);
     }
-  }, [onApiError, onNonOwnerLoaded, setSession]);
+  }, [addToast, handleBookUpdated, onApiError, onNonOwnerLoaded, setSession]);
 
   const clearStoreOnLogout = useCallback(() => {
     setBooks([]);
@@ -121,13 +133,6 @@ export function useLibraryDataStore({
   const handleBookUploaded = useCallback((book: Book, nextStorage: StorageStats) => {
     setBooks((prev) => sortBooksByTitle([...prev.filter((item) => item.id !== book.id), book]));
     setStorage(nextStorage);
-  }, []);
-
-  const handleBookUpdated = useCallback((updatedBook: Book, nextStorage?: StorageStats) => {
-    setBooks((prev) =>
-      sortBooksByTitle(prev.map((item) => (item.id === updatedBook.id ? updatedBook : item))),
-    );
-    if (nextStorage) setStorage(nextStorage);
   }, []);
 
   const handleBooksBatchUpdated = useCallback((updatedBooks: Book[]) => {

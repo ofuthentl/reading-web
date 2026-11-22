@@ -43,7 +43,7 @@ function VolumeCoverThumb({
           : 'hover:bg-subtle'
       }`}
     >
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-lg border border-line bg-subtle shadow-sm">
+      <div className="relative aspect-[7/10] w-full overflow-hidden rounded-lg border border-line bg-subtle shadow-sm">
         {coverUrl && !imgFailed ? (
           <img
             src={coverUrl}

@@ -15,7 +15,6 @@ import {
   formatBytes, groupBooksIntoShelves, parseFileMetadata, pickCoverColor, sortBooksByTitle,
 } from '@/lib/bookMetadata';
 import { isChunkLoadError } from '@/lib/chunkReload';
-import { compressCoverBlob } from '@/lib/coverImage';
 import {
   type ShelfPrefsState, pruneDeletedBooksFromPrefs, readLocalShelfPrefs,
   renameShelfPrefs, writeLocalShelfPrefs,
@@ -184,7 +183,7 @@ export async function uploadBook(
     }
 
     const fileKey = `books/${bookId}.${fileType}`;
-    const coverKey = coverBlob ? `covers/${bookId}.jpg` : null;
+    const coverKey = coverBlob ? `covers/${bookId}-v2.jpg` : null;
 
     await setCachedBookBlob(fileKey, file);
     if (coverKey && coverBlob) {
@@ -307,11 +306,12 @@ export async function updateBookCover(
   imageFile: File,
 ): Promise<{ book: Book; coverBlob: Blob; storage?: StorageStats }> {
   assertApiConfigured();
+  const { compressCoverBlob } = await import('@/lib/coverImage');
   const compressed = await compressCoverBlob(imageFile);
 
   if (!isCloudMode) {
     if (book.cover_key) await deleteCachedCoverBlob(book.cover_key);
-    const nextCoverKey = `covers/${book.id}-${Date.now()}.jpg`;
+    const nextCoverKey = `covers/${book.id}-${Date.now()}-v2.jpg`;
     await setCachedCoverBlob(nextCoverKey, compressed);
     const updated: Book = { ...book, cover_key: nextCoverKey, cover_size: compressed.size };
     await putLocalBook(updated);
@@ -332,7 +332,11 @@ export async function updateBookCover(
   if (!res.ok || !data.book) throw new Error(data.error || 'Không thể cập nhật ảnh bìa.');
   if (book.cover_key) await deleteCachedCoverBlob(book.cover_key);
   if (data.book.cover_key) await setCachedCoverBlob(data.book.cover_key, compressed);
-  return { book: data.book, coverBlob: compressed, storage: data.storage };
+  const mergedBook: Book = {
+    ...data.book,
+    ...(typeof book.guest_ready === 'boolean' ? { guest_ready: book.guest_ready } : {}),
+  };
+  return { book: mergedBook, coverBlob: compressed, storage: data.storage };
 }
 
 export async function renameShelfAll(oldName: string, newName: string): Promise<void> {

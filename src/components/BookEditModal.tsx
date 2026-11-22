@@ -219,7 +219,7 @@ export function BookEditModal({
             <div className="grid gap-5 sm:grid-cols-[9.5rem_1fr]">
               {/* Cột ảnh bìa */}
               <div className="flex flex-col items-center gap-2.5">
-                <div className="relative aspect-[3/4] w-36 overflow-hidden rounded-xl border border-line bg-subtle shadow-sm sm:w-full">
+                <div className="relative aspect-[7/10] w-36 overflow-hidden rounded-xl border border-line bg-subtle shadow-sm sm:w-full">
                   {displayedCoverUrl ? (
                     <img
                       src={displayedCoverUrl}

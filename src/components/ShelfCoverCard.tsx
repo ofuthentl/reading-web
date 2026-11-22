@@ -103,7 +103,7 @@ export function ShelfCoverCard({
         onPointerMove={handleCoverTiltMove}
         onPointerLeave={handleCoverTiltLeave}
         onPointerCancel={handleCoverTiltLeave}
-        className="tilt-card relative aspect-[3/4] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.32)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]"
+        className="tilt-card relative aspect-[7/10] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.32)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]"
       >
         {showImage ? (
           <>
@@ -113,7 +113,7 @@ export function ShelfCoverCard({
               loading="lazy"
               decoding="async"
               onError={() => setImgFailed(true)}
-              className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.045]"
+              className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.03]"
             />
             <span
               aria-hidden="true"
