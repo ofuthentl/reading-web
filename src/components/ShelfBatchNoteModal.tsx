@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FileText, Loader2, Save, Sparkles, X } from 'lucide-react';
 import type { Book, ShelfGroup } from '@/types';
 import { updateBookMetadata } from '@/lib/api';
@@ -204,9 +205,9 @@ export function ShelfBatchNoteModal({
     void runBatchPatch(jobs);
   };
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 !m-0 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="shelf-batch-note-title"
@@ -445,6 +446,7 @@ export function ShelfBatchNoteModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

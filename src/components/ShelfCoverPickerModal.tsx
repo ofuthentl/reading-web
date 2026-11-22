@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, Image, Loader2, Sparkles, X } from 'lucide-react';
 import type { Book, ShelfGroup } from '@/types';
 import { getBookSortTitle, pickClothCoverColor } from '@/lib/bookMetadata';
@@ -148,9 +149,9 @@ export function ShelfCoverPickerModal({
     }
   };
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 !m-0 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="shelf-cover-picker-title"
@@ -239,6 +240,7 @@ export function ShelfCoverPickerModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -204,7 +204,7 @@ export function Library2DView({
         onLogout={onLogout}
       />
 
-      <main className="mx-auto max-w-7xl space-y-9 px-4 py-6 sm:px-6 sm:py-8">
+      <main className="mx-auto flex max-w-7xl flex-col gap-9 px-4 py-6 sm:px-6 sm:py-8">
         {activeTab === 'support' ? (
           <Suspense fallback={<LibraryGridSkeleton />}>
             <LazySupportView onNotify={onNotify} />
