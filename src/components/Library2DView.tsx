@@ -397,12 +397,12 @@ export function Library2DView({
                 {!isFiltering && (
                   <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line-strong/70 pb-3">
                     <div className="space-y-1">
-                      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#b84a27] dark:text-[#e07a5f]">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-crimson-accent">
                         03 · TOÀN BỘ KHO TRUYỆN
                       </p>
                       <h2 className="font-display text-[1.75rem] font-normal leading-[1.08] tracking-[-0.015em] text-ink sm:text-[2.15rem]">
                         <span>Thư viện </span>
-                        <span className="italic text-[#b84a27] dark:text-[#e57c5e]">truyện</span>
+                        <span className="italic text-crimson-accent">truyện</span>
                       </h2>
                     </div>
                     <span className="rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink-muted">
@@ -470,10 +470,11 @@ export function Library2DView({
                       </div>
 
                       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-                        {shelf.books.map((book) => (
+                        {shelf.books.map((book, index) => (
                           <BookCard
                             key={book.id}
                             book={book}
+                            staggerIndex={index}
                             progress={progress[book.id]}
                             sessionRole={sessionRole}
                             selectionMode={selectionMode}

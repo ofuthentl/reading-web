@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
 import {
@@ -8,6 +8,7 @@ import {
   getGuestLockLabel,
   pickClothCoverColor,
 } from '@/lib/bookMetadata';
+import { useCardReveal } from '@/hooks/useCardReveal';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 
 interface EditorialCardProps {
@@ -33,35 +34,12 @@ function EditorialRankedCard({
   onToggleSelect,
   onInspectBook,
 }: EditorialCardProps) {
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const [isNearViewport, setIsNearViewport] = useState(
-    () => typeof IntersectionObserver === 'undefined',
-  );
+  const { cardRef, isNearViewport, isRevealed } = useCardReveal<HTMLDivElement>();
   const [imgFailed, setImgFailed] = useState(false);
 
   useEffect(() => {
     setImgFailed(false);
   }, [book.cover_key]);
-
-  useEffect(() => {
-    if (isNearViewport) return;
-    const node = cardRef.current;
-    if (!node || typeof IntersectionObserver === 'undefined') {
-      setIsNearViewport(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setIsNearViewport(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: '320px' },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [isNearViewport]);
 
   const coverUrl = useCoverUrl(book.cover_key, isNearViewport);
   const showImage = Boolean(coverUrl && !imgFailed);
@@ -72,6 +50,7 @@ function EditorialRankedCard({
   const isCompleted = Boolean(progress?.completed);
   const guestLockLabel = getGuestLockLabel(book, sessionRole);
   const rankText = String(rankNumber).padStart(2, '0');
+  const staggerDelayMs = ((rankNumber - 1) % 7) * 48;
 
   const handleActivate = () => {
     if (selectionMode) {
@@ -84,32 +63,36 @@ function EditorialRankedCard({
   return (
     <div
       ref={cardRef}
-      role="button"
-      tabIndex={0}
-      aria-pressed={selectionMode ? selected : undefined}
-      onClick={handleActivate}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          handleActivate();
-        }
-      }}
-      className={`group relative aspect-[3/4.15] w-[9.5rem] shrink-0 cursor-pointer overflow-hidden rounded-[4px] border bg-subtle text-left transition-transform duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-[11rem] md:w-[11.75rem] ${
-        selected
-          ? 'border-accent ring-2 ring-accent ring-offset-2 ring-offset-canvas'
-          : 'border-black/12 hover:-translate-y-0.5 dark:border-white/12'
-      }`}
+      style={{ ['--stagger-delay' as string]: `${staggerDelayMs}ms` } as CSSProperties}
+      className={`card-scroll-reveal shrink-0 ${isRevealed ? 'is-revealed' : ''}`}
     >
-      {showImage ? (
-        <img
-          src={coverUrl!}
-          alt={book.title}
-          loading="lazy"
-          decoding="async"
-          onError={() => setImgFailed(true)}
-          className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.04]"
-        />
-      ) : (
+      <div
+        role="button"
+        tabIndex={0}
+        aria-pressed={selectionMode ? selected : undefined}
+        onClick={handleActivate}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            handleActivate();
+          }
+        }}
+        className={`group relative aspect-[3/4.15] w-[9.5rem] cursor-pointer overflow-hidden rounded-[4px] border bg-subtle text-left transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-[11rem] md:w-[11.75rem] ${
+          selected
+            ? 'border-accent ring-2 ring-accent ring-offset-2 ring-offset-canvas'
+            : 'border-black/12 hover:-translate-y-1 dark:border-white/12'
+        }`}
+      >
+        {showImage ? (
+          <img
+            src={coverUrl!}
+            alt={book.title}
+            loading="lazy"
+            decoding="async"
+            onError={() => setImgFailed(true)}
+            className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.05]"
+          />
+        ) : (
         <div
           style={{ backgroundColor: clothColor }}
           className="relative flex h-full w-full flex-col justify-between p-3.5 text-[#f6efe2]"
@@ -192,9 +175,9 @@ function EditorialRankedCard({
         </span>
         <span
           aria-hidden="true"
-          className="my-2 block h-[1.5px] w-6 rounded-full bg-[#d95d39] shadow-[0_1px_4px_rgba(0,0,0,0.75)]"
+          className="my-2 block h-[2px] w-6 rounded-full bg-[#B22222] shadow-[0_1px_4px_rgba(0,0,0,0.75)] transition-all duration-300 ease-out group-hover:w-10 group-hover:bg-[#d62828]"
         />
-        <h3 className="line-clamp-2 text-[12.5px] font-semibold leading-snug tracking-tight text-white [text-shadow:0_1px_4px_rgba(0,0,0,0.92)] sm:text-[13.5px]">
+        <h3 className="line-clamp-2 text-[12.5px] font-semibold leading-snug tracking-tight text-white transition-colors duration-200 group-hover:text-[#ffd6d6] [text-shadow:0_1px_4px_rgba(0,0,0,0.92)] sm:text-[13.5px]">
           {displayTitle}
         </h3>
         <p className="mt-0.5 truncate text-[10.5px] font-medium text-white/80 [text-shadow:0_1px_3px_rgba(0,0,0,0.9)] sm:text-[11px]">
@@ -205,11 +188,12 @@ function EditorialRankedCard({
       {percent !== null && (
         <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1 bg-white/15">
           <div
-            className="h-full bg-amber-400 transition-all duration-300"
+            className="h-full bg-[#B22222] transition-all duration-300"
             style={{ width: `${Math.max(percent, isCompleted ? 100 : 6)}%` }}
           />
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -280,12 +264,12 @@ export function EditorialBookStrip({
     <section aria-label={`${leadTitle} ${accentTitle}`} className="space-y-4">
       <div className="flex items-end justify-between gap-4 border-b border-line-strong/70 pb-3">
         <div className="space-y-1">
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#b84a27] dark:text-[#e07a5f]">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-crimson-accent">
             {eyebrow}
           </p>
           <h2 className="font-display text-[1.75rem] font-normal leading-[1.08] tracking-[-0.015em] text-ink sm:text-[2.15rem]">
             <span>{leadTitle} </span>
-            <span className="italic text-[#b84a27] dark:text-[#e57c5e]">{accentTitle}</span>
+            <span className="italic text-crimson-accent">{accentTitle}</span>
           </h2>
         </div>
 

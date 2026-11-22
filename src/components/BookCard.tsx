@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useState } from 'react';
 import { Check, CheckCircle2, Info, Pencil, X } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
+import { formatBytes } from '@/lib/api';
 import {
   getBookSortTitle,
   getDisplayAuthor,
@@ -8,6 +9,7 @@ import {
   isRecentBookUpload,
   pickClothCoverColor,
 } from '@/lib/bookMetadata';
+import { useCardReveal } from '@/hooks/useCardReveal';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 import { computeBookProgressPercent } from '@/hooks/useLibraryViewState';
 
@@ -37,6 +39,7 @@ interface BookCardProps {
   selected: boolean;
   sessionRole?: AuthRole;
   layout?: 'vertical' | 'horizontal';
+  staggerIndex?: number;
   onOpen: (book: Book) => void;
   onToggleSelect: (bookId: string) => void;
   onEdit?: (book: Book) => void;
@@ -51,41 +54,19 @@ export function BookCard({
   selected,
   sessionRole,
   layout = 'vertical',
+  staggerIndex = 0,
   onOpen,
   onToggleSelect,
   onEdit,
   onInspect,
   onDismissContinue,
 }: BookCardProps) {
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const [isNearViewport, setIsNearViewport] = useState(
-    () => typeof IntersectionObserver === 'undefined',
-  );
+  const { cardRef, isNearViewport, isRevealed } = useCardReveal<HTMLDivElement>();
   const [imgFailed, setImgFailed] = useState(false);
 
   useEffect(() => {
     setImgFailed(false);
   }, [book.cover_key]);
-
-  useEffect(() => {
-    if (isNearViewport) return;
-    const node = cardRef.current;
-    if (!node || typeof IntersectionObserver === 'undefined') {
-      setIsNearViewport(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setIsNearViewport(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: '280px' },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [isNearViewport]);
 
   const coverUrl = useCoverUrl(book.cover_key, isNearViewport);
   const showImage = Boolean(coverUrl && !imgFailed);
@@ -97,6 +78,7 @@ export function BookCard({
   const isCompleted = Boolean(progress?.completed);
   const guestLockLabel = getGuestLockLabel(book, sessionRole);
   const isNew = !guestLockLabel && isRecentBookUpload(book.created_at);
+  const staggerDelayMs = (staggerIndex % 6) * 48;
 
   const handleActivate = () => {
     if (selectionMode) {
@@ -108,10 +90,12 @@ export function BookCard({
 
   const renderCover = (compact: boolean) => (
     <div
-      className={`relative aspect-[3/4] overflow-hidden rounded-lg border border-line bg-subtle shadow-sm transition-all duration-200 ${
+      className={`relative aspect-[3/4] overflow-hidden rounded-lg border border-line bg-subtle shadow-sm transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
         selected
           ? 'ring-2 ring-accent ring-offset-2 ring-offset-canvas'
-          : 'group-hover:-translate-y-0.5 group-hover:border-line-strong group-hover:shadow-md dark:group-hover:border-line-strong dark:group-hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.92),0_0_0_1px_rgba(244,244,245,0.14)]'
+          : compact
+            ? 'group-hover:-translate-y-0.5 group-hover:border-line-strong group-hover:shadow-md'
+            : 'group-hover:-translate-y-1 group-hover:border-line-strong group-hover:shadow-[0_14px_28px_-10px_rgba(43,36,29,0.28)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.92),0_0_0_1px_rgba(244,244,245,0.16)]'
       } ${compact ? 'w-[4.5rem] shrink-0' : 'w-full'}`}
     >
       {showImage ? (
@@ -121,7 +105,7 @@ export function BookCard({
           loading="lazy"
           decoding="async"
           onError={() => setImgFailed(true)}
-          className="h-full w-full object-cover"
+          className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.045]"
         />
       ) : (
         <div
@@ -169,10 +153,21 @@ export function BookCard({
           className={`pointer-events-none absolute bottom-2 left-1.5 rounded border px-1.5 py-0.5 text-[9.5px] font-semibold tracking-wide backdrop-blur-sm ${
             guestLockLabel
               ? 'border-amber-300/35 bg-black/80 text-amber-200'
-              : 'border-emerald-300/35 bg-emerald-950/85 text-emerald-200'
+              : 'border-[#f5b3b3]/35 bg-[#8f1818]/90 text-white'
           }`}
         >
           {guestLockLabel || 'MỚI'}
+        </span>
+      )}
+
+      {/* Nhãn dung lượng lướt hiện khi hover trên bìa */}
+      {!compact && book.file_size > 0 && (
+        <span
+          className={`pointer-events-none absolute bottom-2 ${
+            guestLockLabel || isNew ? 'right-1.5' : 'left-1.5'
+          } translate-y-1 rounded border border-white/15 bg-[#111113]/85 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-[#f4f4f5] opacity-0 backdrop-blur-sm transition-all duration-200 ease-out group-hover:translate-y-0 group-hover:opacity-100`}
+        >
+          {formatBytes(book.file_size)}
         </span>
       )}
 
@@ -256,7 +251,7 @@ export function BookCard({
       >
         {renderCover(true)}
         <div className="min-w-0 flex-1 pr-5">
-          <h3 className="line-clamp-2 font-display text-sm font-semibold leading-snug text-ink transition-colors group-hover:text-accent">
+          <h3 className="group-hover-crimson line-clamp-2 font-display text-sm font-semibold leading-snug text-ink transition-colors duration-200">
             {displayTitle}
           </h3>
           <p className="mt-0.5 truncate text-xs text-ink-muted">{displayAuthor}</p>
@@ -340,12 +335,15 @@ export function BookCard({
           handleActivate();
         }
       }}
-      className="group flex cursor-pointer flex-col rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
+      style={{ ['--stagger-delay' as string]: `${staggerDelayMs}ms` } as CSSProperties}
+      className={`card-scroll-reveal group flex cursor-pointer flex-col rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas ${
+        isRevealed ? 'is-revealed' : ''
+      }`}
     >
       {renderCover(false)}
 
       <div className="mt-2.5 space-y-0.5 px-0.5">
-        <h3 className="line-clamp-2 text-sm font-medium leading-snug text-ink transition-colors group-hover:text-accent">
+        <h3 className="group-hover-crimson line-clamp-2 text-sm font-medium leading-snug text-ink transition-colors duration-200">
           {displayTitle}
         </h3>
         <p className="truncate text-xs text-ink-muted">{displayAuthor}</p>

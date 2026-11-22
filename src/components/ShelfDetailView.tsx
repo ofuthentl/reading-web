@@ -412,10 +412,11 @@ export function ShelfDetailView({
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-            {displayedBooks.map((book) => (
+            {displayedBooks.map((book, index) => (
               <BookCard
                 key={book.id}
                 book={book}
+                staggerIndex={index}
                 progress={progress[book.id]}
                 sessionRole={sessionRole}
                 selectionMode={selectionMode}

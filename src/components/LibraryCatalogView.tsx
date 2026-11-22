@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { BookMarked, Library } from 'lucide-react';
+import { BookMarked } from 'lucide-react';
 import type {
   AuthRole,
   Book,
@@ -143,11 +143,18 @@ export function LibraryCatalogView({
           onDeleteSelected={onDeleteSelected}
         />
       ) : (
-        <section aria-label="Thư viện theo kệ" className="space-y-6">
-          <div className="flex items-center gap-2.5">
-            <Library className="h-4 w-4 text-accent" />
-            <h2 className="font-display text-lg font-semibold text-ink">Thư viện bộ truyện</h2>
-            <span className="rounded-full border border-line bg-surface px-2.5 py-0.5 text-xs text-ink-muted">
+        <section aria-label="Thư viện theo kệ" className="fade-in space-y-6">
+          <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line-strong/70 pb-3">
+            <div className="space-y-1">
+              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-crimson-accent">
+                DANH MỤC KỆ SÁCH
+              </p>
+              <h2 className="font-display text-[1.75rem] font-normal leading-[1.08] tracking-[-0.015em] text-ink sm:text-[2.15rem]">
+                <span>Thư viện </span>
+                <span className="italic text-crimson-accent">bộ truyện</span>
+              </h2>
+            </div>
+            <span className="rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink-muted">
               {isFiltering
                 ? `${librarySummaries.length} / ${allShelvesCount} kệ`
                 : `${allShelvesCount} kệ`}
@@ -190,10 +197,11 @@ export function LibraryCatalogView({
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-              {librarySummaries.map((summary) => (
+              {librarySummaries.map((summary, index) => (
                 <ShelfCoverCard
                   key={summary.shelf.key}
                   summary={summary}
+                  staggerIndex={index}
                   onOpenShelf={onOpenShelf}
                   onRenameShelf={onRenameShelf}
                   onChangeShelfCover={handleOpenCoverPicker}

@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useState } from 'react';
 import { FolderEdit, Image, Star } from 'lucide-react';
 import { pickClothCoverColor } from '@/lib/bookMetadata';
 import type { ShelfSummary } from '@/lib/shelfSummary';
+import { useCardReveal } from '@/hooks/useCardReveal';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 
 interface ShelfCoverCardProps {
   summary: ShelfSummary;
+  staggerIndex?: number;
   onOpenShelf: (shelfKey: string) => void;
   onRenameShelf?: (shelfName: string) => void;
   onChangeShelfCover?: (summary: ShelfSummary) => void;
@@ -14,6 +16,7 @@ interface ShelfCoverCardProps {
 
 export function ShelfCoverCard({
   summary,
+  staggerIndex = 0,
   onOpenShelf,
   onRenameShelf,
   onChangeShelfCover,
@@ -30,37 +33,15 @@ export function ShelfCoverCard({
     progressPercent,
   } = summary;
 
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const [isNearViewport, setIsNearViewport] = useState(
-    () => typeof IntersectionObserver === 'undefined',
-  );
+  const { cardRef, isNearViewport, isRevealed } = useCardReveal<HTMLDivElement>();
   const [imgFailed, setImgFailed] = useState(false);
 
   const coverKey = coverBook?.cover_key ?? null;
+  const staggerDelayMs = (staggerIndex % 6) * 48;
 
   useEffect(() => {
     setImgFailed(false);
   }, [coverKey]);
-
-  useEffect(() => {
-    if (isNearViewport) return;
-    const node = cardRef.current;
-    if (!node || typeof IntersectionObserver === 'undefined') {
-      setIsNearViewport(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setIsNearViewport(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: '280px' },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [isNearViewport]);
 
   const coverUrl = useCoverUrl(coverKey, isNearViewport);
   const showImage = Boolean(coverUrl && !imgFailed);
@@ -100,9 +81,12 @@ export function ShelfCoverCard({
           onOpenShelf(shelf.key);
         }
       }}
-      className="group flex cursor-pointer flex-col rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
+      style={{ ['--stagger-delay' as string]: `${staggerDelayMs}ms` } as CSSProperties}
+      className={`card-scroll-reveal group flex cursor-pointer flex-col rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas ${
+        isRevealed ? 'is-revealed' : ''
+      }`}
     >
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm transition-all duration-200 group-hover:-translate-y-0.5 group-hover:border-line-strong group-hover:shadow-md dark:group-hover:border-line-strong dark:group-hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.92),0_0_0_1px_rgba(244,244,245,0.14)]">
+      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:-translate-y-1 group-hover:border-line-strong group-hover:shadow-[0_14px_28px_-10px_rgba(43,36,29,0.28)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.92),0_0_0_1px_rgba(244,244,245,0.16)]">
         {showImage ? (
           <>
             <img
@@ -111,7 +95,7 @@ export function ShelfCoverCard({
               loading="lazy"
               decoding="async"
               onError={() => setImgFailed(true)}
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+              className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.045]"
             />
             <span
               aria-hidden="true"
@@ -215,7 +199,7 @@ export function ShelfCoverCard({
       </div>
 
       <div className="mt-2.5 space-y-0.5 px-0.5">
-        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-ink transition-colors group-hover:text-accent">
+        <h3 className="group-hover-crimson line-clamp-2 text-sm font-semibold leading-snug text-ink transition-colors duration-200">
           {shelf.name}
         </h3>
         <p className="truncate text-xs text-ink-muted">{authorLabel}</p>

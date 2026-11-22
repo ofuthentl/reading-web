@@ -16,6 +16,7 @@
     --color-accent: 140 94 53; /* #8c5e35 */
     --color-accent-hover: 115 75 40; /* #734b28 */
     --color-accent-fg: 253 250 244; /* #fdfaf4 */
+    --color-crimson: 178 34 34; /* #B22222 — Đỏ đô đặc trưng Ofu's Library */
     color-scheme: light;
   }
 
@@ -33,6 +34,7 @@
     --color-accent: 238 242 246; /* #eef2f6 */
     --color-accent-hover: 214 221 229; /* #d6dde5 */
     --color-accent-fg: 13 17 23; /* #0d1117 */
+    --color-crimson: 220 56 56; /* #dc3838 — Đỏ hồng ngọc tương phản cao trên nền tối */
     color-scheme: dark;
   }
 
@@ -49,6 +51,7 @@
     --color-accent: 242 242 244; /* #f2f2f4 */
     --color-accent-hover: 218 218 222; /* #dadade */
     --color-accent-fg: 6 6 8; /* #060608 */
+    --color-crimson: 224 64 64; /* #e04040 */
     color-scheme: dark;
   }
 
@@ -335,15 +338,49 @@
     background-color: rgba(180, 192, 210, 0.28);
   }
 
+  .text-crimson-accent {
+    color: rgb(var(--color-crimson));
+  }
+
+  .group:hover .group-hover-crimson {
+    color: rgb(var(--color-crimson));
+  }
+
   .editorial-rank-num {
     color: rgba(255, 255, 255, 0.1);
     -webkit-text-stroke: 1.15px rgba(255, 255, 255, 0.92);
     text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
-    transition: color 220ms ease;
+    transition:
+      color 260ms ease,
+      transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .group:hover .editorial-rank-num {
-    color: rgba(255, 255, 255, 0.22);
+    color: rgba(178, 34, 34, 0.28);
+    transform: translate3d(0, -2px, 0);
+  }
+
+  .card-scroll-reveal {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0) scale(0.985);
+    transition:
+      opacity 520ms cubic-bezier(0.22, 1, 0.36, 1) var(--stagger-delay, 0ms),
+      transform 560ms cubic-bezier(0.22, 1, 0.36, 1) var(--stagger-delay, 0ms);
+    will-change: opacity, transform;
+  }
+
+  .card-scroll-reveal.is-revealed {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    will-change: auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card-scroll-reveal {
+      opacity: 1 !important;
+      transform: none !important;
+      transition: none !important;
+    }
   }
 
   .fade-in {
