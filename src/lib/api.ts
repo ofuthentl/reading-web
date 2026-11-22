@@ -438,6 +438,7 @@ export async function deleteBooks(booksToDelete: Book[]): Promise<StorageStats> 
 
 export async function fetchBookBlobCached(
   book: Book,
+  options?: { cacheOnFetch?: boolean; signal?: AbortSignal },
 ): Promise<{ blob: Blob; fromCache: boolean }> {
   assertApiConfigured();
   if (isCloudMode && getActiveAuthSession().role !== 'owner') {
@@ -453,13 +454,17 @@ export async function fetchBookBlobCached(
     throw new Error('Không tìm thấy tệp sách trong bộ nhớ cục bộ.');
   }
 
-  const res = await apiFetch(`/api/files/${encodeURIComponent(book.file_key)}`);
+  const res = await apiFetch(`/api/files/${encodeURIComponent(book.file_key)}`, {
+    signal: options?.signal,
+  });
   if (!res.ok) {
     const errBody = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(errBody.error || `Không thể tải sách từ R2 (HTTP ${res.status}).`);
   }
   const blob = await res.blob();
-  await setCachedBookBlob(book.file_key, blob);
+  if (options?.cacheOnFetch !== false) {
+    await setCachedBookBlob(book.file_key, blob);
+  }
   return { blob, fromCache: false };
 }
 
