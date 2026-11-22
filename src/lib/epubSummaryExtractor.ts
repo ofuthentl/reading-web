@@ -113,3 +113,36 @@ export async function extractBookAutoDescription(book: Book): Promise<string | n
 
   return null;
 }
+
+/**
+ * Tự trích xuất tên tác giả từ thẻ `<dc:creator>` trong `content.opf` của tệp `.epub`.
+ */
+export async function extractBookAutoAuthor(book: Book): Promise<string | null> {
+  if (book.file_type !== 'epub') return null;
+
+  const { blob } = await fetchBookBlobCached(book);
+  const JSZipMod = await import('jszip');
+  const JSZip = JSZipMod.default || JSZipMod;
+  const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+
+  const containerXml = await zip.file('META-INF/container.xml')?.async('string');
+  if (!containerXml) return null;
+  const containerDoc = new DOMParser().parseFromString(containerXml, 'application/xml');
+  const rootFile = containerDoc.querySelector('rootfile')?.getAttribute('full-path');
+  if (!rootFile) return null;
+
+  const packageXml = await zip.file(rootFile)?.async('string');
+  if (!packageXml) return null;
+  const pkgDoc = new DOMParser().parseFromString(packageXml, 'application/xml');
+
+  const creatorNodes = [
+    ...Array.from(pkgDoc.getElementsByTagName('dc:creator')),
+    ...Array.from(pkgDoc.getElementsByTagName('creator')),
+  ];
+  const creators = creatorNodes
+    .map((n) => (n.textContent || '').replace(/\s+/g, ' ').trim())
+    .filter((name) => name.length >= 2 && !/^unknown|không rõ/i.test(name));
+
+  if (creators.length === 0) return null;
+  return Array.from(new Set(creators)).join(', ');
+}
