@@ -14,6 +14,7 @@ export type Book = {
   cover_size: number;
   created_at: string;
   guest_ready?: boolean;
+  guest_locked?: boolean;
 };
 
 export type Chapter = {
@@ -132,4 +133,25 @@ export type GuestBookSearchMatch = {
   chapterNumber: number;
   chapterTitle: string;
   matchCount: number;
+};
+
+export type ShelfAccessMode = 'public' | 'restricted';
+
+export type ShelfAccessSummary = {
+  mode: 'restricted';
+  allowedCount: number;
+};
+
+export type ShelfAccessGrantUser = {
+  discordUserId: string;
+  label: string | null;
+  discordUsername?: string | null;
+  createdAt?: number;
+};
+
+export type ShelfAccessRuleDetail = {
+  shelfKey: string;
+  mode: 'restricted';
+  updatedAt: number;
+  allowedUsers: ShelfAccessGrantUser[];
 };

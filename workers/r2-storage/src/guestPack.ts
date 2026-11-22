@@ -11,6 +11,7 @@ import {
   deriveUserWatermarkBits,
   matchForensicCandidates,
 } from './forensicWatermark';
+import { assertGuestBookAccess } from './shelfAccessDb';
 
 export const GUEST_PACK_MAGIC = 'OFGP';
 export const MAX_GUEST_PACK_ENVELOPE_BYTES = 25 * 1024 * 1024; // 25 MiB
@@ -342,6 +343,7 @@ async function loadManifestRecord(
 }
 
 export async function getGuestBookToc(env: Env, auth: AuthContext, bookId: string) {
+  await assertGuestBookAccess(env.DB, auth, bookId);
   const { manifest } = await loadManifestRecord(env, bookId);
   return {
     bookId,
@@ -363,6 +365,7 @@ export async function getGuestEncryptedChapter(
   if (!Number.isInteger(chapterIndex) || chapterIndex < 0) {
     throw new HttpError('Chỉ số chương không hợp lệ.', 400);
   }
+  await assertGuestBookAccess(env.DB, auth, bookId);
   const { packKey, manifest } = await loadManifestRecord(env, bookId);
   const chapterMeta = manifest.chapters[chapterIndex];
   if (!chapterMeta) throw new HttpError('Không tìm thấy chương yêu cầu.', 404);
@@ -416,6 +419,7 @@ export async function getGuestEncryptedMediaResponse(
   if (!Number.isInteger(mediaIndex) || mediaIndex < 0) {
     throw new HttpError('Chỉ số ảnh minh hoạ không hợp lệ.', 400);
   }
+  await assertGuestBookAccess(env.DB, auth, bookId);
   const { manifest } = await loadManifestRecord(env, bookId);
   const mediaMeta = manifest.media[mediaIndex];
   if (!mediaMeta) throw new HttpError('Không tìm thấy ảnh minh hoạ.', 404);

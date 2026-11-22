@@ -5,6 +5,7 @@ import {
   requireOwner,
   verifyAuth,
 } from './auth';
+import { tryHandleAdminRoutes } from './adminRoutes';
 import { handleDiscordInteraction, isValidDiscordPublicKeyFormat } from './discord';
 import {
   ACCEPTED_FILE_TYPES,
@@ -40,9 +41,6 @@ import {
   getGuestBookToc,
   getGuestEncryptedChapter,
   getGuestEncryptedMediaResponse,
-  listDiscordGuests,
-  runAdminForensicCheck,
-  setDiscordGuestBan,
   uploadBookGuestPack,
 } from './guestPack';
 import { searchGuestBookChapters } from './guestSearch';
@@ -227,38 +225,16 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     return jsonResponse(res, 200, origin);
   }
 
-  // Admin Discord Guest Management & Forensic Watermark Leak Check (Owner only, D-028)
-  if (normalizedPath === '/api/admin/discord-guests' && request.method === 'GET') {
-    requireOwner(auth);
-    const list = await listDiscordGuests(env.DB);
-    return jsonResponse(list, 200, origin);
-  }
-
-  const adminBanMatch = normalizedPath.match(/^\/api\/admin\/discord-guests\/([^/]+)\/ban$/);
-  if (adminBanMatch && request.method === 'POST') {
-    requireOwner(auth);
-    const body = (await request.json().catch(() => null)) as {
-      banned?: unknown;
-      reason?: unknown;
-    } | null;
-    if (typeof body?.banned !== 'boolean') {
-      throw new HttpError('Trạng thái khoá không hợp lệ.', 400);
-    }
-    const res = await setDiscordGuestBan(
-      env.DB,
-      adminBanMatch[1],
-      body.banned,
-      typeof body.reason === 'string' ? body.reason : null,
-    );
-    return jsonResponse(res, 200, origin);
-  }
-
-  if (normalizedPath === '/api/admin/forensic-check' && request.method === 'POST') {
-    requireOwner(auth);
-    const body = (await request.json().catch(() => null)) as { text?: unknown } | null;
-    const report = await runAdminForensicCheck(env, body?.text);
-    return jsonResponse(report, 200, origin);
-  }
+  // Admin Discord Guest Management, Forensic Leak Check & Shelf Access Control (Owner only, D-028/D-030)
+  const adminRes = await tryHandleAdminRoutes(
+    request,
+    normalizedPath,
+    env,
+    auth,
+    origin,
+    jsonResponse,
+  );
+  if (adminRes) return adminRes;
 
   // Stream upload a book file directly into R2 with 9.0 GB hard limit guard (Owner only)
   const fileUploadMatch = pathname.match(/^\/api\/books\/([^/]+)\/file$/);

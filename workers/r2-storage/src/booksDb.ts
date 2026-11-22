@@ -1,5 +1,10 @@
 import { type AuthContext, type AuthEnv, HttpError } from './auth';
 import { type ProgressRow, deleteReadingProgress, upsertReadingProgress } from './progressDb';
+import {
+  loadShelfAccessSnapshot,
+  mergeShelfAccessOnRename,
+  toShelfAccessKey,
+} from './shelfAccessDb';
 import { computeWeeklyPopularBookIds } from './weeklyPopular';
 
 export { type ProgressRow, deleteReadingProgress, upsertReadingProgress };
@@ -133,19 +138,25 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
           .all<ProgressRow>()
           .catch(() => ({ results: [] as ProgressRow[] }));
 
-  const [booksRes, progressRes, shelfPrefsRes, guestPacksRes, storage] = await Promise.all([
-    env.DB.prepare('SELECT * FROM books ORDER BY created_at DESC').all<BookRow>(),
-    progressQuery,
-    env.DB.prepare('SELECT shelf_key, cover_book_id, is_favorite FROM shelf_prefs')
-      .all<Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite'>>()
-      .catch(() => ({
-        results: [] as Array<Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite'>>,
+  const [booksRes, progressRes, shelfPrefsRes, guestPacksRes, accessSnapshot, storage] =
+    await Promise.all([
+      env.DB.prepare('SELECT * FROM books ORDER BY created_at DESC').all<BookRow>(),
+      progressQuery,
+      env.DB.prepare('SELECT shelf_key, cover_book_id, is_favorite FROM shelf_prefs')
+        .all<Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite'>>()
+        .catch(() => ({
+          results: [] as Array<Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite'>>,
+        })),
+      env.DB.prepare('SELECT book_id FROM book_guest_packs')
+        .all<{ book_id: string }>()
+        .catch(() => ({ results: [] as Array<{ book_id: string }> })),
+      loadShelfAccessSnapshot(env.DB, auth).catch(() => ({
+        restrictedKeys: new Set<string>(),
+        allowedRestrictedKeys: new Set<string>(),
+        ownerShelfAccess: {},
       })),
-    env.DB.prepare('SELECT book_id FROM book_guest_packs')
-      .all<{ book_id: string }>()
-      .catch(() => ({ results: [] as Array<{ book_id: string }> })),
-    getStorageStats(env),
-  ]);
+      getStorageStats(env),
+    ]);
 
   const progressMap: Record<
     string,
@@ -187,11 +198,19 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
   const guestReadyIds = new Set((guestPacksRes.results || []).map((r) => r.book_id));
   const isGuest = auth.role === 'guest';
   const rawBooks = booksRes.results || [];
-  const sanitizedBooks = rawBooks.map((book) => ({
-    ...book,
-    file_key: isGuest ? '' : book.file_key,
-    guest_ready: book.file_type === 'pdf' ? false : guestReadyIds.has(book.id),
-  }));
+  const sanitizedBooks = rawBooks.map((book) => {
+    const shelfKey = toShelfAccessKey(book.shelf);
+    const isGuestLocked =
+      isGuest &&
+      accessSnapshot.restrictedKeys.has(shelfKey) &&
+      !accessSnapshot.allowedRestrictedKeys.has(shelfKey);
+    return {
+      ...book,
+      file_key: isGuest ? '' : book.file_key,
+      guest_ready: book.file_type === 'pdf' ? false : guestReadyIds.has(book.id),
+      ...(isGuestLocked ? { guest_locked: true } : {}),
+    };
+  });
   const weeklyPopular = await computeWeeklyPopularBookIds(env.DB, rawBooks, 10);
 
   return {
@@ -200,6 +219,7 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     weeklyPopular,
     shelfCovers,
     favoriteShelves,
+    ...(auth.role === 'owner' ? { shelfAccess: accessSnapshot.ownerShelfAccess } : {}),
     storage,
     session: {
       role: auth.role,
@@ -390,6 +410,8 @@ export async function renameShelfCaseInsensitive(env: Env, rawOldName: unknown, 
         env.DB.prepare('DELETE FROM shelf_prefs WHERE shelf_key = ?').bind(targetKey),
       ]);
     })().catch(() => undefined);
+
+    await mergeShelfAccessOnRename(env.DB, targetKey, newKey).catch(() => undefined);
   }
 
   return { ok: true };

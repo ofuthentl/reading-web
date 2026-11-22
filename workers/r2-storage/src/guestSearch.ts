@@ -2,6 +2,7 @@ import { type AuthContext, HttpError, ensureDiscordAccessTable } from './auth';
 import { type Env, isValidId } from './booksDb';
 import type { WatermarkBlock, WatermarkInlineSpan } from './forensicWatermark';
 import type { GuestBookManifest } from './guestPack';
+import { assertGuestBookAccess } from './shelfAccessDb';
 
 const MAX_SEARCH_QUERY_LEN = 80;
 const MAX_MATCHED_CHAPTERS = 40;
@@ -99,6 +100,7 @@ export async function searchGuestBookChapters(
     throw new HttpError('Từ khoá tìm kiếm cần tối thiểu 2 ký tự.', 400);
   }
 
+  await assertGuestBookAccess(env.DB, auth, bookId);
   await ensureDiscordAccessTable(env.DB);
   if (auth.role === 'guest') {
     await consumeGuestSearchQuota(env.DB, auth.userId);

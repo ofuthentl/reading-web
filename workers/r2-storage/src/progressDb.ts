@@ -1,5 +1,6 @@
 import { type AuthContext, HttpError } from './auth';
 import { type Env, isValidId } from './booksDb';
+import { assertGuestBookAccess } from './shelfAccessDb';
 
 export interface ProgressRow {
   book_id: string;
@@ -59,6 +60,10 @@ export async function upsertReadingProgress(
     .bind(bookId)
     .first<{ id: string }>();
   if (!existingBook) throw new HttpError('Không tìm thấy sách.', 404);
+
+  if (auth.role !== 'owner') {
+    await assertGuestBookAccess(env.DB, auth, bookId);
+  }
 
   const updatedAt = typeof body.updatedAt === 'number' ? body.updatedAt : Date.now();
   const chapterTitle =
@@ -136,6 +141,7 @@ export async function deleteReadingProgress(env: Env, auth: AuthContext, bookId:
   if (auth.role === 'owner') {
     await env.DB.prepare('DELETE FROM reading_progress WHERE book_id = ?').bind(bookId).run();
   } else {
+    await assertGuestBookAccess(env.DB, auth, bookId);
     await env.DB.prepare(
       'DELETE FROM guest_reading_progress WHERE discord_user_id = ? AND book_id = ?',
     )

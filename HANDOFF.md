@@ -1,22 +1,20 @@
 # HANDOFF
-Cập nhật: 2026-11-22 21:32 | Nhánh: feat/web-2d-enhancements | Build: 🟢 frontend (`<= 86.04 kB` gzip, `0 B` three) · 🟢 worker · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: **Hoàn tất trọn bộ 5 Phase Nâng cấp Web 2D (`D-029`), Tab Ủng hộ & sửa nhận diện tiêu đề phụ tập tách nhầm sang Tác giả** — sẵn sàng deploy Worker & mở PR vào `main`.
-Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/web-2d-enhancements.md
+Cập nhật: 2026-11-22 21:51 | Nhánh: feat/shelf-member-access | Build: 🟢 frontend (`<= 86.04 kB` gzip, `0 B` three) · 🟢 worker · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: **Triển khai Phân quyền Đọc theo Bộ cho Thành viên Discord chỉ định & Hiển thị Bìa gắn Ổ khoá (`D-030`)**.
+Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/shelf-member-access.md
 
 ## Đang làm dở
-- Đã hoàn tất trọn vẹn **Phase 1 → Phase 5** kèm các tinh chỉnh UI/UX trên nhánh `feat/web-2d-enhancements` (`D-029`):
-  1. **Worker & D1 (`0005_bookmarks.sql`, `bookmarksDb.ts`, `weeklyPopular.ts`, `guestSearch.ts`, `r2Files.ts`):** xếp hạng từng Tập sách thịnh hành 7 ngày (`weeklyPopular`), CRUD dấu trang cách ly `owner` vs `guest:<discord_user_id>`, tìm chương khớp từ khoá cho `guest` (`0` lộ văn bản thô).
-  2. **Trang chủ, Thư viện & Ủng hộ 2D (`EditorialBookStrip.tsx`, `Library2DView.tsx`, `BookCard.tsx`, `ShelfCoverCard.tsx`, `SupportView.tsx`, `ShelfBatchNoteModal.tsx`):** đồng bộ **tông đỏ đô `#B22222`** trên toàn bộ tiêu đề & thanh tiến trình, bỏ viền trắng thẻ ở 2 chế độ tối, nghiêng bìa 3D theo chuột, hộp *Dung lượng* gọn trong thanh lọc Trang chủ, tab **Ủng hộ** 2 cột `Text | QR` (`public/support-qr.png`), và nút Admin **Thêm ghi chú** hàng loạt cho các tập chưa có trong kệ (hỗ trợ cả ghi chú chung, điền từng tập & tự trích từ EPUB).
-  3. **Giới thiệu & Thống kê (`BookInfoModal.tsx`, `ReadingStatsModal.tsx`, `ShelfDetailView.tsx`):** xem `book.description`, đánh dấu hoàn thành / đặt lại tiến độ 1 chạm, hiện mô tả bộ trên Hero kệ & bảng thống kê đọc 2D (`LV/XP`, trang đọc, nhật ký).
-  4. **Trình đọc nâng cao (`ReaderTopBar.tsx`, `useReaderController.ts`, `ReaderPaginatedView.tsx`, `GuestCanvasPaginatedView.tsx`, `GuestCanvasReader.tsx`, `readerConfig.ts`):** chế độ **Cuộn dọc ↔ Lật trang (2 cột)** sắc nét 100% vector (0 canvas phụ gây mờ chữ, hạt giấy tuần hoàn `2π` tiệp màu trang, vạch chia trang mảnh `1px` kéo thẳng sát từ thanh trên xuống thanh chân trang, sửa dứt điểm lỗi kẹt `760px` khi mới mở Cuộn dọc & lỗi nháy số trang vượt giới hạn khi đổi `Gọn/Vừa/Rộng`), nút **Đọc tiếp Tập kế →**, `Immersive Mode`, phím tắt `/`, `Ctrl+K`, `M`, `B`, `F`, ngăn kéo 3 tab & Lightbox zoom ảnh.
+- Đã hoàn tất **Phase 1 (`D-030`)** trên nhánh `feat/shelf-member-access`:
+  1. Bảng D1 `shelf_access_rules` + `shelf_guest_grants` (`0006_shelf_access.sql`, `shelfAccessDb.ts`, `adminRoutes.ts`) tự khởi tạo an toàn và tự hợp nhất giữ quyền khi đổi tên kệ.
+  2. Chốt chặn cứng `403 Forbidden` qua `assertGuestBookAccess` ở toàn bộ API mục lục, chương, ảnh, tìm kiếm, tiến độ & dấu trang của `guest`, kèm trả cờ `guest_locked` + `shelfAccess` trong `GET /api/books` và client `shelfAccessApi.ts`.
 
 ## Bước tiếp theo
-1. Deploy cập nhật Cloudflare Worker (`wrangler deploy` — bảng `book_bookmarks` tự khởi tạo an toàn).
-2. Push nhánh `feat/web-2d-enhancements` và tạo Pull Request vào `main`.
+1. Triển khai **Phase 2**: hiển thị huy hiệu ổ khoá `🔒 Giới hạn` trên bìa sách & kệ cho `guest`, chặn mở lịch sự ở `useBookReader`, `ShelfDetailView`, `BookInfoModal` & `findNextBookInShelf`.
+2. Triển khai **Phase 3**: cửa sổ quản trị `ShelfAccessModal` trên Hero kệ + cập nhật `docs/ARCHITECTURE.md`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **`feat/web-2d-enhancements` (`D-029`):** Hoàn tất 5 Phase nâng cấp giao diện & trình đọc 2D.
+- **`feat/web-2d-enhancements` (`D-029`):** Hoàn tất 5 Phase nâng cấp giao diện & trình đọc 2D + sửa nhận diện tiêu đề phụ tập.
 - **PR #10 (`feat/guest-content-protection`, `D-028`):** đã merge vào `main`.

@@ -1,5 +1,6 @@
 import { type AuthContext, HttpError } from './auth';
 import { type Env, isValidId } from './booksDb';
+import { assertGuestBookAccess } from './shelfAccessDb';
 
 export const MAX_BOOKMARKS_PER_BOOK = 30;
 const MAX_BOOKMARK_LABEL_LENGTH = 160;
@@ -75,6 +76,7 @@ function mapBookmarkRow(row: BookmarkRow) {
 
 export async function listBookBookmarks(env: Env, auth: AuthContext, bookId: string) {
   if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
+  await assertGuestBookAccess(env.DB, auth, bookId);
   await ensureBookmarksTable(env.DB);
   const scope = resolveUserScope(auth);
 
@@ -116,6 +118,7 @@ export async function createBookBookmark(
     .first<{ id: string }>();
   if (!existingBook) throw new HttpError('Không tìm thấy sách.', 404);
 
+  await assertGuestBookAccess(env.DB, auth, bookId);
   await ensureBookmarksTable(env.DB);
   const scope = resolveUserScope(auth);
 
@@ -184,6 +187,7 @@ export async function deleteBookBookmark(
   if (!isValidId(bookId) || !isValidId(bookmarkId)) {
     throw new HttpError('ID dấu trang không hợp lệ.', 400);
   }
+  await assertGuestBookAccess(env.DB, auth, bookId);
   await ensureBookmarksTable(env.DB);
   const scope = resolveUserScope(auth);
 

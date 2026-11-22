@@ -1,24 +1,10 @@
 import type {
-  AuthRole,
-  AuthSessionInfo,
-  Book,
-  BookFileType,
-  ReadingProgress,
-  StorageStats,
+  AuthRole, AuthSessionInfo, Book, BookFileType, ReadingProgress, ShelfAccessSummary, StorageStats,
 } from '@/types';
 import {
-  DEFAULT_OWNER_SESSION,
-  apiFetch,
-  assertApiConfigured,
-  checkHealth,
-  getActiveAuthSession,
-  getAuthToken,
-  isAuthError,
-  isCloudMode,
-  isLocalDevMode,
-  isMissingProductionApi,
-  loginWithPasscode,
-  setAuthToken,
+  DEFAULT_OWNER_SESSION, apiFetch, assertApiConfigured, checkHealth, getActiveAuthSession,
+  getAuthToken, isAuthError, isCloudMode, isLocalDevMode, isMissingProductionApi,
+  loginWithPasscode, setAuthToken,
 } from '@/lib/authSession';
 import {
   deleteCachedBookBlob, deleteCachedCoverBlob, deleteLocalBook, deleteLocalProgress,
@@ -26,36 +12,19 @@ import {
   putLocalBook, putLocalProgress, setCachedBookBlob, setCachedCoverBlob,
 } from '@/lib/cache';
 import {
-  formatBytes,
-  groupBooksIntoShelves,
-  parseFileMetadata,
-  pickCoverColor,
-  sortBooksByTitle,
+  formatBytes, groupBooksIntoShelves, parseFileMetadata, pickCoverColor, sortBooksByTitle,
 } from '@/lib/bookMetadata';
 import { isChunkLoadError } from '@/lib/chunkReload';
 import { compressCoverBlob } from '@/lib/coverImage';
 import {
-  type ShelfPrefsState,
-  pruneDeletedBooksFromPrefs,
-  readLocalShelfPrefs,
-  renameShelfPrefs,
-  writeLocalShelfPrefs,
+  type ShelfPrefsState, pruneDeletedBooksFromPrefs, readLocalShelfPrefs,
+  renameShelfPrefs, writeLocalShelfPrefs,
 } from '@/lib/shelfPrefs';
 
 export {
-  apiFetch,
-  assertApiConfigured,
-  checkHealth,
-  formatBytes,
-  getAuthToken,
-  groupBooksIntoShelves,
-  isAuthError,
-  isCloudMode,
-  isLocalDevMode,
-  isMissingProductionApi,
-  loginWithPasscode,
-  setAuthToken,
-  sortBooksByTitle,
+  apiFetch, assertApiConfigured, checkHealth, formatBytes, getAuthToken, groupBooksIntoShelves,
+  isAuthError, isCloudMode, isLocalDevMode, isMissingProductionApi, loginWithPasscode,
+  setAuthToken, sortBooksByTitle,
 };
 
 export const HARD_LIMIT_BYTES = 9 * 1024 * 1024 * 1024; // 9.0 GiB
@@ -124,6 +93,7 @@ export async function fetchLibraryState(): Promise<{
     weeklyPopular?: string[];
     shelfCovers?: Record<string, string>;
     favoriteShelves?: string[];
+    shelfAccess?: Record<string, ShelfAccessSummary>;
     storage?: StorageStats;
     session?: { role?: AuthRole; expiresAt?: number | null; watermarkLabel?: string | null };
     error?: string;
@@ -146,6 +116,7 @@ export async function fetchLibraryState(): Promise<{
   const nextPrefs: ShelfPrefsState = {
     covers: data.shelfCovers ?? localPrefs.covers,
     favorites: data.favoriteShelves ?? localPrefs.favorites,
+    ...(data.shelfAccess ? { access: data.shelfAccess } : {}),
   };
   if (resolvedSession.role === 'owner') {
     writeLocalShelfPrefs(nextPrefs);
