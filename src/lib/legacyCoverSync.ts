@@ -85,7 +85,7 @@ async function uploadPrecompressedCover(
 
 export async function syncLegacyCoversInBackground(
   books: Book[],
-  onBookUpdated: (book: Book, nextStorage?: StorageStats) => void,
+  onBooksBatchUpdated: (books: Book[], latestStorage?: StorageStats) => void,
   onNotify?: (message: string, type?: ToastType) => void,
 ): Promise<void> {
   if (syncInFlight) return;
@@ -98,6 +98,15 @@ export async function syncLegacyCoversInBackground(
   syncInFlight = true;
   let updatedCount = 0;
   let workerOutdated = false;
+  let pendingBooks: Book[] = [];
+  let latestStorage: StorageStats | undefined;
+
+  const flushBatch = () => {
+    if (pendingBooks.length === 0) return;
+    const batch = pendingBooks;
+    pendingBooks = [];
+    onBooksBatchUpdated(batch, latestStorage);
+  };
 
   try {
     onNotify?.(
@@ -122,10 +131,11 @@ export async function syncLegacyCoversInBackground(
           } else {
             const saved = await uploadPrecompressedCover(book, freshCover);
             if (saved) {
-              onBookUpdated(saved.book, saved.storage);
+              pendingBooks.push(saved.book);
+              if (saved.storage) latestStorage = saved.storage;
               updatedCount += 1;
+              if (pendingBooks.length >= 12) flushBatch();
               if (!saved.book.cover_key?.endsWith('-v2.jpg')) {
-                // Worker chưa cập nhật hậu tố -v2.jpg → dừng sớm để tránh lặp lại ở phiên sau
                 workerOutdated = true;
                 return;
               }
@@ -134,7 +144,7 @@ export async function syncLegacyCoversInBackground(
         } catch {
           // Bỏ qua cuốn lỗi mạng/tệp lẻ để tiếp tục các cuốn còn lại
         }
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 40));
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 60));
       }
     };
 
@@ -143,6 +153,7 @@ export async function syncLegacyCoversInBackground(
       () => runWorker(),
     );
     await Promise.all(workers);
+    flushBatch();
 
     if (updatedCount > 0) {
       onNotify?.(`Đã tự động chuẩn hoá ảnh bìa gốc cho ${updatedCount} cuốn sách.`, 'success');

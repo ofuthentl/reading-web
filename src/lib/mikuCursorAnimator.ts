@@ -1,5 +1,5 @@
-interface CursorAnimSpec {
-  selector: string;
+interface CursorGroupSpec {
+  selector: string | null;
   hotX: number;
   hotY: number;
   fallback: string;
@@ -12,80 +12,14 @@ const TOTAL_SPRITES = 123;
 const STEP_COUNT = 12;
 const FRAME_INTERVAL_MS = 84; // Chuẩn jifRate = 5/60s (~83.3ms) của tệp .ani gốc
 
-const CURSOR_SPECS: readonly CursorAnimSpec[] = [
+// Sắp theo thứ tự ưu tiên từ đặc thù nhất đến tổng quát nhất (nhóm cuối selector = null là mặc định trên body)
+const CURSOR_GROUPS: readonly CursorGroupSpec[] = [
   {
-    selector: 'html, body, .cursor-default',
-    hotX: 1,
-    hotY: 0,
-    fallback: 'auto',
-    frames: [0, 1, 2, 3, 4, 5, 0, 1, 6, 7, 8, 9],
-  },
-  {
-    selector:
-      "a[href], button:not(:disabled), [role='button']:not([aria-disabled='true']), summary, select:not(:disabled), input[type='checkbox']:not(:disabled), input[type='radio']:not(:disabled), input[type='range']:not(:disabled), input[type='file']:not(:disabled), input[type='submit']:not(:disabled), input[type='button']:not(:disabled), label[for], .cursor-pointer, .cursor-zoom-out",
-    hotX: 4,
-    hotY: 0,
-    fallback: 'pointer',
-    frames: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
-  },
-  {
-    selector:
-      "input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='submit']):not([type='button']):not(:disabled), textarea:not(:disabled), [contenteditable='true'], .reading-content p, .reading-content li, .reading-content blockquote, .cursor-text",
-    hotX: 4,
-    hotY: 9,
-    fallback: 'text',
-    frames: [22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33],
-  },
-  {
-    selector: '.reading-content a[href]',
-    hotX: 4,
-    hotY: 0,
-    fallback: 'pointer',
-    frames: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
-  },
-  {
-    selector: '.reading-content img, .cursor-zoom-in, .cursor-crosshair',
-    hotX: 5,
-    hotY: 6,
-    fallback: 'crosshair',
-    frames: [78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89],
-  },
-  {
-    selector:
-      "button[aria-label*='Chỉnh sửa']:not(:disabled), button[aria-label*='Đổi tên']:not(:disabled), button[title*='ghi chú']:not(:disabled), .cursor-miku-pen",
-    hotX: 0,
-    hotY: 0,
-    fallback: 'pointer',
-    frames: [113, 114, 115, 116, 117, 118, 113, 114, 119, 120, 121, 122],
-  },
-  {
-    selector:
-      "button[aria-label*='yêu thích' i]:not(:disabled), [aria-label*='Ủng hộ'] button:not(:disabled), [aria-label*='Ủng hộ'] a[href], .cursor-miku-heart",
-    hotX: 4,
-    hotY: 3,
-    fallback: 'pointer',
-    frames: [102, 103, 104, 105, 106, 107, 102, 108, 109, 110, 111, 112],
-  },
-  {
-    selector: '.cursor-move, .cursor-grab, .cursor-grabbing, .active\\:cursor-grabbing:active',
-    hotX: 15,
-    hotY: 15,
-    fallback: 'move',
-    frames: [72, 73, 74, 75, 76, 77, 72, 73, 74, 75, 76, 77],
-  },
-  {
-    selector: '.cursor-ew-resize, .cursor-col-resize',
-    hotX: 15,
-    hotY: 15,
-    fallback: 'ew-resize',
-    frames: [90, 91, 92, 93, 94, 95, 90, 91, 92, 93, 94, 95],
-  },
-  {
-    selector: '.cursor-ns-resize, .cursor-row-resize',
-    hotX: 15,
-    hotY: 15,
-    fallback: 'ns-resize',
-    frames: [96, 97, 98, 99, 100, 101, 96, 97, 98, 99, 100, 101],
+    selector: ":disabled, [aria-disabled='true'], .cursor-not-allowed",
+    hotX: 7,
+    hotY: 7,
+    fallback: 'not-allowed',
+    frames: [34, 35, 36, 37, 38, 39, 34, 35, 36, 37, 38, 39],
   },
   {
     selector: '.cursor-wait',
@@ -109,14 +43,75 @@ const CURSOR_SPECS: readonly CursorAnimSpec[] = [
     frames: [62, 63, 64, 65, 66, 67, 62, 63, 68, 69, 70, 71],
   },
   {
+    selector: '.cursor-move, .cursor-grab, .cursor-grabbing',
+    hotX: 15,
+    hotY: 15,
+    fallback: 'move',
+    frames: [72, 73, 74, 75, 76, 77, 72, 73, 74, 75, 76, 77],
+  },
+  {
+    selector: '.cursor-ew-resize, .cursor-col-resize',
+    hotX: 15,
+    hotY: 15,
+    fallback: 'ew-resize',
+    frames: [90, 91, 92, 93, 94, 95, 90, 91, 92, 93, 94, 95],
+  },
+  {
+    selector: '.cursor-ns-resize, .cursor-row-resize',
+    hotX: 15,
+    hotY: 15,
+    fallback: 'ns-resize',
+    frames: [96, 97, 98, 99, 100, 101, 96, 97, 98, 99, 100, 101],
+  },
+  {
     selector:
-      ":disabled, button:disabled, input:disabled, select:disabled, textarea:disabled, label:has(> input:disabled), [aria-disabled='true'], .cursor-not-allowed, .disabled\\:cursor-not-allowed:disabled",
-    hotX: 7,
-    hotY: 7,
-    fallback: 'not-allowed',
-    frames: [34, 35, 36, 37, 38, 39, 34, 35, 36, 37, 38, 39],
+      "button[aria-label*='yêu thích' i], [aria-label*='Ủng hộ'] button, [aria-label*='Ủng hộ'] a[href], .cursor-miku-heart",
+    hotX: 4,
+    hotY: 3,
+    fallback: 'pointer',
+    frames: [102, 103, 104, 105, 106, 107, 102, 108, 109, 110, 111, 112],
+  },
+  {
+    selector:
+      "button[aria-label*='Chỉnh sửa'], button[aria-label*='Đổi tên'], button[title*='ghi chú'], .cursor-miku-pen",
+    hotX: 0,
+    hotY: 0,
+    fallback: 'pointer',
+    frames: [113, 114, 115, 116, 117, 118, 113, 114, 119, 120, 121, 122],
+  },
+  {
+    selector: '.reading-content img, .cursor-zoom-in, .cursor-crosshair',
+    hotX: 5,
+    hotY: 6,
+    fallback: 'crosshair',
+    frames: [78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89],
+  },
+  {
+    selector:
+      "a[href], button, [role='button'], summary, select, input[type='checkbox'], input[type='radio'], input[type='range'], input[type='file'], input[type='submit'], input[type='button'], label[for], .cursor-pointer, .cursor-zoom-out",
+    hotX: 4,
+    hotY: 0,
+    fallback: 'pointer',
+    frames: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+  },
+  {
+    selector:
+      "input, textarea, [contenteditable='true'], .reading-content p, .reading-content li, .reading-content blockquote, .cursor-text",
+    hotX: 4,
+    hotY: 9,
+    fallback: 'text',
+    frames: [22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33],
+  },
+  {
+    selector: null,
+    hotX: 1,
+    hotY: 0,
+    fallback: 'auto',
+    frames: [0, 1, 2, 3, 4, 5, 0, 1, 6, 7, 8, 9],
   },
 ];
+
+const DEFAULT_GROUP_IDX = CURSOR_GROUPS.length - 1;
 
 let activeControllerDispose: (() => void) | null = null;
 let bootPromise: Promise<void> | null = null;
@@ -170,6 +165,44 @@ async function sliceSpriteSheetUrls(sheetImg: HTMLImageElement): Promise<{
   }
 }
 
+function resolveHoveredCursorTarget(rawTarget: EventTarget | null): {
+  element: HTMLElement;
+  groupIdx: number;
+} {
+  const fallbackEl = document.body || document.documentElement;
+  if (!(rawTarget instanceof Element)) {
+    return { element: fallbackEl, groupIdx: DEFAULT_GROUP_IDX };
+  }
+
+  // Trường hợp label bọc checkbox/radio đang disabled
+  const enclosingLabel = rawTarget.closest('label');
+  if (enclosingLabel && enclosingLabel.querySelector('input:disabled')) {
+    return { element: enclosingLabel as HTMLElement, groupIdx: 0 };
+  }
+
+  for (let i = 0; i < DEFAULT_GROUP_IDX; i += 1) {
+    const sel = CURSOR_GROUPS[i].selector;
+    if (!sel) continue;
+    const matched = rawTarget.closest(sel);
+    if (matched instanceof HTMLElement) {
+      return { element: matched, groupIdx: i };
+    }
+  }
+
+  const explicitDefault = rawTarget.closest('.cursor-default');
+  if (explicitDefault instanceof HTMLElement) {
+    return { element: explicitDefault, groupIdx: DEFAULT_GROUP_IDX };
+  }
+
+  return { element: fallbackEl, groupIdx: DEFAULT_GROUP_IDX };
+}
+
+/**
+ * Phát hoạt ảnh 12 khung cho con trỏ Miku với chi phí ~0.004ms/nhịp:
+ * - KHÔNG sửa stylesheet toàn trang (tránh `RecalcStyle` trên hàng nghìn DOM node).
+ * - Chỉ cập nhật inline `style.cursor` trên ĐÚNG 1 phần tử đang trỏ chuột.
+ * - Tự động ngắt nhịp `0ms` trong suốt lúc người dùng đang cuộn trang (`scroll`).
+ */
 export function startMikuCursorAnimation(): Promise<void> {
   if (activeControllerDispose || bootPromise) return bootPromise ?? Promise.resolve();
 
@@ -183,20 +216,7 @@ export function startMikuCursorAnimation(): Promise<void> {
       const sheetImg = await loadImage(sheetUrl);
       const { urls, keepAlive } = await sliceSpriteSheetUrls(sheetImg);
 
-      const styleEl = document.createElement('style');
-      styleEl.setAttribute('data-miku-animated-cursors', 'true');
-      styleEl.textContent = CURSOR_SPECS.map((spec) => `${spec.selector} {}`).join('\n');
-      document.head.appendChild(styleEl);
-
-      const sheet = styleEl.sheet;
-      if (!sheet || sheet.cssRules.length !== CURSOR_SPECS.length) {
-        styleEl.remove();
-        for (const u of urls) URL.revokeObjectURL(u);
-        return;
-      }
-
-      const styleRules = Array.from(sheet.cssRules) as CSSStyleRule[];
-      const prebuiltValues: string[][] = CURSOR_SPECS.map((spec) =>
+      const prebuiltValues: string[][] = CURSOR_GROUPS.map((spec) =>
         spec.frames.map(
           (spriteIdx) => `url("${urls[spriteIdx]}") ${spec.hotX} ${spec.hotY}, ${spec.fallback}`,
         ),
@@ -204,10 +224,28 @@ export function startMikuCursorAnimation(): Promise<void> {
 
       let step = 0;
       let timerId: number | null = null;
+      let scrollResumeTimer: number | null = null;
+      let scrolling = false;
+      let currentEl: HTMLElement | null = document.body || document.documentElement;
+      let currentGroupIdx = DEFAULT_GROUP_IDX;
+      let lastAppliedValue = '';
 
-      const applyStep = (nextStep: number) => {
-        for (let r = 0; r < styleRules.length; r += 1) {
-          styleRules[r].style.cursor = prebuiltValues[r][nextStep];
+      const clearInlineCursor = () => {
+        if (currentEl) {
+          currentEl.style.removeProperty('cursor');
+        }
+        lastAppliedValue = '';
+      };
+
+      const applyCurrentFrame = () => {
+        if (!currentEl || scrolling) return;
+        if ('disabled' in currentEl && Boolean((currentEl as HTMLButtonElement).disabled)) {
+          currentGroupIdx = 0;
+        }
+        const nextVal = prebuiltValues[currentGroupIdx][step];
+        if (nextVal !== lastAppliedValue) {
+          currentEl.style.cursor = nextVal;
+          lastAppliedValue = nextVal;
         }
       };
 
@@ -220,28 +258,52 @@ export function startMikuCursorAnimation(): Promise<void> {
 
       const syncPlayback = () => {
         const shouldPlay =
+          !scrolling &&
           document.visibilityState === 'visible' &&
           pointerMq.matches &&
           !reducedMotionMq.matches;
 
         if (!shouldPlay) {
           stopTicker();
-          if (reducedMotionMq.matches || !pointerMq.matches) {
-            styleEl.disabled = true;
-          }
+          clearInlineCursor();
           return;
         }
 
-        styleEl.disabled = false;
         if (timerId === null) {
-          applyStep(step);
+          applyCurrentFrame();
           timerId = window.setInterval(() => {
             step = (step + 1) % STEP_COUNT;
-            applyStep(step);
+            applyCurrentFrame();
           }, FRAME_INTERVAL_MS);
         }
       };
 
+      const onPointerOver = (event: PointerEvent) => {
+        if (event.pointerType === 'touch' || scrolling) return;
+        const resolved = resolveHoveredCursorTarget(event.target);
+        if (resolved.element !== currentEl || resolved.groupIdx !== currentGroupIdx) {
+          clearInlineCursor();
+          currentEl = resolved.element;
+          currentGroupIdx = resolved.groupIdx;
+          if (timerId !== null) applyCurrentFrame();
+        }
+      };
+
+      const onWindowScroll = () => {
+        if (!scrolling) {
+          scrolling = true;
+          syncPlayback();
+        }
+        if (scrollResumeTimer !== null) window.clearTimeout(scrollResumeTimer);
+        scrollResumeTimer = window.setTimeout(() => {
+          scrolling = false;
+          scrollResumeTimer = null;
+          syncPlayback();
+        }, 160);
+      };
+
+      window.addEventListener('pointerover', onPointerOver, { passive: true });
+      window.addEventListener('scroll', onWindowScroll, { passive: true });
       document.addEventListener('visibilitychange', syncPlayback);
       pointerMq.addEventListener('change', syncPlayback);
       reducedMotionMq.addEventListener('change', syncPlayback);
@@ -249,10 +311,13 @@ export function startMikuCursorAnimation(): Promise<void> {
 
       const dispose = () => {
         stopTicker();
+        if (scrollResumeTimer !== null) window.clearTimeout(scrollResumeTimer);
+        clearInlineCursor();
+        window.removeEventListener('pointerover', onPointerOver);
+        window.removeEventListener('scroll', onWindowScroll);
         document.removeEventListener('visibilitychange', syncPlayback);
         pointerMq.removeEventListener('change', syncPlayback);
         reducedMotionMq.removeEventListener('change', syncPlayback);
-        styleEl.remove();
         keepAlive.length = 0;
         for (const u of urls) URL.revokeObjectURL(u);
         activeControllerDispose = null;

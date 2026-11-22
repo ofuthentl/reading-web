@@ -11,7 +11,6 @@ import {
 import {
   AlertTriangle,
   ArrowRight,
-  BookOpen,
   Eye,
   EyeOff,
   KeyRound,
@@ -209,9 +208,14 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
       {/* Thanh điều hướng tối giản: lề trái dịch +5%, lề phải khoá thẳng trục ổ khoá */}
       <header className="relative z-10 flex w-full items-center justify-between pl-6 pr-6 pt-6 sm:pl-10 sm:pr-10 md:pl-[calc(3.5rem+3.5%)] md:pr-14 md:pt-8 lg:pl-[calc(5rem+5%)] lg:pr-20">
         <div className="flex items-center gap-2.5 select-none">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-line-strong/70 bg-surface/70 text-accent backdrop-blur-sm">
-            <BookOpen className="h-4 w-4" />
-          </div>
+          <img
+            src={`${import.meta.env.BASE_URL}logo-128.png`}
+            alt=""
+            width={36}
+            height={36}
+            decoding="async"
+            className="h-9 w-9 shrink-0 object-contain"
+          />
           <span className="font-display text-base font-semibold tracking-tight text-ink sm:text-lg">
             Ofu&apos;s Library
           </span>

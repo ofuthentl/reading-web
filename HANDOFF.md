@@ -1,19 +1,20 @@
 # HANDOFF
-Cập nhật: 2026-11-22 23:37 | Nhánh: feat/miku-cursors | Build: 🟢 frontend (`85.38 kB` gzip, `0 B` three) · 🟢 worker · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: **Hoàn tất bộ con trỏ chuột động 12 khung Hatsune Miku (`mikuCursorAnimator.ts` + `miku-sheet.png`) & cân bằng chiều cao nút có huy hiệu số (`ShelfDetailView`, `LibraryHeader`)**.
-Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/cover-aspect-ratio.md
+Cập nhật: 2026-11-23 00:22 | Nhánh: fix/mobile-admin-header | Build: 🟢 frontend (`<= 86.04 kB` gzip, `0 B` three) · 🟢 worker · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: **Gọn header Admin mobile, gỡ lọc tệp, tối ưu cuộn mượt 120–144 FPS & đặt logo mèo đọc sách mới cho web (`title.png` + `logo-128.png`)**.
+Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/scroll-performance-2d.md
 
 ## Đang làm dở
-- Trên nhánh `feat/miku-cursors` (đã rebase sạch trên `origin/main` sau PR #12):
-  1. **Bộ con trỏ chuột ĐỘNG 12 khung Hatsune Miku (`public/cursors/miku-sheet.png` `20.08 KB`, `src/lib/mikuCursorAnimator.ts`, `src/assets/cursors/*.png`, `src/index.css`):** phát đầy đủ chuyển động `.ani` gốc ở nhịp chuẩn `84ms`/khung (chớp mắt, bấm nút, quay hành, khóc `🚫`, ôm tim đập `💗` trên nút Yêu thích / Ủng hộ, cầm bút trên nút Sửa / Ghi chú, lấp lánh sao zoom ảnh...), tự dừng `0 FPS` khi ẩn tab hoặc `prefers-reduced-motion`, thu hồi sạch `URL.revokeObjectURL`.
-  2. **Sửa phồng chiều cao nút có huy hiệu đếm số (`ShelfDetailView.tsx`, `LibraryHeader.tsx`):** cố định `h-[18px] leading-none` cho huy hiệu số trên nút `Thêm ghi chú` và nút `Bảo mật` để bằng khít `38px` với các nút bên cạnh.
+- Trên nhánh `fix/mobile-admin-header` (tách từ `origin/main` sau PR #13):
+  1. **Gọn header Admin trên điện thoại & gỡ lọc định dạng (`LibraryHeader.tsx`, `LibraryFilterBar.tsx`, `Library2DView.tsx`, `LibraryCatalogView.tsx`):** dời nút `Bảo mật` + `Chọn` xuống sát ô tìm kiếm trên mobile (`sm:hidden`), bỏ cụm `Mọi tệp | EPUB | PDF | DOCX`.
+  2. **Tối ưu cuộn mượt 120–144 FPS (`index.css`, `useCardReveal.ts`, `mikuCursorAnimator.ts`, `BookCard.tsx`, `legacyCoverSync.ts`):** thay `background-attachment: fixed` bằng lớp tĩnh `position: fixed`, chỉ bật `data-tilting` + `mix-blend-mode: soft-light` trên đúng 1 thẻ đang hover (khoá tilt & cache `DOMRect` khi cuộn), đổi trình phát Miku sang gắn inline `style.cursor` trên 1 phần tử đang trỏ + tạm ngắt khi cuộn (`0` `RecalcStyle` toàn trang), bật `content-visibility: auto` cho 58 kệ sách và gom lô đồng bộ bìa.
+  3. **Logo mèo đeo kính đọc sách mới (`public/title.png` `512×512`, `public/logo-128.png` `128×128`, `index.html`, `manifest.webmanifest`, `LibraryHeader.tsx`, `AuthGate.tsx`):** tách sạch 100% nền caro giả sang trong suốt thật 32-bit, xoá watermark góc ảnh và đồng bộ làm favicon + logo header toàn web.
 
 ## Bước tiếp theo
-1. Mở Pull Request `feat/miku-cursors` vào `main` và bấm Merge khi CI xanh để đưa lên `ofu.lol`.
+1. Mở Pull Request `fix/mobile-admin-header` vào `main` và bấm Merge khi CI xanh để đưa lên `ofu.lol`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **PR #12 (`D-031` tỉ lệ bìa `7:10` + tự động đồng bộ ngầm & sửa tràn tiêu đề modal):** đã merge vào `main`.
-- **PR #11 (`feat/shelf-member-access`, `D-030`):** đã merge vào `main`.
+- **PR #13 (`feat/miku-cursors`):** Bộ con trỏ động 12 khung Hatsune Miku & cân chiều cao nút huy hiệu đã merge vào `main`.
+- **PR #12 (`D-031`)** & **PR #11 (`D-030`):** đã merge vào `main`.

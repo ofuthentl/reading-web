@@ -70,12 +70,14 @@ export function useLibraryDataStore({
     [books],
   );
 
-  const handleBookUpdated = useCallback((updatedBook: Book, nextStorage?: StorageStats) => {
-    setBooks((prev) =>
-      sortBooksByTitle(prev.map((item) => (item.id === updatedBook.id ? updatedBook : item))),
-    );
-    if (nextStorage) setStorage(nextStorage);
-  }, []);
+  const handleBooksBatchUpdated = useCallback(
+    (updatedBooks: Book[], nextStorage?: StorageStats) => {
+      const byId = new Map(updatedBooks.map((item) => [item.id, item]));
+      setBooks((prev) => sortBooksByTitle(prev.map((item) => byId.get(item.id) ?? item)));
+      if (nextStorage) setStorage(nextStorage);
+    },
+    [],
+  );
 
   const loadLibrary = useCallback(async () => {
     setLoading(true);
@@ -107,7 +109,9 @@ export function useLibraryDataStore({
         if (state.books.some((b) => Boolean(b.file_key) && !b.cover_key?.endsWith('-v2.jpg'))) {
           window.setTimeout(() => {
             void import('@/lib/legacyCoverSync')
-              .then((m) => m.syncLegacyCoversInBackground(state.books, handleBookUpdated, addToast))
+              .then((m) =>
+                m.syncLegacyCoversInBackground(state.books, handleBooksBatchUpdated, addToast),
+              )
               .catch(() => undefined);
           }, 1200);
         }
@@ -117,7 +121,7 @@ export function useLibraryDataStore({
     } finally {
       setLoading(false);
     }
-  }, [addToast, handleBookUpdated, onApiError, onNonOwnerLoaded, setSession]);
+  }, [addToast, handleBooksBatchUpdated, onApiError, onNonOwnerLoaded, setSession]);
 
   const clearStoreOnLogout = useCallback(() => {
     setBooks([]);
@@ -135,9 +139,11 @@ export function useLibraryDataStore({
     setStorage(nextStorage);
   }, []);
 
-  const handleBooksBatchUpdated = useCallback((updatedBooks: Book[]) => {
-    const byId = new Map(updatedBooks.map((item) => [item.id, item]));
-    setBooks((prev) => sortBooksByTitle(prev.map((item) => byId.get(item.id) ?? item)));
+  const handleBookUpdated = useCallback((updatedBook: Book, nextStorage?: StorageStats) => {
+    setBooks((prev) =>
+      sortBooksByTitle(prev.map((item) => (item.id === updatedBook.id ? updatedBook : item))),
+    );
+    if (nextStorage) setStorage(nextStorage);
   }, []);
 
   const handleBookPackSynced = useCallback((bookId: string, nextStorage?: StorageStats) => {

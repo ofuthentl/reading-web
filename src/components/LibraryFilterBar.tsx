@@ -1,6 +1,5 @@
-import { ArrowUpDown, HardDrive, Search, X } from 'lucide-react';
+import { ArrowUpDown, CheckSquare, HardDrive, Search, Shield, X } from 'lucide-react';
 import type {
-  LibraryFormatFilter,
   LibrarySortMode,
   LibraryStatusFilter,
   StorageStats,
@@ -14,13 +13,6 @@ const STATUS_OPTIONS: ReadonlyArray<{ id: LibraryStatusFilter; label: string }> 
   { id: 'completed', label: 'Hoàn thành' },
 ];
 
-const FORMAT_OPTIONS: ReadonlyArray<{ id: LibraryFormatFilter; label: string }> = [
-  { id: 'all', label: 'Mọi tệp' },
-  { id: 'epub', label: 'EPUB' },
-  { id: 'pdf', label: 'PDF' },
-  { id: 'docx', label: 'DOCX' },
-];
-
 const SORT_OPTIONS: ReadonlyArray<{ id: LibrarySortMode; label: string }> = [
   { id: 'title_asc', label: 'Tên A → Z' },
   { id: 'recent_upload', label: 'Mới tải lên' },
@@ -31,20 +23,22 @@ const SORT_OPTIONS: ReadonlyArray<{ id: LibrarySortMode; label: string }> = [
 export interface LibraryFilterBarProps {
   searchQuery: string;
   statusFilter: LibraryStatusFilter;
-  formatFilter: LibraryFormatFilter;
   sortMode?: LibrarySortMode;
   isFiltering: boolean;
   filteredCount: number;
   totalCount: number;
   unitLabel?: string;
   searchPlaceholder?: string;
-  hideFormatFilter?: boolean;
   hideSort?: boolean;
   showStorage?: boolean;
   storage?: StorageStats | null;
+  selectionMode?: boolean;
+  selectedCount?: number;
+  unprotectedBookCount?: number;
+  onProtectionClick?: () => void;
+  onToggleSelectionMode?: () => void;
   onSearchChange: (value: string) => void;
   onStatusChange: (value: LibraryStatusFilter) => void;
-  onFormatChange: (value: LibraryFormatFilter) => void;
   onSortChange?: (value: LibrarySortMode) => void;
   onClearFilters: () => void;
 }
@@ -52,20 +46,22 @@ export interface LibraryFilterBarProps {
 export function LibraryFilterBar({
   searchQuery,
   statusFilter,
-  formatFilter,
   sortMode = 'title_asc',
   isFiltering,
   filteredCount,
   totalCount,
   unitLabel = 'cuốn',
-  searchPlaceholder = 'Tìm theo tên sách, tác giả hoặc tên kệ... (Nhấn /)',
-  hideFormatFilter = false,
+  searchPlaceholder = 'Tìm theo tên sách, tác giả hoặc tên kệ...',
   hideSort = false,
   showStorage = false,
   storage = null,
+  selectionMode = false,
+  selectedCount = 0,
+  unprotectedBookCount = 0,
+  onProtectionClick,
+  onToggleSelectionMode,
   onSearchChange,
   onStatusChange,
-  onFormatChange,
   onSortChange,
   onClearFilters,
 }: LibraryFilterBarProps) {
@@ -78,30 +74,76 @@ export function LibraryFilterBar({
       : usagePercent >= 75
         ? 'bg-amber-700 dark:bg-amber-500'
         : 'bg-crimson-accent';
+
   return (
     <section aria-label="Tìm kiếm và lọc thư viện" className="space-y-3">
       <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
-        {/* Ô tìm kiếm */}
-        <div className="relative flex-1 lg:max-w-md">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
-          <input
-            type="text"
-            inputMode="search"
-            data-library-search-input="true"
-            value={searchQuery}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder={searchPlaceholder}
-            aria-label={searchPlaceholder}
-            className="w-full rounded-xl border border-line bg-surface py-2.5 pl-10 pr-9 text-sm text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-accent"
-          />
-          {searchQuery && (
+        {/* Hàng ô tìm kiếm + nút Bảo mật / Chọn nhiều cho Admin trên điện thoại */}
+        <div className="flex items-center gap-2 lg:max-w-md lg:flex-1">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
+            <input
+              type="text"
+              inputMode="search"
+              data-library-search-input="true"
+              value={searchQuery}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
+              className="w-full rounded-xl border border-line bg-surface py-2.5 pl-10 pr-9 text-sm text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-accent"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => onSearchChange('')}
+                aria-label="Xoá từ khoá tìm kiếm"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-ink-faint transition-colors hover:bg-subtle hover:text-ink"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {onProtectionClick && (
             <button
               type="button"
-              onClick={() => onSearchChange('')}
-              aria-label="Xoá từ khoá tìm kiếm"
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-ink-faint transition-colors hover:bg-subtle hover:text-ink"
+              onClick={onProtectionClick}
+              aria-label="Bảo mật chế độ khách và truy vết rò rỉ"
+              title={
+                unprotectedBookCount > 0
+                  ? `Còn ${unprotectedBookCount} sách chưa đồng bộ gói bảo mật khách`
+                  : 'Bảo mật nội dung & Truy vết rò rỉ'
+              }
+              className="inline-flex h-[42px] shrink-0 items-center justify-center gap-1 rounded-xl border border-line bg-surface px-3 text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink sm:hidden"
             >
-              <X className="h-3.5 w-3.5" />
+              <Shield className="h-4 w-4 text-accent" />
+              {unprotectedBookCount > 0 && (
+                <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-500/20 px-1.5 text-[10px] font-bold leading-none tabular-nums text-amber-700 dark:text-amber-300">
+                  {unprotectedBookCount}
+                </span>
+              )}
+            </button>
+          )}
+
+          {onToggleSelectionMode && (
+            <button
+              type="button"
+              onClick={onToggleSelectionMode}
+              aria-pressed={selectionMode}
+              aria-label={selectionMode ? 'Thoát chế độ chọn nhiều' : 'Chọn nhiều sách'}
+              title={selectionMode ? 'Thoát chế độ chọn' : 'Chọn nhiều sách'}
+              className={`inline-flex h-[42px] shrink-0 items-center justify-center gap-1 rounded-xl border px-3 transition-colors sm:hidden ${
+                selectionMode
+                  ? 'border-accent bg-accent/15 text-accent'
+                  : 'border-line bg-surface text-ink-muted hover:border-line-strong hover:bg-subtle hover:text-ink'
+              }`}
+            >
+              <CheckSquare className="h-4 w-4" />
+              {selectionMode && selectedCount > 0 && (
+                <span className="text-xs font-semibold leading-none tabular-nums">
+                  {selectedCount}
+                </span>
+              )}
             </button>
           )}
         </div>
@@ -169,7 +211,7 @@ export function LibraryFilterBar({
         </div>
       </div>
 
-      {/* Hàng chips trạng thái đọc + định dạng */}
+      {/* Hàng chips trạng thái đọc */}
       <div className="flex flex-wrap items-center gap-2">
         <div
           role="group"
@@ -195,33 +237,6 @@ export function LibraryFilterBar({
             );
           })}
         </div>
-
-        {!hideFormatFilter && (
-          <div
-            role="group"
-            aria-label="Lọc theo định dạng tệp"
-            className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-line bg-surface p-1"
-          >
-            {FORMAT_OPTIONS.map((opt) => {
-              const active = formatFilter === opt.id;
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => onFormatChange(opt.id)}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
-                    active
-                      ? 'bg-subtle font-semibold text-ink ring-1 ring-line-strong'
-                      : 'text-ink-muted hover:bg-subtle/70 hover:text-ink'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
     </section>
   );
