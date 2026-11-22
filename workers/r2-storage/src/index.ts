@@ -104,6 +104,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
         ok: true,
         authRequired: isAuthRequired(env),
         discordReady: isValidDiscordPublicKeyFormat(env.DISCORD_PUBLIC_KEY),
+        guestProtectionReady: true,
         limitBytes: getLimitBytes(env),
       },
       200,
@@ -155,7 +156,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   }
 
   // Upload indexed Guest Chapter Pack for EPUB/DOCX (Owner only, D-028)
-  const guestPackUploadMatch = pathname.match(/^\/api\/books\/([^/]+)\/guest-pack$/);
+  const guestPackUploadMatch = normalizedPath.match(/^\/api\/books\/([^/]+)\/guest-pack$/);
   if (guestPackUploadMatch && request.method === 'PUT') {
     requireOwner(auth);
     const result = await uploadBookGuestPack(request, env, guestPackUploadMatch[1]);
@@ -163,13 +164,13 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   }
 
   // Guest-safe TOC, per-chapter AES-GCM encrypted payload & sliced R2 media (D-028)
-  const guestTocMatch = pathname.match(/^\/api\/guest\/books\/([^/]+)\/toc$/);
+  const guestTocMatch = normalizedPath.match(/^\/api\/guest\/books\/([^/]+)\/toc$/);
   if (guestTocMatch && request.method === 'GET') {
     const toc = await getGuestBookToc(env, auth, guestTocMatch[1]);
     return jsonResponse(toc, 200, origin);
   }
 
-  const guestChapterMatch = pathname.match(/^\/api\/guest\/books\/([^/]+)\/chapters\/(\d+)$/);
+  const guestChapterMatch = normalizedPath.match(/^\/api\/guest\/books\/([^/]+)\/chapters\/(\d+)$/);
   if (guestChapterMatch && request.method === 'GET') {
     const chapter = await getGuestEncryptedChapter(
       env,
@@ -180,7 +181,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     return jsonResponse(chapter, 200, origin);
   }
 
-  const guestMediaMatch = pathname.match(/^\/api\/guest\/books\/([^/]+)\/media\/(\d+)$/);
+  const guestMediaMatch = normalizedPath.match(/^\/api\/guest\/books\/([^/]+)\/media\/(\d+)$/);
   if (guestMediaMatch && request.method === 'GET') {
     return getGuestEncryptedMediaResponse(
       env,
@@ -192,13 +193,13 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   }
 
   // Admin Discord Guest Management & Forensic Watermark Leak Check (Owner only, D-028)
-  if (pathname === '/api/admin/discord-guests' && request.method === 'GET') {
+  if (normalizedPath === '/api/admin/discord-guests' && request.method === 'GET') {
     requireOwner(auth);
     const list = await listDiscordGuests(env.DB);
     return jsonResponse(list, 200, origin);
   }
 
-  const adminBanMatch = pathname.match(/^\/api\/admin\/discord-guests\/(\d+)\/ban$/);
+  const adminBanMatch = normalizedPath.match(/^\/api\/admin\/discord-guests\/([^/]+)\/ban$/);
   if (adminBanMatch && request.method === 'POST') {
     requireOwner(auth);
     const body = (await request.json().catch(() => null)) as {
@@ -217,7 +218,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     return jsonResponse(res, 200, origin);
   }
 
-  if (pathname === '/api/admin/forensic-check' && request.method === 'POST') {
+  if (normalizedPath === '/api/admin/forensic-check' && request.method === 'POST') {
     requireOwner(auth);
     const body = (await request.json().catch(() => null)) as { text?: unknown } | null;
     const report = await runAdminForensicCheck(env, body?.text);
