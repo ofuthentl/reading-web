@@ -1,22 +1,22 @@
 # HANDOFF
-Cập nhật: 2026-11-22 10:32 | Nhánh: feat/guest-content-protection | Build: 🟢 frontend (entry <= 86.04 kB gzip, 0 B three) · 🟢 worker (live) · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: **Hoàn tất & đồng bộ `origin/main` (PR #9) vào `feat/guest-content-protection` (`D-028`)** — sẵn sàng bấm Merge PR trên GitHub.
-Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/guest-content-protection.md
+Cập nhật: 2026-11-22 11:00 | Nhánh: feat/web-2d-enhancements | Build: 🟢 frontend · 🟢 worker · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: **Triển khai Nâng cấp Web 2D (`D-029`) — xong Phase 1/5, đang vào Phase 2**
+Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/web-2d-enhancements.md
 
 ## Đang làm dở
-- Đã hợp nhất sạch `origin/main` (gồm PR #9 `fix/native-gate-ui` cổng vòm `GateBackdropArt`) vào nhánh `feat/guest-content-protection` (`D-028`) và đã deploy live Cloudflare Worker (`arcane-library-api`):
-  1. **Worker (`guestPack.ts`, `forensicWatermark.ts`, `progressDb.ts`):** khoá `403` `/api/files/books/*` với `guest`, ẩn `file_key`, gắn `ua_hash`, Token Bucket chống bot (`burst = 10`, hồi `1 chương / 6s`, không trần ngày), cắt byte-range từng chương & ảnh từ R2 mã hoá `AES-256-GCM` và nhúng thuỷ vân 32-bit theo `discord_user_id`.
-  2. **Đóng gói `GuestPack` (`zipDirectory.ts`, `guestPackBuilder.ts`, `guestCrypto.ts`):** trích toạ độ ảnh trực tiếp trong ZIP (`0 B` nhân bản ảnh), tự sinh gói khi upload `EPUB`/`DOCX` mới & ngắt lưu IndexedDB sách ở chế độ `guest`.
-  3. **Trình đọc `<canvas>` 2D (`GuestCanvasReader.tsx`):** DOM 0 chữ/ảnh, khoá `toDataURL`/`toBlob`, phủ vân giấy sóng độ sáng chống tách nền Tesseract OCR + thuỷ vân nổi `discord_username · #xxxx`; Admin giữ nguyên 100% `ReaderView` DOM + Cache `0ms`.
-  4. **Bảng Bảo mật Admin (`AdminProtectionModal.tsx`, `AdminModalsHost.tsx`):** nút Khiên trên `LibraryHeader` để đồng bộ 1 chạm sách `EPUB`/`DOCX` cũ trên R2, quét văn bản truy vết thủ phạm Discord & khoá/mở khoá tức thì.
+- Đã chốt **`D-029`** (`PA-1A` xếp trực tiếp theo Tập + cặp 2 dải *Thịnh hành tuần này* & *Mới cập nhật*, `PA-2A`, `PA-3A`) và hoàn tất **Phase 1 — Hạ tầng Worker & D1**:
+  1. Migration `0005_bookmarks.sql` + `bookmarksDb.ts` (`GET/POST/DELETE /api/books/:id/bookmarks` cách ly `owner` vs `guest:<discord_user_id>`).
+  2. Xếp hạng từng tập sách thịnh hành 7 ngày (`weeklyPopular.ts`) trả kèm trong `GET /api/books`.
+  3. Tìm kiếm chương chứa từ khoá an toàn cho `guest` (`guestSearch.ts`, 0 đoạn văn bản thô lộ ra ngoài) + tách `r2Files.ts` gọn dưới trần 500 dòng.
+  4. Cập nhật `src/types.ts`, `src/lib/api.ts` và tạo `src/lib/bookmarksApi.ts`.
 
 ## Bước tiếp theo
-1. Bấm **Merge pull request** trên GitHub khi CI chạy lại xanh (đã hết conflict).
-2. Sau khi `ofu.lol` cập nhật, bấm nút **Khiên** trên Header → bấm **Đồng bộ sách chưa có gói** 1 lần cho các sách `EPUB`/`DOCX` cũ.
+1. **Phase 2:** Tạo `EditorialBookStrip.tsx` (cho cả *Thịnh hành tuần này* & *Mới cập nhật gần đây*), thanh Bộ lọc/Sắp xếp `LibraryFilterBar.tsx`, yêu thích cục bộ `localStorage` & nhãn gói bảo mật cho `guest`.
+2. **Phase 3:** `BookInfoModal.tsx` (`description` + Đặt lại tiến độ / Đánh dấu đọc xong), mô tả kệ trên `ShelfDetailView` & `ReadingStatsModal.tsx`.
+3. **Phase 4 & 5:** Đọc tiếp Tập kế, Immersive Mode, Phím tắt, Lightbox ảnh & Tìm chữ / Dấu trang trong trình đọc.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
-- **`feat/guest-content-protection` (`D-028`):** Hoàn tất 4 Phase + deploy live Worker + giải quyết conflict với PR #9 (`fix/native-gate-ui`).
-- **PR #9 (`fix/native-gate-ui`, `D-027`):** đã merge vào `main`.
+- **PR #10 (`feat/guest-content-protection`, `D-028`):** đã merge vào `main`.

@@ -71,9 +71,32 @@ async function computeLocalStorageStats(books: Book[]): Promise<StorageStats> {
   };
 }
 
+function computeLocalWeeklyPopularIds(
+  books: Book[],
+  progress: Record<string, ReadingProgress>,
+  limit = 10,
+): string[] {
+  const now = Date.now();
+  const since7d = now - 7 * 86_400_000;
+  const byCreatedDesc = [...books].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const recent = books
+    .filter((b) => (progress[b.id]?.updatedAt ?? 0) >= since7d)
+    .sort((a, b) => (progress[b.id]?.updatedAt ?? 0) - (progress[a.id]?.updatedAt ?? 0));
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const b of [...recent, ...byCreatedDesc]) {
+    if (out.length >= limit) break;
+    if (seen.has(b.id)) continue;
+    seen.add(b.id);
+    out.push(b.id);
+  }
+  return out;
+}
+
 export async function fetchLibraryState(): Promise<{
   books: Book[];
   progress: Record<string, ReadingProgress>;
+  weeklyPopularIds: string[];
   shelfPrefs: ShelfPrefsState;
   storage: StorageStats;
   session: AuthSessionInfo;
@@ -87,6 +110,7 @@ export async function fetchLibraryState(): Promise<{
     return {
       books: sorted,
       progress,
+      weeklyPopularIds: computeLocalWeeklyPopularIds(sorted, progress),
       shelfPrefs: localPrefs,
       storage,
       session: DEFAULT_OWNER_SESSION,
@@ -97,6 +121,7 @@ export async function fetchLibraryState(): Promise<{
   const data = (await response.json().catch(() => ({}))) as {
     books?: Book[];
     progress?: Record<string, ReadingProgress>;
+    weeklyPopular?: string[];
     shelfCovers?: Record<string, string>;
     favoriteShelves?: string[];
     storage?: StorageStats;
@@ -125,9 +150,15 @@ export async function fetchLibraryState(): Promise<{
   if (resolvedSession.role === 'owner') {
     writeLocalShelfPrefs(nextPrefs);
   }
+  const sortedBooks = sortBooksByTitle(data.books || []);
+  const progressMap = data.progress || {};
+  const weeklyPopularIds = Array.isArray(data.weeklyPopular)
+    ? data.weeklyPopular
+    : computeLocalWeeklyPopularIds(sortedBooks, progressMap);
   return {
-    books: sortBooksByTitle(data.books || []),
-    progress: data.progress || {},
+    books: sortedBooks,
+    progress: progressMap,
+    weeklyPopularIds,
     shelfPrefs: nextPrefs,
     storage: data.storage || {
       usedBytes: 0,

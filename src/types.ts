@@ -109,3 +109,22 @@ export type GuestChapterPayload = {
   watermarkLabel: string;
   blocks: GuestBlock[];
 };
+
+export type BookBookmark = {
+  id: string;
+  bookId: string;
+  chapterId: string;
+  chapterIndex: number;
+  chapterTitle?: string;
+  scrollRatio: number;
+  label: string;
+  note: string | null;
+  createdAt: number;
+};
+
+export type GuestBookSearchMatch = {
+  chapterIndex: number;
+  chapterNumber: number;
+  chapterTitle: string;
+  matchCount: number;
+};

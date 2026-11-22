@@ -72,8 +72,22 @@ CREATE TABLE IF NOT EXISTS book_guest_packs (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS book_bookmarks (
+  id TEXT PRIMARY KEY,
+  user_scope TEXT NOT NULL,
+  book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  chapter_id TEXT NOT NULL,
+  chapter_index INTEGER NOT NULL DEFAULT 0,
+  chapter_title TEXT,
+  scroll_ratio REAL NOT NULL DEFAULT 0,
+  label TEXT NOT NULL,
+  note TEXT,
+  created_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_books_shelf ON books(shelf);
 CREATE INDEX IF NOT EXISTS idx_books_created_at ON books(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_progress_updated_at ON reading_progress(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_discord_access_key_hash ON discord_access(key_hash) WHERE key_hash IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_guest_progress_user_updated ON guest_reading_progress(discord_user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bookmarks_user_book ON book_bookmarks(user_scope, book_id, created_at DESC);

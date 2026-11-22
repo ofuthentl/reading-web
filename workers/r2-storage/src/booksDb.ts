@@ -1,5 +1,6 @@
 import { type AuthContext, type AuthEnv, HttpError } from './auth';
 import { type ProgressRow, deleteReadingProgress, upsertReadingProgress } from './progressDb';
+import { computeWeeklyPopularBookIds } from './weeklyPopular';
 
 export { type ProgressRow, deleteReadingProgress, upsertReadingProgress };
 
@@ -185,15 +186,18 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
 
   const guestReadyIds = new Set((guestPacksRes.results || []).map((r) => r.book_id));
   const isGuest = auth.role === 'guest';
-  const sanitizedBooks = (booksRes.results || []).map((book) => ({
+  const rawBooks = booksRes.results || [];
+  const sanitizedBooks = rawBooks.map((book) => ({
     ...book,
     file_key: isGuest ? '' : book.file_key,
     guest_ready: book.file_type === 'pdf' ? false : guestReadyIds.has(book.id),
   }));
+  const weeklyPopular = await computeWeeklyPopularBookIds(env.DB, rawBooks, 10);
 
   return {
     books: sanitizedBooks,
     progress: progressMap,
+    weeklyPopular,
     shelfCovers,
     favoriteShelves,
     storage,
@@ -234,6 +238,10 @@ export async function deleteSingleBook(env: Env, bookId: string) {
     env.DB.prepare('DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0'),
   ]).catch(() => undefined);
   await env.DB.prepare('DELETE FROM guest_reading_progress WHERE book_id = ?')
+    .bind(bookId)
+    .run()
+    .catch(() => undefined);
+  await env.DB.prepare('DELETE FROM book_bookmarks WHERE book_id = ?')
     .bind(bookId)
     .run()
     .catch(() => undefined);
@@ -291,6 +299,10 @@ export async function bulkDeleteBooks(env: Env, rawIds: unknown) {
       .run()
       .catch(() => undefined);
     await env.DB.prepare(`DELETE FROM book_guest_packs WHERE book_id IN (${placeholders})`)
+      .bind(...chunk)
+      .run()
+      .catch(() => undefined);
+    await env.DB.prepare(`DELETE FROM book_bookmarks WHERE book_id IN (${placeholders})`)
       .bind(...chunk)
       .run()
       .catch(() => undefined);
