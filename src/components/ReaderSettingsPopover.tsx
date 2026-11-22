@@ -1,5 +1,5 @@
-import { Minus, Plus, X } from 'lucide-react';
-import type { ReaderSettings, ReaderTheme } from '@/types';
+import { BookOpen, Minus, Plus, ScrollText, X } from 'lucide-react';
+import type { ReaderLayoutMode, ReaderSettings, ReaderTheme } from '@/types';
 import { READER_THEME_STYLES, type ReaderThemePalette } from '@/lib/readerConfig';
 
 interface ReaderSettingsPopoverProps {
@@ -20,6 +20,11 @@ const WIDTH_OPTIONS = [
   ['medium', 'Vừa'],
   ['wide', 'Rộng'],
 ] as const;
+
+const LAYOUT_OPTIONS: ReadonlyArray<{ id: ReaderLayoutMode; label: string; icon: typeof ScrollText }> = [
+  { id: 'scroll', label: 'Cuộn dọc', icon: ScrollText },
+  { id: 'paginated', label: 'Lật trang (2 cột)', icon: BookOpen },
+];
 
 export function ReaderSettingsPopover({
   settings,
@@ -142,6 +147,28 @@ export function ReaderSettingsPopover({
         />
       </div>
 
+      {/* Kiểu trang đọc */}
+      <div className="mb-4">
+        <p className={`mb-2 text-xs font-medium ${palette.textSecondary}`}>Kiểu trang đọc</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {LAYOUT_OPTIONS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onUpdateSettings({ layoutMode: id })}
+              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${
+                settings.layoutMode === id
+                  ? palette.active
+                  : `${palette.border} ${palette.hover}`
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5 shrink-0" />
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Độ rộng trang đọc */}
       <div className="mb-4">
         <p className={`mb-2 text-xs font-medium ${palette.textSecondary}`}>Độ rộng trang đọc</p>
@@ -165,14 +192,14 @@ export function ReaderSettingsPopover({
 
       {/* Chạm lề & phím mũi tên */}
       <label
-        className={`flex cursor-pointer items-center justify-between border-t pt-3 text-xs ${palette.border}`}
+        className={`flex cursor-pointer items-center justify-between gap-2 border-t pt-3 text-xs ${palette.border}`}
       >
-        <span>Chạm lề trái/phải & phím mũi tên</span>
+        <span>Chạm lề trái/phải &amp; phím mũi tên để qua trang</span>
         <input
           type="checkbox"
           checked={settings.sideTapNavigation}
           onChange={(event) => onUpdateSettings({ sideTapNavigation: event.target.checked })}
-          className="h-4 w-4 accent-accent"
+          className="h-4 w-4 shrink-0 accent-accent"
         />
       </label>
     </div>

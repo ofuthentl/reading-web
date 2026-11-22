@@ -1,4 +1,10 @@
-import type { ReaderFont, ReaderSettings, ReaderTheme, ReaderWidth } from '@/types';
+import type {
+  ReaderFont,
+  ReaderLayoutMode,
+  ReaderSettings,
+  ReaderTheme,
+  ReaderWidth,
+} from '@/types';
 import type { AppTheme } from '@/hooks/useTheme';
 
 const READER_SETTINGS_KEY = 'ofu-library-reader-settings';
@@ -15,6 +21,7 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   fontSizePx: 19,
   lineHeight: 1.8,
   width: 'medium',
+  layoutMode: 'scroll',
   sideTapNavigation: true,
 };
 
@@ -112,6 +119,7 @@ export const READER_WIDTH_MAX: Record<ReaderWidth, string> = {
 const VALID_THEMES = new Set<ReaderTheme>(['paper', 'sepia', 'dark', 'midnight']);
 const VALID_FONTS = new Set<ReaderFont>(['serif', 'sans', 'mono']);
 const VALID_WIDTHS = new Set<ReaderWidth>(['narrow', 'medium', 'wide']);
+const VALID_LAYOUTS = new Set<ReaderLayoutMode>(['scroll', 'paginated']);
 
 export function loadReaderSettings(): ReaderSettings {
   try {
@@ -130,6 +138,10 @@ export function loadReaderSettings(): ReaderSettings {
           ? Math.min(2.3, Math.max(1.5, Number(parsed.lineHeight.toFixed(1))))
           : DEFAULT_READER_SETTINGS.lineHeight,
       width: parsed.width && VALID_WIDTHS.has(parsed.width) ? parsed.width : DEFAULT_READER_SETTINGS.width,
+      layoutMode:
+        parsed.layoutMode && VALID_LAYOUTS.has(parsed.layoutMode)
+          ? parsed.layoutMode
+          : DEFAULT_READER_SETTINGS.layoutMode,
       sideTapNavigation:
         typeof parsed.sideTapNavigation === 'boolean'
           ? parsed.sideTapNavigation

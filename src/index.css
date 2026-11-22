@@ -245,6 +245,25 @@
     opacity: 0.9;
   }
 
+  .reading-paginated-content img,
+  .reading-paginated-content svg,
+  .reading-paginated-content video,
+  .reading-paginated-content figure {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    max-height: var(--paginated-img-max-h, 520px);
+    object-fit: contain;
+    margin: 0.75rem auto;
+  }
+
+  .reading-paginated-content h1,
+  .reading-paginated-content h2,
+  .reading-paginated-content h3,
+  .reading-paginated-content h4 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: rgba(120, 120, 120, 0.3) transparent;

@@ -61,6 +61,7 @@ export type ShelfGroup = {
 export type ReaderTheme = 'paper' | 'sepia' | 'dark' | 'midnight';
 export type ReaderFont = 'serif' | 'sans' | 'mono';
 export type ReaderWidth = 'narrow' | 'medium' | 'wide';
+export type ReaderLayoutMode = 'scroll' | 'paginated';
 
 export type ReaderSettings = {
   theme: ReaderTheme;
@@ -68,6 +69,7 @@ export type ReaderSettings = {
   fontSizePx: number;
   lineHeight: number;
   width: ReaderWidth;
+  layoutMode: ReaderLayoutMode;
   sideTapNavigation: boolean;
 };
 

@@ -4,6 +4,7 @@ import type { Book, ParsedBook, ReaderSettings, ReadingProgress } from '@/types'
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { PdfReaderFallback } from '@/components/PdfReaderFallback';
 import { ReaderChapterEndNav } from '@/components/ReaderChapterEndNav';
+import { type PaginatedStageHandle, ReaderPaginatedView } from '@/components/ReaderPaginatedView';
 import { ReaderTocDrawer } from '@/components/ReaderTocDrawer';
 import { ReaderTopBar } from '@/components/ReaderTopBar';
 import { useReaderController } from '@/hooks/useReaderController';
@@ -50,6 +51,7 @@ export function ReaderView({
 }: ReaderViewProps) {
   const { chapters, pdfBlobUrl } = parsedBook;
   const isPdf = book.file_type === 'pdf' && Boolean(pdfBlobUrl);
+  const isPaginated = !isPdf && settings.layoutMode === 'paginated';
 
   const initialIdx = useMemo(() => {
     if (!initialProgress) return 0;
@@ -58,10 +60,17 @@ export function ReaderView({
     return Math.max(0, Math.min(initialProgress.chapterIndex || 0, chapters.length - 1));
   }, [chapters, initialProgress]);
 
+  const initialStartRatio =
+    initialProgress && initialProgress.chapterId === chapters[initialIdx]?.id
+      ? initialProgress.scrollRatio
+      : 0;
+
   const [chapterIndex, setChapterIndex] = useState(initialIdx);
-  const [chapterScrollRatio, setChapterScrollRatio] = useState(0);
+  const [chapterScrollRatio, setChapterScrollRatio] = useState(initialStartRatio);
+  const [paginatedStartRatio, setPaginatedStartRatio] = useState(initialStartRatio);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const paginatedRef = useRef<PaginatedStageHandle>(null);
   const restoreTargetRatioRef = useRef<number | null>(
     initialProgress && initialProgress.chapterId === chapters[initialIdx]?.id
       ? initialProgress.scrollRatio
@@ -100,6 +109,20 @@ export function ReaderView({
   const currentChapter = chapters[chapterIndex];
   const palette = READER_THEME_STYLES[settings.theme];
 
+  const handleUpdateSettings = useCallback(
+    (patch: Partial<ReaderSettings>) => {
+      if (patch.layoutMode && patch.layoutMode !== settings.layoutMode) {
+        if (patch.layoutMode === 'paginated') {
+          setPaginatedStartRatio(chapterScrollRatio);
+        } else {
+          restoreTargetRatioRef.current = chapterScrollRatio;
+        }
+      }
+      onUpdateSettings(patch);
+    },
+    [chapterScrollRatio, onUpdateSettings, settings.layoutMode],
+  );
+
   const goToChapter = useCallback(
     (nextIndex: number, targetRatio = 0) => {
       const clamped = Math.max(0, Math.min(nextIndex, chapters.length - 1));
@@ -110,16 +133,23 @@ export function ReaderView({
       setTocOpen(false);
       setImmersiveHidden(false);
 
-      if (clamped === chapterIndex && !isPdf && scrollContainerRef.current) {
-        const el = scrollContainerRef.current;
-        const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
-        el.scrollTop = Math.round(maxScroll * safeRatio);
+      if (clamped === chapterIndex && !isPdf) {
+        setChapterScrollRatio(safeRatio);
+        if (isPaginated) {
+          paginatedRef.current?.jumpToRatio(safeRatio);
+        } else if (scrollContainerRef.current) {
+          const el = scrollContainerRef.current;
+          const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+          el.scrollTop = Math.round(maxScroll * safeRatio);
+        }
         return;
       }
 
       suppressSaveRef.current = true;
       restoreTargetRatioRef.current = safeRatio;
       lastScrollTopRef.current = 0;
+      setPaginatedStartRatio(safeRatio);
+      setChapterScrollRatio(safeRatio);
       setChapterIndex(clamped);
 
       const isCompleted = completedRef.current || (isPdf && clamped === chapters.length - 1);
@@ -144,6 +174,7 @@ export function ReaderView({
       chapterIndex,
       chapters,
       completedRef,
+      isPaginated,
       isPdf,
       lastScrollTopRef,
       queueProgressSave,
@@ -152,20 +183,44 @@ export function ReaderView({
     ],
   );
 
-  const goPrev = useCallback(() => {
-    if (chapterIndex > 0) goToChapter(chapterIndex - 1);
+  const goPrevChapter = useCallback(() => {
+    if (chapterIndex > 0) goToChapter(chapterIndex - 1, 0);
   }, [chapterIndex, goToChapter]);
 
-  const goNext = useCallback(() => {
-    if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1);
+  const goNextChapter = useCallback(() => {
+    if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1, 0);
   }, [chapterIndex, chapters.length, goToChapter]);
 
-  goPrevRef.current = goPrev;
-  goNextRef.current = goNext;
+  goPrevRef.current = isPaginated ? () => paginatedRef.current?.stepPrev() : goPrevChapter;
+  goNextRef.current = isPaginated ? () => paginatedRef.current?.stepNext() : goNextChapter;
+
+  const handlePaginatedRatioChange = useCallback(
+    (ratio: number, isEndOfChapter: boolean) => {
+      if (!currentChapter) return;
+      setChapterScrollRatio(ratio);
+      const reachedEnd = chapterIndex === chapters.length - 1 && isEndOfChapter;
+      if (reachedEnd) completedRef.current = true;
+
+      queueProgressSave(
+        {
+          chapterId: currentChapter.id,
+          chapterIndex,
+          chapterTitle: currentChapter.title,
+          totalChapters: chapters.length,
+          scrollRatio: ratio,
+          scrollTop: 0,
+          completed: completedRef.current,
+          updatedAt: Date.now(),
+        },
+        reachedEnd,
+      );
+    },
+    [chapterIndex, chapters.length, completedRef, currentChapter, queueProgressSave],
+  );
 
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current;
-    if (!el || !currentChapter || isPdf) return;
+    if (!el || !currentChapter || isPdf || isPaginated) return;
 
     const currentTop = el.scrollTop;
     updateImmersiveOnScroll(currentTop, suppressSaveRef.current);
@@ -198,13 +253,14 @@ export function ReaderView({
     chapters.length,
     completedRef,
     currentChapter,
+    isPaginated,
     isPdf,
     queueProgressSave,
     updateImmersiveOnScroll,
   ]);
 
   useLayoutEffect(() => {
-    if (isPdf || !currentChapter || !scrollContainerRef.current) return;
+    if (isPdf || isPaginated || !currentChapter || !scrollContainerRef.current) return;
     suppressSaveRef.current = true;
     const targetRatio = restoreTargetRatioRef.current ?? 0;
 
@@ -227,7 +283,7 @@ export function ReaderView({
     };
     frame = requestAnimationFrame(apply);
     return () => cancelAnimationFrame(frame);
-  }, [currentChapter, handleScroll, isPdf, lastScrollTopRef]);
+  }, [currentChapter, handleScroll, isPaginated, isPdf, lastScrollTopRef]);
 
   const completeBook = useCallback(
     (targetNextBook?: Book) => {
@@ -309,7 +365,7 @@ export function ReaderView({
           setSettingsOpen((v) => !v);
         }}
         onCloseSettings={() => setSettingsOpen(false)}
-        onUpdateSettings={onUpdateSettings}
+        onUpdateSettings={handleUpdateSettings}
       />
 
       {tocOpen && (
@@ -359,6 +415,32 @@ export function ReaderView({
             />
           </Suspense>
         </ErrorBoundary>
+      ) : isPaginated && currentChapter ? (
+        <ReaderPaginatedView
+          ref={paginatedRef}
+          bookTitle={book.title}
+          chapter={currentChapter}
+          chapterIndex={chapterIndex}
+          totalChapters={chapters.length}
+          initialRatio={paginatedStartRatio}
+          nextBook={nextBook}
+          settings={settings}
+          palette={palette}
+          immersiveHidden={immersiveHidden}
+          onToggleImmersive={() => setImmersiveHidden((prev) => !prev)}
+          onCloseSettings={() => {
+            if (settingsOpen) setSettingsOpen(false);
+          }}
+          onRatioChange={handlePaginatedRatioChange}
+          onPrevChapterEnd={() => {
+            if (chapterIndex > 0) goToChapter(chapterIndex - 1, 1);
+          }}
+          onNextChapterStart={() => {
+            if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1, 0);
+          }}
+          onCompleteBook={completeBook}
+          onOpenImage={(src, alt) => setLightboxTarget({ kind: 'dom', src, alt })}
+        />
       ) : (
         <main
           ref={scrollContainerRef}
@@ -385,8 +467,8 @@ export function ReaderView({
             if (target?.closest('button, a, input, select, textarea')) return;
             const rect = event.currentTarget.getBoundingClientRect();
             const ratio = (event.clientX - rect.left) / rect.width;
-            if (settings.sideTapNavigation && ratio < 0.16) goPrev();
-            else if (settings.sideTapNavigation && ratio > 0.84) goNext();
+            if (settings.sideTapNavigation && ratio < 0.16) goPrevChapter();
+            else if (settings.sideTapNavigation && ratio > 0.84) goNextChapter();
             else if (immersiveHidden && ratio >= 0.22 && ratio <= 0.78) setImmersiveHidden(false);
           }}
           className="scrollbar-thin flex-1 overflow-y-auto px-4 pb-8 pt-[4.75rem] sm:px-8 sm:pb-12 sm:pt-20"
@@ -427,8 +509,8 @@ export function ReaderView({
                 totalChapters={chapters.length}
                 palette={palette}
                 nextBook={nextBook}
-                onPrev={goPrev}
-                onNext={goNext}
+                onPrev={goPrevChapter}
+                onNext={goNextChapter}
                 onCompleteAndClose={() => completeBook()}
                 onCompleteAndOpenNext={(nb) => completeBook(nb)}
               />
