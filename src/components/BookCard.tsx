@@ -9,7 +9,11 @@ import {
   isRecentBookUpload,
   pickClothCoverColor,
 } from '@/lib/bookMetadata';
-import { useCardReveal } from '@/hooks/useCardReveal';
+import {
+  handleCoverTiltLeave,
+  handleCoverTiltMove,
+  useCardReveal,
+} from '@/hooks/useCardReveal';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 import { computeBookProgressPercent } from '@/hooks/useLibraryViewState';
 
@@ -90,13 +94,14 @@ export function BookCard({
 
   const renderCover = (compact: boolean) => (
     <div
-      className={`relative aspect-[3/4] overflow-hidden rounded-lg border border-line bg-subtle shadow-sm transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-        selected
-          ? 'ring-2 ring-accent ring-offset-2 ring-offset-canvas'
-          : compact
-            ? 'group-hover:-translate-y-0.5 group-hover:border-line-strong group-hover:shadow-md'
-            : 'group-hover:-translate-y-1 group-hover:border-line-strong group-hover:shadow-[0_14px_28px_-10px_rgba(43,36,29,0.28)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.92),0_0_0_1px_rgba(244,244,245,0.16)]'
-      } ${compact ? 'w-[4.5rem] shrink-0' : 'w-full'}`}
+      onPointerMove={compact ? undefined : handleCoverTiltMove}
+      onPointerLeave={compact ? undefined : handleCoverTiltLeave}
+      onPointerCancel={compact ? undefined : handleCoverTiltLeave}
+      className={`relative aspect-[3/4] overflow-hidden rounded-lg border border-line bg-subtle shadow-sm ${
+        compact
+          ? 'w-[4.5rem] shrink-0 transition-all duration-300 group-hover:-translate-y-0.5 group-hover:border-line-strong group-hover:shadow-md'
+          : 'tilt-card w-full group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.32)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]'
+      } ${selected ? 'ring-2 ring-accent ring-offset-2 ring-offset-canvas' : ''}`}
     >
       {showImage ? (
         <img

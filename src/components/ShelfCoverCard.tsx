@@ -2,7 +2,11 @@ import { type CSSProperties, useEffect, useState } from 'react';
 import { FolderEdit, Image, Star } from 'lucide-react';
 import { pickClothCoverColor } from '@/lib/bookMetadata';
 import type { ShelfSummary } from '@/lib/shelfSummary';
-import { useCardReveal } from '@/hooks/useCardReveal';
+import {
+  handleCoverTiltLeave,
+  handleCoverTiltMove,
+  useCardReveal,
+} from '@/hooks/useCardReveal';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 
 interface ShelfCoverCardProps {
@@ -86,7 +90,12 @@ export function ShelfCoverCard({
         isRevealed ? 'is-revealed' : ''
       }`}
     >
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:-translate-y-1 group-hover:border-line-strong group-hover:shadow-[0_14px_28px_-10px_rgba(43,36,29,0.28)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.92),0_0_0_1px_rgba(244,244,245,0.16)]">
+      <div
+        onPointerMove={handleCoverTiltMove}
+        onPointerLeave={handleCoverTiltLeave}
+        onPointerCancel={handleCoverTiltLeave}
+        className="tilt-card relative aspect-[3/4] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.32)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]"
+      >
         {showImage ? (
           <>
             <img

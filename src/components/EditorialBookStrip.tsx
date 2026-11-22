@@ -8,7 +8,11 @@ import {
   getGuestLockLabel,
   pickClothCoverColor,
 } from '@/lib/bookMetadata';
-import { useCardReveal } from '@/hooks/useCardReveal';
+import {
+  handleCoverTiltLeave,
+  handleCoverTiltMove,
+  useCardReveal,
+} from '@/hooks/useCardReveal';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 
 interface EditorialCardProps {
@@ -71,16 +75,19 @@ function EditorialRankedCard({
         tabIndex={0}
         aria-pressed={selectionMode ? selected : undefined}
         onClick={handleActivate}
+        onPointerMove={handleCoverTiltMove}
+        onPointerLeave={handleCoverTiltLeave}
+        onPointerCancel={handleCoverTiltLeave}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
             handleActivate();
           }
         }}
-        className={`group relative aspect-[3/4.15] w-[9.5rem] cursor-pointer overflow-hidden rounded-[4px] border bg-subtle text-left transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-[11rem] md:w-[11.75rem] ${
+        className={`tilt-card group relative aspect-[3/4.15] w-[9.5rem] cursor-pointer overflow-hidden rounded-[4px] border bg-subtle text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-[11rem] md:w-[11.75rem] ${
           selected
             ? 'border-accent ring-2 ring-accent ring-offset-2 ring-offset-canvas'
-            : 'border-black/12 hover:-translate-y-1 dark:border-white/12'
+            : 'border-black/12 hover:shadow-[0_16px_30px_-12px_rgba(43,36,29,0.38)] dark:border-white/12 dark:hover:shadow-[0_18px_34px_-12px_rgba(0,0,0,0.9)]'
         }`}
       >
         {showImage ? (
@@ -300,7 +307,7 @@ export function EditorialBookStrip({
       <div
         ref={scrollerRef}
         onScroll={syncScrollState}
-        className={`flex gap-3.5 overflow-x-auto pb-1.5 pt-0.5 scrollbar-hover sm:gap-4 ${
+        className={`-mx-1 flex gap-3.5 overflow-x-auto px-1 py-2.5 scrollbar-hover sm:gap-4 ${
           isDark ? 'scrollbar-hover-dark' : ''
         }`}
       >

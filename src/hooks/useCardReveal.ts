@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 
 type ObserverCallback = () => void;
 
@@ -96,4 +96,43 @@ export function useCardReveal<T extends HTMLElement = HTMLDivElement>() {
   }, [isNearViewport, isRevealed]);
 
   return { cardRef, isNearViewport, isRevealed };
+}
+
+/**
+ * Hiệu ứng nghiêng 3D (tilt trái/phải/trên/dưới + ánh sáng phản chiếu) theo con trỏ chuột,
+ * cập nhật trực tiếp biến CSS (0 React re-render, 60–120 FPS).
+ */
+export function handleCoverTiltMove(
+  event: ReactPointerEvent<HTMLElement>,
+  maxDegY = 11.5,
+  maxDegX = 9,
+): void {
+  if (event.pointerType === 'touch' || prefersReducedMotion()) return;
+  const el = event.currentTarget;
+  const rect = el.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+
+  const px = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+  const py = Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height));
+  const ry = (px - 0.5) * maxDegY * 2;
+  const rx = (0.5 - py) * maxDegX * 2;
+
+  el.style.setProperty('--tilt-dur', '85ms');
+  el.style.setProperty('--rx', `${rx.toFixed(2)}deg`);
+  el.style.setProperty('--ry', `${ry.toFixed(2)}deg`);
+  el.style.setProperty('--tilt-lift', '-5px');
+  el.style.setProperty('--tilt-scale', '1.022');
+  el.style.setProperty('--gx', `${(px * 100).toFixed(1)}%`);
+  el.style.setProperty('--gy', `${(py * 100).toFixed(1)}%`);
+  el.style.setProperty('--glare-opacity', '1');
+}
+
+export function handleCoverTiltLeave(event: ReactPointerEvent<HTMLElement>): void {
+  const el = event.currentTarget;
+  el.style.setProperty('--tilt-dur', '440ms');
+  el.style.setProperty('--rx', '0deg');
+  el.style.setProperty('--ry', '0deg');
+  el.style.setProperty('--tilt-lift', '0px');
+  el.style.setProperty('--tilt-scale', '1');
+  el.style.setProperty('--glare-opacity', '0');
 }
