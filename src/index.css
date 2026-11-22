@@ -264,11 +264,11 @@
   }
 
   .scrollbar-thin-dark {
-    scrollbar-color: rgba(160, 160, 160, 0.45) #202020;
+    scrollbar-color: rgba(180, 192, 210, 0.28) transparent;
   }
 
   .scrollbar-thin-dark::-webkit-scrollbar-track {
-    background: #202020;
+    background: transparent;
   }
 
   .scrollbar-hover {
@@ -285,13 +285,14 @@
     scrollbar-color: rgba(120, 120, 120, 0.3) transparent;
   }
 
-  .scrollbar-hover::-webkit-scrollbar-track {
+  .scrollbar-hover::-webkit-scrollbar-track,
+  .scrollbar-hover::-webkit-scrollbar-corner {
     background: transparent;
   }
 
   .scrollbar-hover::-webkit-scrollbar-thumb {
     background-color: transparent;
-    border-radius: 3px;
+    border-radius: 9999px;
   }
 
   .scrollbar-hover:hover::-webkit-scrollbar-thumb {
@@ -299,19 +300,31 @@
   }
 
   .scrollbar-hover-dark {
-    scrollbar-color: transparent #17181c;
+    scrollbar-color: transparent transparent;
   }
 
   .scrollbar-hover-dark:hover {
-    scrollbar-color: #464650 #17181c;
+    scrollbar-color: rgba(180, 192, 210, 0.28) transparent;
   }
 
-  .scrollbar-hover-dark::-webkit-scrollbar-track {
-    background: #17181c;
+  .scrollbar-hover-dark::-webkit-scrollbar-track,
+  .scrollbar-hover-dark::-webkit-scrollbar-corner {
+    background: transparent;
   }
 
   .scrollbar-hover-dark:hover::-webkit-scrollbar-thumb {
-    background-color: #464650;
+    background-color: rgba(180, 192, 210, 0.28);
+  }
+
+  .editorial-rank-num {
+    color: rgba(255, 255, 255, 0.1);
+    -webkit-text-stroke: 1.15px rgba(255, 255, 255, 0.92);
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
+    transition: color 220ms ease;
+  }
+
+  .group:hover .editorial-rank-num {
+    color: rgba(255, 255, 255, 0.22);
   }
 
   .fade-in {

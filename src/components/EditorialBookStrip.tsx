@@ -124,10 +124,24 @@ function EditorialRankedCard({
         </div>
       )}
 
-      {/* Lớp phủ tối chuyển sắc kiểu tạp chí sách giúp chữ & số thứ tự luôn sắc nét */}
+      {/* Lớp shader phủ tối đa tầng + hiệu ứng khối gáy sách giúp số & chữ luôn nổi rõ trên mọi bìa sáng */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-[68%] bg-gradient-to-t from-black/92 via-black/52 to-transparent"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage:
+            'linear-gradient(to top, rgba(6,7,10,0.97) 0%, rgba(8,9,13,0.92) 24%, rgba(10,11,16,0.74) 48%, rgba(10,12,18,0.34) 70%, rgba(10,12,18,0.08) 88%, rgba(0,0,0,0.14) 100%)',
+          boxShadow:
+            'inset 6px 0 12px -6px rgba(0,0,0,0.5), inset -4px 0 10px -6px rgba(0,0,0,0.4)',
+        }}
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-[56%]"
+        style={{
+          backgroundImage:
+            'radial-gradient(ellipse 115% 85% at 32% 100%, rgba(4,5,8,0.72) 0%, rgba(4,5,8,0.32) 55%, transparent 100%)',
+        }}
       />
 
       {guestLockLabel && (
@@ -164,18 +178,26 @@ function EditorialRankedCard({
         )
       )}
 
-      {/* Số thứ tự nghiêng nghệ thuật + Tiêu đề & Tác giả */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col justify-end p-3 sm:p-3.5">
+      {/* Số thứ tự viền mảnh nghệ thuật + Vạch nhấn + Tiêu đề & Tác giả độ tương phản cao */}
+      <div
+        className={`pointer-events-none absolute inset-x-0 bottom-0 flex flex-col justify-end px-3 pt-6 sm:px-3.5 ${
+          percent !== null ? 'pb-4' : 'pb-3.5'
+        }`}
+      >
         <span
           aria-hidden="true"
-          className="mb-1 select-none font-display text-[2.6rem] font-light italic leading-[0.86] tracking-[-0.04em] text-white/92 drop-shadow-[0_2px_10px_rgba(0,0,0,0.65)] sm:text-[3.05rem]"
+          className="editorial-rank-num select-none font-display text-[2.75rem] font-normal italic leading-[0.86] tracking-[-0.03em] sm:text-[3.2rem]"
         >
           {rankText}
         </span>
-        <h3 className="line-clamp-1 text-xs font-semibold tracking-tight text-white drop-shadow-sm sm:text-[13px]">
+        <span
+          aria-hidden="true"
+          className="my-2 block h-[1.5px] w-6 rounded-full bg-[#d95d39] shadow-[0_1px_4px_rgba(0,0,0,0.75)]"
+        />
+        <h3 className="line-clamp-2 text-[12.5px] font-semibold leading-snug tracking-tight text-white [text-shadow:0_1px_4px_rgba(0,0,0,0.92)] sm:text-[13.5px]">
           {displayTitle}
         </h3>
-        <p className="mt-0.5 truncate text-[10.5px] text-white/72 sm:text-[11px]">
+        <p className="mt-0.5 truncate text-[10.5px] font-medium text-white/80 [text-shadow:0_1px_3px_rgba(0,0,0,0.9)] sm:text-[11px]">
           {displayAuthor}
         </p>
       </div>
