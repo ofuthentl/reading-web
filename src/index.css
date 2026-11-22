@@ -341,3 +341,9 @@
     }
   }
 }
+
+@media print {
+  .guest-protected-reader {
+    display: none !important;
+  }
+}

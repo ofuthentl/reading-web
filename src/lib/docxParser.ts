@@ -41,7 +41,7 @@ interface DocxRenderContext {
   styles: Map<string, StyleMeta>;
   numberingKinds: Map<string, 'ul' | 'ol'>;
   imageUrlByZipPath: Map<string, string>;
-  placeholderToBlobUrl: Map<string, string>;
+  placeholderToImage: Map<string, { blobUrl: string; zipPath: string }>;
   createdUrls: string[];
   placeholderSeq: number;
 }
@@ -63,7 +63,7 @@ async function resolveImagePlaceholder(ctx: DocxRenderContext, relId: string): P
   }
 
   const token = `__docx-img__/${ctx.placeholderSeq++}`;
-  ctx.placeholderToBlobUrl.set(token, blobUrl);
+  ctx.placeholderToImage.set(token, { blobUrl, zipPath });
   return token;
 }
 
@@ -290,16 +290,20 @@ function assembleBlocksHtml(blocks: DocxBlock[]): string {
   return parts.join('');
 }
 
-function sanitizeAndRestoreImages(rawHtml: string, placeholderToBlobUrl: Map<string, string>): string {
+function sanitizeAndRestoreImages(
+  rawHtml: string,
+  placeholderToImage: Map<string, { blobUrl: string; zipPath: string }>,
+): string {
   const doc = new DOMParser().parseFromString(rawHtml, 'text/html');
   // Must sanitize BEFORE replacing placeholder src with blob: URLs (DOMPurify strips blob: by default)
   sanitizeBookDocument(doc);
   for (const img of Array.from(doc.querySelectorAll<HTMLImageElement>('img[src]'))) {
     const src = img.getAttribute('src') || '';
-    const blobUrl = placeholderToBlobUrl.get(src);
-    if (blobUrl) {
-      img.src = blobUrl;
+    const resolved = placeholderToImage.get(src);
+    if (resolved) {
+      img.src = resolved.blobUrl;
       img.loading = 'lazy';
+      img.setAttribute('data-zip-path', resolved.zipPath);
     } else {
       img.remove();
     }
@@ -310,7 +314,7 @@ function sanitizeAndRestoreImages(rawHtml: string, placeholderToBlobUrl: Map<str
 function buildDocxChapters(
   blocks: DocxBlock[],
   book: Book,
-  placeholderToBlobUrl: Map<string, string>,
+  placeholderToImage: Map<string, { blobUrl: string; zipPath: string }>,
 ): Chapter[] {
   const h1Count = blocks.filter((b) => b.headingLevel === 1 && b.text).length;
   const h2Count = blocks.filter((b) => b.headingLevel === 2 && b.text).length;
@@ -391,7 +395,7 @@ function buildDocxChapters(
   const chapters: Chapter[] = [];
   for (const group of groups) {
     const rawHtml = assembleBlocksHtml(group.blocks);
-    const contentHtml = sanitizeAndRestoreImages(rawHtml, placeholderToBlobUrl);
+    const contentHtml = sanitizeAndRestoreImages(rawHtml, placeholderToImage);
     const plainText = group.blocks
       .map((b) => b.text)
       .filter(Boolean)
@@ -454,7 +458,7 @@ export async function parseDocxZip(zip: JSZip, book: Book): Promise<ParsedBook> 
       styles,
       numberingKinds,
       imageUrlByZipPath: new Map(),
-      placeholderToBlobUrl: new Map(),
+      placeholderToImage: new Map(),
       createdUrls,
       placeholderSeq: 0,
     };
@@ -478,7 +482,7 @@ export async function parseDocxZip(zip: JSZip, book: Book): Promise<ParsedBook> 
     await walkBodyChildren(bodyEl);
     if (blocks.length === 0) throw new Error('DOCX không có nội dung để đọc.');
 
-    const chapters = buildDocxChapters(blocks, book, ctx.placeholderToBlobUrl);
+    const chapters = buildDocxChapters(blocks, book, ctx.placeholderToImage);
     if (chapters.length === 0) throw new Error('DOCX không có nội dung để đọc.');
 
     return { chapters, dispose };

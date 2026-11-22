@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS discord_access (
   key_expires_at INTEGER,
   active_session_id TEXT,
   session_expires_at INTEGER,
+  ua_hash TEXT,
+  rl_tokens REAL NOT NULL DEFAULT 10,
+  rl_updated_at INTEGER NOT NULL DEFAULT 0,
+  rl_strikes INTEGER NOT NULL DEFAULT 0,
+  is_banned INTEGER NOT NULL DEFAULT 0,
+  ban_reason TEXT,
   updated_at INTEGER NOT NULL
 );
 
@@ -55,6 +61,15 @@ CREATE TABLE IF NOT EXISTS guest_reading_progress (
   completed INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (discord_user_id, book_id)
+);
+
+CREATE TABLE IF NOT EXISTS book_guest_packs (
+  book_id TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+  pack_key TEXT NOT NULL,
+  pack_size INTEGER NOT NULL DEFAULT 0,
+  chapter_count INTEGER NOT NULL DEFAULT 0,
+  manifest_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_books_shelf ON books(shelf);

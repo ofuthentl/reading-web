@@ -1,4 +1,7 @@
 import { type AuthContext, type AuthEnv, HttpError } from './auth';
+import { type ProgressRow, deleteReadingProgress, upsertReadingProgress } from './progressDb';
+
+export { type ProgressRow, deleteReadingProgress, upsertReadingProgress };
 
 export interface Env extends AuthEnv {
   APP_ORIGINS: string;
@@ -24,18 +27,6 @@ export interface BookRow {
   file_size: number;
   cover_size: number;
   created_at: string;
-}
-
-export interface ProgressRow {
-  book_id: string;
-  chapter_id: string;
-  chapter_index: number;
-  chapter_title: string | null;
-  total_chapters: number | null;
-  scroll_ratio: number;
-  scroll_top: number;
-  completed: number;
-  updated_at: number;
 }
 
 export interface ShelfPrefRow {
@@ -87,11 +78,16 @@ function chunkArray<T>(items: T[], chunkSize: number): T[][] {
 }
 
 export async function getStorageStats(env: Env) {
-  const row = await env.DB.prepare(
-    'SELECT COALESCE(SUM(file_size + cover_size), 0) AS used_bytes, COUNT(*) AS book_count FROM books',
-  ).first<{ used_bytes: number; book_count: number }>();
-  const usedBytes = Number(row?.used_bytes ?? 0);
-  const bookCount = Number(row?.book_count ?? 0);
+  const [booksRow, packRow] = await Promise.all([
+    env.DB.prepare(
+      'SELECT COALESCE(SUM(file_size + cover_size), 0) AS used_bytes, COUNT(*) AS book_count FROM books',
+    ).first<{ used_bytes: number; book_count: number }>(),
+    env.DB.prepare('SELECT COALESCE(SUM(pack_size), 0) AS pack_bytes FROM book_guest_packs')
+      .first<{ pack_bytes: number }>()
+      .catch(() => ({ pack_bytes: 0 })),
+  ]);
+  const usedBytes = Number(booksRow?.used_bytes ?? 0) + Number(packRow?.pack_bytes ?? 0);
+  const bookCount = Number(booksRow?.book_count ?? 0);
   const limitBytes = getLimitBytes(env);
   return {
     usedBytes,
@@ -123,30 +119,6 @@ async function ensureShelfPrefsTable(env: Env): Promise<void> {
   ).run();
 }
 
-async function ensureGuestProgressTable(env: Env): Promise<void> {
-  await env.DB.batch([
-    env.DB.prepare(
-      `CREATE TABLE IF NOT EXISTS guest_reading_progress (
-         discord_user_id TEXT NOT NULL,
-         book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-         chapter_id TEXT NOT NULL,
-         chapter_index INTEGER NOT NULL DEFAULT 0,
-         chapter_title TEXT,
-         total_chapters INTEGER,
-         scroll_ratio REAL NOT NULL DEFAULT 0,
-         scroll_top REAL NOT NULL DEFAULT 0,
-         completed INTEGER NOT NULL DEFAULT 0,
-         updated_at INTEGER NOT NULL,
-         PRIMARY KEY (discord_user_id, book_id)
-       )`,
-    ),
-    env.DB.prepare(
-      `CREATE INDEX IF NOT EXISTS idx_guest_progress_user_updated
-       ON guest_reading_progress(discord_user_id, updated_at DESC)`,
-    ),
-  ]);
-}
-
 export async function listBooksAndProgress(env: Env, auth: AuthContext) {
   const progressQuery =
     auth.role === 'owner'
@@ -160,7 +132,7 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
           .all<ProgressRow>()
           .catch(() => ({ results: [] as ProgressRow[] }));
 
-  const [booksRes, progressRes, shelfPrefsRes, storage] = await Promise.all([
+  const [booksRes, progressRes, shelfPrefsRes, guestPacksRes, storage] = await Promise.all([
     env.DB.prepare('SELECT * FROM books ORDER BY created_at DESC').all<BookRow>(),
     progressQuery,
     env.DB.prepare('SELECT shelf_key, cover_book_id, is_favorite FROM shelf_prefs')
@@ -168,6 +140,9 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
       .catch(() => ({
         results: [] as Array<Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite'>>,
       })),
+    env.DB.prepare('SELECT book_id FROM book_guest_packs')
+      .all<{ book_id: string }>()
+      .catch(() => ({ results: [] as Array<{ book_id: string }> })),
     getStorageStats(env),
   ]);
 
@@ -208,13 +183,25 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     if (row.is_favorite === 1) favoriteShelves.push(row.shelf_key);
   }
 
+  const guestReadyIds = new Set((guestPacksRes.results || []).map((r) => r.book_id));
+  const isGuest = auth.role === 'guest';
+  const sanitizedBooks = (booksRes.results || []).map((book) => ({
+    ...book,
+    file_key: isGuest ? '' : book.file_key,
+    guest_ready: book.file_type === 'pdf' ? false : guestReadyIds.has(book.id),
+  }));
+
   return {
-    books: booksRes.results || [],
+    books: sanitizedBooks,
     progress: progressMap,
     shelfCovers,
     favoriteShelves,
     storage,
-    session: { role: auth.role, expiresAt: auth.expiresAt },
+    session: {
+      role: auth.role,
+      expiresAt: auth.expiresAt,
+      ...(auth.watermarkLabel ? { watermarkLabel: auth.watermarkLabel } : {}),
+    },
   };
 }
 
@@ -226,7 +213,11 @@ export async function deleteSingleBook(env: Env, bookId: string) {
     .first<{ file_key: string; cover_key: string | null }>();
   if (!existing) throw new HttpError('Không tìm thấy sách.', 404);
 
-  const keysToDelete = [existing.file_key, existing.cover_key].filter((k): k is string => Boolean(k));
+  const keysToDelete = [
+    existing.file_key,
+    existing.cover_key,
+    `guest-packs/${bookId}.pack`,
+  ].filter((k): k is string => Boolean(k));
   if (keysToDelete.length > 0) {
     await env.BOOKS_BUCKET.delete(keysToDelete);
   }
@@ -234,6 +225,10 @@ export async function deleteSingleBook(env: Env, bookId: string) {
     env.DB.prepare('DELETE FROM reading_progress WHERE book_id = ?').bind(bookId),
     env.DB.prepare('DELETE FROM books WHERE id = ?').bind(bookId),
   ]);
+  await env.DB.prepare('DELETE FROM book_guest_packs WHERE book_id = ?')
+    .bind(bookId)
+    .run()
+    .catch(() => undefined);
   await env.DB.batch([
     env.DB.prepare('UPDATE shelf_prefs SET cover_book_id = NULL WHERE cover_book_id = ?').bind(bookId),
     env.DB.prepare('DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0'),
@@ -266,6 +261,7 @@ export async function bulkDeleteBooks(env: Env, rawIds: unknown) {
     for (const row of rows.results || []) {
       if (row.file_key) keysToDelete.push(row.file_key);
       if (row.cover_key) keysToDelete.push(row.cover_key);
+      keysToDelete.push(`guest-packs/${row.id}.pack`);
     }
   }
 
@@ -291,6 +287,10 @@ export async function bulkDeleteBooks(env: Env, rawIds: unknown) {
       env.DB.prepare('DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0'),
     ]).catch(() => undefined);
     await env.DB.prepare(`DELETE FROM guest_reading_progress WHERE book_id IN (${placeholders})`)
+      .bind(...chunk)
+      .run()
+      .catch(() => undefined);
+    await env.DB.prepare(`DELETE FROM book_guest_packs WHERE book_id IN (${placeholders})`)
       .bind(...chunk)
       .run()
       .catch(() => undefined);
@@ -439,113 +439,4 @@ export async function upsertShelfFavorite(env: Env, rawShelfName: unknown, rawFa
   ]);
 
   return { ok: true, shelfKey, favorite: rawFavorite, updatedAt };
-}
-
-export async function upsertReadingProgress(
-  env: Env,
-  auth: AuthContext,
-  bookId: string,
-  body: {
-    chapterId?: string;
-    chapterIndex?: number;
-    chapterTitle?: string;
-    totalChapters?: number;
-    scrollRatio?: number;
-    scrollTop?: number;
-    completed?: boolean;
-    updatedAt?: number;
-  } | null,
-) {
-  if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
-  if (!body?.chapterId) throw new HttpError('Thiếu thông tin chương đang đọc.', 400);
-
-  const existingBook = await env.DB.prepare('SELECT id FROM books WHERE id = ?')
-    .bind(bookId)
-    .first<{ id: string }>();
-  if (!existingBook) throw new HttpError('Không tìm thấy sách.', 404);
-
-  const updatedAt = typeof body.updatedAt === 'number' ? body.updatedAt : Date.now();
-  const chapterTitle =
-    typeof body.chapterTitle === 'string' && body.chapterTitle.trim()
-      ? body.chapterTitle.trim().slice(0, 200)
-      : null;
-  const totalChapters =
-    typeof body.totalChapters === 'number' &&
-    Number.isFinite(body.totalChapters) &&
-    body.totalChapters > 0
-      ? Math.floor(body.totalChapters)
-      : null;
-
-  if (auth.role === 'owner') {
-    await env.DB.prepare(
-      `INSERT INTO reading_progress (book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(book_id) DO UPDATE SET
-         chapter_id = excluded.chapter_id,
-         chapter_index = excluded.chapter_index,
-         chapter_title = COALESCE(excluded.chapter_title, reading_progress.chapter_title),
-         total_chapters = COALESCE(excluded.total_chapters, reading_progress.total_chapters),
-         scroll_ratio = excluded.scroll_ratio,
-         scroll_top = excluded.scroll_top,
-         completed = excluded.completed,
-         updated_at = excluded.updated_at`,
-    )
-      .bind(
-        bookId,
-        body.chapterId,
-        Number(body.chapterIndex ?? 0),
-        chapterTitle,
-        totalChapters,
-        Number(body.scrollRatio ?? 0),
-        Number(body.scrollTop ?? 0),
-        body.completed ? 1 : 0,
-        updatedAt,
-      )
-      .run();
-  } else {
-    await ensureGuestProgressTable(env);
-    await env.DB.prepare(
-      `INSERT INTO guest_reading_progress (discord_user_id, book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(discord_user_id, book_id) DO UPDATE SET
-         chapter_id = excluded.chapter_id,
-         chapter_index = excluded.chapter_index,
-         chapter_title = COALESCE(excluded.chapter_title, guest_reading_progress.chapter_title),
-         total_chapters = COALESCE(excluded.total_chapters, guest_reading_progress.total_chapters),
-         scroll_ratio = excluded.scroll_ratio,
-         scroll_top = excluded.scroll_top,
-         completed = excluded.completed,
-         updated_at = excluded.updated_at`,
-    )
-      .bind(
-        auth.userId,
-        bookId,
-        body.chapterId,
-        Number(body.chapterIndex ?? 0),
-        chapterTitle,
-        totalChapters,
-        Number(body.scrollRatio ?? 0),
-        Number(body.scrollTop ?? 0),
-        body.completed ? 1 : 0,
-        updatedAt,
-      )
-      .run();
-  }
-
-  return { ok: true, updatedAt };
-}
-
-export async function deleteReadingProgress(env: Env, auth: AuthContext, bookId: string) {
-  if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
-  if (auth.role === 'owner') {
-    await env.DB.prepare('DELETE FROM reading_progress WHERE book_id = ?').bind(bookId).run();
-  } else {
-    await env.DB.prepare(
-      'DELETE FROM guest_reading_progress WHERE discord_user_id = ? AND book_id = ?',
-    )
-      .bind(auth.userId, bookId)
-      .run()
-      .catch(() => undefined);
-  }
-  return { ok: true };
 }

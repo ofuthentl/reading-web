@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Book, ParsedBook, ReaderSettings, ReadingProgress } from '@/types';
+import type {
+  AuthRole,
+  Book,
+  GuestTocItem,
+  ParsedBook,
+  ReaderSettings,
+  ReadingProgress,
+} from '@/types';
 import type { AppTheme } from '@/hooks/useTheme';
-import { fetchBookBlobCached, isAuthError, saveReadingProgress } from '@/lib/api';
+import { fetchBookBlobCached, isAuthError, isCloudMode, saveReadingProgress } from '@/lib/api';
 import { isChunkLoadError, recoverFromChunkError } from '@/lib/chunkReload';
 import {
   appThemeToReaderTheme,
@@ -9,13 +16,24 @@ import {
   saveReaderSettings,
 } from '@/lib/readerConfig';
 
+export interface GuestReaderSessionState {
+  chapters: GuestTocItem[];
+  watermarkLabel: string;
+}
+
 interface UseBookReaderOptions {
   appTheme: AppTheme;
+  sessionRole: AuthRole;
   onProgressUpdated: (bookId: string, progress: ReadingProgress) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
 }
 
-export function useBookReader({ appTheme, onProgressUpdated, onApiError }: UseBookReaderOptions) {
+export function useBookReader({
+  appTheme,
+  sessionRole,
+  onProgressUpdated,
+  onApiError,
+}: UseBookReaderOptions) {
   const [settings, setSettings] = useState<ReaderSettings>(() => ({
     ...loadReaderSettings(),
     theme: appThemeToReaderTheme(appTheme),
@@ -23,6 +41,7 @@ export function useBookReader({ appTheme, onProgressUpdated, onApiError }: UseBo
   const [activeBook, setActiveBook] = useState<Book | null>(null);
   const [openingBook, setOpeningBook] = useState<Book | null>(null);
   const [parsedBook, setParsedBook] = useState<ParsedBook | null>(null);
+  const [guestSession, setGuestSession] = useState<GuestReaderSessionState | null>(null);
   const [loadedFromCache, setLoadedFromCache] = useState(false);
 
   const requestIdRef = useRef(0);
@@ -66,11 +85,20 @@ export function useBookReader({ appTheme, onProgressUpdated, onApiError }: UseBo
     setOpeningBook(null);
     setActiveBook(null);
     setParsedBook(null);
+    setGuestSession(null);
     setLoadedFromCache(false);
   }, [disposeCurrent]);
 
   const openBook = useCallback(
     async (book: Book) => {
+      if (isCloudMode && sessionRole === 'guest' && book.file_type === 'pdf') {
+        onApiError(
+          new Error('Định dạng PDF chỉ dành cho Quản trị viên thư viện.'),
+          'Định dạng PDF chỉ dành cho Quản trị viên thư viện.',
+        );
+        return;
+      }
+
       const requestId = requestIdRef.current + 1;
       requestIdRef.current = requestId;
       const syncedTheme = appThemeToReaderTheme(appTheme);
@@ -83,6 +111,24 @@ export function useBookReader({ appTheme, onProgressUpdated, onApiError }: UseBo
       setOpeningBook(book);
 
       try {
+        if (isCloudMode && sessionRole === 'guest') {
+          const { fetchGuestBookToc } = await import('@/lib/guestCrypto');
+          if (requestId !== requestIdRef.current) return;
+          const toc = await fetchGuestBookToc(book.id);
+          if (requestId !== requestIdRef.current) return;
+
+          disposeCurrent();
+          setParsedBook(null);
+          setGuestSession({
+            chapters: toc.chapters,
+            watermarkLabel: toc.watermarkLabel,
+          });
+          setActiveBook(book);
+          setLoadedFromCache(false);
+          setOpeningBook(null);
+          return;
+        }
+
         const { blob, fromCache } = await fetchBookBlobCached(book);
         if (requestId !== requestIdRef.current) return;
 
@@ -97,6 +143,7 @@ export function useBookReader({ appTheme, onProgressUpdated, onApiError }: UseBo
 
         disposeCurrent();
         parsedBookRef.current = parsed;
+        setGuestSession(null);
         setActiveBook(book);
         setParsedBook(parsed);
         setLoadedFromCache(fromCache);
@@ -115,7 +162,7 @@ export function useBookReader({ appTheme, onProgressUpdated, onApiError }: UseBo
         onApiError(err, `Không thể mở "${book.title}".`);
       }
     },
-    [appTheme, disposeCurrent, onApiError],
+    [appTheme, disposeCurrent, onApiError, sessionRole],
   );
 
   const handleSaveProgress = useCallback(
@@ -139,6 +186,7 @@ export function useBookReader({ appTheme, onProgressUpdated, onApiError }: UseBo
     activeBook,
     openingBook,
     parsedBook,
+    guestSession,
     loadedFromCache,
     updateSettings,
     openBook,

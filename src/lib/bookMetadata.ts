@@ -1,4 +1,4 @@
-import type { Book, BookFileType, ReadingProgress } from '@/types';
+import type { Book, BookFileType, ReadingProgress, ShelfGroup } from '@/types';
 import {
   VOLUME_SEGMENT_RE,
   VOLUME_WITH_SUBTITLE_RE,
@@ -155,4 +155,54 @@ export function computeBookProgressPercent(
     );
   }
   return Math.round(clamped * 100);
+}
+
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let idx = 0;
+  let value = bytes;
+  while (value >= 1024 && idx < units.length - 1) {
+    value /= 1024;
+    idx += 1;
+  }
+  return `${value.toFixed(idx >= 2 ? 2 : 0)} ${units[idx]}`;
+}
+
+function normalizeSortKey(value: string): string {
+  return value
+    .trim()
+    .replace(/\s*[-–—_:|]+\s*/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+function compareVietnameseText(a: string, b: string): number {
+  const keyA = normalizeSortKey(a);
+  const keyB = normalizeSortKey(b);
+  const primary = keyA.localeCompare(keyB, 'vi', { numeric: true, sensitivity: 'base' });
+  if (primary !== 0) return primary;
+  return keyA.localeCompare(keyB, 'vi', { numeric: true, sensitivity: 'variant' });
+}
+
+export function sortBooksByTitle(books: Book[]): Book[] {
+  return [...books].sort((a, b) => {
+    const byTitle = compareVietnameseText(getBookSortTitle(a), getBookSortTitle(b));
+    if (byTitle !== 0) return byTitle;
+    return compareVietnameseText(a.author, b.author);
+  });
+}
+
+export function groupBooksIntoShelves(books: Book[]): ShelfGroup[] {
+  const map = new Map<string, ShelfGroup>();
+  for (const book of sortBooksByTitle(books)) {
+    const shelfName = (book.shelf || 'Kho chưa phân loại').trim();
+    const key = shelfName.toLocaleLowerCase('vi');
+    const existing = map.get(key);
+    if (existing) {
+      existing.books.push(book);
+    } else {
+      map.set(key, { key, name: shelfName, books: [book] });
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => compareVietnameseText(a.name, b.name));
 }

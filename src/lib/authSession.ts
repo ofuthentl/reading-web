@@ -157,6 +157,7 @@ export async function loginWithPasscode(passcode: string): Promise<AuthSessionIn
     token?: string;
     role?: AuthRole;
     expiresAt?: number;
+    watermarkLabel?: string;
     error?: string;
   };
   if (!response.ok || !body.token) {
@@ -167,5 +168,6 @@ export async function loginWithPasscode(passcode: string): Promise<AuthSessionIn
   return {
     role: body.role === 'guest' ? 'guest' : (parsed?.role ?? 'owner'),
     expiresAt: typeof body.expiresAt === 'number' ? body.expiresAt : (parsed?.expiresAt ?? null),
+    watermarkLabel: typeof body.watermarkLabel === 'string' ? body.watermarkLabel : null,
   };
 }

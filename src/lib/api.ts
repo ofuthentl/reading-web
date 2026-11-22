@@ -4,7 +4,6 @@ import type {
   Book,
   BookFileType,
   ReadingProgress,
-  ShelfGroup,
   StorageStats,
 } from '@/types';
 import {
@@ -26,7 +25,13 @@ import {
   getAllLocalProgress, getCachedBookBlob, getCachedCoverBlob, getLocalBooks,
   putLocalBook, putLocalProgress, setCachedBookBlob, setCachedCoverBlob,
 } from '@/lib/cache';
-import { getBookSortTitle, parseFileMetadata, pickCoverColor } from '@/lib/bookMetadata';
+import {
+  formatBytes,
+  groupBooksIntoShelves,
+  parseFileMetadata,
+  pickCoverColor,
+  sortBooksByTitle,
+} from '@/lib/bookMetadata';
 import { isChunkLoadError } from '@/lib/chunkReload';
 import { compressCoverBlob } from '@/lib/coverImage';
 import {
@@ -41,67 +46,20 @@ export {
   apiFetch,
   assertApiConfigured,
   checkHealth,
+  formatBytes,
   getAuthToken,
+  groupBooksIntoShelves,
   isAuthError,
   isCloudMode,
   isLocalDevMode,
   isMissingProductionApi,
   loginWithPasscode,
   setAuthToken,
+  sortBooksByTitle,
 };
 
 export const HARD_LIMIT_BYTES = 9 * 1024 * 1024 * 1024; // 9.0 GiB
 export const MAX_SHELF_NAME_LENGTH = 120;
-
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let idx = 0;
-  let value = bytes;
-  while (value >= 1024 && idx < units.length - 1) {
-    value /= 1024;
-    idx += 1;
-  }
-  return `${value.toFixed(idx >= 2 ? 2 : 0)} ${units[idx]}`;
-}
-
-function normalizeSortKey(value: string): string {
-  return value
-    .trim()
-    .replace(/\s*[-–—_:|]+\s*/g, ' ')
-    .replace(/\s+/g, ' ');
-}
-
-function compareVietnameseText(a: string, b: string): number {
-  const keyA = normalizeSortKey(a);
-  const keyB = normalizeSortKey(b);
-  const primary = keyA.localeCompare(keyB, 'vi', { numeric: true, sensitivity: 'base' });
-  if (primary !== 0) return primary;
-  return keyA.localeCompare(keyB, 'vi', { numeric: true, sensitivity: 'variant' });
-}
-
-export function sortBooksByTitle(books: Book[]): Book[] {
-  return [...books].sort((a, b) => {
-    const byTitle = compareVietnameseText(getBookSortTitle(a), getBookSortTitle(b));
-    if (byTitle !== 0) return byTitle;
-    return compareVietnameseText(a.author, b.author);
-  });
-}
-
-export function groupBooksIntoShelves(books: Book[]): ShelfGroup[] {
-  const map = new Map<string, ShelfGroup>();
-  for (const book of sortBooksByTitle(books)) {
-    const shelfName = (book.shelf || 'Kho chưa phân loại').trim();
-    const key = shelfName.toLocaleLowerCase('vi');
-    const existing = map.get(key);
-    if (existing) {
-      existing.books.push(book);
-    } else {
-      map.set(key, { key, name: shelfName, books: [book] });
-    }
-  }
-  return Array.from(map.values()).sort((a, b) => compareVietnameseText(a.name, b.name));
-}
 
 async function computeLocalStorageStats(books: Book[]): Promise<StorageStats> {
   const usedBytes = books.reduce((sum, b) => sum + (b.file_size || 0) + (b.cover_size || 0), 0);
@@ -142,7 +100,7 @@ export async function fetchLibraryState(): Promise<{
     shelfCovers?: Record<string, string>;
     favoriteShelves?: string[];
     storage?: StorageStats;
-    session?: { role?: AuthRole; expiresAt?: number | null };
+    session?: { role?: AuthRole; expiresAt?: number | null; watermarkLabel?: string | null };
     error?: string;
   };
   if (!response.ok) {
@@ -155,6 +113,10 @@ export async function fetchLibraryState(): Promise<{
       typeof data.session?.expiresAt === 'number'
         ? data.session.expiresAt
         : fallbackSession.expiresAt,
+    watermarkLabel:
+      typeof data.session?.watermarkLabel === 'string'
+        ? data.session.watermarkLabel
+        : (fallbackSession.watermarkLabel ?? null),
   };
   const nextPrefs: ShelfPrefsState = {
     covers: data.shelfCovers ?? localPrefs.covers,
@@ -240,6 +202,7 @@ export async function uploadBook(
       file_size: file.size,
       cover_size: coverBlob?.size || 0,
       created_at: new Date().toISOString(),
+      guest_ready: fileType !== 'pdf',
     };
     await putLocalBook(newBook);
     const updatedBooks = await getLocalBooks();
@@ -294,6 +257,20 @@ export async function uploadBook(
     } catch {
       // Non-fatal: book is already uploaded safely
     }
+  }
+
+  if (fileType === 'epub' || fileType === 'docx') {
+    try {
+      const { buildAndUploadGuestPack } = await import('@/lib/guestPackBuilder');
+      const packRes = await buildAndUploadGuestPack(file, finalBook);
+      finalBook = { ...finalBook, guest_ready: true };
+      if (packRes.storage) finalStorage = packRes.storage;
+    } catch {
+      // Không chặn upload chính nếu sinh gói bảo mật lỗi; Admin có thể bấm đồng bộ lại trong 1 chạm
+      finalBook = { ...finalBook, guest_ready: false };
+    }
+  } else {
+    finalBook = { ...finalBook, guest_ready: false };
   }
 
   return { book: finalBook, storage: finalStorage };
@@ -461,6 +438,12 @@ export async function fetchBookBlobCached(
   book: Book,
 ): Promise<{ blob: Blob; fromCache: boolean }> {
   assertApiConfigured();
+  if (isCloudMode && getActiveAuthSession().role !== 'owner') {
+    throw new Error('Phiên khách không được phép tải tệp sách gốc.');
+  }
+  if (!book.file_key) {
+    throw new Error('Đường dẫn tệp sách không khả dụng.');
+  }
   const cached = await getCachedBookBlob(book.file_key);
   if (cached) return { blob: cached, fromCache: true };
 

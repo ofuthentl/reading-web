@@ -171,10 +171,20 @@ async function issueKeyForDiscordMember(
   const now = Date.now();
 
   const existing = await env.DB.prepare(
-    'SELECT key_issued_at, key_expires_at FROM discord_access WHERE discord_user_id = ?',
+    'SELECT key_issued_at, key_expires_at, is_banned FROM discord_access WHERE discord_user_id = ?',
   )
     .bind(discordUserId)
-    .first<{ key_issued_at: number | null; key_expires_at: number | null }>();
+    .first<{
+      key_issued_at: number | null;
+      key_expires_at: number | null;
+      is_banned: number | null;
+    }>();
+
+  if (existing?.is_banned === 1) {
+    return ephemeralMessage(
+      '🚫 Tài khoản Discord của bạn hiện đã bị tạm ngưng quyền nhận chìa khoá thư viện.',
+    );
+  }
 
   if (
     existing?.key_issued_at &&

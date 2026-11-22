@@ -44,6 +44,8 @@ interface Library2DViewProps {
   onLogout: () => void;
   onOpenBook: (book: Book) => void;
   onUploadClick?: () => void;
+  onProtectionClick?: () => void;
+  unprotectedBookCount?: number;
   onEditBook?: (book: Book) => void;
   onRenameShelf?: (shelfName: string) => void;
   onShelfCoverChanged?: (shelfName: string, bookId: string | null) => void;
@@ -90,6 +92,8 @@ export function Library2DView({
   onLogout,
   onOpenBook,
   onUploadClick,
+  onProtectionClick,
+  unprotectedBookCount = 0,
   onEditBook,
   onRenameShelf,
   onShelfCoverChanged,
@@ -146,6 +150,8 @@ export function Library2DView({
         onChangeViewMode={onChangeViewMode}
         onCycleTheme={onCycleTheme}
         onUploadClick={onUploadClick}
+        onProtectionClick={onProtectionClick}
+        unprotectedBookCount={unprotectedBookCount}
         onToggleSelectionMode={toggleSelectionMode}
         onRefresh={onRefresh}
         onLogout={onLogout}
