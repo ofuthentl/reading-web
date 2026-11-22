@@ -94,10 +94,10 @@ function EditorialRankedCard({
           handleActivate();
         }
       }}
-      className={`group relative aspect-[3/4.15] w-[9.5rem] shrink-0 cursor-pointer overflow-hidden rounded-[4px] border bg-subtle text-left shadow-[0_12px_28px_-12px_rgba(0,0,0,0.45)] transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-[11rem] md:w-[11.75rem] ${
+      className={`group relative aspect-[3/4.15] w-[9.5rem] shrink-0 cursor-pointer overflow-hidden rounded-[4px] border bg-subtle text-left transition-transform duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-[11rem] md:w-[11.75rem] ${
         selected
           ? 'border-accent ring-2 ring-accent ring-offset-2 ring-offset-canvas'
-          : 'border-black/12 hover:-translate-y-1 hover:shadow-[0_18px_34px_-12px_rgba(0,0,0,0.58)] dark:border-white/12'
+          : 'border-black/12 hover:-translate-y-0.5 dark:border-white/12'
       }`}
     >
       {showImage ? (
@@ -316,12 +316,8 @@ export function EditorialBookStrip({
       <div
         ref={scrollerRef}
         onScroll={syncScrollState}
-        className={`flex gap-3.5 overflow-x-auto pb-2.5 pt-0.5 scrollbar-hover sm:gap-4 ${
+        className={`flex gap-3.5 overflow-x-auto pb-1.5 pt-0.5 scrollbar-hover sm:gap-4 ${
           isDark ? 'scrollbar-hover-dark' : ''
-        } ${
-          canScrollRight
-            ? '[mask-image:linear-gradient(to_right,black_0%,black_93%,transparent_100%)]'
-            : ''
         }`}
       >
         {books.map((book, index) => (

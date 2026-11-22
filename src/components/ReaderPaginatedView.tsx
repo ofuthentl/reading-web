@@ -43,9 +43,9 @@ interface ReaderPaginatedViewProps {
 }
 
 const SPREAD_WIDTH_MAX_PX: Record<ReaderSettings['width'], number> = {
-  narrow: 920,
-  medium: 1120,
-  wide: 1320,
+  narrow: 1080,
+  medium: 1400,
+  wide: 1760,
 };
 
 export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPaginatedViewProps>(
@@ -286,21 +286,16 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
             else stepPrev();
           }}
         >
-          <div ref={outerRef} className="relative h-full w-full max-w-[1320px]">
+          <div ref={outerRef} className="relative h-full w-full">
             <div
               className="relative mx-auto h-full overflow-hidden"
               style={{ width: `${geometry.innerWidth}px` }}
             >
-              {/* Đường gáy sách dịu ở giữa khi hiển thị 2 cột như sách giấy mở đôi */}
+              {/* Đường kẻ phân trang mảnh 1px tinh tế ở giữa 2 cột */}
               {geometry.columns === 2 && (
                 <span
                   aria-hidden="true"
-                  className="pointer-events-none absolute inset-y-2 left-1/2 z-10 w-8 -translate-x-1/2"
-                  style={{
-                    backgroundImage: palette.isDark
-                      ? 'linear-gradient(to right, transparent, rgba(0,0,0,0.34) 48%, rgba(255,255,255,0.05) 50%, rgba(0,0,0,0.34) 52%, transparent)'
-                      : 'linear-gradient(to right, transparent, rgba(72,52,32,0.11) 48%, rgba(255,255,255,0.28) 50%, rgba(72,52,32,0.11) 52%, transparent)',
-                  }}
+                  className={`pointer-events-none absolute inset-y-3 left-1/2 z-10 -translate-x-1/2 border-l opacity-75 ${palette.border}`}
                 />
               )}
 

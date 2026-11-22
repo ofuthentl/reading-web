@@ -44,9 +44,9 @@ interface GuestCanvasPaginatedViewProps {
 }
 
 const SPREAD_WIDTH_MAX_PX: Record<ReaderSettings['width'], number> = {
-  narrow: 920,
-  medium: 1120,
-  wide: 1320,
+  narrow: 1080,
+  medium: 1400,
+  wide: 1760,
 };
 
 export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCanvasPaginatedViewProps>(
@@ -289,11 +289,11 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
             else stepPrev();
           }}
         >
-          <div ref={outerRef} className="flex h-full w-full max-w-[1320px] items-center justify-center">
+          <div ref={outerRef} className="flex h-full w-full items-center justify-center">
             <canvas
               ref={canvasRef}
               aria-label="Trang đọc sách bảo mật"
-              className="pointer-events-none block rounded-lg"
+              className="pointer-events-none block"
             />
           </div>
         </div>

@@ -52,9 +52,9 @@ export interface ChapterCanvasLayout {
 }
 
 export const CANVAS_WIDTH_PX: Record<ReaderWidth, number> = {
-  narrow: 680,
-  medium: 820,
-  wide: 980,
+  narrow: 886,
+  medium: 1098,
+  wide: 1352,
 };
 
 const FONT_STACK_MAP: Record<ReaderFont, string> = {

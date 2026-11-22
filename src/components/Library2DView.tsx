@@ -4,14 +4,13 @@ import {
   BookOpen,
   Clock,
   FolderEdit,
-  FolderInput,
   Library,
   Star,
-  Trash2,
   Upload,
 } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress, StorageStats, ViewMode } from '@/types';
 import { BookCard } from '@/components/BookCard';
+import { BulkSelectionBar } from '@/components/BulkSelectionBar';
 import { EditorialBookStrip } from '@/components/EditorialBookStrip';
 import { LibraryFilterBar } from '@/components/LibraryFilterBar';
 import { LibraryHeader } from '@/components/LibraryHeader';
@@ -283,57 +282,21 @@ export function Library2DView({
             />
 
             {selectionMode && (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/40 bg-surface px-4 py-3 shadow-sm">
-                <p className="text-sm text-ink">
-                  Đã chọn <strong className="text-accent">{selectedIds.size}</strong> /{' '}
-                  {filteredBooks.length} cuốn sách
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={
-                      selectedIds.size === filteredBooks.length && filteredBooks.length > 0
-                        ? clearSelection
-                        : selectAllVisible
-                    }
-                    disabled={filteredBooks.length === 0}
-                    className="rounded-lg border border-line bg-canvas px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-line-strong disabled:opacity-50"
-                  >
-                    {selectedIds.size === filteredBooks.length && filteredBooks.length > 0
-                      ? 'Bỏ chọn tất cả'
-                      : 'Chọn tất cả'}
-                  </button>
-                  {onMoveSelectedToShelf && (
-                    <button
-                      type="button"
-                      disabled={selectedBooks.length === 0}
-                      onClick={() => onMoveSelectedToShelf(selectedBooks)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-45"
-                    >
-                      <FolderInput className="h-3.5 w-3.5" />
-                      Chuyển kệ ({selectedBooks.length})
-                    </button>
-                  )}
-                  {onDeleteSelected && (
-                    <button
-                      type="button"
-                      disabled={selectedBooks.length === 0}
-                      onClick={() => onDeleteSelected(selectedBooks)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-700/30 bg-red-600/10 px-3 py-1.5 text-xs font-medium text-red-800 transition-colors hover:bg-red-600/20 disabled:opacity-45 dark:border-red-400/30 dark:text-red-300"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Xoá đã chọn ({selectedBooks.length})
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={toggleSelectionMode}
-                    className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
-                  >
-                    Xong
-                  </button>
-                </div>
-              </div>
+              <BulkSelectionBar
+                selectedCount={selectedIds.size}
+                totalVisibleCount={filteredBooks.length}
+                unitLabel="cuốn sách"
+                allSelected={selectedIds.size === filteredBooks.length && filteredBooks.length > 0}
+                selectedBooks={selectedBooks}
+                onToggleSelectAll={
+                  selectedIds.size === filteredBooks.length && filteredBooks.length > 0
+                    ? clearSelection
+                    : selectAllVisible
+                }
+                onMoveSelected={onMoveSelectedToShelf}
+                onDeleteSelected={onDeleteSelected}
+                onDone={toggleSelectionMode}
+              />
             )}
 
             {/* Khối Tiếp tục đọc */}
@@ -430,8 +393,26 @@ export function Library2DView({
                 </button>
               </section>
             ) : (
-              <div className="space-y-9">
-                {visibleShelves.map((shelf) => {
+              <section aria-label="03 Thư viện truyện" className="space-y-7">
+                {!isFiltering && (
+                  <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line-strong/70 pb-3">
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#b84a27] dark:text-[#e07a5f]">
+                        03 · TOÀN BỘ KHO TRUYỆN
+                      </p>
+                      <h2 className="font-display text-[1.75rem] font-normal leading-[1.08] tracking-[-0.015em] text-ink sm:text-[2.15rem]">
+                        <span>Thư viện </span>
+                        <span className="italic text-[#b84a27] dark:text-[#e57c5e]">truyện</span>
+                      </h2>
+                    </div>
+                    <span className="rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink-muted">
+                      {visibleShelves.length} kệ · {books.length} cuốn
+                    </span>
+                  </div>
+                )}
+
+                <div className="space-y-9">
+                  {visibleShelves.map((shelf) => {
                   const isFav = Boolean(favoriteShelfKeys?.has(shelf.key));
                   return (
                     <section key={shelf.key} aria-label={`Kệ ${shelf.name}`} className="space-y-4">
@@ -507,7 +488,8 @@ export function Library2DView({
                     </section>
                   );
                 })}
-              </div>
+                </div>
+              </section>
             )}
           </>
         )}
