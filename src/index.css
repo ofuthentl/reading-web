@@ -475,6 +475,8 @@
     --cursor-precision: url('./assets/cursors/miku-precision.png') 5 6, crosshair;
     --cursor-ew-resize: url('./assets/cursors/miku-horizontal.png') 15 15, ew-resize;
     --cursor-ns-resize: url('./assets/cursors/miku-vertical.png') 15 15, ns-resize;
+    --cursor-heart: url('./assets/cursors/miku-heart.png') 4 3, pointer;
+    --cursor-pen: url('./assets/cursors/miku-pen.png') 0 0, pointer;
   }
 
   html,
@@ -518,6 +520,20 @@
   .cursor-zoom-in,
   .cursor-crosshair {
     cursor: var(--cursor-precision);
+  }
+
+  button[aria-label*='Chỉnh sửa']:not(:disabled),
+  button[aria-label*='Đổi tên']:not(:disabled),
+  button[title*='ghi chú']:not(:disabled),
+  .cursor-miku-pen {
+    cursor: var(--cursor-pen);
+  }
+
+  button[aria-label*='yêu thích' i]:not(:disabled),
+  [aria-label*='Ủng hộ'] button:not(:disabled),
+  [aria-label*='Ủng hộ'] a[href],
+  .cursor-miku-heart {
+    cursor: var(--cursor-heart);
   }
 
   .cursor-move,
