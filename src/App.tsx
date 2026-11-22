@@ -291,8 +291,10 @@ export default function App() {
                 : undefined
             }
             shelfCovers={store.shelfPrefs.covers}
+            shelfAccess={isOwner ? store.shelfPrefs.access : undefined}
             favoriteShelfKeys={store.effectiveFavoriteShelfKeys}
             onShelfCoverChanged={isOwner ? store.handleShelfCoverChanged : undefined}
+            onShelfAccessChanged={isOwner ? store.handleShelfAccessChanged : undefined}
             onToggleFavoriteShelf={store.handleToggleFavoriteShelf}
             onApiError={handleApiError}
             onNotify={addToast}

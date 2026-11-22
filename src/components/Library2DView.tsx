@@ -1,14 +1,8 @@
 import { Suspense, lazy, useEffect } from 'react';
-import {
-  BookMarked,
-  BookOpen,
-  Clock,
-  FolderEdit,
-  Library,
-  Star,
-  Upload,
-} from 'lucide-react';
-import type { AuthRole, Book, ReadingProgress, StorageStats, ViewMode } from '@/types';
+import { BookMarked, BookOpen, Clock, FolderEdit, Library, Star, Upload } from 'lucide-react';
+import type {
+  AuthRole, Book, ReadingProgress, ShelfAccessSummary, StorageStats, ViewMode,
+} from '@/types';
 import { BookCard } from '@/components/BookCard';
 import { EditorialBookStrip } from '@/components/EditorialBookStrip';
 import { LibraryFilterBar } from '@/components/LibraryFilterBar';
@@ -33,6 +27,7 @@ interface Library2DViewProps {
   books: Book[];
   progress: Record<string, ReadingProgress>;
   shelfCovers?: Readonly<Record<string, string>>;
+  shelfAccess?: Readonly<Record<string, ShelfAccessSummary>>;
   favoriteShelfKeys?: ReadonlySet<string>;
   storage: StorageStats | null;
   loading: boolean;
@@ -57,6 +52,7 @@ interface Library2DViewProps {
   onBooksUpdated?: (books: Book[]) => void;
   onRenameShelf?: (shelfName: string) => void;
   onShelfCoverChanged?: (shelfName: string, bookId: string | null) => void;
+  onShelfAccessChanged?: (shelfName: string, summary: ShelfAccessSummary | null) => void;
   onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
@@ -85,6 +81,7 @@ export function Library2DView({
   books,
   progress,
   shelfCovers,
+  shelfAccess,
   favoriteShelfKeys,
   storage,
   loading,
@@ -109,6 +106,7 @@ export function Library2DView({
   onBooksUpdated,
   onRenameShelf,
   onShelfCoverChanged,
+  onShelfAccessChanged,
   onToggleFavoriteShelf,
   onMoveSelectedToShelf,
   onDeleteSelected,
@@ -238,11 +236,12 @@ export function Library2DView({
         ) : activeTab === 'library' ? (
           <Suspense fallback={<LibraryGridSkeleton />}>
             <LazyLibraryCatalogView
-              allShelvesCount={allShelves.length}
+              allShelves={allShelves}
               libraryShelves={libraryShelves}
               openedLibraryShelf={openedLibraryShelf}
               progress={progress}
               shelfCovers={shelfCovers}
+              shelfAccess={shelfAccess}
               favoriteShelfKeys={favoriteShelfKeys}
               sessionRole={sessionRole}
               searchQuery={searchQuery}
@@ -269,6 +268,7 @@ export function Library2DView({
               onBooksUpdated={onBooksUpdated}
               onRenameShelf={onRenameShelf}
               onShelfCoverChanged={onShelfCoverChanged}
+              onShelfAccessChanged={onShelfAccessChanged}
               onToggleFavoriteShelf={onToggleFavoriteShelf}
               onMoveSelectedToShelf={onMoveSelectedToShelf}
               onDeleteSelected={onDeleteSelected}

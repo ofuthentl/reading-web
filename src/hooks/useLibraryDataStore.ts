@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import type { AuthSessionInfo, Book, ReadingProgress, StorageStats } from '@/types';
+import type {
+  AuthSessionInfo, Book, ReadingProgress, ShelfAccessSummary, StorageStats,
+} from '@/types';
 import {
   clearReadingProgress,
   fetchLibraryState,
@@ -8,6 +10,7 @@ import {
 } from '@/lib/api';
 import {
   type ShelfPrefsState,
+  patchShelfAccessSummary,
   patchShelfCover,
   patchShelfFavorite,
   pruneDeletedBooksFromPrefs,
@@ -159,6 +162,13 @@ export function useLibraryDataStore({
     setShelfPrefs((prev) => patchShelfCover(prev, shelfName, bookId));
   }, []);
 
+  const handleShelfAccessChanged = useCallback(
+    (shelfName: string, summary: ShelfAccessSummary | null) => {
+      setShelfPrefs((prev) => patchShelfAccessSummary(prev, shelfName, summary));
+    },
+    [],
+  );
+
   const handleToggleFavoriteShelf = useCallback(
     (shelfName: string, nextFavorite: boolean) => {
       if (session.role !== 'owner') {
@@ -260,6 +270,7 @@ export function useLibraryDataStore({
     handleBookPackSynced,
     applyShelfRenamed,
     handleShelfCoverChanged,
+    handleShelfAccessChanged,
     handleToggleFavoriteShelf,
     handleMarkBookCompleted,
     handleResetBookProgress,

@@ -2,7 +2,7 @@
 
 > **Nhánh triển khai:** `feat/shelf-member-access` (tách từ `feat/web-2d-enhancements`).
 > **Quyết định kiến trúc:** **`D-030`** trong `docs/DECISIONS.md` — **PA-1 (Phân quyền trực tiếp theo Bộ & Thành viên Discord trên Web)** + **Khi bị chặn vẫn hiển thị bìa kèm ổ khoá 🔒**.
-> **Trạng thái:** 🚧 Đang triển khai Phase 1 → Phase 3.
+> **Trạng thái:** ✅ **Đã hoàn tất triển khai toàn bộ Phase 1 → Phase 3** — sẵn sàng deploy Worker & mở PR.
 
 ---
 
@@ -113,11 +113,11 @@ CREATE INDEX IF NOT EXISTS idx_shelf_grants_user ON shelf_guest_grants(discord_u
 ---
 
 ## 4. Checklist Kiểm thử Định nghĩa "Xong" (`AGENTS.md` §7)
-- [ ] `npm run typecheck`, `npm run lint` (`0` lỗi, mọi file `<= 500` dòng), `npm run build` (`index-*.js <= 86.04 kB gzip`, `0 B` `three`) và `npx tsc --noEmit` trong `workers/r2-storage` sạch 100%.
-- [ ] Kệ mặc định (`public`): mọi thành viên Discord mở đọc bình thường như cũ.
-- [ ] Kệ bật `restricted` cho Thành viên A (không tick Thành viên B):
+- [x] `npm run typecheck`, `npm run lint` (`0` lỗi, mọi file `<= 500` dòng), `npm run build` (`index-*.js <= 86.04 kB gzip`, `0 B` `three`) và `npx tsc --noEmit` trong `workers/r2-storage` sạch 100%.
+- [x] Kệ mặc định (`public`): mọi thành viên Discord mở đọc bình thường như cũ.
+- [x] Kệ bật `restricted` cho Thành viên A (không tick Thành viên B):
   - Thành viên A thấy bìa bình thường (không có ổ khoá) và mở đọc chương/ảnh bình thường.
   - Thành viên B **vẫn thấy bìa sách & bìa kệ gắn nhãn `🔒 Giới hạn`**, bấm vào nhận thông báo khoá lịch sự; thử gọi thẳng `GET /api/guest/books/:id/toc` hoặc `/chapters/0` bằng token của B nhận cứng **`403 Forbidden`**.
-- [ ] Kệ bật `restricted` với `0` thành viên: khoá với toàn bộ khách Discord, chỉ `owner` đọc được.
-- [ ] Đổi tên kệ đang `restricted`: danh sách thành viên được cấp quyền tự động giữ nguyên sang tên kệ mới.
-- [ ] Cập nhật đầy đủ `docs/DECISIONS.md` (`D-030`), `docs/ARCHITECTURE.md` và `HANDOFF.md` trong cùng commit.
+- [x] Kệ bật `restricted` với `0` thành viên: khoá với toàn bộ khách Discord, chỉ `owner` đọc được.
+- [x] Đổi tên kệ đang `restricted`: danh sách thành viên được cấp quyền tự động giữ nguyên sang tên kệ mới.
+- [x] Cập nhật đầy đủ `docs/DECISIONS.md` (`D-030`), `docs/ARCHITECTURE.md` và `HANDOFF.md` trong cùng commit.

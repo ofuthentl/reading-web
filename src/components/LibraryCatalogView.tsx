@@ -7,10 +7,12 @@ import type {
   LibrarySortMode,
   LibraryStatusFilter,
   ReadingProgress,
+  ShelfAccessSummary,
   ShelfGroup,
 } from '@/types';
 import { summarizeShelf, type ShelfSummary } from '@/lib/shelfSummary';
 import { LibraryFilterBar } from '@/components/LibraryFilterBar';
+import { ShelfAccessModal } from '@/components/ShelfAccessModal';
 import { ShelfBatchNoteModal } from '@/components/ShelfBatchNoteModal';
 import { ShelfCoverCard } from '@/components/ShelfCoverCard';
 import { ShelfCoverPickerModal } from '@/components/ShelfCoverPickerModal';
@@ -18,11 +20,12 @@ import { ShelfDetailView } from '@/components/ShelfDetailView';
 import type { ToastType } from '@/hooks/useToast';
 
 export interface LibraryCatalogViewProps {
-  allShelvesCount: number;
+  allShelves: ShelfGroup[];
   libraryShelves: ShelfGroup[];
   openedLibraryShelf: ShelfGroup | null;
   progress: Record<string, ReadingProgress>;
   shelfCovers?: Readonly<Record<string, string>>;
+  shelfAccess?: Readonly<Record<string, ShelfAccessSummary>>;
   favoriteShelfKeys?: ReadonlySet<string>;
   sessionRole?: AuthRole;
   searchQuery: string;
@@ -49,6 +52,7 @@ export interface LibraryCatalogViewProps {
   onBooksUpdated?: (books: Book[]) => void;
   onRenameShelf?: (shelfName: string) => void;
   onShelfCoverChanged?: (shelfName: string, bookId: string | null) => void;
+  onShelfAccessChanged?: (shelfName: string, summary: ShelfAccessSummary | null) => void;
   onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
@@ -57,11 +61,12 @@ export interface LibraryCatalogViewProps {
 }
 
 export function LibraryCatalogView({
-  allShelvesCount,
+  allShelves,
   libraryShelves,
   openedLibraryShelf,
   progress,
   shelfCovers,
+  shelfAccess,
   favoriteShelfKeys,
   sessionRole,
   searchQuery,
@@ -88,6 +93,7 @@ export function LibraryCatalogView({
   onBooksUpdated,
   onRenameShelf,
   onShelfCoverChanged,
+  onShelfAccessChanged,
   onToggleFavoriteShelf,
   onMoveSelectedToShelf,
   onDeleteSelected,
@@ -95,22 +101,41 @@ export function LibraryCatalogView({
   onNotify,
 }: LibraryCatalogViewProps) {
   const [pickingShelfKey, setPickingShelfKey] = useState<string | null>(null);
+  const [accessShelfKey, setAccessShelfKey] = useState<string | null>(null);
   const [batchNoteOpen, setBatchNoteOpen] = useState(false);
+
+  const allShelvesCount = allShelves.length;
+  const allShelfNames = useMemo(
+    () => new Map(allShelves.map((s) => [s.key, s.name])),
+    [allShelves],
+  );
 
   const librarySummaries = useMemo(
     () =>
       libraryShelves.map((shelf) =>
-        summarizeShelf(shelf, progress, shelfCovers, favoriteShelfKeys),
+        summarizeShelf(
+          shelf,
+          progress,
+          shelfCovers,
+          favoriteShelfKeys,
+          shelfAccess?.[shelf.key] ?? null,
+        ),
       ),
-    [libraryShelves, progress, shelfCovers, favoriteShelfKeys],
+    [libraryShelves, progress, shelfCovers, favoriteShelfKeys, shelfAccess],
   );
 
   const openedShelfSummary = useMemo(
     () =>
       openedLibraryShelf
-        ? summarizeShelf(openedLibraryShelf, progress, shelfCovers, favoriteShelfKeys)
+        ? summarizeShelf(
+            openedLibraryShelf,
+            progress,
+            shelfCovers,
+            favoriteShelfKeys,
+            shelfAccess?.[openedLibraryShelf.key] ?? null,
+          )
         : null,
-    [openedLibraryShelf, progress, shelfCovers, favoriteShelfKeys],
+    [openedLibraryShelf, progress, shelfCovers, favoriteShelfKeys, shelfAccess],
   );
 
   const pickingSummary: ShelfSummary | null = useMemo(() => {
@@ -119,8 +144,18 @@ export function LibraryCatalogView({
     return librarySummaries.find((s) => s.shelf.key === pickingShelfKey) ?? null;
   }, [pickingShelfKey, openedShelfSummary, librarySummaries]);
 
+  const accessTargetShelf: ShelfGroup | null = useMemo(() => {
+    if (!accessShelfKey) return null;
+    if (openedLibraryShelf?.key === accessShelfKey) return openedLibraryShelf;
+    return allShelves.find((s) => s.key === accessShelfKey) ?? null;
+  }, [accessShelfKey, allShelves, openedLibraryShelf]);
+
   const handleOpenCoverPicker = onShelfCoverChanged
     ? (summary: ShelfSummary) => setPickingShelfKey(summary.shelf.key)
+    : undefined;
+
+  const handleOpenAccessModal = onShelfAccessChanged
+    ? (summary: ShelfSummary) => setAccessShelfKey(summary.shelf.key)
     : undefined;
 
   return (
@@ -144,6 +179,11 @@ export function LibraryCatalogView({
           onChangeShelfCover={handleOpenCoverPicker}
           onOpenBatchNotes={
             onBooksUpdated ? () => setBatchNoteOpen(true) : undefined
+          }
+          onManageAccess={
+            onShelfAccessChanged
+              ? () => setAccessShelfKey(openedShelfSummary.shelf.key)
+              : undefined
           }
           onToggleFavorite={onToggleFavoriteShelf}
           onMoveSelectedToShelf={onMoveSelectedToShelf}
@@ -212,6 +252,7 @@ export function LibraryCatalogView({
                   onOpenShelf={onOpenShelf}
                   onRenameShelf={onRenameShelf}
                   onChangeShelfCover={handleOpenCoverPicker}
+                  onManageAccess={handleOpenAccessModal}
                   onToggleFavorite={onToggleFavoriteShelf}
                 />
               ))}
@@ -236,6 +277,17 @@ export function LibraryCatalogView({
           shelf={openedShelfSummary?.shelf ?? null}
           onClose={() => setBatchNoteOpen(false)}
           onBooksUpdated={onBooksUpdated}
+          onApiError={onApiError}
+          onNotify={onNotify}
+        />
+      )}
+
+      {onShelfAccessChanged && accessTargetShelf && (
+        <ShelfAccessModal
+          shelf={accessTargetShelf}
+          allShelfNames={allShelfNames}
+          onClose={() => setAccessShelfKey(null)}
+          onAccessSaved={onShelfAccessChanged}
           onApiError={onApiError}
           onNotify={onNotify}
         />
