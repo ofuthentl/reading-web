@@ -10,11 +10,7 @@ import {
 } from 'lucide-react';
 import type { Book, StorageStats } from '@/types';
 import { formatBytes, updateBookCover, updateBookMetadata } from '@/lib/api';
-import {
-  TITLE_ENDS_WITH_BARE_VOL_RE,
-  getBookSortTitle,
-  getDisplayAuthor,
-} from '@/lib/bookMetadata';
+import { getBookSortTitle, getDisplayAuthor } from '@/lib/bookMetadata';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 import type { ToastType } from '@/hooks/useToast';
 
@@ -314,21 +310,19 @@ export function BookEditModal({
                     <label htmlFor="edit-book-author" className="block text-xs font-medium text-ink-muted">
                       Tác giả
                     </label>
-                    {TITLE_ENDS_WITH_BARE_VOL_RE.test(title.trim()) &&
-                      author.trim() &&
-                      author.trim() !== 'Không rõ tác giả' && (
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => {
-                            setTitle(`${title.trim()} - ${author.trim()}`);
-                            setAuthor('Không rõ tác giả');
-                          }}
-                          className="text-[11px] font-medium text-ink-muted underline-offset-2 hover:text-ink hover:underline disabled:opacity-50"
-                        >
-                          ⇄ Chuyển sang Tên sách
-                        </button>
-                      )}
+                    {author.trim() && author.trim() !== 'Không rõ tác giả' && (
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => {
+                          setTitle(`${title.trim()} - ${author.trim()}`);
+                          setAuthor('Không rõ tác giả');
+                        }}
+                        className="text-[11px] font-medium text-ink-muted underline-offset-2 hover:text-ink hover:underline disabled:opacity-50"
+                      >
+                        ⇄ Ghép vào sau Tên sách
+                      </button>
+                    )}
                   </div>
                   <input
                     id="edit-book-author"

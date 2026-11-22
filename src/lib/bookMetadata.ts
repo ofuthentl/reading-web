@@ -47,94 +47,82 @@ const CLOTH_COVER_PALETTE = [
  * Trích nhãn số tập (kể cả kèm tiêu đề phụ như `Tập 1：Những Kẻ...`) lỡ bị tách sang trường `author`
  * ở dữ liệu cũ để hiển thị, sắp xếp và nhận diện số tập chính xác mà không cần xoá sách tải lại.
  */
-export function extractMisplacedVolumeFromAuthor(author: string): string | null {
-  const clean = author.trim();
-  if (!clean) return null;
-  if (isVolumeOrSubtitleSegment(clean)) return clean;
-  const firstSegment = clean.split(/\s+[-–—―−]\s+/)[0]?.trim();
-  if (firstSegment && isVolumeOrSubtitleSegment(firstSegment)) {
-    return firstSegment;
-  }
-  return null;
-}
-
 /**
- * Phát hiện tiêu đề phụ của tập bị tách nhầm sang cột `author` khi `title` kết thúc bằng nhãn số tập trơn
- * (VD: `title = "Mii-kun... - Quyển 1"`, `author = "Đằng Sau Hạnh Phúc Là Bất Hạnh"`).
+ * Tách và khôi phục trọn vẹn phần nhãn tập + tiêu đề phụ lỡ bị cắt sang trường `author`
+ * (VD: `author = "Quyển i - Sự Hình Thành Của Ký Ức Là Sự Ngụy Tạo"` hoặc
+ * `title = "Unnamed Memory I"`, `author = "Phù Thủy Trăng Xanh Và Hoàng Tử Bị Nguyền Rủa"`).
  */
-export function extractMisplacedSubtitleFromAuthor(
+export function splitMisplacedTitleAndAuthor(
   title: string,
   author: string,
-): { subtitle: string; realAuthor: string | null } | null {
+): { extraTitle: string | null; realAuthor: string } {
   const cleanTitle = title.trim();
   const cleanAuthor = author.trim();
-  if (!cleanTitle || !cleanAuthor || cleanAuthor === UNKNOWN_AUTHOR) return null;
-  if (!TITLE_ENDS_WITH_BARE_VOL_RE.test(cleanTitle)) return null;
+  if (!cleanAuthor || cleanAuthor === UNKNOWN_AUTHOR) {
+    return { extraTitle: null, realAuthor: UNKNOWN_AUTHOR };
+  }
 
   const parts = cleanAuthor
     .split(/\s+[-–—―−]\s+/)
     .map((p) => p.trim())
     .filter(Boolean);
-  if (parts.length === 0) return null;
-
-  if (parts.length >= 2) {
-    return {
-      subtitle: parts[0],
-      realAuthor: parts.slice(1).join(' - ').trim() || null,
-    };
+  if (parts.length === 0) {
+    return { extraTitle: null, realAuthor: UNKNOWN_AUTHOR };
   }
 
-  if (isLikelyVolumeSubtitle(parts[0])) {
-    return { subtitle: parts[0], realAuthor: null };
+  const moved: string[] = [];
+
+  // 1. Nhặt toàn bộ các vế đầu là nhãn tập (`Quyển i`, `Tập 1`, `I`, `After the End`...)
+  while (parts.length > 0 && isVolumeOrSubtitleSegment(parts[0])) {
+    moved.push(parts.shift()!);
   }
-  return null;
+
+  // 2. Nếu vừa nhặt nhãn tập trơn (hoặc `title` vốn kết thúc bằng nhãn tập trơn) và còn vế sau là tiêu đề phụ
+  const prevEnd = moved.length > 0 ? moved[moved.length - 1] : cleanTitle;
+  const afterBareVol = Boolean(prevEnd && TITLE_ENDS_WITH_BARE_VOL_RE.test(prevEnd));
+  if (parts.length > 0 && afterBareVol && (parts.length > 1 || isLikelyVolumeSubtitle(parts[0]))) {
+    moved.push(parts.shift()!);
+  } else if (moved.length === 0 && parts.length > 0 && isLikelyVolumeSubtitle(parts[0])) {
+    // 3. Kể cả khi `title` không có chữ `Tập/Quyển` (VD `Unnamed Memory`), nếu `parts[0]` rõ ràng là câu tiêu đề phụ
+    moved.push(parts.shift()!);
+  }
+
+  const extraTitle = moved.length > 0 ? moved.join(' - ') : null;
+  const remaining = parts.join(' - ').trim();
+  return {
+    extraTitle,
+    realAuthor: remaining || UNKNOWN_AUTHOR,
+  };
 }
 
-/**
- * Chuẩn hoá tên tác giả khi hiển thị lên thẻ sách / chi tiết sách:
- * nếu trường `author` chứa nhầm tên tập (`Tập 1`, `Tập 1：...`) hoặc tiêu đề phụ của tập
- * (`Đằng Sau Hạnh Phúc Là Bất Hạnh`), trả về `Không rõ tác giả` hoặc phần tên tác giả thật đứng sau.
- */
-export function getDisplayAuthor(author: string, title?: string): string {
-  const clean = author.trim();
-  if (!clean) return UNKNOWN_AUTHOR;
-  if (isVolumeOrSubtitleSegment(clean)) return UNKNOWN_AUTHOR;
-  const segments = clean
-    .split(/\s+[-–—―−]\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (segments.length > 1 && isVolumeOrSubtitleSegment(segments[0])) {
-    const rest = segments.slice(1).filter((s) => !isVolumeOrSubtitleSegment(s));
-    return rest.join(' - ').trim() || UNKNOWN_AUTHOR;
-  }
-  if (title) {
-    const misplacedSub = extractMisplacedSubtitleFromAuthor(title, clean);
-    if (misplacedSub) {
-      return misplacedSub.realAuthor || UNKNOWN_AUTHOR;
-    }
-  }
-  return clean;
+export function extractMisplacedVolumeFromAuthor(author: string): string | null {
+  return splitMisplacedTitleAndAuthor('', author).extraTitle;
 }
 
-/**
- * Tiêu đề đầy đủ dùng để sắp xếp, hiển thị và nhận diện số tập; tự ghép lại nhãn tập hoặc
- * tiêu đề phụ của tập nếu dữ liệu cũ bị tách nhầm sang trường tác giả.
- */
+export function extractMisplacedSubtitleFromAuthor(
+  title: string,
+  author: string,
+): { subtitle: string; realAuthor: string | null } | null {
+  const res = splitMisplacedTitleAndAuthor(title, author);
+  if (!res.extraTitle) return null;
+  return {
+    subtitle: res.extraTitle,
+    realAuthor: res.realAuthor === UNKNOWN_AUTHOR ? null : res.realAuthor,
+  };
+}
+
+export function getDisplayAuthor(author: string, title = ''): string {
+  return splitMisplacedTitleAndAuthor(title, author).realAuthor;
+}
+
 export function getBookSortTitle(book: Pick<Book, 'title' | 'author'>): string {
   const cleanTitle = book.title.trim();
-  const misplacedVol = extractMisplacedVolumeFromAuthor(book.author);
+  const { extraTitle } = splitMisplacedTitleAndAuthor(cleanTitle, book.author);
   if (
-    misplacedVol &&
-    !cleanTitle.toLocaleLowerCase('vi').includes(misplacedVol.toLocaleLowerCase('vi'))
+    extraTitle &&
+    !cleanTitle.toLocaleLowerCase('vi').includes(extraTitle.toLocaleLowerCase('vi'))
   ) {
-    return `${cleanTitle} - ${misplacedVol}`;
-  }
-  const misplacedSub = extractMisplacedSubtitleFromAuthor(cleanTitle, book.author);
-  if (
-    misplacedSub &&
-    !cleanTitle.toLocaleLowerCase('vi').includes(misplacedSub.subtitle.toLocaleLowerCase('vi'))
-  ) {
-    return `${cleanTitle} - ${misplacedSub.subtitle}`;
+    return `${cleanTitle} - ${extraTitle}`;
   }
   return cleanTitle;
 }
@@ -181,8 +169,9 @@ export function parseFileMetadata(fileName: string): {
   const lastTitlePart = titleParts[titleParts.length - 1] || '';
   if (
     authorIndex < segments.length &&
-    TITLE_ENDS_WITH_BARE_VOL_RE.test(lastTitlePart) &&
-    (authorIndex < segments.length - 1 || isLikelyVolumeSubtitle(segments[authorIndex]))
+    ((TITLE_ENDS_WITH_BARE_VOL_RE.test(lastTitlePart) &&
+      (authorIndex < segments.length - 1 || isLikelyVolumeSubtitle(segments[authorIndex]))) ||
+      isLikelyVolumeSubtitle(segments[authorIndex]))
   ) {
     titleParts.push(segments[authorIndex]);
     authorIndex += 1;

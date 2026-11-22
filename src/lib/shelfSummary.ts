@@ -220,13 +220,20 @@ function isDisplayableAuthor(author: string, title?: string): boolean {
   return isKnownAuthor(resolved) && !isVolumeOrSubtitleSegment(resolved);
 }
 
-function buildAuthorLabel(books: Book[], coverBook: Book | null): string {
+function buildAuthorLabel(shelf: ShelfGroup, coverBook: Book | null): string {
+  const { books } = shelf;
+  const isSeriesShelf =
+    books.length >= 2 &&
+    shelf.key !== 'kho chưa phân loại' &&
+    books.filter((b) => normalizeKey(b.title).startsWith(shelf.key)).length >=
+      Math.ceil(books.length * 0.6);
+
   const counts = new Map<string, { label: string; count: number; allBareVol: boolean }>();
   for (const book of books) {
     if (!isDisplayableAuthor(book.author, book.title)) continue;
     const clean = getDisplayAuthor(book.author, book.title);
     const key = normalizeKey(clean);
-    const bareVol = TITLE_ENDS_WITH_BARE_VOL_RE.test(book.title.trim());
+    const bareVol = isSeriesShelf || TITLE_ENDS_WITH_BARE_VOL_RE.test(book.title.trim());
     const prev = counts.get(key);
     if (prev) {
       prev.count += 1;
@@ -378,7 +385,7 @@ export function summarizeShelf(
     coverBook,
     customCoverBookId,
     isFavorite,
-    authorLabel: buildAuthorLabel(shelf.books, coverBook),
+    authorLabel: buildAuthorLabel(shelf, coverBook),
     bookCount,
     completedCount,
     startedCount,

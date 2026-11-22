@@ -33,9 +33,12 @@ function isUniqueSubtitleInShelf(
   const cleanAuth = book.author.trim();
   if (!cleanAuth || cleanAuth === UNKNOWN_AUTHOR_LABEL) return false;
   if (getDisplayAuthor(book.author, book.title) === UNKNOWN_AUTHOR_LABEL) return true;
-  if (!shelf || shelf.books.length < 2) return false;
-  if (!TITLE_ENDS_WITH_BARE_VOL_RE.test(book.title.trim())) return false;
-  return (rawAuthorCounts.get(cleanAuth.toLocaleLowerCase('vi')) ?? 0) === 1;
+  if (!shelf || shelf.books.length < 2 || shelf.key === 'kho chưa phân loại') return false;
+  const matchesSeriesPrefix = book.title.trim().toLocaleLowerCase('vi').startsWith(shelf.key);
+  const endsWithBareVol = TITLE_ENDS_WITH_BARE_VOL_RE.test(book.title.trim());
+  if (!matchesSeriesPrefix && !endsWithBareVol) return false;
+  const distinctCount = rawAuthorCounts.size;
+  return distinctCount >= 2 && (rawAuthorCounts.get(cleanAuth.toLocaleLowerCase('vi')) ?? 0) === 1;
 }
 
 function getEffectiveAuthorInShelf(

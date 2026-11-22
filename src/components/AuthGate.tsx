@@ -1,6 +1,8 @@
 import {
+  Suspense,
   type ClipboardEvent,
   type FormEvent,
+  lazy,
   useCallback,
   useEffect,
   useRef,
@@ -32,9 +34,12 @@ import {
   subscribeGateRoute,
   syncGateDocumentTitle,
 } from '@/lib/gateRoutes';
-import { GateBackdropArt } from '@/components/GateBackdropArt';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import type { AppTheme } from '@/hooks/useTheme';
+
+const LazyGateBackdropArt = lazy(() =>
+  import('@/components/GateBackdropArt').then((mod) => ({ default: mod.GateBackdropArt })),
+);
 
 interface AuthGateProps {
   onAuthenticated: (session: AuthSessionInfo) => void;
@@ -197,7 +202,9 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
 
   return (
     <div className="theme-canvas relative flex min-h-screen flex-col justify-between overflow-hidden text-ink transition-colors duration-200">
-      <GateBackdropArt isDark={isDark} isEntrance={isEntrance} />
+      <Suspense fallback={null}>
+        <LazyGateBackdropArt isDark={isDark} isEntrance={isEntrance} />
+      </Suspense>
 
       {/* Thanh điều hướng tối giản: lề trái dịch +5%, lề phải khoá thẳng trục ổ khoá */}
       <header className="relative z-10 flex w-full items-center justify-between pl-6 pr-6 pt-6 sm:pl-10 sm:pr-10 md:pl-[calc(3.5rem+3.5%)] md:pr-14 md:pt-8 lg:pl-[calc(5rem+5%)] lg:pr-20">

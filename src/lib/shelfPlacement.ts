@@ -16,42 +16,47 @@ const STOPWORD_PREFIXES = new Set([
   'tuyển tập', 'tuyen tap', 'ngoại truyện', 'ngoai truyen', 'la', 'và', 'va', 'bộ', 'bo', 'về', 've', 'số', 'so',
 ]);
 
-/** Nhãn số tập thuần (`Tập 1`, `Tập 6.5`, `Vol. 02`, `01`, `1-3`). */
-export const VOLUME_SEGMENT_RE =
-  /^(?:(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|book|part|ep(?:isode)?|ch|c|v|#)\.?\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~]\s*\d+(?:[.,]\d+)?)?$/i;
+const VOL_UNIT =
+  '(?:(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|màn|man|hồi|hoi|book|part|act|arc|ep(?:isode)?)\\.?\\s*(?:\\d+(?:[.,]\\d+)?(?:\\s*[-–—~]\\s*\\d+(?:[.,]\\d+)?)?|[ivxlcdm]{1,6}|[a-z]|ex|ss|sp|ova|oad|thượng|thuong|trung|hạ|ha|đầu|dau|cuối|cuoi)|(?:[chv]|#)\\.?\\s*\\d+(?:[.,]\\d+)?)';
 
-/**
- * Nhãn số tập hoặc ngoại truyện đi kèm tiêu đề phụ ở cùng vế
- * (VD: `Tập 1：Những Kẻ Khao Khát...`, `Tập 2: Đối Đầu...`, `Vol.01 (Full)`, `Ngoại truyện：...`).
- * Không đưa chữ đơn `v`/`c` vào đây để không nhận nhầm tên tác giả viết tắt như `V. Hugo`, `C. S. Lewis`.
- */
-export const VOLUME_WITH_SUBTITLE_RE =
-  /^(?:(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|book|part|ep(?:isode)?)\.?\s*\d+(?:[.,]\d+)?(?:\s*[-–—~]\s*\d+(?:[.,]\d+)?)?|(?:ngoại\s+truyện|ngoai\s+truyen|side\s+story|extra|ova|special)\b)(?:$|[\s\-–—―−_:|：;/.,([（［【])/i;
+const EXTRA_LABEL =
+  '(?:ngoại\\s+truyện|ngoai\\s+truyen|hậu\\s+truyện|hau\\s+truyen|tiền\\s+truyện|tien\\s+truyen|after\\s+the\\s+end(?:\\s*\\d+)?|side\\s+story|short\\s+stories|extra|ova|special)';
+
+export const VOLUME_SEGMENT_RE = new RegExp(
+  `^(?:${VOL_UNIT}|\\d+(?:[.,]\\d+)?(?:\\s*[-–—~]\\s*\\d+(?:[.,]\\d+)?)?|[IVX]{1,5})$`,
+  'i',
+);
+
+export const VOLUME_WITH_SUBTITLE_RE = new RegExp(
+  `^(?:${VOL_UNIT}|${EXTRA_LABEL})(?:$|[\\s\\-–—―−_:|：;/.,([（［【])`,
+  'i',
+);
 
 export function isVolumeOrSubtitleSegment(segment: string): boolean {
   const clean = segment.trim();
   return Boolean(clean) && (VOLUME_SEGMENT_RE.test(clean) || VOLUME_WITH_SUBTITLE_RE.test(clean));
 }
 
-/**
- * Nhận diện tiêu đề kết thúc bằng nhãn số tập trơn chưa kèm tiêu đề phụ
- * (VD: `Mii-kun dối trá và Maa-chan hư hỏng - Quyển 1`, `SAO - Tập 2`, `Ngoại truyện`).
- */
-export const TITLE_ENDS_WITH_BARE_VOL_RE =
-  /(?:^|\s[-–—―−_:|：]\s*)(?:(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|book|part|ep(?:isode)?|v|#)\.?\s*\d+(?:[.,]\d+)?(?:\s*[-–—~]\s*\d+(?:[.,]\d+)?)?|ngoại\s+truyện|ngoai\s+truyen|side\s+story|extra|ova|special)\s*$/i;
+export const TITLE_ENDS_WITH_BARE_VOL_RE = new RegExp(
+  `(?:(?:^|\\s[-–—―−_:|：]\\s*)(?:${VOL_UNIT}|${EXTRA_LABEL})|\\s+(?:II|III|IV|VI|VII|VIII|IX|XI|XII|I|V|X))\\s*$`,
+  'i',
+);
 
-const SUBTITLE_GRAMMAR_RE =
+const VN_SUBTITLE_GRAMMAR_RE =
   /(?:^|\s)(?:là|và|của|những|các|chiếc|cuộc|chuyện|đằng|giữa|dưới|với|nếu|vì|dù|nhưng|hoặc|không|chẳng|chưa|đừng|hãy|được|bị|phải|sẽ|đã|đang|vừa|vẫn|rất|quá|lắm|này|kia|ấy|nào|kẻ|đứa|thằng)(?=$|\s|[?!.,:;…])/i;
 
+const EN_SUBTITLE_GRAMMAR_RE =
+  /(?:^|\s)(?:the|of|upon|without|within|beyond|after|before|under|over|between|through|behind|beneath|against|into|untold|unnamed|endless|eternal|cursed|forgotten|chronicle|chronicles|prologue|epilogue|interlude)(?=$|\s|[?!.,:;…])/i;
+
 /**
- * Nhận diện vế đứng ngay sau `- Quyển 1 - ...` thực chất là tiêu đề phụ của tập
- * (VD: `Đằng Sau Hạnh Phúc Là Bất Hạnh`) chứ không phải tên tác giả.
+ * Nhận diện một vế văn bản thực chất là tiêu đề phụ của tập (tiếng Việt hoặc tiếng Anh)
+ * chứ không phải tên tác giả.
  */
 export function isLikelyVolumeSubtitle(segment: string): boolean {
   const clean = segment.trim();
   if (!clean) return false;
   if (/[?!…“”"~：]/.test(clean)) return true;
-  if (SUBTITLE_GRAMMAR_RE.test(clean)) return true;
+  if (VN_SUBTITLE_GRAMMAR_RE.test(clean) || EN_SUBTITLE_GRAMMAR_RE.test(clean)) return true;
   if (!/[,&/]/.test(clean)) {
     const wordCount = clean.split(/\s+/).filter(Boolean).length;
     if (wordCount >= 5) return true;
@@ -90,16 +95,15 @@ export function extractSeriesName(title: string): string | null {
   if (!clean || clean === UNTITLED_BOOK) return null;
 
   let stripped = clean
-    // 1a. Từ khoá tập/vol/quyển/phần + số tập + mọi tiêu đề phụ phía sau (`Tên - Tập 1：...`, `Tên – Vol.1`, `SAO (Tập 2)`)
     .replace(
-      /\s*(?:[-–—―−_:|：]\s*)?(?:\(|\[|（|［|【)?\s*(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|book|part|ep(?:isode)?|ch|v|#)\.?\s*(?:0+\d{1,3}|[1-9]\d?)(?:[.,]\d+)?(?:\b|[\s\-–—―−_:|：~.)\]）］】].*)?$/i,
+      new RegExp(
+        `\\s*(?:[-–—―−_:|：]\\s*)?(?:\\(|\\[|（|［|【)?\\s*${VOL_UNIT}(?=$|[\\s\\-–—―−_:|：~.)\\]）］】]).*$`,
+        'i',
+      ),
       '',
     )
-    // 1b. Hậu tố ngoại truyện / side story đứng sau dấu phân cách (`Tên - Ngoại truyện：...`)
-    .replace(
-      /\s*[-–—―−_:|：]\s*(?:ngoại\s+truyện|ngoai\s+truyen|side\s+story|extra|ova|special)\b.*$/i,
-      '',
-    )
+    .replace(new RegExp(`\\s*[-–—―−_:|：]\\s*${EXTRA_LABEL}\\b.*$`, 'i'), '')
+    .replace(/\s+(?:II|III|IV|VI|VII|VIII|IX|XI|XII|I|V|X)(?:\s*[-–—―−_:|：].*)?$/, '')
     // 2. Dấu phân cách + số tập thuần (`Tên - 01`, `Tên – 1`, không cắt nhầm `Tên - 7 Người`)
     .replace(
       /\s*[-–—―−_:|：]\s*(?:0+\d{1,3}|[1-9]\d?)(?:\.\d+)?(?:\s*[-–—~.]\s*\d+(?:\.\d+)?|\s*\([^)]*\)|\s*\[[^\]]*\])*\s*$/i,
