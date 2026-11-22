@@ -19,9 +19,11 @@ import type { AppTheme } from '@/hooks/useTheme';
 import type { ToastType } from '@/hooks/useToast';
 
 const LazyLibraryCatalogView = lazy(() =>
-  import('@/components/LibraryCatalogView').then((mod) => ({
-    default: mod.LibraryCatalogView,
-  })),
+  import('@/components/LibraryCatalogView').then((mod) => ({ default: mod.LibraryCatalogView })),
+);
+
+const LazySupportView = lazy(() =>
+  import('@/components/SupportView').then((mod) => ({ default: mod.SupportView })),
 );
 
 interface Library2DViewProps {
@@ -179,7 +181,7 @@ export function Library2DView({
         theme={theme}
         selectionMode={selectionMode}
         selectedCount={selectedIds.size}
-        showSelectionToggle={!isLibraryGridMode}
+        showSelectionToggle={!isLibraryGridMode && activeTab !== 'support'}
         sessionRole={sessionRole}
         sessionExpiresAt={sessionExpiresAt}
         activeTab={activeTab}
@@ -198,7 +200,11 @@ export function Library2DView({
       />
 
       <main className="mx-auto max-w-7xl space-y-9 px-4 py-6 sm:px-6 sm:py-8">
-        {loading && books.length === 0 ? (
+        {activeTab === 'support' ? (
+          <Suspense fallback={<LibraryGridSkeleton />}>
+            <LazySupportView onNotify={onNotify} />
+          </Suspense>
+        ) : loading && books.length === 0 ? (
           <LibraryGridSkeleton />
         ) : books.length === 0 ? (
           <section className="moonlit-card mx-auto flex max-w-md flex-col items-center rounded-2xl border border-line bg-surface px-6 py-14 text-center shadow-sm dark:border-line-strong/60">

@@ -20,7 +20,8 @@ export const LIBRARY_TAB_STORAGE_KEY = 'ofu-library-active-tab';
 function readStoredLibraryTab(): LibraryTab {
   try {
     const raw = localStorage.getItem(LIBRARY_TAB_STORAGE_KEY);
-    return raw === 'library' ? 'library' : 'home';
+    if (raw === 'library' || raw === 'support') return raw;
+    return 'home';
   } catch {
     return 'home';
   }
@@ -241,7 +242,7 @@ export function useLibraryViewState(
     setActiveTabState(tab);
     writeStoredLibraryTab(tab);
     setOpenedLibraryShelfKey(null);
-    if (tab === 'library') {
+    if (tab !== 'home') {
       setSelectionMode(false);
       setSelectedIds(new Set());
     }

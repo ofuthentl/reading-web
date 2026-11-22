@@ -1,12 +1,12 @@
 # HANDOFF
-Cập nhật: 2026-11-22 19:43 | Nhánh: feat/web-2d-enhancements | Build: 🟢 frontend (`<= 86.04 kB` gzip, `0 B` three) · 🟢 worker · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: **Hoàn tất trọn bộ 5 Phase Nâng cấp Web 2D (`D-029`) & bố cục gọn thanh đầu / dung lượng Trang chủ** — sẵn sàng deploy Worker & mở PR vào `main`.
+Cập nhật: 2026-11-22 19:54 | Nhánh: feat/web-2d-enhancements | Build: 🟢 frontend (`<= 86.04 kB` gzip, `0 B` three) · 🟢 worker · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: **Hoàn tất trọn bộ 5 Phase Nâng cấp Web 2D (`D-029`) & bổ sung Tab Ủng hộ (`SupportView` + VietQR)** — sẵn sàng deploy Worker & mở PR vào `main`.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/web-2d-enhancements.md
 
 ## Đang làm dở
 - Đã hoàn tất trọn vẹn **Phase 1 → Phase 5** kèm các tinh chỉnh UI/UX trên nhánh `feat/web-2d-enhancements` (`D-029`):
   1. **Worker & D1 (`0005_bookmarks.sql`, `bookmarksDb.ts`, `weeklyPopular.ts`, `guestSearch.ts`, `r2Files.ts`):** xếp hạng từng Tập sách thịnh hành 7 ngày (`weeklyPopular`), CRUD dấu trang cách ly `owner` vs `guest:<discord_user_id>`, tìm chương khớp từ khoá cho `guest` (`0` lộ văn bản thô).
-  2. **Trang chủ & Thư viện 2D (`EditorialBookStrip.tsx`, `Library2DView.tsx`, `BookCard.tsx`, `ShelfCoverCard.tsx`, `useCardReveal.ts`):** chuỗi tiêu đề biên tập dùng **tông đỏ đô `#B22222`** đặc trưng của Ofu's Library, hiệu ứng **nghiêng bìa 3D trái/phải/trên/dưới + vệt phản sáng theo con trỏ chuột** (`0` re-render) kết hợp lướt hiện tuần tự trái→phải khi cuộn, thanh lọc & sắp xếp, yêu thích cục bộ cho `guest`.
+  2. **Trang chủ, Thư viện & Ủng hộ 2D (`EditorialBookStrip.tsx`, `Library2DView.tsx`, `BookCard.tsx`, `ShelfCoverCard.tsx`, `SupportView.tsx`, `useCardReveal.ts`):** chuỗi tiêu đề tông **đỏ đô `#B22222`**, hiệu ứng nghiêng bìa 3D + phản sáng theo chuột (`0` re-render) & lướt hiện tuần tự khi cuộn, hộp *Dung lượng* gọn trong thanh lọc Trang chủ, và tab **Ủng hộ** nạp lười kèm mã VietQR (`public/support-qr.png`), sao chép STK & tải ảnh QR.
   3. **Giới thiệu & Thống kê (`BookInfoModal.tsx`, `ReadingStatsModal.tsx`, `ShelfDetailView.tsx`):** xem `book.description`, đánh dấu hoàn thành / đặt lại tiến độ 1 chạm, hiện mô tả bộ trên Hero kệ & bảng thống kê đọc 2D (`LV/XP`, trang đọc, nhật ký).
   4. **Trình đọc nâng cao (`ReaderTopBar.tsx`, `useReaderController.ts`, `ReaderPaginatedView.tsx`, `GuestCanvasPaginatedView.tsx`, `GuestCanvasReader.tsx`, `readerConfig.ts`):** chế độ **Cuộn dọc ↔ Lật trang (2 cột)** sắc nét 100% vector (0 canvas phụ gây mờ chữ, hạt giấy tuần hoàn `2π` tiệp màu trang, vạch chia trang mảnh `1px` kéo thẳng sát từ thanh trên xuống thanh chân trang, sửa dứt điểm lỗi kẹt `760px` khi mới mở Cuộn dọc & lỗi nháy số trang vượt giới hạn khi đổi `Gọn/Vừa/Rộng`), nút **Đọc tiếp Tập kế →**, `Immersive Mode`, phím tắt `/`, `Ctrl+K`, `M`, `B`, `F`, ngăn kéo 3 tab & Lightbox zoom ảnh.
 

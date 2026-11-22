@@ -5,6 +5,7 @@ import {
   CheckSquare,
   Clock,
   HardDrive,
+  Heart,
   Home,
   Library,
   LogOut,
@@ -48,6 +49,7 @@ interface LibraryHeaderProps {
 const NAV_TABS: Array<{ id: LibraryTab; label: string; icon: typeof Home }> = [
   { id: 'home', label: 'Trang chủ', icon: Home },
   { id: 'library', label: 'Thư viện', icon: Library },
+  { id: 'support', label: 'Ủng hộ', icon: Heart },
 ];
 
 export function LibraryHeader({
@@ -114,7 +116,11 @@ export function LibraryHeader({
               : 'text-ink-muted hover:bg-subtle/70 hover:text-ink'
           }`}
         >
-          <Icon className={`${compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} ${isActive ? 'text-accent' : ''}`} />
+          <Icon
+            className={`${compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} ${
+              isActive ? (id === 'support' ? 'text-crimson-accent' : 'text-accent') : ''
+            }`}
+          />
           <span>{label}</span>
         </button>
       );
@@ -304,7 +310,7 @@ export function LibraryHeader({
           aria-label="Điều hướng thư viện"
           className="border-t border-line/70 bg-surface/90 px-4 py-1.5 md:hidden"
         >
-          <div className="mx-auto grid max-w-7xl grid-cols-2 gap-1.5 rounded-xl border border-line bg-canvas p-1">
+          <div className="mx-auto grid max-w-7xl grid-cols-3 gap-1.5 rounded-xl border border-line bg-canvas p-1">
             {renderTabButtons(true)}
           </div>
         </nav>
