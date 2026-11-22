@@ -178,12 +178,12 @@ export function BookCard({
       {/* Nhãn MỚI hoặc trạng thái gói bảo mật / giới hạn khách */}
       {!compact && (guestLockLabel || isNew) && (
         <span
-          className={`pointer-events-none absolute bottom-2 left-1.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9.5px] font-semibold tracking-wide backdrop-blur-sm ${
+          className={`pointer-events-none absolute bottom-2 left-1.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9.5px] font-semibold tracking-wide ${
             isMemberLocked
-              ? 'border-rose-300/40 bg-[#140b0e]/88 text-rose-100'
+              ? 'border-rose-300/40 bg-[#140b0e]/92 text-rose-100'
               : guestLockLabel
-                ? 'border-amber-300/35 bg-black/80 text-amber-200'
-                : 'border-[#f5b3b3]/35 bg-[#8f1818]/90 text-white'
+                ? 'border-amber-300/35 bg-black/88 text-amber-200'
+                : 'border-[#f5b3b3]/35 bg-[#8f1818]/95 text-white'
           }`}
         >
           {isMemberLocked && <Lock className="h-2.5 w-2.5 shrink-0" />}
@@ -196,7 +196,7 @@ export function BookCard({
         <span
           className={`pointer-events-none absolute bottom-2 ${
             guestLockLabel || isNew ? 'right-1.5' : 'left-1.5'
-          } translate-y-1 rounded border border-white/15 bg-[#111113]/85 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-[#f4f4f5] opacity-0 backdrop-blur-sm transition-all duration-200 ease-out group-hover:translate-y-0 group-hover:opacity-100`}
+          } translate-y-1 rounded border border-white/15 bg-[#111113]/90 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-[#f4f4f5] opacity-0 transition-all duration-200 ease-out group-hover:translate-y-0 group-hover:opacity-100`}
         >
           {formatBytes(book.file_size)}
         </span>

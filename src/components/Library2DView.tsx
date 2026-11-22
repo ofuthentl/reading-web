@@ -432,7 +432,7 @@ export function Library2DView({
                   {visibleShelves.map((shelf) => {
                   const isFav = Boolean(favoriteShelfKeys?.has(shelf.key));
                   return (
-                    <section key={shelf.key} aria-label={`Kệ ${shelf.name}`} className="space-y-4">
+                    <section key={shelf.key} aria-label={`Kệ ${shelf.name}`} className="shelf-cv-auto space-y-4">
                       <div className="flex items-center justify-between gap-3 border-b border-line pb-2.5">
                         <div className="flex min-w-0 items-center gap-2.5">
                           {isFav ? (

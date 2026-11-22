@@ -68,25 +68,33 @@
   }
 
   .theme-canvas {
+    position: relative;
+    isolation: isolate;
     background-color: rgb(var(--color-canvas));
   }
 
-  [data-theme='dim'] .theme-canvas {
-    background-color: rgb(var(--color-canvas));
+  [data-theme='dim'] .theme-canvas::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
     background-image:
       radial-gradient(ellipse 68% 42% at 50% -12%, rgba(206, 222, 245, 0.085), transparent 68%),
       radial-gradient(ellipse 46% 36% at 88% 12%, rgba(124, 152, 198, 0.06), transparent 64%);
-    background-attachment: fixed;
   }
 
-  [data-theme='midnight'] .theme-canvas {
-    background-color: rgb(var(--color-canvas));
+  [data-theme='midnight'] .theme-canvas::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
     background-image: radial-gradient(
       ellipse 58% 32% at 50% -14%,
       rgba(242, 242, 244, 0.032),
       transparent 66%
     );
-    background-attachment: fixed;
   }
 
   .dark .moonlit-card {
@@ -379,19 +387,26 @@
     will-change: auto;
   }
 
+  .shelf-cv-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 340px;
+  }
+
   .tilt-card {
-    transform-style: preserve-3d;
+    transition:
+      transform var(--tilt-dur, 420ms) cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 280ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 220ms ease;
+  }
+
+  .tilt-card[data-tilting] {
     transform: perspective(740px) translate3d(0, var(--tilt-lift, 0px), 0)
       rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg))
       scale3d(var(--tilt-scale, 1), var(--tilt-scale, 1), 1);
-    transition:
-      transform var(--tilt-dur, 440ms) cubic-bezier(0.22, 1, 0.36, 1),
-      box-shadow 300ms cubic-bezier(0.22, 1, 0.36, 1),
-      border-color 220ms ease;
     will-change: transform;
   }
 
-  .tilt-card::after {
+  .tilt-card[data-tilting]::after {
     content: '';
     position: absolute;
     inset: 0;
@@ -405,7 +420,7 @@
       transparent 68%
     );
     mix-blend-mode: soft-light;
-    transition: opacity 240ms ease;
+    transition: opacity 220ms ease;
     z-index: 5;
   }
 
@@ -570,7 +585,6 @@
   input:disabled,
   select:disabled,
   textarea:disabled,
-  label:has(> input:disabled),
   [aria-disabled='true'],
   .cursor-not-allowed,
   .disabled\:cursor-not-allowed:disabled {
