@@ -3,7 +3,6 @@ import { BookMarked } from 'lucide-react';
 import type {
   AuthRole,
   Book,
-  LibraryFormatFilter,
   LibrarySortMode,
   LibraryStatusFilter,
   ReadingProgress,
@@ -30,14 +29,12 @@ export interface LibraryCatalogViewProps {
   sessionRole?: AuthRole;
   searchQuery: string;
   statusFilter: LibraryStatusFilter;
-  formatFilter: LibraryFormatFilter;
   sortMode: LibrarySortMode;
   isFiltering: boolean;
   selectionMode: boolean;
   selectedIds: Set<string>;
   onSearchChange: (value: string) => void;
   onStatusChange: (value: LibraryStatusFilter) => void;
-  onFormatChange: (value: LibraryFormatFilter) => void;
   onSortChange: (value: LibrarySortMode) => void;
   onClearFilters: () => void;
   onOpenShelf: (shelfKey: string) => void;
@@ -48,6 +45,8 @@ export interface LibraryCatalogViewProps {
   onSelectBookIds: (ids: string[]) => void;
   onClearSelection: () => void;
   onToggleSelectionMode: () => void;
+  onProtectionClick?: () => void;
+  unprotectedBookCount?: number;
   onEditBook?: (book: Book) => void;
   onBooksUpdated?: (books: Book[]) => void;
   onRenameShelf?: (shelfName: string) => void;
@@ -71,14 +70,12 @@ export function LibraryCatalogView({
   sessionRole,
   searchQuery,
   statusFilter,
-  formatFilter,
   sortMode,
   isFiltering,
   selectionMode,
   selectedIds,
   onSearchChange,
   onStatusChange,
-  onFormatChange,
   onSortChange,
   onClearFilters,
   onOpenShelf,
@@ -89,6 +86,8 @@ export function LibraryCatalogView({
   onSelectBookIds,
   onClearSelection,
   onToggleSelectionMode,
+  onProtectionClick,
+  unprotectedBookCount = 0,
   onEditBook,
   onBooksUpdated,
   onRenameShelf,
@@ -211,16 +210,16 @@ export function LibraryCatalogView({
           <LibraryFilterBar
             searchQuery={searchQuery}
             statusFilter={statusFilter}
-            formatFilter={formatFilter}
             sortMode={sortMode}
             isFiltering={isFiltering}
             filteredCount={librarySummaries.length}
             totalCount={allShelvesCount}
             unitLabel="kệ"
-            searchPlaceholder="Tìm bộ truyện, tác giả hoặc tên tập... (Nhấn /)"
+            searchPlaceholder="Tìm bộ truyện, tác giả hoặc tên tập..."
+            unprotectedBookCount={unprotectedBookCount}
+            onProtectionClick={sessionRole === 'owner' ? onProtectionClick : undefined}
             onSearchChange={onSearchChange}
             onStatusChange={onStatusChange}
-            onFormatChange={onFormatChange}
             onSortChange={onSortChange}
             onClearFilters={onClearFilters}
           />

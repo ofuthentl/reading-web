@@ -128,16 +128,16 @@ export function LibraryHeader({
 
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur-sm transition-colors duration-200 dark:shadow-[0_1px_0_rgba(241,241,241,0.04)]">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-3.5 py-3 sm:gap-3 sm:px-6">
         {/* Thương hiệu + Thanh tab điều hướng (Desktop) */}
-        <div className="flex min-w-0 shrink-0 items-center gap-3 lg:gap-4">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
-              <BookOpen className="h-5 w-5" />
+        <div className="flex min-w-0 items-center gap-2.5 sm:shrink-0 sm:gap-3 lg:gap-4">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent sm:h-9 sm:w-9">
+              <BookOpen className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="truncate whitespace-nowrap font-display text-lg font-semibold tracking-tight text-ink sm:text-xl">
+                <h1 className="truncate whitespace-nowrap font-display text-base font-semibold tracking-tight text-ink sm:text-xl">
                   Ofu&apos;s Library
                 </h1>
                 {!isCloudMode && (
@@ -207,7 +207,8 @@ export function LibraryHeader({
             <button
               type="button"
               onClick={onUploadClick}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
+              aria-label="Tải sách lên"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-accent p-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover sm:px-3 dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
             >
               <Upload className="h-4 w-4" />
               <span className="hidden sm:inline">Tải sách</span>
@@ -224,7 +225,7 @@ export function LibraryHeader({
                   ? `Còn ${unprotectedBookCount} sách EPUB/DOCX chưa đồng bộ gói bảo mật khách`
                   : 'Bảo mật chế độ khách & Truy vết rò rỉ'
               }
-              className="relative inline-flex items-center gap-1.5 rounded-xl border border-line bg-canvas px-2.5 py-2 text-sm font-medium text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink"
+              className="relative hidden items-center gap-1.5 rounded-xl border border-line bg-canvas px-2.5 py-2 text-sm font-medium text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink sm:inline-flex"
             >
               <Shield className="h-4 w-4 text-accent" />
               {unprotectedBookCount > 0 && (
@@ -242,7 +243,7 @@ export function LibraryHeader({
               aria-pressed={selectionMode}
               aria-label={selectionMode ? 'Thoát chế độ chọn nhiều' : 'Chọn nhiều sách'}
               title={selectionMode ? 'Thoát chế độ chọn' : 'Chọn nhiều sách'}
-              className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-sm font-medium transition-colors ${
+              className={`hidden items-center gap-1.5 rounded-xl border px-2.5 py-2 text-sm font-medium transition-colors sm:inline-flex ${
                 selectionMode
                   ? 'border-accent bg-accent/15 text-accent'
                   : 'border-line bg-canvas text-ink-muted hover:border-line-strong hover:bg-subtle hover:text-ink'

@@ -124,8 +124,6 @@ export function Library2DView({
     setSearchQuery,
     statusFilter,
     setStatusFilter,
-    formatFilter,
-    setFormatFilter,
     sortMode,
     setSortMode,
     selectionMode,
@@ -175,7 +173,7 @@ export function Library2DView({
   }, []);
 
   return (
-    <div className="theme-canvas min-h-screen text-ink transition-colors duration-200">
+    <div className="theme-canvas min-h-screen overflow-x-clip text-ink transition-colors duration-200">
       <LibraryHeader
         storage={storage}
         hideStorage
@@ -246,14 +244,12 @@ export function Library2DView({
               sessionRole={sessionRole}
               searchQuery={searchQuery}
               statusFilter={statusFilter}
-              formatFilter={formatFilter}
               sortMode={sortMode}
               isFiltering={isFiltering}
               selectionMode={selectionMode}
               selectedIds={selectedIds}
               onSearchChange={setSearchQuery}
               onStatusChange={setStatusFilter}
-              onFormatChange={setFormatFilter}
               onSortChange={setSortMode}
               onClearFilters={clearFilters}
               onOpenShelf={openLibraryShelf}
@@ -264,6 +260,8 @@ export function Library2DView({
               onSelectBookIds={selectBookIds}
               onClearSelection={clearSelection}
               onToggleSelectionMode={toggleSelectionMode}
+              onProtectionClick={onProtectionClick}
+              unprotectedBookCount={unprotectedBookCount}
               onEditBook={onEditBook}
               onBooksUpdated={onBooksUpdated}
               onRenameShelf={onRenameShelf}
@@ -281,17 +279,20 @@ export function Library2DView({
             <LibraryFilterBar
               searchQuery={searchQuery}
               statusFilter={statusFilter}
-              formatFilter={formatFilter}
               hideSort
               showStorage={sessionRole === 'owner'}
               storage={storage}
+              selectionMode={selectionMode}
+              selectedCount={selectedIds.size}
+              unprotectedBookCount={unprotectedBookCount}
+              onProtectionClick={sessionRole === 'owner' ? onProtectionClick : undefined}
+              onToggleSelectionMode={sessionRole === 'owner' ? toggleSelectionMode : undefined}
               isFiltering={isFiltering}
               filteredCount={filteredBooks.length}
               totalCount={books.length}
               unitLabel="cuốn"
               onSearchChange={setSearchQuery}
               onStatusChange={setStatusFilter}
-              onFormatChange={setFormatFilter}
               onClearFilters={clearFilters}
             />
 
