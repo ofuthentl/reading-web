@@ -363,23 +363,33 @@ export function ShelfBatchNoteModal({
       >
         {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
               {mode === 'author' ? <UserPen className="h-5 w-5" /> : <FileText className="h-5 w-5" />}
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h2
                 id="shelf-batch-note-title"
                 className="truncate font-display text-lg font-semibold text-ink"
               >
                 Ghi chú &amp; Tác giả bộ truyện
               </h2>
-              <p className="truncate text-xs text-ink-muted">
-                {shelf.name} · Trống ghi chú:{' '}
-                <strong className="text-ink">{missingBooks.length}</strong>/{shelf.books.length} ·
-                Chưa rõ tác giả:{' '}
-                <strong className="text-ink">{missingAuthorBooks.length}</strong>/
-                {shelf.books.length}
+              <p
+                title={shelf.name}
+                className="mt-0.5 truncate text-xs font-medium text-ink-muted"
+              >
+                {shelf.name}
+              </p>
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-ink-muted">
+                <span>
+                  Trống ghi chú: <strong className="text-ink">{missingBooks.length}</strong>/
+                  {shelf.books.length}
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  Chưa rõ tác giả: <strong className="text-ink">{missingAuthorBooks.length}</strong>/
+                  {shelf.books.length}
+                </span>
               </p>
             </div>
           </div>
@@ -389,7 +399,7 @@ export function ShelfBatchNoteModal({
             onClick={onClose}
             disabled={saving || extracting}
             aria-label="Đóng cửa sổ"
-            className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink disabled:opacity-40"
+            className="shrink-0 rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink disabled:opacity-40"
           >
             <X className="h-4 w-4" />
           </button>
@@ -398,42 +408,27 @@ export function ShelfBatchNoteModal({
         {/* Thanh chuyển 3 tab + nút Tự trích từ EPUB */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-canvas/50 px-5 py-2.5">
           <div className="inline-flex flex-wrap rounded-xl border border-line bg-surface p-1 text-xs">
-            <button
-              type="button"
-              disabled={saving || extracting}
-              onClick={() => setMode('shared')}
-              className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
-                mode === 'shared'
-                  ? 'bg-accent text-accent-foreground shadow-sm'
-                  : 'text-ink-muted hover:text-ink'
-              }`}
-            >
-              Ghi chú chung cả bộ
-            </button>
-            <button
-              type="button"
-              disabled={saving || extracting}
-              onClick={() => setMode('per-volume')}
-              className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
-                mode === 'per-volume'
-                  ? 'bg-accent text-accent-foreground shadow-sm'
-                  : 'text-ink-muted hover:text-ink'
-              }`}
-            >
-              Điền riêng từng tập ({missingBooks.length})
-            </button>
-            <button
-              type="button"
-              disabled={saving || extracting}
-              onClick={() => setMode('author')}
-              className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
-                mode === 'author'
-                  ? 'bg-accent text-accent-foreground shadow-sm'
-                  : 'text-ink-muted hover:text-ink'
-              }`}
-            >
-              Tên tác giả
-            </button>
+            {(
+              [
+                ['shared', 'Ghi chú chung cả bộ'],
+                ['per-volume', `Điền riêng từng tập (${missingBooks.length})`],
+                ['author', 'Tên tác giả'],
+              ] as const
+            ).map(([tabId, label]) => (
+              <button
+                key={tabId}
+                type="button"
+                disabled={saving || extracting}
+                onClick={() => setMode(tabId)}
+                className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
+                  mode === tabId
+                    ? 'bg-accent text-accent-foreground shadow-sm'
+                    : 'text-ink-muted hover:text-ink'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
           {hasEpubCandidates && (
