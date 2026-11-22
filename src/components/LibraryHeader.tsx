@@ -21,6 +21,7 @@ import type { AppTheme } from '@/hooks/useTheme';
 
 interface LibraryHeaderProps {
   storage: StorageStats | null;
+  hideStorage?: boolean;
   bookCount: number;
   loading: boolean;
   theme: AppTheme;
@@ -51,6 +52,7 @@ const NAV_TABS: Array<{ id: LibraryTab; label: string; icon: typeof Home }> = [
 
 export function LibraryHeader({
   storage,
+  hideStorage = false,
   bookCount,
   loading,
   theme,
@@ -154,8 +156,8 @@ export function LibraryHeader({
           )}
         </div>
 
-        {/* Thanh dung lượng (Desktop — chỉ hiển thị cho Admin/Owner) */}
-        {isOwner && (
+        {/* Thanh dung lượng (Desktop — chỉ hiển thị cho Admin/Owner khi không dời xuống thân trang) */}
+        {isOwner && !hideStorage && (
           <div
             className={`hidden min-w-[160px] max-w-[240px] flex-1 flex-col gap-1.5 rounded-xl border border-line bg-canvas px-3 py-2 ${
               showTabs ? 'xl:flex' : 'lg:flex'
@@ -308,8 +310,8 @@ export function LibraryHeader({
         </nav>
       )}
 
-      {/* Thanh dung lượng gọn cho Mobile / Tablet (chỉ hiển thị cho Admin/Owner) */}
-      {isOwner && (
+      {/* Thanh dung lượng gọn cho Mobile / Tablet (chỉ hiển thị cho Admin/Owner khi không dời xuống thân trang) */}
+      {isOwner && !hideStorage && (
         <div
           className={`border-t border-line/70 bg-canvas/60 px-4 py-2 ${
             showTabs ? 'xl:hidden' : 'lg:hidden'

@@ -332,21 +332,10 @@ export function useLibraryViewState(
     });
   }, [activeShelfKey, books, formatFilter, normalizedQuery, progress, statusFilter]);
 
-  const visibleShelves = useMemo(() => {
-    const grouped = groupBooksIntoShelves(filteredBooks);
-    if (sortMode === 'recent_upload') {
-      for (const shelf of grouped) {
-        shelf.books.sort((a, b) => b.created_at.localeCompare(a.created_at));
-      }
-    } else if (sortMode === 'recent_read') {
-      for (const shelf of grouped) {
-        shelf.books.sort(
-          (a, b) => (progress[b.id]?.updatedAt ?? 0) - (progress[a.id]?.updatedAt ?? 0),
-        );
-      }
-    }
-    return sortShelvesByMode(grouped, sortMode, progress, favoriteShelfKeys);
-  }, [favoriteShelfKeys, filteredBooks, progress, sortMode]);
+  const visibleShelves = useMemo(
+    () => sortShelvesFavoriteFirst(groupBooksIntoShelves(filteredBooks), favoriteShelfKeys),
+    [favoriteShelfKeys, filteredBooks],
+  );
 
   const toggleSelectionMode = useCallback(() => {
     setSelectionMode((prev) => {

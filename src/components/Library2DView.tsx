@@ -173,6 +173,7 @@ export function Library2DView({
     <div className="theme-canvas min-h-screen text-ink transition-colors duration-200">
       <LibraryHeader
         storage={storage}
+        hideStorage
         bookCount={books.length}
         loading={loading}
         theme={theme}
@@ -269,7 +270,9 @@ export function Library2DView({
               searchQuery={searchQuery}
               statusFilter={statusFilter}
               formatFilter={formatFilter}
-              sortMode={sortMode}
+              hideSort
+              showStorage={sessionRole === 'owner'}
+              storage={storage}
               isFiltering={isFiltering}
               filteredCount={filteredBooks.length}
               totalCount={books.length}
@@ -277,7 +280,6 @@ export function Library2DView({
               onSearchChange={setSearchQuery}
               onStatusChange={setStatusFilter}
               onFormatChange={setFormatFilter}
-              onSortChange={setSortMode}
               onClearFilters={clearFilters}
             />
 
