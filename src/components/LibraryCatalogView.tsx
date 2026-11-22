@@ -11,6 +11,7 @@ import type {
 } from '@/types';
 import { summarizeShelf, type ShelfSummary } from '@/lib/shelfSummary';
 import { LibraryFilterBar } from '@/components/LibraryFilterBar';
+import { ShelfBatchNoteModal } from '@/components/ShelfBatchNoteModal';
 import { ShelfCoverCard } from '@/components/ShelfCoverCard';
 import { ShelfCoverPickerModal } from '@/components/ShelfCoverPickerModal';
 import { ShelfDetailView } from '@/components/ShelfDetailView';
@@ -45,6 +46,7 @@ export interface LibraryCatalogViewProps {
   onClearSelection: () => void;
   onToggleSelectionMode: () => void;
   onEditBook?: (book: Book) => void;
+  onBooksUpdated?: (books: Book[]) => void;
   onRenameShelf?: (shelfName: string) => void;
   onShelfCoverChanged?: (shelfName: string, bookId: string | null) => void;
   onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
@@ -83,6 +85,7 @@ export function LibraryCatalogView({
   onClearSelection,
   onToggleSelectionMode,
   onEditBook,
+  onBooksUpdated,
   onRenameShelf,
   onShelfCoverChanged,
   onToggleFavoriteShelf,
@@ -92,6 +95,7 @@ export function LibraryCatalogView({
   onNotify,
 }: LibraryCatalogViewProps) {
   const [pickingShelfKey, setPickingShelfKey] = useState<string | null>(null);
+  const [batchNoteOpen, setBatchNoteOpen] = useState(false);
 
   const librarySummaries = useMemo(
     () =>
@@ -138,6 +142,9 @@ export function LibraryCatalogView({
           onEditBook={onEditBook}
           onRenameShelf={onRenameShelf}
           onChangeShelfCover={handleOpenCoverPicker}
+          onOpenBatchNotes={
+            onBooksUpdated ? () => setBatchNoteOpen(true) : undefined
+          }
           onToggleFavorite={onToggleFavoriteShelf}
           onMoveSelectedToShelf={onMoveSelectedToShelf}
           onDeleteSelected={onDeleteSelected}
@@ -219,6 +226,16 @@ export function LibraryCatalogView({
           customCoverBookId={pickingSummary?.customCoverBookId ?? null}
           onClose={() => setPickingShelfKey(null)}
           onCoverChanged={onShelfCoverChanged}
+          onApiError={onApiError}
+          onNotify={onNotify}
+        />
+      )}
+
+      {onBooksUpdated && batchNoteOpen && (
+        <ShelfBatchNoteModal
+          shelf={openedShelfSummary?.shelf ?? null}
+          onClose={() => setBatchNoteOpen(false)}
+          onBooksUpdated={onBooksUpdated}
           onApiError={onApiError}
           onNotify={onNotify}
         />

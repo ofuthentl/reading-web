@@ -127,6 +127,11 @@ export function useLibraryDataStore({
     if (nextStorage) setStorage(nextStorage);
   }, []);
 
+  const handleBooksBatchUpdated = useCallback((updatedBooks: Book[]) => {
+    const byId = new Map(updatedBooks.map((item) => [item.id, item]));
+    setBooks((prev) => sortBooksByTitle(prev.map((item) => byId.get(item.id) ?? item)));
+  }, []);
+
   const handleBookPackSynced = useCallback((bookId: string, nextStorage?: StorageStats) => {
     setBooks((prev) =>
       prev.map((item) => (item.id === bookId ? { ...item, guest_ready: true } : item)),
@@ -251,6 +256,7 @@ export function useLibraryDataStore({
     handleProgressUpdated,
     handleBookUploaded,
     handleBookUpdated,
+    handleBooksBatchUpdated,
     handleBookPackSynced,
     applyShelfRenamed,
     handleShelfCoverChanged,

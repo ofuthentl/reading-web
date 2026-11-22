@@ -10,13 +10,16 @@ import {
 } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress, StorageStats, ViewMode } from '@/types';
 import { BookCard } from '@/components/BookCard';
-import { BulkSelectionBar } from '@/components/BulkSelectionBar';
 import { EditorialBookStrip } from '@/components/EditorialBookStrip';
 import { LibraryFilterBar } from '@/components/LibraryFilterBar';
 import { LibraryHeader } from '@/components/LibraryHeader';
 import type { LibraryViewState } from '@/hooks/useLibraryViewState';
 import type { AppTheme } from '@/hooks/useTheme';
 import type { ToastType } from '@/hooks/useToast';
+
+const LazyBulkSelectionBar = lazy(() =>
+  import('@/components/BulkSelectionBar').then((mod) => ({ default: mod.BulkSelectionBar })),
+);
 
 const LazyLibraryCatalogView = lazy(() =>
   import('@/components/LibraryCatalogView').then((mod) => ({ default: mod.LibraryCatalogView })),
@@ -51,6 +54,7 @@ interface Library2DViewProps {
   onProtectionClick?: () => void;
   unprotectedBookCount?: number;
   onEditBook?: (book: Book) => void;
+  onBooksUpdated?: (books: Book[]) => void;
   onRenameShelf?: (shelfName: string) => void;
   onShelfCoverChanged?: (shelfName: string, bookId: string | null) => void;
   onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
@@ -102,6 +106,7 @@ export function Library2DView({
   onProtectionClick,
   unprotectedBookCount = 0,
   onEditBook,
+  onBooksUpdated,
   onRenameShelf,
   onShelfCoverChanged,
   onToggleFavoriteShelf,
@@ -261,6 +266,7 @@ export function Library2DView({
               onClearSelection={clearSelection}
               onToggleSelectionMode={toggleSelectionMode}
               onEditBook={onEditBook}
+              onBooksUpdated={onBooksUpdated}
               onRenameShelf={onRenameShelf}
               onShelfCoverChanged={onShelfCoverChanged}
               onToggleFavoriteShelf={onToggleFavoriteShelf}
@@ -290,21 +296,23 @@ export function Library2DView({
             />
 
             {selectionMode && (
-              <BulkSelectionBar
-                selectedCount={selectedIds.size}
-                totalVisibleCount={filteredBooks.length}
-                unitLabel="cuốn sách"
-                allSelected={selectedIds.size === filteredBooks.length && filteredBooks.length > 0}
-                selectedBooks={selectedBooks}
-                onToggleSelectAll={
-                  selectedIds.size === filteredBooks.length && filteredBooks.length > 0
-                    ? clearSelection
-                    : selectAllVisible
-                }
-                onMoveSelected={onMoveSelectedToShelf}
-                onDeleteSelected={onDeleteSelected}
-                onDone={toggleSelectionMode}
-              />
+              <Suspense fallback={null}>
+                <LazyBulkSelectionBar
+                  selectedCount={selectedIds.size}
+                  totalVisibleCount={filteredBooks.length}
+                  unitLabel="cuốn sách"
+                  allSelected={selectedIds.size === filteredBooks.length && filteredBooks.length > 0}
+                  selectedBooks={selectedBooks}
+                  onToggleSelectAll={
+                    selectedIds.size === filteredBooks.length && filteredBooks.length > 0
+                      ? clearSelection
+                      : selectAllVisible
+                  }
+                  onMoveSelected={onMoveSelectedToShelf}
+                  onDeleteSelected={onDeleteSelected}
+                  onDone={toggleSelectionMode}
+                />
+              </Suspense>
             )}
 
             {/* Khối Tiếp tục đọc */}

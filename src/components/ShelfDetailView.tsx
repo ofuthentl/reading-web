@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   BookMarked,
   BookOpen,
+  FileText,
   FolderEdit,
   FolderInput,
   Image,
@@ -35,6 +36,7 @@ interface ShelfDetailViewProps {
   onEditBook?: (book: Book) => void;
   onRenameShelf?: (shelfName: string) => void;
   onChangeShelfCover?: (summary: ShelfSummary) => void;
+  onOpenBatchNotes?: () => void;
   onToggleFavorite?: (shelfName: string, nextFavorite: boolean) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
@@ -56,6 +58,7 @@ export function ShelfDetailView({
   onEditBook,
   onRenameShelf,
   onChangeShelfCover,
+  onOpenBatchNotes,
   onToggleFavorite,
   onMoveSelectedToShelf,
   onDeleteSelected,
@@ -82,6 +85,11 @@ export function ShelfDetailView({
   const coverUrl = useCoverUrl(coverKey, true);
   const showImage = Boolean(coverUrl && !imgFailed);
   const clothColor = pickClothCoverColor(`${shelf.key}-${shelf.name}`);
+
+  const missingNoteCount = useMemo(
+    () => shelf.books.filter((b) => !b.description?.trim()).length,
+    [shelf.books],
+  );
 
   const shelfDescription = useMemo(() => {
     const fromCover = coverBook?.description?.trim();
@@ -301,6 +309,23 @@ export function ShelfDetailView({
               >
                 <Image className="h-4 w-4 text-ink-muted" />
                 <span>Đổi ảnh bìa kệ</span>
+              </button>
+            )}
+
+            {onOpenBatchNotes && (
+              <button
+                type="button"
+                onClick={onOpenBatchNotes}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-canvas px-3.5 py-2 text-sm font-medium text-ink transition-colors hover:border-line-strong hover:bg-subtle"
+                title="Thêm hoặc cập nhật ghi chú cho các tập chưa có trong bộ này"
+              >
+                <FileText className="h-4 w-4 text-crimson-accent" />
+                <span>{missingNoteCount > 0 ? 'Thêm ghi chú' : 'Sửa ghi chú bộ'}</span>
+                {missingNoteCount > 0 && (
+                  <span className="rounded-full bg-[#B22222]/15 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-crimson-accent">
+                    {missingNoteCount}
+                  </span>
+                )}
               </button>
             )}
           </div>

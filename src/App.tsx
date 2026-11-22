@@ -276,6 +276,7 @@ export default function App() {
             onProtectionClick={isOwner ? () => setModal({ kind: 'protection' }) : undefined}
             unprotectedBookCount={isOwner ? store.unprotectedBookCount : 0}
             onEditBook={isOwner ? (book: Book) => setModal({ kind: 'edit', book }) : undefined}
+            onBooksUpdated={isOwner ? store.handleBooksBatchUpdated : undefined}
             onRenameShelf={
               isOwner ? (shelfName: string) => setModal({ kind: 'rename-shelf', shelfName }) : undefined
             }
