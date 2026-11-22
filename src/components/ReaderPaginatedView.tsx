@@ -2,7 +2,6 @@ import {
   type CSSProperties,
   forwardRef,
   useCallback,
-  useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -15,6 +14,7 @@ import { getBookSortTitle } from '@/lib/bookMetadata';
 import {
   READER_FONT_CLASS,
   type ReaderThemePalette,
+  resolvePaginatedSpreadWidth,
 } from '@/lib/readerConfig';
 
 export interface PaginatedStageHandle {
@@ -41,12 +41,6 @@ interface ReaderPaginatedViewProps {
   onCompleteBook: (nextBook?: Book) => void;
   onOpenImage: (src: string, alt: string) => void;
 }
-
-const SPREAD_WIDTH_MAX_PX: Record<ReaderSettings['width'], number> = {
-  narrow: 1080,
-  medium: 1400,
-  wide: 1760,
-};
 
 export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPaginatedViewProps>(
   function ReaderPaginatedView(
@@ -76,24 +70,33 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
     const wheelCooldownRef = useRef(0);
     const anchorRatioRef = useRef(Math.min(1, Math.max(0, initialRatio)));
 
-    const [stageSize, setStageSize] = useState({ width: 960, height: 600 });
+    const [stageSize, setStageSize] = useState(() => {
+      if (typeof window === 'undefined') return { width: 1280, height: 720 };
+      const padX = window.innerWidth >= 640 ? 64 : 32;
+      return {
+        width: Math.max(260, window.innerWidth - padX),
+        height: Math.max(260, window.innerHeight - 116),
+      };
+    });
     const [totalPages, setTotalPages] = useState(1);
     const [pageIndex, setPageIndex] = useState(0);
+    const [animateTurn, setAnimateTurn] = useState(false);
 
     // Khi đổi chương mới, cập nhật neo ratio ban đầu (0 khi sang chương sau, 1 khi lùi chương trước)
-    useEffect(() => {
+    useLayoutEffect(() => {
       anchorRatioRef.current = Math.min(1, Math.max(0, initialRatio));
     }, [chapter.id, initialRatio]);
 
     // Đo kích thước khung hiển thị thực tế qua ResizeObserver (D-011)
-    useEffect(() => {
+    useLayoutEffect(() => {
       const el = outerRef.current;
       if (!el) return;
       const measure = () => {
-        setStageSize({
-          width: Math.max(260, Math.floor(el.clientWidth)),
-          height: Math.max(260, Math.floor(el.clientHeight)),
-        });
+        const nextW = Math.max(260, Math.floor(el.clientWidth));
+        const nextH = Math.max(260, Math.floor(el.clientHeight));
+        setStageSize((prev) =>
+          prev.width === nextW && prev.height === nextH ? prev : { width: nextW, height: nextH },
+        );
       };
       measure();
       const observer = new ResizeObserver(measure);
@@ -102,8 +105,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
     }, []);
 
     const geometry = useMemo(() => {
-      const maxSpread = SPREAD_WIDTH_MAX_PX[settings.width];
-      const usableW = Math.min(stageSize.width, maxSpread);
+      const usableW = resolvePaginatedSpreadWidth(stageSize.width, settings.width);
       const columns = usableW >= 820 ? 2 : 1;
       const gap = columns === 2 ? 56 : 28;
       const colWidth = Math.max(220, Math.floor((usableW - (columns - 1) * gap) / columns));
@@ -120,6 +122,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       if (step <= 0) return;
       const rawCols = Math.max(1, Math.round((track.scrollWidth + geometry.gap) / step));
       const nextTotal = Math.max(1, Math.ceil(rawCols / geometry.columns));
+      setAnimateTurn(false);
       setTotalPages(nextTotal);
       const targetPage = Math.min(
         nextTotal - 1,
@@ -128,7 +131,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       setPageIndex(targetPage);
     }, [geometry.colWidth, geometry.columns, geometry.gap]);
 
-    // Chuyển ảnh sang eager và re-measure ngay khi ảnh trong chương tải xong (D-011)
+    // Chuyển ảnh sang eager và đo ngay lập tức trước khi paint để 0 lệch trang khi đổi độ rộng/cỡ chữ
     useLayoutEffect(() => {
       const track = trackRef.current;
       if (!track) return;
@@ -143,9 +146,8 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
         }
       }
 
-      const raf1 = requestAnimationFrame(() => {
-        measurePages();
-      });
+      measurePages();
+      const raf1 = requestAnimationFrame(measurePages);
       return () => {
         cancelAnimationFrame(raf1);
         for (const img of imgs) {
@@ -164,11 +166,14 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       settings.lineHeight,
     ]);
 
+    const safePageIndex = Math.max(0, Math.min(pageIndex, totalPages - 1));
+
     const commitPage = useCallback(
-      (nextPage: number) => {
+      (nextPage: number, animate = true) => {
         const clamped = Math.max(0, Math.min(totalPages - 1, nextPage));
         const ratio = totalPages > 1 ? clamped / (totalPages - 1) : 1;
         anchorRatioRef.current = ratio;
+        setAnimateTurn(animate);
         setPageIndex(clamped);
         onRatioChange(ratio, clamped >= totalPages - 1);
       },
@@ -176,20 +181,20 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
     );
 
     const stepPrev = useCallback(() => {
-      if (pageIndex > 0) {
-        commitPage(pageIndex - 1);
+      if (safePageIndex > 0) {
+        commitPage(safePageIndex - 1, true);
       } else if (chapterIndex > 0) {
         onPrevChapterEnd();
       }
-    }, [chapterIndex, commitPage, onPrevChapterEnd, pageIndex]);
+    }, [chapterIndex, commitPage, onPrevChapterEnd, safePageIndex]);
 
     const stepNext = useCallback(() => {
-      if (pageIndex < totalPages - 1) {
-        commitPage(pageIndex + 1);
+      if (safePageIndex < totalPages - 1) {
+        commitPage(safePageIndex + 1, true);
       } else if (chapterIndex < totalChapters - 1) {
         onNextChapterStart();
       }
-    }, [chapterIndex, commitPage, onNextChapterStart, pageIndex, totalChapters, totalPages]);
+    }, [chapterIndex, commitPage, onNextChapterStart, safePageIndex, totalChapters, totalPages]);
 
     const jumpToRatio = useCallback(
       (ratio: number) => {
@@ -199,7 +204,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
           totalPages - 1,
           Math.max(0, Math.round(clampedRatio * (totalPages - 1))),
         );
-        commitPage(target);
+        commitPage(target, false);
       },
       [commitPage, totalPages],
     );
@@ -211,8 +216,8 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
     );
 
     const isLastChapter = chapterIndex >= totalChapters - 1;
-    const isLastSpread = pageIndex >= totalPages - 1;
-    const isFirstSpread = pageIndex === 0 && chapterIndex === 0;
+    const isLastSpread = safePageIndex >= totalPages - 1;
+    const isFirstSpread = safePageIndex === 0 && chapterIndex === 0;
 
     const trackStyle: CSSProperties = {
       width: `${geometry.innerWidth}px`,
@@ -220,8 +225,8 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       columnWidth: `${geometry.colWidth}px`,
       columnGap: `${geometry.gap}px`,
       columnFill: 'auto',
-      transform: `translate3d(-${pageIndex * geometry.stride}px, 0, 0)`,
-      transition: 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1)',
+      transform: `translate3d(-${safePageIndex * geometry.stride}px, 0, 0)`,
+      transition: animateTurn ? 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)' : 'none',
       ['--paginated-img-max-h' as string]: `${Math.max(180, geometry.pageHeight - 36)}px`,
     };
 
@@ -286,19 +291,20 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
             else stepPrev();
           }}
         >
+          {geometry.columns === 2 && (
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none absolute bottom-0 left-1/2 z-10 border-l transition-[top] duration-200 ${palette.border} ${
+                immersiveHidden ? 'top-0' : 'top-[3.25rem]'
+              }`}
+            />
+          )}
+
           <div ref={outerRef} className="relative h-full w-full">
             <div
               className="relative mx-auto h-full overflow-hidden"
               style={{ width: `${geometry.innerWidth}px` }}
             >
-              {/* Đường kẻ phân trang mảnh 1px tinh tế ở giữa 2 cột */}
-              {geometry.columns === 2 && (
-                <span
-                  aria-hidden="true"
-                  className={`pointer-events-none absolute inset-y-3 left-1/2 z-10 -translate-x-1/2 border-l opacity-75 ${palette.border}`}
-                />
-              )}
-
               <div ref={trackRef} style={trackStyle} className="reading-paginated-content">
                 <header
                   className={`mb-5 border-b pb-4 text-center ${palette.border}`}
@@ -368,7 +374,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
           ) : (
             <div className={`flex items-center gap-2 tabular-nums ${palette.textSecondary}`}>
               <span>
-                Trang <strong className={palette.textPrimary}>{pageIndex + 1}</strong> / {totalPages}
+                Trang <strong className={palette.textPrimary}>{safePageIndex + 1}</strong> / {totalPages}
               </span>
               <span aria-hidden="true">·</span>
               <span>

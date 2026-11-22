@@ -1,7 +1,6 @@
 import {
   forwardRef,
   useCallback,
-  useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -18,7 +17,10 @@ import {
   paginateCanvasLayoutItems,
   paintGuestPaginatedCanvas,
 } from '@/lib/guestCanvasPages';
-import type { ReaderThemePalette } from '@/lib/readerConfig';
+import {
+  type ReaderThemePalette,
+  resolvePaginatedSpreadWidth,
+} from '@/lib/readerConfig';
 
 interface GuestCanvasPaginatedViewProps {
   bookTitle: string;
@@ -42,12 +44,6 @@ interface GuestCanvasPaginatedViewProps {
   onCompleteBook: (nextBook?: Book) => void;
   onOpenGuestImage: (bitmap: ImageBitmap, alt: string) => void;
 }
-
-const SPREAD_WIDTH_MAX_PX: Record<ReaderSettings['width'], number> = {
-  narrow: 1080,
-  medium: 1400,
-  wide: 1760,
-};
 
 export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCanvasPaginatedViewProps>(
   function GuestCanvasPaginatedView(
@@ -82,21 +78,29 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     const wheelCooldownRef = useRef(0);
     const anchorRatioRef = useRef(Math.min(1, Math.max(0, initialRatio)));
 
-    const [stageSize, setStageSize] = useState({ width: 960, height: 600 });
+    const [stageSize, setStageSize] = useState(() => {
+      if (typeof window === 'undefined') return { width: 1280, height: 720 };
+      const padX = window.innerWidth >= 640 ? 56 : 28;
+      return {
+        width: Math.max(260, window.innerWidth - padX),
+        height: Math.max(260, window.innerHeight - 116),
+      };
+    });
     const [spreadIndex, setSpreadIndex] = useState(0);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
       anchorRatioRef.current = Math.min(1, Math.max(0, initialRatio));
     }, [chapterData.id, initialRatio]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
       const el = outerRef.current;
       if (!el) return;
       const measure = () => {
-        setStageSize({
-          width: Math.max(260, Math.floor(el.clientWidth)),
-          height: Math.max(260, Math.floor(el.clientHeight)),
-        });
+        const nextW = Math.max(260, Math.floor(el.clientWidth));
+        const nextH = Math.max(260, Math.floor(el.clientHeight));
+        setStageSize((prev) =>
+          prev.width === nextW && prev.height === nextH ? prev : { width: nextW, height: nextH },
+        );
       };
       measure();
       const observer = new ResizeObserver(measure);
@@ -105,7 +109,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     }, []);
 
     const geometry = useMemo(() => {
-      const usableW = Math.min(stageSize.width, SPREAD_WIDTH_MAX_PX[settings.width]);
+      const usableW = resolvePaginatedSpreadWidth(stageSize.width, settings.width);
       const columns: 1 | 2 = usableW >= 820 ? 2 : 1;
       const columnGap = columns === 2 ? 48 : 0;
       const columnWidth = Math.max(220, Math.floor((usableW - columnGap) / columns));
@@ -135,8 +139,9 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     ]);
 
     const totalSpreads = Math.max(1, Math.ceil(columnPages.length / geometry.columns));
+    const safeSpreadIndex = Math.max(0, Math.min(spreadIndex, totalSpreads - 1));
 
-    useEffect(() => {
+    useLayoutEffect(() => {
       const target = Math.min(
         totalSpreads - 1,
         Math.max(0, Math.round(anchorRatioRef.current * (totalSpreads - 1))),
@@ -147,7 +152,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     useLayoutEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const leftIdx = spreadIndex * geometry.columns;
+      const leftIdx = safeSpreadIndex * geometry.columns;
       const leftPage = columnPages[leftIdx] ?? null;
       const rightPage = geometry.columns === 2 ? columnPages[leftIdx + 1] ?? null : null;
 
@@ -172,9 +177,9 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       geometry.columns,
       geometry.pageHeight,
       imageSizes,
+      safeSpreadIndex,
       settings.font,
       settings.theme,
-      spreadIndex,
       watermarkLabel,
     ]);
 
@@ -190,14 +195,14 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     );
 
     const stepPrev = useCallback(() => {
-      if (spreadIndex > 0) commitSpread(spreadIndex - 1);
+      if (safeSpreadIndex > 0) commitSpread(safeSpreadIndex - 1);
       else if (chapterIndex > 0) onPrevChapterEnd();
-    }, [chapterIndex, commitSpread, onPrevChapterEnd, spreadIndex]);
+    }, [chapterIndex, commitSpread, onPrevChapterEnd, safeSpreadIndex]);
 
     const stepNext = useCallback(() => {
-      if (spreadIndex < totalSpreads - 1) commitSpread(spreadIndex + 1);
+      if (safeSpreadIndex < totalSpreads - 1) commitSpread(safeSpreadIndex + 1);
       else if (chapterIndex < totalChapters - 1) onNextChapterStart();
-    }, [chapterIndex, commitSpread, onNextChapterStart, spreadIndex, totalChapters, totalSpreads]);
+    }, [chapterIndex, commitSpread, onNextChapterStart, safeSpreadIndex, totalChapters, totalSpreads]);
 
     const jumpToRatio = useCallback(
       (ratio: number) => {
@@ -219,8 +224,8 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     );
 
     const isLastChapter = chapterIndex >= totalChapters - 1;
-    const isLastSpread = spreadIndex >= totalSpreads - 1;
-    const isFirstSpread = spreadIndex === 0 && chapterIndex === 0;
+    const isLastSpread = safeSpreadIndex >= totalSpreads - 1;
+    const isFirstSpread = safeSpreadIndex === 0 && chapterIndex === 0;
 
     return (
       <div className={`flex flex-1 flex-col overflow-hidden transition-all ${pageHidden ? 'blur-lg' : ''}`}>
@@ -289,6 +294,15 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
             else stepPrev();
           }}
         >
+          {geometry.columns === 2 && (
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none absolute bottom-0 left-1/2 z-10 border-l transition-[top] duration-200 ${palette.border} ${
+                immersiveHidden ? 'top-0' : 'top-[3.25rem]'
+              }`}
+            />
+          )}
+
           <div ref={outerRef} className="flex h-full w-full items-center justify-center">
             <canvas
               ref={canvasRef}
@@ -335,7 +349,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
           ) : (
             <div className={`flex items-center gap-2 tabular-nums ${palette.textSecondary}`}>
               <span>
-                Trang <strong className={palette.textPrimary}>{spreadIndex + 1}</strong> / {totalSpreads}
+                Trang <strong className={palette.textPrimary}>{safeSpreadIndex + 1}</strong> / {totalSpreads}
               </span>
               <span aria-hidden="true">·</span>
               <span>

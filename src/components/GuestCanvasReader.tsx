@@ -8,14 +8,16 @@ import { ReaderTocDrawer } from '@/components/ReaderTocDrawer';
 import { ReaderTopBar } from '@/components/ReaderTopBar';
 import { useGuestChapterStream } from '@/hooks/useGuestChapterStream';
 import { useReaderController } from '@/hooks/useReaderController';
-import { computeChapterCanvasLayout } from '@/lib/guestCanvasLayout';
+import {
+  computeChapterCanvasLayout,
+  findCanvasLayoutImageAtPoint,
+  getInitialGuestStageBox,
+} from '@/lib/guestCanvasLayout';
 import { paintGuestViewportCanvas } from '@/lib/guestCanvasPaint';
 import { READER_THEME_STYLES } from '@/lib/readerConfig';
 
 const LazyReaderImageLightbox = lazy(() =>
-  import('@/components/ReaderImageLightbox').then((mod) => ({
-    default: mod.ReaderImageLightbox,
-  })),
+  import('@/components/ReaderImageLightbox').then((mod) => ({ default: mod.ReaderImageLightbox })),
 );
 
 const VIEWPORT_OVERSCAN_PX = 280;
@@ -63,7 +65,7 @@ export function GuestCanvasReader({
   const [chapterIndex, setChapterIndex] = useState(initialIdx);
   const [chapterScrollRatio, setChapterScrollRatio] = useState(initialStartRatio);
   const [paginatedStartRatio, setPaginatedStartRatio] = useState(initialStartRatio);
-  const [stageBox, setStageBox] = useState({ width: 760, height: 720 });
+  const [stageBox, setStageBox] = useState(getInitialGuestStageBox);
   const [pageHidden, setPageHidden] = useState(() =>
     typeof document !== 'undefined' ? document.visibilityState === 'hidden' : false,
   );
@@ -112,19 +114,27 @@ export function GuestCanvasReader({
     [book.id, tocChapters],
   );
 
-  useEffect(() => {
-    if (isPaginated) return;
+  const showScrollStage = !loadingChapter && !chapterError && !isPaginated;
+
+  useLayoutEffect(() => {
+    if (!showScrollStage) return;
     const el = scrollContainerRef.current;
     if (!el) return;
     const measure = () => {
       const padX = el.clientWidth >= 640 ? 56 : 28;
-      setStageBox({ width: Math.max(240, el.clientWidth - padX), height: Math.max(280, el.clientHeight) });
+      const nextWidth = Math.max(240, el.clientWidth - padX);
+      const nextHeight = Math.max(280, el.clientHeight);
+      setStageBox((prev) =>
+        prev.width === nextWidth && prev.height === nextHeight
+          ? prev
+          : { width: nextWidth, height: nextHeight },
+      );
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [isPaginated]);
+  }, [showScrollStage]);
 
   useEffect(() => {
     const onVisChange = () => setPageHidden(document.visibilityState === 'hidden');
@@ -179,10 +189,12 @@ export function GuestCanvasReader({
       if (patch.layoutMode && patch.layoutMode !== settings.layoutMode) {
         if (patch.layoutMode === 'paginated') setPaginatedStartRatio(chapterScrollRatio);
         else restoreTargetRatioRef.current = chapterScrollRatio;
+      } else if (!isPaginated && (patch.width || patch.fontSizePx || patch.lineHeight || patch.font)) {
+        restoreTargetRatioRef.current = chapterScrollRatio;
       }
       onUpdateSettings(patch);
     },
-    [chapterScrollRatio, onUpdateSettings, settings.layoutMode],
+    [chapterScrollRatio, isPaginated, onUpdateSettings, settings.layoutMode],
   );
 
   const goToChapter = useCallback(
@@ -354,19 +366,10 @@ export function GuestCanvasReader({
         settings={settings}
         palette={palette}
         statusBadge={watermarkBadge}
-        onBack={() => {
-          flushProgress();
-          onClose();
-        }}
+        onBack={() => { flushProgress(); onClose(); }}
         onOpenDrawerTab={openDrawerTab}
-        onHideToolbar={() => {
-          setSettingsOpen(false);
-          setImmersiveHidden(true);
-        }}
-        onToggleSettings={() => {
-          setTocOpen(false);
-          setSettingsOpen((v) => !v);
-        }}
+        onHideToolbar={() => { setSettingsOpen(false); setImmersiveHidden(true); }}
+        onToggleSettings={() => { setTocOpen(false); setSettingsOpen((v) => !v); }}
         onCloseSettings={() => setSettingsOpen(false)}
         onUpdateSettings={handleUpdateSettings}
       />
@@ -452,27 +455,21 @@ export function GuestCanvasReader({
 
             if (layout && stageWrapRef.current) {
               const stageRect = stageWrapRef.current.getBoundingClientRect();
-              const stageX = event.clientX - stageRect.left;
-              const stageY = event.clientY - stageRect.top;
-              if (stageY >= 0 && stageY <= layout.totalHeight) {
-                const offsetX = Math.max(0, Math.floor((stageBox.width - layout.contentWidth) / 2));
-                for (const item of layout.items) {
-                  if (item.kind !== 'image') continue;
-                  const imgX = offsetX + Math.round((layout.contentWidth - item.drawWidth) / 2);
-                  const imgY = item.y + 12;
-                  if (
-                    stageX >= imgX && stageX <= imgX + item.drawWidth &&
-                    stageY >= imgY && stageY <= imgY + item.drawHeight
-                  ) {
-                    const bitmap = bitmapsRef.current.get(item.mediaIndex);
-                    if (bitmap) {
-                      setLightboxTarget({
-                        kind: 'guest-bitmap', bitmap, watermarkLabel: effectiveWatermark, alt: item.alt || book.title,
-                      });
-                      return;
-                    }
-                  }
-                }
+              const hitImg = findCanvasLayoutImageAtPoint(
+                layout,
+                stageBox.width,
+                event.clientX - stageRect.left,
+                event.clientY - stageRect.top,
+              );
+              const bitmap = hitImg ? bitmapsRef.current.get(hitImg.mediaIndex) : undefined;
+              if (hitImg && bitmap) {
+                setLightboxTarget({
+                  kind: 'guest-bitmap',
+                  bitmap,
+                  watermarkLabel: effectiveWatermark,
+                  alt: hitImg.alt || book.title,
+                });
+                return;
               }
             }
 

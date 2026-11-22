@@ -116,6 +116,25 @@ export const READER_WIDTH_MAX: Record<ReaderWidth, string> = {
   wide: '84.5rem',
 };
 
+export function resolvePaginatedSpreadWidth(
+  stageWidth: number,
+  widthMode: ReaderWidth,
+): number {
+  const safeStage = Math.max(260, Math.floor(stageWidth));
+  if (safeStage < 640) return safeStage;
+
+  const wideW = Math.min(safeStage, 1820);
+  if (widthMode === 'wide') return wideW;
+
+  const mediumRaw = Math.min(Math.round(wideW * 0.84), 1420);
+  const mediumW = wideW >= 900 ? Math.max(840, mediumRaw) : mediumRaw;
+  if (widthMode === 'medium') return Math.min(wideW, mediumW);
+
+  const narrowRaw = Math.min(Math.round(wideW * 0.68), 1080);
+  const narrowW = wideW >= 1040 ? Math.max(820, narrowRaw) : narrowRaw;
+  return Math.min(mediumW, narrowW);
+}
+
 const VALID_THEMES = new Set<ReaderTheme>(['paper', 'sepia', 'dark', 'midnight']);
 const VALID_FONTS = new Set<ReaderFont>(['serif', 'sans', 'mono']);
 const VALID_WIDTHS = new Set<ReaderWidth>(['narrow', 'medium', 'wide']);

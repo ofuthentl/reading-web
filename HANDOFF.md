@@ -1,14 +1,14 @@
 # HANDOFF
-Cập nhật: 2026-11-22 11:25 | Nhánh: feat/web-2d-enhancements | Build: 🟢 frontend (`<= 86.04 kB` gzip, `0 B` three) · 🟢 worker · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: **Hoàn tất trọn bộ 5 Phase Nâng cấp Web 2D (`D-029`)** — sẵn sàng deploy Worker & mở PR vào `main`.
+Cập nhật: 2026-11-22 19:08 | Nhánh: feat/web-2d-enhancements | Build: 🟢 frontend (`<= 86.04 kB` gzip, `0 B` three) · 🟢 worker · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: **Hoàn tất trọn bộ 5 Phase Nâng cấp Web 2D (`D-029`) & tinh chỉnh độ rộng / vạch chia trang** — sẵn sàng deploy Worker & mở PR vào `main`.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/web-2d-enhancements.md
 
 ## Đang làm dở
-- Đã hoàn tất trọn vẹn **Phase 1 → Phase 5** trên nhánh `feat/web-2d-enhancements` (`D-029`):
+- Đã hoàn tất trọn vẹn **Phase 1 → Phase 5** kèm các tinh chỉnh UI/UX trên nhánh `feat/web-2d-enhancements` (`D-029`):
   1. **Worker & D1 (`0005_bookmarks.sql`, `bookmarksDb.ts`, `weeklyPopular.ts`, `guestSearch.ts`, `r2Files.ts`):** xếp hạng từng Tập sách thịnh hành 7 ngày (`weeklyPopular`), CRUD dấu trang cách ly `owner` vs `guest:<discord_user_id>`, tìm chương khớp từ khoá cho `guest` (`0` lộ văn bản thô).
   2. **Trang chủ & Thư viện 2D (`EditorialBookStrip.tsx`, `Library2DView.tsx`, `LibraryFilterBar.tsx`, `useGuestLocalFavorites.ts`):** chuỗi 3 mục biên tập đồng bộ (**`01 Thịnh hành` *`tuần này`*** · **`02 Mới cập nhật` *`gần đây`*** · **`03 Thư viện` *`truyện`***; bỏ bóng đen lem dưới đáy thẻ, thanh cuộn tiệp màu 3 theme), lọc trạng thái/định dạng & sắp xếp, nhãn `MỚI`, gỡ nhanh *Tiếp tục đọc* & yêu thích cục bộ cho `guest`.
   3. **Giới thiệu & Thống kê (`BookInfoModal.tsx`, `ReadingStatsModal.tsx`, `ShelfDetailView.tsx`):** xem `book.description`, đánh dấu hoàn thành / đặt lại tiến độ 1 chạm, hiện mô tả bộ trên Hero kệ & bảng thống kê đọc 2D (`LV/XP`, trang đọc, nhật ký).
-  4. **Trình đọc nâng cao (`ReaderTopBar.tsx`, `useReaderController.ts`, `ReaderPaginatedView.tsx`, `GuestCanvasPaginatedView.tsx`, `guestCanvasPaint.ts`, `guestCanvasPages.ts`):** chế độ **Cuộn dọc ↔ Lật trang (2 cột)** sắc nét 100% vector (0 canvas phụ gây mờ chữ, hạt giấy mịn tiệp 100% màu trang không gãy ô vuông, vạch chia trang mảnh `1px`, giữ trọn độ rộng `Gọn/Vừa/Rộng`), nút **Đọc tiếp Tập kế →**, `Immersive Mode`, phím tắt `/`, `Ctrl+K`, `M`, `B`, `F`, ngăn kéo 3 tab & Lightbox zoom ảnh.
+  4. **Trình đọc nâng cao (`ReaderTopBar.tsx`, `useReaderController.ts`, `ReaderPaginatedView.tsx`, `GuestCanvasPaginatedView.tsx`, `GuestCanvasReader.tsx`, `readerConfig.ts`):** chế độ **Cuộn dọc ↔ Lật trang (2 cột)** sắc nét 100% vector (0 canvas phụ gây mờ chữ, hạt giấy tuần hoàn `2π` tiệp màu trang, vạch chia trang mảnh `1px` kéo thẳng sát từ thanh trên xuống thanh chân trang, sửa dứt điểm lỗi kẹt `760px` khi mới mở Cuộn dọc & lỗi nháy số trang vượt giới hạn khi đổi `Gọn/Vừa/Rộng`), nút **Đọc tiếp Tập kế →**, `Immersive Mode`, phím tắt `/`, `Ctrl+K`, `M`, `B`, `F`, ngăn kéo 3 tab & Lightbox zoom ảnh.
 
 ## Bước tiếp theo
 1. Deploy cập nhật Cloudflare Worker (`wrangler deploy` — bảng `book_bookmarks` tự khởi tạo an toàn).

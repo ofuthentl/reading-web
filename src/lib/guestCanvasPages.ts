@@ -167,41 +167,28 @@ export function paintGuestPaginatedCanvas(options: {
     });
   }
 
-  if (columns === 2) {
-    // Đường kẻ phân trang mảnh 1px tinh tế (thay cho vệt bóng nhoè cũ)
-    const dividerX = Math.round(columnWidth + columnGap / 2) + 0.5;
-    ctx.save();
-    ctx.strokeStyle = palette.divider;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(dividerX, 12);
-    ctx.lineTo(dividerX, pageHeight - 12);
-    ctx.stroke();
-    ctx.restore();
-
-    if (rightPage && rightPage.items.length > 0) {
-      const rightOffsetX = columnWidth + columnGap;
-      const shiftedRight = shiftColumnItems(
-        rightPage,
-        columnWidth,
-        rightOffsetX,
-        pageHeight,
-        hitRects,
-      );
-      drawCanvasLayoutItems({
-        ctx,
-        items: shiftedRight,
-        contentWidth: columnWidth,
-        offsetX: rightOffsetX,
-        sliceTop: 0,
-        sliceHeight: pageHeight,
-        canvasCssWidth: totalCssW,
-        palette,
-        font,
-        watermarkLabel,
-        bitmaps,
-      });
-    }
+  if (columns === 2 && rightPage && rightPage.items.length > 0) {
+    const rightOffsetX = columnWidth + columnGap;
+    const shiftedRight = shiftColumnItems(
+      rightPage,
+      columnWidth,
+      rightOffsetX,
+      pageHeight,
+      hitRects,
+    );
+    drawCanvasLayoutItems({
+      ctx,
+      items: shiftedRight,
+      contentWidth: columnWidth,
+      offsetX: rightOffsetX,
+      sliceTop: 0,
+      sliceHeight: pageHeight,
+      canvasCssWidth: totalCssW,
+      palette,
+      font,
+      watermarkLabel,
+      bitmaps,
+    });
   }
 
   return hitRects;

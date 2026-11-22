@@ -57,6 +57,15 @@ export const CANVAS_WIDTH_PX: Record<ReaderWidth, number> = {
   wide: 1352,
 };
 
+export function getInitialGuestStageBox(): { width: number; height: number } {
+  if (typeof window === 'undefined') return { width: 960, height: 720 };
+  const padX = window.innerWidth >= 640 ? 56 : 28;
+  return {
+    width: Math.max(240, window.innerWidth - padX),
+    height: Math.max(280, window.innerHeight - 64),
+  };
+}
+
 const FONT_STACK_MAP: Record<ReaderFont, string> = {
   serif: '"Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, Cambria, serif',
   sans: '"Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
@@ -394,4 +403,28 @@ export function computeChapterCanvasLayout(options: {
     totalHeight: Math.max(320, y + 24),
     items,
   };
+}
+
+export function findCanvasLayoutImageAtPoint(
+  layout: ChapterCanvasLayout,
+  stageWidth: number,
+  stageX: number,
+  stageY: number,
+): Extract<CanvasLayoutItem, { kind: 'image' }> | null {
+  if (stageY < 0 || stageY > layout.totalHeight) return null;
+  const offsetX = Math.max(0, Math.floor((stageWidth - layout.contentWidth) / 2));
+  for (const item of layout.items) {
+    if (item.kind !== 'image') continue;
+    const imgX = offsetX + Math.round((layout.contentWidth - item.drawWidth) / 2);
+    const imgY = item.y + 12;
+    if (
+      stageX >= imgX &&
+      stageX <= imgX + item.drawWidth &&
+      stageY >= imgY &&
+      stageY <= imgY + item.drawHeight
+    ) {
+      return item;
+    }
+  }
+  return null;
 }
