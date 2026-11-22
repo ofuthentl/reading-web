@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, Info } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Info, Lock } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
 import {
   computeBookProgressPercent,
@@ -52,6 +52,7 @@ function EditorialRankedCard({
   const clothColor = pickClothCoverColor(`${book.id}-${book.title}`);
   const percent = computeBookProgressPercent(book, progress);
   const isCompleted = Boolean(progress?.completed);
+  const isMemberLocked = sessionRole === 'guest' && Boolean(book.guest_locked);
   const guestLockLabel = getGuestLockLabel(book, sessionRole);
   const rankText = String(rankNumber).padStart(2, '0');
   const staggerDelayMs = ((rankNumber - 1) % 7) * 48;
@@ -135,8 +136,15 @@ function EditorialRankedCard({
       />
 
       {guestLockLabel && (
-        <span className="pointer-events-none absolute left-2 top-2 rounded border border-amber-300/35 bg-black/80 px-1.5 py-0.5 text-[10px] font-medium text-amber-200 backdrop-blur-sm">
-          {guestLockLabel}
+        <span
+          className={`pointer-events-none absolute left-2 top-2 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium backdrop-blur-sm ${
+            isMemberLocked
+              ? 'border-rose-300/40 bg-[#140b0e]/88 text-rose-100'
+              : 'border-amber-300/35 bg-black/80 text-amber-200'
+          }`}
+        >
+          {isMemberLocked && <Lock className="h-2.5 w-2.5 shrink-0" />}
+          <span>{guestLockLabel}</span>
         </span>
       )}
 

@@ -270,6 +270,7 @@ export function isRecentBookUpload(createdAt: string, withinDays = RECENT_UPLOAD
 
 export function getGuestLockLabel(book: Book, sessionRole?: AuthRole): string | null {
   if (sessionRole !== 'guest') return null;
+  if (book.guest_locked) return 'Giới hạn';
   if (book.file_type === 'pdf') return 'Chỉ Admin';
   if (book.guest_ready === false) return 'Chờ đồng bộ';
   return null;

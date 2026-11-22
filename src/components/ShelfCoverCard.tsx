@@ -1,5 +1,5 @@
 import { type CSSProperties, useEffect, useState } from 'react';
-import { FolderEdit, Image, Star } from 'lucide-react';
+import { FolderEdit, Image, Lock, Star } from 'lucide-react';
 import { pickClothCoverColor } from '@/lib/bookMetadata';
 import type { ShelfSummary } from '@/lib/shelfSummary';
 import {
@@ -15,6 +15,7 @@ interface ShelfCoverCardProps {
   onOpenShelf: (shelfKey: string) => void;
   onRenameShelf?: (shelfName: string) => void;
   onChangeShelfCover?: (summary: ShelfSummary) => void;
+  onManageAccess?: (summary: ShelfSummary) => void;
   onToggleFavorite?: (shelfName: string, nextFavorite: boolean) => void;
 }
 
@@ -24,6 +25,7 @@ export function ShelfCoverCard({
   onOpenShelf,
   onRenameShelf,
   onChangeShelfCover,
+  onManageAccess,
   onToggleFavorite,
 }: ShelfCoverCardProps) {
   const {
@@ -35,6 +37,8 @@ export function ShelfCoverCard({
     completedCount,
     readingStatus,
     progressPercent,
+    isGuestLocked,
+    accessSummary,
   } = summary;
 
   const { cardRef, isNearViewport, isRevealed } = useCardReveal<HTMLDivElement>();
@@ -51,8 +55,13 @@ export function ShelfCoverCard({
   const showImage = Boolean(coverUrl && !imgFailed);
   const clothColor = pickClothCoverColor(`${shelf.key}-${shelf.name}`);
 
-  const statusMeta =
-    readingStatus === 'completed'
+  const statusMeta = isGuestLocked
+    ? {
+        dotClass: 'bg-crimson-accent',
+        textClass: 'text-crimson-accent',
+        label: 'Giới hạn quyền đọc',
+      }
+    : readingStatus === 'completed'
       ? {
           dotClass: 'bg-emerald-600 dark:bg-emerald-400',
           textClass: 'text-emerald-700 dark:text-emerald-400',
@@ -135,7 +144,7 @@ export function ShelfCoverCard({
         )}
 
         {/* Nhóm nút thao tác kệ kín đáo khi hover */}
-        {(onRenameShelf || onChangeShelfCover) && (
+        {(onRenameShelf || onChangeShelfCover || onManageAccess) && (
           <div className="absolute left-2 top-2 flex items-center gap-1 opacity-85 transition-opacity focus-within:opacity-100 group-hover:opacity-100 sm:opacity-0">
             {onRenameShelf && (
               <button
@@ -165,6 +174,20 @@ export function ShelfCoverCard({
                 <Image className="h-3.5 w-3.5" />
               </button>
             )}
+            {onManageAccess && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onManageAccess(summary);
+                }}
+                aria-label={`Phân quyền đọc kệ ${shelf.name}`}
+                title="Phân quyền thành viên Discord"
+                className="rounded-lg border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] transition-colors hover:bg-[#16120f]"
+              >
+                <Lock className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         )}
 
@@ -187,6 +210,37 @@ export function ShelfCoverCard({
           >
             <Star className={`h-3.5 w-3.5 ${isFavorite ? 'fill-amber-400' : ''}`} />
           </button>
+        )}
+
+        {/* Huy hiệu ổ khoá khi bộ sách bị giới hạn cho khách hoặc nhãn quản trị cho Admin */}
+        {isGuestLocked && (
+          <>
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 bg-black/15 transition-colors duration-300 group-hover:bg-black/28"
+            />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-[#120b0e]/78 text-[#fce7eb] shadow-lg backdrop-blur-md transition-transform duration-300 group-hover:scale-105"
+            >
+              <Lock className="h-4 w-4" />
+            </span>
+            <span className="pointer-events-none absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md border border-rose-300/40 bg-[#140b0e]/88 px-2 py-0.5 text-[10.5px] font-semibold tracking-tight text-rose-100 backdrop-blur-sm">
+              <Lock className="h-2.5 w-2.5 shrink-0" />
+              <span>Giới hạn</span>
+            </span>
+          </>
+        )}
+
+        {!isGuestLocked && accessSummary?.mode === 'restricted' && (
+          <span className="pointer-events-none absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md border border-rose-300/35 bg-[#140b0e]/85 px-2 py-0.5 text-[10.5px] font-medium tracking-tight text-rose-100 backdrop-blur-sm">
+            <Lock className="h-2.5 w-2.5 shrink-0" />
+            <span>
+              {accessSummary.allowedCount > 0
+                ? `${accessSummary.allowedCount} người`
+                : 'Chỉ Admin'}
+            </span>
+          </span>
         )}
 
         {/* Badge số tập góc dưới-phải */}

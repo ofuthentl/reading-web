@@ -4,13 +4,12 @@ Nhiệm vụ hiện tại: **Triển khai Phân quyền Đọc theo Bộ cho Th�
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/shelf-member-access.md
 
 ## Đang làm dở
-- Đã hoàn tất **Phase 1 (`D-030`)** trên nhánh `feat/shelf-member-access`:
-  1. Bảng D1 `shelf_access_rules` + `shelf_guest_grants` (`0006_shelf_access.sql`, `shelfAccessDb.ts`, `adminRoutes.ts`) tự khởi tạo an toàn và tự hợp nhất giữ quyền khi đổi tên kệ.
-  2. Chốt chặn cứng `403 Forbidden` qua `assertGuestBookAccess` ở toàn bộ API mục lục, chương, ảnh, tìm kiếm, tiến độ & dấu trang của `guest`, kèm trả cờ `guest_locked` + `shelfAccess` trong `GET /api/books` và client `shelfAccessApi.ts`.
+- Đã hoàn tất **Phase 1 & Phase 2 (`D-030`)** trên nhánh `feat/shelf-member-access`:
+  1. Bảng D1 `shelf_access_rules` + `shelf_guest_grants` (`0006_shelf_access.sql`, `shelfAccessDb.ts`, `adminRoutes.ts`) tự khởi tạo an toàn, tự gộp quyền khi đổi tên kệ và chặn cứng `403 Forbidden` ở toàn bộ API khách.
+  2. Giao diện 2D (`BookCard`, `EditorialBookStrip`, `ShelfCoverCard`, `ShelfDetailView`, `BookInfoModal`, `useBookReader`, `nextVolume`): giữ nguyên ảnh bìa sắc nét nhưng đính biểu tượng ổ khoá `🔒 Giới hạn` rõ ràng cho khách không thuộc danh sách được cấp quyền, chặn mở lịch sự & tự bỏ qua tập bị khoá khi chuyển tập kế.
 
 ## Bước tiếp theo
-1. Triển khai **Phase 2**: hiển thị huy hiệu ổ khoá `🔒 Giới hạn` trên bìa sách & kệ cho `guest`, chặn mở lịch sự ở `useBookReader`, `ShelfDetailView`, `BookInfoModal` & `findNextBookInShelf`.
-2. Triển khai **Phase 3**: cửa sổ quản trị `ShelfAccessModal` trên Hero kệ + cập nhật `docs/ARCHITECTURE.md`.
+1. Triển khai **Phase 3**: cửa sổ quản trị `ShelfAccessModal` trên Hero kệ & thẻ kệ + nối state `shelfAccess` và cập nhật `docs/ARCHITECTURE.md`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.

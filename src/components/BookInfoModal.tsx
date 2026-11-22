@@ -1,13 +1,6 @@
 import { useEffect } from 'react';
 import {
-  BookOpen,
-  Calendar,
-  CheckCircle2,
-  HardDrive,
-  Library,
-  Pencil,
-  RotateCcw,
-  X,
+  BookOpen, Calendar, CheckCircle2, HardDrive, Library, Lock, Pencil, RotateCcw, X,
 } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
 import { formatBytes } from '@/lib/api';
@@ -61,6 +54,7 @@ export function BookInfoModal({
   const clothColor = pickClothCoverColor(`${book.id}-${book.title}`);
   const percent = computeBookProgressPercent(book, progress);
   const isCompleted = Boolean(progress?.completed);
+  const isMemberLocked = sessionRole === 'guest' && Boolean(book.guest_locked);
   const guestLockLabel = getGuestLockLabel(book, sessionRole);
   const shelfName = (book.shelf || 'Kho chưa phân loại').trim();
   const shelfKey = shelfName.toLocaleLowerCase('vi');
@@ -98,8 +92,15 @@ export function BookInfoModal({
               {book.file_type}
             </span>
             {guestLockLabel && (
-              <span className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                {guestLockLabel}
+              <span
+                className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium ${
+                  isMemberLocked
+                    ? 'border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+                    : 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                }`}
+              >
+                {isMemberLocked && <Lock className="h-3 w-3" />}
+                <span>{guestLockLabel}</span>
               </span>
             )}
           </div>
@@ -116,7 +117,7 @@ export function BookInfoModal({
 
         <div className="scrollbar-thin flex-1 overflow-y-auto px-5 py-5">
           <div className="grid gap-5 sm:grid-cols-[9.25rem_1fr]">
-            <div className="mx-auto aspect-[3/4] w-36 overflow-hidden rounded-xl border border-line bg-subtle shadow-sm sm:mx-0 sm:w-full">
+            <div className="relative mx-auto aspect-[3/4] w-36 overflow-hidden rounded-xl border border-line bg-subtle shadow-sm sm:mx-0 sm:w-full">
               {coverUrl ? (
                 <img src={coverUrl} alt={book.title} className="h-full w-full object-cover" />
               ) : (
@@ -129,6 +130,14 @@ export function BookInfoModal({
                   </p>
                   <p className="truncate text-[10px] opacity-85">{displayAuthor}</p>
                 </div>
+              )}
+              {isMemberLocked && (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-[#120b0e]/80 text-[#fce7eb] shadow-lg backdrop-blur-md"
+                >
+                  <Lock className="h-4 w-4" />
+                </span>
               )}
             </div>
 
@@ -208,7 +217,7 @@ export function BookInfoModal({
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-canvas/60 px-5 py-3.5">
           <div className="flex flex-wrap items-center gap-2">
-            {!isCompleted && (
+            {!isMemberLocked && !isCompleted && (
               <button
                 type="button"
                 onClick={() => onMarkCompleted(book)}
@@ -219,7 +228,7 @@ export function BookInfoModal({
               </button>
             )}
 
-            {progress && (
+            {!isMemberLocked && progress && (
               <button
                 type="button"
                 onClick={() => onResetProgress(book)}
@@ -246,17 +255,31 @@ export function BookInfoModal({
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                onOpenBook(book);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
-            >
-              <BookOpen className="h-4 w-4" />
-              {progress && !isCompleted ? 'Đọc tiếp' : 'Đọc sách'}
-            </button>
+            {isMemberLocked ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenBook(book);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-rose-600/35 bg-rose-600/10 px-4 py-2 text-xs font-medium text-rose-800 transition-colors hover:bg-rose-600/15 dark:border-rose-400/35 dark:text-rose-200"
+              >
+                <Lock className="h-3.5 w-3.5" />
+                Chỉ dành cho thành viên được cấp quyền
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenBook(book);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
+              >
+                <BookOpen className="h-4 w-4" />
+                {progress && !isCompleted ? 'Đọc tiếp' : 'Đọc sách'}
+              </button>
+            )}
           </div>
         </div>
       </div>

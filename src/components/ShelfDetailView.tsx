@@ -1,16 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ArrowLeft,
-  BookMarked,
-  BookOpen,
-  FileText,
-  FolderEdit,
-  FolderInput,
-  Image,
-  Search,
-  Star,
-  Trash2,
-  X,
+  ArrowLeft, BookMarked, BookOpen, FileText, FolderEdit, FolderInput,
+  Image, Lock, Search, Star, Trash2, Users, X,
 } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
 import { formatBytes } from '@/lib/api';
@@ -37,6 +28,7 @@ interface ShelfDetailViewProps {
   onRenameShelf?: (shelfName: string) => void;
   onChangeShelfCover?: (summary: ShelfSummary) => void;
   onOpenBatchNotes?: () => void;
+  onManageAccess?: () => void;
   onToggleFavorite?: (shelfName: string, nextFavorite: boolean) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
@@ -59,6 +51,7 @@ export function ShelfDetailView({
   onRenameShelf,
   onChangeShelfCover,
   onOpenBatchNotes,
+  onManageAccess,
   onToggleFavorite,
   onMoveSelectedToShelf,
   onDeleteSelected,
@@ -75,6 +68,8 @@ export function ShelfDetailView({
     totalBytes,
     resumeBook,
     resumeActionLabel,
+    isGuestLocked,
+    accessSummary,
   } = summary;
 
   const [volumeQuery, setVolumeQuery] = useState('');
@@ -127,8 +122,13 @@ export function ShelfDetailView({
   const allDisplayedSelected =
     displayedBooks.length > 0 && displayedBooks.every((book) => selectedIds.has(book.id));
 
-  const statusBadge =
-    readingStatus === 'completed'
+  const statusBadge = isGuestLocked
+    ? {
+        className:
+          'border-rose-600/35 bg-rose-600/10 text-rose-700 dark:border-rose-400/35 dark:text-rose-300',
+        label: '🔒 Giới hạn quyền đọc',
+      }
+    : readingStatus === 'completed'
       ? {
           className:
             'border-emerald-600/30 bg-emerald-600/10 text-emerald-700 dark:border-emerald-400/30 dark:text-emerald-300',
@@ -189,6 +189,15 @@ export function ShelfDetailView({
               </p>
               <p className="truncate pl-2 text-[10px] text-[#e6d5b8]/85">{authorLabel}</p>
             </div>
+          )}
+
+          {isGuestLocked && (
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-[#120b0e]/80 text-[#fce7eb] shadow-lg backdrop-blur-md"
+            >
+              <Lock className="h-4 w-4" />
+            </span>
           )}
 
           {onChangeShelfCover && shelf.books.some((b) => Boolean(b.cover_key)) && (
@@ -259,16 +268,26 @@ export function ShelfDetailView({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {resumeBook && (
-              <button
-                type="button"
-                onClick={() => onOpenBook(resumeBook)}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
-              >
-                <BookOpen className="h-4 w-4" />
-                <span>{resumeActionLabel}</span>
-              </button>
-            )}
+            {resumeBook &&
+              (isGuestLocked ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenBook(resumeBook)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-rose-600/35 bg-rose-600/10 px-4 py-2 text-sm font-medium text-rose-800 transition-colors hover:bg-rose-600/15 dark:border-rose-400/35 dark:text-rose-200"
+                >
+                  <Lock className="h-4 w-4" />
+                  <span>Cần cấp quyền đọc</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onOpenBook(resumeBook)}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
+                >
+                  <BookOpen className="h-4 w-4" />
+                  <span>{resumeActionLabel}</span>
+                </button>
+              ))}
 
             {onToggleFavorite && (
               <button
@@ -326,6 +345,32 @@ export function ShelfDetailView({
                     {missingNoteCount}
                   </span>
                 )}
+              </button>
+            )}
+
+            {onManageAccess && (
+              <button
+                type="button"
+                onClick={onManageAccess}
+                title="Chọn thành viên Discord được phép đọc bộ truyện này"
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-medium transition-colors ${
+                  accessSummary?.mode === 'restricted'
+                    ? 'border-crimson-accent/45 bg-crimson-accent/10 text-crimson-accent hover:bg-crimson-accent/15'
+                    : 'border-line bg-canvas text-ink hover:border-line-strong hover:bg-subtle'
+                }`}
+              >
+                {accessSummary?.mode === 'restricted' ? (
+                  <Lock className="h-4 w-4" />
+                ) : (
+                  <Users className="h-4 w-4 text-ink-muted" />
+                )}
+                <span>
+                  {accessSummary?.mode === 'restricted'
+                    ? accessSummary.allowedCount > 0
+                      ? `Giới hạn (${accessSummary.allowedCount} người)`
+                      : 'Giới hạn (Chỉ Admin)'
+                    : 'Phân quyền'}
+                </span>
               </button>
             )}
           </div>

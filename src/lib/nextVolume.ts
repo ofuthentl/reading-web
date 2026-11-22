@@ -30,6 +30,9 @@ export function findNextBookInShelf(
 
   for (let i = currentIdx + 1; i < sameShelf.length; i += 1) {
     const candidate = sameShelf[i];
+    if (sessionRole === 'guest' && candidate.guest_locked) {
+      continue;
+    }
     if (isCloudMode && sessionRole === 'guest') {
       if (candidate.file_type === 'pdf' || candidate.guest_ready === false) {
         continue;

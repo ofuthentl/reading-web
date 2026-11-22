@@ -1,4 +1,4 @@
-import type { Book, ReadingProgress, ShelfGroup } from '@/types';
+import type { Book, ReadingProgress, ShelfAccessSummary, ShelfGroup } from '@/types';
 import {
   TITLE_ENDS_WITH_BARE_VOL_RE,
   computeBookProgressPercent,
@@ -80,6 +80,8 @@ export interface ShelfSummary {
   resumeBook: Book | null;
   resumeActionLabel: string;
   latestReadAt: number | null;
+  isGuestLocked: boolean;
+  accessSummary: ShelfAccessSummary | null;
 }
 
 function normalizeKey(value: string): string {
@@ -332,6 +334,7 @@ export function summarizeShelf(
   progress: Record<string, ReadingProgress>,
   shelfCovers?: Readonly<Record<string, string>>,
   favoriteShelfKeys?: ReadonlySet<string>,
+  accessSummary?: ShelfAccessSummary | null,
 ): ShelfSummary {
   const rawPreferredId = shelfCovers?.[shelf.key] ?? null;
   const validCustomBook = rawPreferredId
@@ -380,6 +383,8 @@ export function summarizeShelf(
     autoStartBook,
   );
 
+  const isGuestLocked = bookCount > 0 && shelf.books.every((book) => Boolean(book.guest_locked));
+
   return {
     shelf,
     coverBook,
@@ -395,5 +400,7 @@ export function summarizeShelf(
     resumeBook,
     resumeActionLabel,
     latestReadAt,
+    isGuestLocked,
+    accessSummary: accessSummary ?? null,
   };
 }

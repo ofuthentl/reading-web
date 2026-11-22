@@ -1,5 +1,5 @@
 import { type CSSProperties, useEffect, useState } from 'react';
-import { Check, CheckCircle2, Info, Pencil, X } from 'lucide-react';
+import { Check, CheckCircle2, Info, Lock, Pencil, X } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
 import { formatBytes } from '@/lib/api';
 import {
@@ -80,6 +80,7 @@ export function BookCard({
   const percent = computeBookProgressPercent(book, progress);
   const chapterLabel = getProgressChapterLabel(book, progress);
   const isCompleted = Boolean(progress?.completed);
+  const isMemberLocked = sessionRole === 'guest' && Boolean(book.guest_locked);
   const guestLockLabel = getGuestLockLabel(book, sessionRole);
   const isNew = !guestLockLabel && isRecentBookUpload(book.created_at);
   const staggerDelayMs = (staggerIndex % 6) * 48;
@@ -152,16 +153,41 @@ export function BookCard({
         {book.file_type}
       </span>
 
-      {/* Nhãn MỚI hoặc trạng thái gói bảo mật khách */}
+      {/* Huy hiệu ổ khoá cho tập bị giới hạn quyền đọc (vẫn giữ nguyên ảnh bìa) */}
+      {isMemberLocked && (
+        <>
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-black/15 transition-colors duration-300 group-hover:bg-black/28"
+          />
+          {compact ? (
+            <span className="pointer-events-none absolute bottom-1 left-1 inline-flex items-center justify-center rounded border border-rose-300/40 bg-[#140b0e]/85 p-1 text-rose-200 backdrop-blur-sm">
+              <Lock className="h-2.5 w-2.5" />
+            </span>
+          ) : (
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-[#120b0e]/78 text-[#fce7eb] shadow-lg backdrop-blur-md transition-transform duration-300 group-hover:scale-105"
+            >
+              <Lock className="h-4 w-4" />
+            </span>
+          )}
+        </>
+      )}
+
+      {/* Nhãn MỚI hoặc trạng thái gói bảo mật / giới hạn khách */}
       {!compact && (guestLockLabel || isNew) && (
         <span
-          className={`pointer-events-none absolute bottom-2 left-1.5 rounded border px-1.5 py-0.5 text-[9.5px] font-semibold tracking-wide backdrop-blur-sm ${
-            guestLockLabel
-              ? 'border-amber-300/35 bg-black/80 text-amber-200'
-              : 'border-[#f5b3b3]/35 bg-[#8f1818]/90 text-white'
+          className={`pointer-events-none absolute bottom-2 left-1.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9.5px] font-semibold tracking-wide backdrop-blur-sm ${
+            isMemberLocked
+              ? 'border-rose-300/40 bg-[#140b0e]/88 text-rose-100'
+              : guestLockLabel
+                ? 'border-amber-300/35 bg-black/80 text-amber-200'
+                : 'border-[#f5b3b3]/35 bg-[#8f1818]/90 text-white'
           }`}
         >
-          {guestLockLabel || 'MỚI'}
+          {isMemberLocked && <Lock className="h-2.5 w-2.5 shrink-0" />}
+          <span>{guestLockLabel || 'MỚI'}</span>
         </span>
       )}
 
