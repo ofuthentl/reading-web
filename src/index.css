@@ -460,3 +460,120 @@
     display: none !important;
   }
 }
+
+/* Bộ con trỏ pixel-art Hatsune Miku (chỉ nạp trên thiết bị chuột/trackpad có hover) */
+@media (hover: hover) and (pointer: fine) {
+  :root {
+    --cursor-default: url('./assets/cursors/miku-normal.png') 1 0, auto;
+    --cursor-pointer: url('./assets/cursors/miku-link.png') 4 0, pointer;
+    --cursor-text: url('./assets/cursors/miku-text.png') 4 9, text;
+    --cursor-not-allowed: url('./assets/cursors/miku-unavailable.png') 7 7, not-allowed;
+    --cursor-wait: url('./assets/cursors/miku-busy.png') 15 15, wait;
+    --cursor-progress: url('./assets/cursors/miku-working.png') 1 1, progress;
+    --cursor-help: url('./assets/cursors/miku-help.png') 1 0, help;
+    --cursor-move: url('./assets/cursors/miku-move.png') 15 15, move;
+    --cursor-precision: url('./assets/cursors/miku-precision.png') 5 6, crosshair;
+    --cursor-ew-resize: url('./assets/cursors/miku-horizontal.png') 15 15, ew-resize;
+    --cursor-ns-resize: url('./assets/cursors/miku-vertical.png') 15 15, ns-resize;
+    --cursor-heart: url('./assets/cursors/miku-heart.png') 4 3, pointer;
+    --cursor-pen: url('./assets/cursors/miku-pen.png') 0 0, pointer;
+  }
+
+  html,
+  body,
+  .cursor-default {
+    cursor: var(--cursor-default);
+  }
+
+  a[href],
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  summary,
+  select:not(:disabled),
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  input[type='range']:not(:disabled),
+  input[type='file']:not(:disabled),
+  input[type='submit']:not(:disabled),
+  input[type='button']:not(:disabled),
+  label[for],
+  .cursor-pointer,
+  .cursor-zoom-out {
+    cursor: var(--cursor-pointer);
+  }
+
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='submit']):not([type='button']):not(:disabled),
+  textarea:not(:disabled),
+  [contenteditable='true'],
+  .reading-content p,
+  .reading-content li,
+  .reading-content blockquote,
+  .cursor-text {
+    cursor: var(--cursor-text);
+  }
+
+  .reading-content a[href] {
+    cursor: var(--cursor-pointer);
+  }
+
+  .reading-content img,
+  .cursor-zoom-in,
+  .cursor-crosshair {
+    cursor: var(--cursor-precision);
+  }
+
+  button[aria-label*='Chỉnh sửa']:not(:disabled),
+  button[aria-label*='Đổi tên']:not(:disabled),
+  button[title*='ghi chú']:not(:disabled),
+  .cursor-miku-pen {
+    cursor: var(--cursor-pen);
+  }
+
+  button[aria-label*='yêu thích' i]:not(:disabled),
+  [aria-label*='Ủng hộ'] button:not(:disabled),
+  [aria-label*='Ủng hộ'] a[href],
+  .cursor-miku-heart {
+    cursor: var(--cursor-heart);
+  }
+
+  .cursor-move,
+  .cursor-grab,
+  .cursor-grabbing,
+  .active\:cursor-grabbing:active {
+    cursor: var(--cursor-move);
+  }
+
+  .cursor-ew-resize,
+  .cursor-col-resize {
+    cursor: var(--cursor-ew-resize);
+  }
+
+  .cursor-ns-resize,
+  .cursor-row-resize {
+    cursor: var(--cursor-ns-resize);
+  }
+
+  .cursor-wait {
+    cursor: var(--cursor-wait);
+  }
+
+  .cursor-progress {
+    cursor: var(--cursor-progress);
+  }
+
+  .cursor-help {
+    cursor: var(--cursor-help);
+  }
+
+  :disabled,
+  button:disabled,
+  input:disabled,
+  select:disabled,
+  textarea:disabled,
+  label:has(> input:disabled),
+  [aria-disabled='true'],
+  .cursor-not-allowed,
+  .disabled\:cursor-not-allowed:disabled {
+    cursor: var(--cursor-not-allowed);
+  }
+}

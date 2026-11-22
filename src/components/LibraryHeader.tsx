@@ -228,7 +228,7 @@ export function LibraryHeader({
             >
               <Shield className="h-4 w-4 text-accent" />
               {unprotectedBookCount > 0 && (
-                <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-300">
+                <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-500/20 px-1.5 text-[10px] font-bold leading-none tabular-nums text-amber-700 dark:text-amber-300">
                   {unprotectedBookCount}
                 </span>
               )}

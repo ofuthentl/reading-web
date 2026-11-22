@@ -18,3 +18,15 @@ createRoot(document.getElementById('root')!).render(
     </ErrorBoundary>
   </StrictMode>,
 );
+
+if (
+  typeof window !== 'undefined' &&
+  window.matchMedia('(hover: hover) and (pointer: fine)').matches &&
+  !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+) {
+  window.setTimeout(() => {
+    void import('@/lib/mikuCursorAnimator')
+      .then((mod) => mod.startMikuCursorAnimation())
+      .catch(() => undefined);
+  }, 300);
+}
