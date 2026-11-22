@@ -307,9 +307,11 @@ export default function App() {
         loadedFromCache={reader.loadedFromCache}
         settings={reader.settings}
         session={session}
+        books={store.books}
         progress={store.progress}
         onUpdateSettings={reader.updateSettings}
         onSaveProgress={reader.handleSaveProgress}
+        onOpenBook={(book: Book) => void reader.openBook(book)}
         onApiError={handleApiError}
         onClose={reader.closeBook}
       />

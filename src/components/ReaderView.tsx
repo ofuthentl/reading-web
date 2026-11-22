@@ -1,20 +1,12 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import {
-  ArrowLeft,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  HardDrive,
-  List,
-  Loader2,
-  Sparkles,
-  Type,
-} from 'lucide-react';
+import { lazy, Suspense, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { HardDrive, Loader2, Sparkles } from 'lucide-react';
 import type { Book, ParsedBook, ReaderSettings, ReadingProgress } from '@/types';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { PdfReaderFallback } from '@/components/PdfReaderFallback';
-import { ReaderSettingsPopover } from '@/components/ReaderSettingsPopover';
+import { ReaderChapterEndNav } from '@/components/ReaderChapterEndNav';
 import { ReaderTocDrawer } from '@/components/ReaderTocDrawer';
+import { ReaderTopBar } from '@/components/ReaderTopBar';
+import { useReaderController } from '@/hooks/useReaderController';
 import {
   READER_FONT_CLASS,
   READER_THEME_STYLES,
@@ -25,14 +17,22 @@ const LazyPdfReader = lazy(() =>
   import('@/components/PdfReader').then((mod) => ({ default: mod.PdfReader })),
 );
 
+const LazyReaderImageLightbox = lazy(() =>
+  import('@/components/ReaderImageLightbox').then((mod) => ({
+    default: mod.ReaderImageLightbox,
+  })),
+);
+
 type ReaderViewProps = {
   book: Book;
   parsedBook: ParsedBook;
   loadedFromCache: boolean;
   initialProgress?: ReadingProgress;
+  nextBook?: Book | null;
   settings: ReaderSettings;
   onUpdateSettings: (next: Partial<ReaderSettings>) => void;
   onSaveProgress: (progress: ReadingProgress) => void;
+  onOpenNextBook?: (nextBook: Book) => void;
   onClose: () => void;
 };
 
@@ -41,9 +41,11 @@ export function ReaderView({
   parsedBook,
   loadedFromCache,
   initialProgress,
+  nextBook,
   settings,
   onUpdateSettings,
   onSaveProgress,
+  onOpenNextBook,
   onClose,
 }: ReaderViewProps) {
   const { chapters, pdfBlobUrl } = parsedBook;
@@ -57,9 +59,7 @@ export function ReaderView({
   }, [chapters, initialProgress]);
 
   const [chapterIndex, setChapterIndex] = useState(initialIdx);
-  const [tocOpen, setTocOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [chapterScrollPercent, setChapterScrollPercent] = useState(0);
+  const [chapterScrollRatio, setChapterScrollRatio] = useState(0);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const restoreTargetRatioRef = useRef<number | null>(
@@ -68,53 +68,63 @@ export function ReaderView({
       : null,
   );
   const suppressSaveRef = useRef(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingProgressRef = useRef<ReadingProgress | null>(null);
-  const completedRef = useRef(Boolean(initialProgress?.completed));
+  const goPrevRef = useRef<() => void>(() => undefined);
+  const goNextRef = useRef<() => void>(() => undefined);
+
+  const ctrl = useReaderController({
+    initialCompleted: Boolean(initialProgress?.completed),
+    isPdf,
+    settings,
+    onSaveProgress,
+    onPrev: () => goPrevRef.current(),
+    onNext: () => goNextRef.current(),
+  });
+  const {
+    tocOpen,
+    setTocOpen,
+    drawerTab,
+    settingsOpen,
+    setSettingsOpen,
+    immersiveHidden,
+    setImmersiveHidden,
+    lightboxTarget,
+    setLightboxTarget,
+    lastScrollTopRef,
+    completedRef,
+    flushProgress,
+    queueProgressSave,
+    openDrawerTab,
+    updateImmersiveOnScroll,
+  } = ctrl;
 
   const currentChapter = chapters[chapterIndex];
   const palette = READER_THEME_STYLES[settings.theme];
 
-  const flushProgress = useCallback(() => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-    if (pendingProgressRef.current) {
-      onSaveProgress(pendingProgressRef.current);
-      pendingProgressRef.current = null;
-    }
-  }, [onSaveProgress]);
-
-  const queueProgressSave = useCallback(
-    (progress: ReadingProgress, immediate = false) => {
-      pendingProgressRef.current = progress;
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      if (immediate) {
-        flushProgress();
-      } else {
-        saveTimerRef.current = setTimeout(flushProgress, 600);
-      }
-    },
-    [flushProgress],
-  );
-
-  useEffect(() => () => flushProgress(), [flushProgress]);
-
   const goToChapter = useCallback(
-    (nextIndex: number) => {
+    (nextIndex: number, targetRatio = 0) => {
       const clamped = Math.max(0, Math.min(nextIndex, chapters.length - 1));
       const target = chapters[clamped];
       if (!target) return;
 
-      suppressSaveRef.current = true;
-      restoreTargetRatioRef.current = 0;
-      setChapterIndex(clamped);
+      const safeRatio = Math.min(1, Math.max(0, targetRatio));
       setTocOpen(false);
+      setImmersiveHidden(false);
+
+      if (clamped === chapterIndex && !isPdf && scrollContainerRef.current) {
+        const el = scrollContainerRef.current;
+        const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+        el.scrollTop = Math.round(maxScroll * safeRatio);
+        return;
+      }
+
+      suppressSaveRef.current = true;
+      restoreTargetRatioRef.current = safeRatio;
+      lastScrollTopRef.current = 0;
+      setChapterIndex(clamped);
 
       const isCompleted = completedRef.current || (isPdf && clamped === chapters.length - 1);
       completedRef.current = isCompleted;
-      const pdfRatio = isPdf && chapters.length > 0 ? (clamped + 1) / chapters.length : 0;
+      const pdfRatio = isPdf && chapters.length > 0 ? (clamped + 1) / chapters.length : safeRatio;
 
       queueProgressSave(
         {
@@ -130,7 +140,16 @@ export function ReaderView({
         true,
       );
     },
-    [chapters, isPdf, queueProgressSave],
+    [
+      chapterIndex,
+      chapters,
+      completedRef,
+      isPdf,
+      lastScrollTopRef,
+      queueProgressSave,
+      setImmersiveHidden,
+      setTocOpen,
+    ],
   );
 
   const goPrev = useCallback(() => {
@@ -141,36 +160,19 @@ export function ReaderView({
     if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1);
   }, [chapterIndex, chapters.length, goToChapter]);
 
-  // Safe keyboard navigation: ignores inputs/textareas and Escape closes panels
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const isTyping =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target?.isContentEditable;
-
-      if (event.key === 'Escape') {
-        if (tocOpen) setTocOpen(false);
-        else if (settingsOpen) setSettingsOpen(false);
-        return;
-      }
-
-      if (isTyping || !settings.sideTapNavigation) return;
-      if (event.key === 'ArrowLeft') goPrev();
-      else if (event.key === 'ArrowRight') goNext();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [goNext, goPrev, settings.sideTapNavigation, settingsOpen, tocOpen]);
+  goPrevRef.current = goPrev;
+  goNextRef.current = goNext;
 
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current;
     if (!el || !currentChapter || isPdf) return;
 
+    const currentTop = el.scrollTop;
+    updateImmersiveOnScroll(currentTop, suppressSaveRef.current);
+
     const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
-    const ratio = maxScroll > 0 ? Math.min(1, Math.max(0, el.scrollTop / maxScroll)) : 1;
-    setChapterScrollPercent(Math.round(ratio * 100));
+    const ratio = maxScroll > 0 ? Math.min(1, Math.max(0, currentTop / maxScroll)) : 1;
+    setChapterScrollRatio(ratio);
 
     if (suppressSaveRef.current) return;
 
@@ -185,15 +187,22 @@ export function ReaderView({
         chapterTitle: currentChapter.title,
         totalChapters: chapters.length,
         scrollRatio: ratio,
-        scrollTop: el.scrollTop,
+        scrollTop: currentTop,
         completed: completedRef.current,
         updatedAt: Date.now(),
       },
       reachedEndOfBook,
     );
-  }, [chapterIndex, chapters.length, currentChapter, isPdf, queueProgressSave]);
+  }, [
+    chapterIndex,
+    chapters.length,
+    completedRef,
+    currentChapter,
+    isPdf,
+    queueProgressSave,
+    updateImmersiveOnScroll,
+  ]);
 
-  // Restore scroll position smoothly by ratio (survives font size & screen width changes)
   useLayoutEffect(() => {
     if (isPdf || !currentChapter || !scrollContainerRef.current) return;
     suppressSaveRef.current = true;
@@ -206,6 +215,7 @@ export function ReaderView({
       if (!el) return;
       const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
       el.scrollTop = Math.round(maxScroll * targetRatio);
+      lastScrollTopRef.current = el.scrollTop;
       tries += 1;
       if (tries < 4) {
         frame = requestAnimationFrame(apply);
@@ -217,121 +227,109 @@ export function ReaderView({
     };
     frame = requestAnimationFrame(apply);
     return () => cancelAnimationFrame(frame);
-  }, [currentChapter, handleScroll, isPdf]);
+  }, [currentChapter, handleScroll, isPdf, lastScrollTopRef]);
+
+  const completeBook = useCallback(
+    (targetNextBook?: Book) => {
+      if (currentChapter) {
+        completedRef.current = true;
+        queueProgressSave(
+          {
+            chapterId: currentChapter.id,
+            chapterIndex,
+            chapterTitle: currentChapter.title,
+            totalChapters: chapters.length,
+            scrollRatio: 1,
+            scrollTop: scrollContainerRef.current?.scrollTop || 0,
+            completed: true,
+            updatedAt: Date.now(),
+          },
+          true,
+        );
+      }
+      if (targetNextBook && onOpenNextBook) onOpenNextBook(targetNextBook);
+      else onClose();
+    },
+    [chapterIndex, chapters.length, completedRef, currentChapter, onClose, onOpenNextBook, queueProgressSave],
+  );
 
   const overallPercent = useMemo(() => {
     if (chapters.length === 0) return 0;
     if (isPdf) return Math.round(((chapterIndex + 1) / chapters.length) * 100);
     const base = chapterIndex / chapters.length;
-    const intra = chapterScrollPercent / 100 / chapters.length;
+    const intra = chapterScrollRatio / chapters.length;
     return Math.min(100, Math.round((base + intra) * 100));
-  }, [chapterIndex, chapterScrollPercent, chapters.length, isPdf]);
+  }, [chapterIndex, chapterScrollRatio, chapters.length, isPdf]);
+
+  const cacheBadge = (
+    <span
+      className={`hidden items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] md:inline-flex ${palette.border} ${palette.textSecondary}`}
+      title={
+        loadedFromCache
+          ? 'Đọc tức thì từ bộ nhớ đệm IndexedDB (0ms)'
+          : 'Đã tải từ Cloudflare R2 & lưu vào cache'
+      }
+    >
+      {loadedFromCache ? (
+        <HardDrive className="h-3 w-3 text-emerald-500" />
+      ) : (
+        <Sparkles className="h-3 w-3 text-amber-500" />
+      )}
+      {loadedFromCache ? 'Cache 0ms' : 'R2 Ready'}
+    </span>
+  );
 
   return (
     <div
-      className={`flex h-screen flex-col overflow-hidden transition-colors duration-200 ${
+      className={`relative flex h-screen flex-col overflow-hidden transition-colors duration-200 ${
         isPdf ? 'bg-canvas text-ink' : `${palette.pageBg} ${palette.textPrimary}`
       }`}
     >
-      {/* Slim Reader Header */}
-      <header
-        className={`relative z-30 flex h-[3.25rem] shrink-0 items-center justify-between border-b px-3 backdrop-blur-md sm:px-5 ${
-          isPdf ? 'border-line bg-surface/95' : `${palette.headerBg} ${palette.border}`
-        }`}
-      >
-        <div className="flex min-w-0 items-center gap-1.5 sm:gap-2.5">
-          <button
-            type="button"
-            onClick={() => {
-              flushProgress();
-              onClose();
-            }}
-            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition ${palette.hover}`}
-            title="Quay lại Thư viện"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span className="hidden sm:inline">Thư viện</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSettingsOpen(false);
-              setTocOpen(true);
-            }}
-            className={`rounded-lg p-2 transition ${palette.hover}`}
-            aria-label="Mở mục lục"
-            title="Mục lục chương"
-          >
-            <List className="h-4 w-4" />
-          </button>
-
-          <div className="min-w-0 pl-1">
-            <p className="truncate font-display text-sm font-semibold leading-tight">
-              {book.title}
-            </p>
-            <p className={`truncate text-[11px] ${palette.textSecondary}`}>
-              {currentChapter?.title} · {overallPercent}%
-            </p>
-          </div>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1.5">
-          <span
-            className={`hidden items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] md:inline-flex ${palette.border} ${palette.textSecondary}`}
-            title={
-              loadedFromCache
-                ? 'Đọc tức thì từ bộ nhớ đệm IndexedDB (0ms)'
-                : 'Đã tải từ Cloudflare R2 & lưu vào cache'
-            }
-          >
-            {loadedFromCache ? (
-              <HardDrive className="h-3 w-3 text-emerald-500" />
-            ) : (
-              <Sparkles className="h-3 w-3 text-amber-500" />
-            )}
-            {loadedFromCache ? 'Cache 0ms' : 'R2 Ready'}
-          </span>
-
-          {!isPdf && (
-            <button
-              type="button"
-              onClick={() => {
-                setTocOpen(false);
-                setSettingsOpen((v) => !v);
-              }}
-              className={`rounded-lg p-2 transition ${settingsOpen ? palette.active : palette.hover}`}
-              aria-label="Tùy chỉnh trình đọc"
-              title="Cài đặt đọc sách"
-            >
-              <Type className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-
-        {settingsOpen && !isPdf && (
-          <ReaderSettingsPopover
-            settings={settings}
-            palette={palette}
-            onUpdateSettings={onUpdateSettings}
-            onClose={() => setSettingsOpen(false)}
-          />
-        )}
-      </header>
+      <ReaderTopBar
+        bookTitle={book.title}
+        chapterTitle={currentChapter?.title}
+        overallPercent={overallPercent}
+        isPdf={isPdf}
+        immersiveHidden={immersiveHidden}
+        settingsOpen={settingsOpen}
+        settings={settings}
+        palette={palette}
+        statusBadge={cacheBadge}
+        onBack={() => {
+          flushProgress();
+          onClose();
+        }}
+        onOpenDrawerTab={openDrawerTab}
+        onHideToolbar={() => {
+          setSettingsOpen(false);
+          setImmersiveHidden(true);
+        }}
+        onToggleSettings={() => {
+          setTocOpen(false);
+          setSettingsOpen((v) => !v);
+        }}
+        onCloseSettings={() => setSettingsOpen(false)}
+        onUpdateSettings={onUpdateSettings}
+      />
 
       {tocOpen && (
         <ReaderTocDrawer
           book={book}
           chapters={chapters}
+          parsedChapters={isPdf ? undefined : chapters}
           activeIndex={chapterIndex}
+          currentChapterId={currentChapter?.id || ''}
+          currentChapterTitle={currentChapter?.title || ''}
+          currentScrollRatio={isPdf ? 0 : chapterScrollRatio}
+          initialTab={drawerTab}
           isPdf={isPdf}
           palette={palette}
-          onSelectChapter={goToChapter}
+          onSelectChapter={(idx) => goToChapter(idx, 0)}
+          onJumpToBookmark={goToChapter}
           onClose={() => setTocOpen(false)}
         />
       )}
 
-      {/* Main Content Area */}
       {isPdf && pdfBlobUrl ? (
         <ErrorBoundary
           fallback={(errorMessage) => (
@@ -370,17 +368,28 @@ export function ReaderView({
               setSettingsOpen(false);
               return;
             }
-            if (!settings.sideTapNavigation) return;
             const selection = window.getSelection()?.toString();
             if (selection) return;
+
             const target = event.target as HTMLElement | null;
+            const clickedImg = target?.closest('.reading-content img') as HTMLImageElement | null;
+            if (clickedImg?.src) {
+              setLightboxTarget({
+                kind: 'dom',
+                src: clickedImg.src,
+                alt: clickedImg.alt || book.title,
+              });
+              return;
+            }
+
             if (target?.closest('button, a, input, select, textarea')) return;
             const rect = event.currentTarget.getBoundingClientRect();
             const ratio = (event.clientX - rect.left) / rect.width;
-            if (ratio < 0.16) goPrev();
-            else if (ratio > 0.84) goNext();
+            if (settings.sideTapNavigation && ratio < 0.16) goPrev();
+            else if (settings.sideTapNavigation && ratio > 0.84) goNext();
+            else if (immersiveHidden && ratio >= 0.22 && ratio <= 0.78) setImmersiveHidden(false);
           }}
-          className="scrollbar-thin flex-1 overflow-y-auto px-4 py-8 sm:px-8 sm:py-12"
+          className="scrollbar-thin flex-1 overflow-y-auto px-4 pb-8 pt-[4.75rem] sm:px-8 sm:pb-12 sm:pt-20"
         >
           {currentChapter && (
             <article
@@ -413,60 +422,16 @@ export function ReaderView({
                 )}
               </div>
 
-              <nav
-                className={`mt-14 flex items-center justify-between gap-3 border-t pb-8 pt-6 ${palette.border}`}
-              >
-                <button
-                  type="button"
-                  onClick={goPrev}
-                  disabled={chapterIndex === 0}
-                  className={`flex items-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-30 ${palette.border} ${palette.hover}`}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  <span>Trước</span>
-                </button>
-
-                {chapterIndex === chapters.length - 1 ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      completedRef.current = true;
-                      queueProgressSave(
-                        {
-                          chapterId: currentChapter.id,
-                          chapterIndex,
-                          chapterTitle: currentChapter.title,
-                          totalChapters: chapters.length,
-                          scrollRatio: 1,
-                          scrollTop: scrollContainerRef.current?.scrollTop || 0,
-                          completed: true,
-                          updatedAt: Date.now(),
-                        },
-                        true,
-                      );
-                      onClose();
-                    }}
-                    className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-500"
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    <span>Hoàn thành cuốn này!</span>
-                  </button>
-                ) : (
-                  <span className={`text-xs tabular-nums ${palette.textSecondary}`}>
-                    {chapterIndex + 1} / {chapters.length}
-                  </span>
-                )}
-
-                <button
-                  type="button"
-                  onClick={goNext}
-                  disabled={chapterIndex === chapters.length - 1}
-                  className={`flex items-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-30 ${palette.border} ${palette.hover}`}
-                >
-                  <span>Sau</span>
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </nav>
+              <ReaderChapterEndNav
+                chapterIndex={chapterIndex}
+                totalChapters={chapters.length}
+                palette={palette}
+                nextBook={nextBook}
+                onPrev={goPrev}
+                onNext={goNext}
+                onCompleteAndClose={() => completeBook()}
+                onCompleteAndOpenNext={(nb) => completeBook(nb)}
+              />
             </article>
           )}
         </main>
@@ -479,6 +444,15 @@ export function ReaderView({
             style={{ width: `${overallPercent}%` }}
           />
         </div>
+      )}
+
+      {lightboxTarget && (
+        <Suspense fallback={null}>
+          <LazyReaderImageLightbox
+            target={lightboxTarget}
+            onClose={() => setLightboxTarget(null)}
+          />
+        </Suspense>
       )}
     </div>
   );

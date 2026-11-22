@@ -184,6 +184,7 @@
     max-width: 100%;
     height: auto;
     margin: 1.5rem auto;
+    cursor: zoom-in;
   }
 
   .reading-content svg,

@@ -2,7 +2,7 @@
 
 > **Nhánh triển khai:** `feat/web-2d-enhancements` (tách từ `origin/main` sau khi merge PR #10 `D-028`).
 > **Quyết định kiến trúc:** **`D-029`** trong `docs/DECISIONS.md` (đã chốt `PA-1A` xếp theo từng Tập + thêm dải *Mới cập nhật* cùng format, `PA-2A`, `PA-3A`).
-> **Trạng thái:** **Đã được người dùng duyệt — đang triển khai Phase 1 → 5**.
+> **Trạng thái:** **Đã hoàn tất triển khai toàn bộ Phase 1 → 5** — sẵn sàng migrate D1 / deploy Worker & mở PR vào `main`.
 
 ---
 
@@ -102,9 +102,9 @@ Triển khai **10 nhóm tính năng nâng cấp Web 2D** đã chốt với ngư�
 ---
 
 ## 4. Checklist Kiểm thử Định nghĩa "Xong" (`AGENTS.md` §7)
-- [ ] `npm run typecheck`, `npm run lint` (`0` lỗi, mọi file `<= 500` dòng), `npm run build` (`index-*.js <= 86.04 kB gzip`, **`0 B` `three`** ở gói khởi đầu) và `npx tsc --noEmit` trong `workers/r2-storage` đều sạch 100%.
-- [ ] Dải **"Thịnh hành tuần này"** hiển thị đúng phong cách biên tập trên cả 3 theme (`light`, `dim`, `midnight`), 0 chữ Hán/con dấu TMW, bấm mở sách mượt.
-- [ ] Lọc trạng thái / định dạng / sắp xếp, xem `book.description`, đặt lại tiến độ / đánh dấu hoàn thành, yêu thích cục bộ `guest` và bảng Thống kê đọc hoạt động chuẩn cho cả `owner` và `guest`.
-- [ ] Cuối sách hiện đúng nút **"Đọc tiếp Tập kế →"**, chế độ Immersive tự ẩn thanh công cụ, phím tắt `/`, `Ctrl+K`, `M`, `B`, `F` không xung đột khi đang gõ chữ trong ô input.
-- [ ] Zoom ảnh Lightbox, Tìm chữ trong sách và Dấu trang hoạt động mượt; ở chế độ `guest` đảm bảo **0 thẻ `<img>` / 0 văn bản chương lộ trên DOM hay JSON API**.
-- [ ] Cập nhật đầy đủ `docs/DECISIONS.md`, `docs/ARCHITECTURE.md` và `HANDOFF.md` trong cùng commit từng bước.
+- [x] `npm run typecheck`, `npm run lint` (`0` lỗi, mọi file `<= 500` dòng), `npm run build` (`index-*.js <= 86.04 kB gzip`, **`0 B` `three`** ở gói khởi đầu) và `npx tsc --noEmit` trong `workers/r2-storage` đều sạch 100%.
+- [x] Dải **"Thịnh hành tuần này"** & **"Mới cập nhật gần đây"** hiển thị đúng phong cách biên tập trên cả 3 theme (`light`, `dim`, `midnight`), 0 chữ Hán/con dấu TMW, bấm mở sách mượt.
+- [x] Lọc trạng thái / định dạng / sắp xếp, xem `book.description`, đặt lại tiến độ / đánh dấu hoàn thành, yêu thích cục bộ `guest` và bảng Thống kê đọc hoạt động chuẩn cho cả `owner` và `guest`.
+- [x] Cuối sách hiện đúng nút **"Đọc tiếp Tập kế →"**, chế độ Immersive tự ẩn thanh công cụ, phím tắt `/`, `Ctrl+K`, `M`, `B`, `F` không xung đột khi đang gõ chữ trong ô input.
+- [x] Zoom ảnh Lightbox, Tìm chữ trong sách và Dấu trang hoạt động mượt; ở chế độ `guest` đảm bảo **0 thẻ `<img>` / 0 văn bản chương lộ trên DOM hay JSON API**.
+- [x] Cập nhật đầy đủ `docs/DECISIONS.md`, `docs/ARCHITECTURE.md` và `HANDOFF.md` trong cùng commit từng bước.

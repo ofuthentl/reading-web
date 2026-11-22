@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import {
   BookMarked,
   BookOpen,
@@ -144,6 +144,31 @@ export function Library2DView({
   } = viewState;
 
   const isLibraryGridMode = activeTab === 'library' && !openedLibraryShelf;
+
+  // Phím tắt `/` hoặc `Ctrl+K` nhảy nhanh vào ô tìm kiếm thư viện 2D (D-029)
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector('[role="dialog"]')) return;
+      const target = event.target as HTMLElement | null;
+      const isTyping =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target?.isContentEditable;
+
+      const isModK = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k';
+      if (isModK || (!isTyping && event.key === '/')) {
+        const input = document.querySelector<HTMLInputElement>('[data-library-search-input="true"]');
+        if (input) {
+          event.preventDefault();
+          input.focus();
+          input.select();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   return (
     <div className="theme-canvas min-h-screen text-ink transition-colors duration-200">

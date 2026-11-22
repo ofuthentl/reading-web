@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
 import type {
   AuthSessionInfo,
@@ -7,6 +7,7 @@ import type {
   ReaderSettings,
   ReadingProgress,
 } from '@/types';
+import { findNextBookInShelf } from '@/lib/nextVolume';
 import type { GuestReaderSessionState } from '@/hooks/useBookReader';
 
 const LazyReaderView = lazy(() =>
@@ -25,11 +26,11 @@ export interface ActiveReaderHostProps {
   loadedFromCache: boolean;
   settings: ReaderSettings;
   session: AuthSessionInfo;
+  books: Book[];
   progress: Record<string, ReadingProgress>;
-  nextBook?: Book | null;
   onUpdateSettings: (patch: Partial<ReaderSettings>) => void;
   onSaveProgress: (progress: ReadingProgress) => void;
-  onOpenNextBook?: (book: Book) => void;
+  onOpenBook: (book: Book) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
   onClose: () => void;
 }
@@ -42,12 +43,19 @@ export function ActiveReaderHost({
   loadedFromCache,
   settings,
   session,
+  books,
   progress,
   onUpdateSettings,
   onSaveProgress,
+  onOpenBook,
   onApiError,
   onClose,
 }: ActiveReaderHostProps) {
+  const nextBook = useMemo(
+    () => findNextBookInShelf(activeBook, books, session.role),
+    [activeBook, books, session.role],
+  );
+
   return (
     <>
       {activeBook && parsedBook && (
@@ -59,9 +67,11 @@ export function ActiveReaderHost({
               parsedBook={parsedBook}
               loadedFromCache={loadedFromCache}
               initialProgress={progress[activeBook.id]}
+              nextBook={nextBook}
               settings={settings}
               onUpdateSettings={onUpdateSettings}
               onSaveProgress={onSaveProgress}
+              onOpenNextBook={onOpenBook}
               onClose={onClose}
             />
           </Suspense>
@@ -79,9 +89,11 @@ export function ActiveReaderHost({
                 session.watermarkLabel || guestSession.watermarkLabel || 'Guest'
               }
               initialProgress={progress[activeBook.id]}
+              nextBook={nextBook}
               settings={settings}
               onUpdateSettings={onUpdateSettings}
               onSaveProgress={onSaveProgress}
+              onOpenNextBook={onOpenBook}
               onApiError={onApiError}
               onClose={onClose}
             />
