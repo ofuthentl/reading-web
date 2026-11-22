@@ -76,14 +76,26 @@ export function ShelfDetailView({
 
   const [volumeQuery, setVolumeQuery] = useState('');
   const [imgFailed, setImgFailed] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
 
   const coverKey = coverBook?.cover_key ?? null;
   const coverUrl = useCoverUrl(coverKey, true);
   const showImage = Boolean(coverUrl && !imgFailed);
   const clothColor = pickClothCoverColor(`${shelf.key}-${shelf.name}`);
 
+  const shelfDescription = useMemo(() => {
+    const fromCover = coverBook?.description?.trim();
+    if (fromCover) return fromCover;
+    for (const b of shelf.books) {
+      const text = b.description?.trim();
+      if (text) return text;
+    }
+    return null;
+  }, [coverBook, shelf.books]);
+
   useEffect(() => {
     setVolumeQuery('');
+    setDescExpanded(false);
   }, [shelf.key]);
 
   useEffect(() => {
@@ -202,6 +214,27 @@ export function ShelfDetailView({
               {shelf.name}
             </h2>
             <p className="text-sm text-ink-muted">{authorLabel}</p>
+
+            {shelfDescription && (
+              <div className="max-w-2xl pt-1">
+                <p
+                  className={`whitespace-pre-line text-xs leading-relaxed text-ink-muted sm:text-sm ${
+                    descExpanded ? '' : 'line-clamp-3'
+                  }`}
+                >
+                  {shelfDescription}
+                </p>
+                {shelfDescription.length > 180 && (
+                  <button
+                    type="button"
+                    onClick={() => setDescExpanded((v) => !v)}
+                    className="mt-1 text-xs font-medium text-accent hover:underline"
+                  >
+                    {descExpanded ? 'Thu gọn' : 'Xem đầy đủ'}
+                  </button>
+                )}
+              </div>
+            )}
 
             {progressPercent !== null && (
               <div className="max-w-md pt-1">
