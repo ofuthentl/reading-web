@@ -11,7 +11,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import type { Book, ReadingProgress } from '@/types';
+import type { AuthRole, Book, ReadingProgress } from '@/types';
 import { formatBytes } from '@/lib/api';
 import { pickClothCoverColor } from '@/lib/bookMetadata';
 import type { ShelfSummary } from '@/lib/shelfSummary';
@@ -22,10 +22,12 @@ import { normalizeSearchText } from '@/hooks/useLibraryViewState';
 interface ShelfDetailViewProps {
   summary: ShelfSummary;
   progress: Record<string, ReadingProgress>;
+  sessionRole?: AuthRole;
   selectionMode: boolean;
   selectedIds: Set<string>;
   onBack: () => void;
   onOpenBook: (book: Book) => void;
+  onInspectBook?: (book: Book) => void;
   onToggleSelect: (bookId: string) => void;
   onSelectBookIds: (ids: string[]) => void;
   onClearSelection: () => void;
@@ -41,10 +43,12 @@ interface ShelfDetailViewProps {
 export function ShelfDetailView({
   summary,
   progress,
+  sessionRole,
   selectionMode,
   selectedIds,
   onBack,
   onOpenBook,
+  onInspectBook,
   onToggleSelect,
   onSelectBookIds,
   onClearSelection,
@@ -380,11 +384,13 @@ export function ShelfDetailView({
                 key={book.id}
                 book={book}
                 progress={progress[book.id]}
+                sessionRole={sessionRole}
                 selectionMode={selectionMode}
                 selected={selectedIds.has(book.id)}
                 onOpen={onOpenBook}
                 onToggleSelect={onToggleSelect}
                 onEdit={onEditBook}
+                onInspect={onInspectBook}
               />
             ))}
           </div>

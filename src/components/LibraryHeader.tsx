@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  BarChart3,
   BookOpen,
   CheckSquare,
   Clock,
@@ -34,6 +35,7 @@ interface LibraryHeaderProps {
   viewMode?: ViewMode;
   onChangeViewMode?: (mode: ViewMode) => void;
   onCycleTheme: (origin?: { x: number; y: number }) => void;
+  onOpenStats?: () => void;
   onUploadClick?: () => void;
   onProtectionClick?: () => void;
   unprotectedBookCount?: number;
@@ -63,6 +65,7 @@ export function LibraryHeader({
   viewMode = '2d',
   onChangeViewMode,
   onCycleTheme,
+  onOpenStats,
   onUploadClick,
   onProtectionClick,
   unprotectedBookCount = 0,
@@ -257,6 +260,18 @@ export function LibraryHeader({
           )}
 
           <ThemeToggle theme={theme} onCycle={onCycleTheme} />
+
+          {onOpenStats && bookCount > 0 && (
+            <button
+              type="button"
+              onClick={onOpenStats}
+              aria-label="Thống kê đọc sách"
+              title="Thống kê đọc sách"
+              className="rounded-xl border border-line bg-canvas p-2 text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink"
+            >
+              <BarChart3 className="h-4 w-4" />
+            </button>
+          )}
 
           <button
             type="button"

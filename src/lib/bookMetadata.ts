@@ -1,4 +1,4 @@
-import type { Book, BookFileType, ReadingProgress, ShelfGroup } from '@/types';
+import type { AuthRole, Book, BookFileType, ReadingProgress, ShelfGroup } from '@/types';
 import {
   VOLUME_SEGMENT_RE,
   VOLUME_WITH_SUBTITLE_RE,
@@ -205,4 +205,21 @@ export function groupBooksIntoShelves(books: Book[]): ShelfGroup[] {
     }
   }
   return Array.from(map.values()).sort((a, b) => compareVietnameseText(a.name, b.name));
+}
+
+const RECENT_UPLOAD_WINDOW_DAYS = 7;
+
+export function isRecentBookUpload(createdAt: string, withinDays = RECENT_UPLOAD_WINDOW_DAYS): boolean {
+  if (!createdAt) return false;
+  const ts = Date.parse(createdAt);
+  if (!Number.isFinite(ts)) return false;
+  const ageMs = Date.now() - ts;
+  return ageMs >= -60_000 && ageMs <= withinDays * 86_400_000;
+}
+
+export function getGuestLockLabel(book: Book, sessionRole?: AuthRole): string | null {
+  if (sessionRole !== 'guest') return null;
+  if (book.file_type === 'pdf') return 'Chỉ Admin';
+  if (book.guest_ready === false) return 'Chờ đồng bộ';
+  return null;
 }

@@ -1,0 +1,322 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Check, ChevronLeft, ChevronRight, Info } from 'lucide-react';
+import type { AuthRole, Book, ReadingProgress } from '@/types';
+import {
+  computeBookProgressPercent,
+  getBookSortTitle,
+  getDisplayAuthor,
+  getGuestLockLabel,
+  pickClothCoverColor,
+} from '@/lib/bookMetadata';
+import { useCoverUrl } from '@/hooks/useCoverUrl';
+
+interface EditorialCardProps {
+  book: Book;
+  rankNumber: number;
+  progress?: ReadingProgress;
+  selectionMode: boolean;
+  selected: boolean;
+  sessionRole?: AuthRole;
+  onOpenBook: (book: Book) => void;
+  onToggleSelect: (bookId: string) => void;
+  onInspectBook?: (book: Book) => void;
+}
+
+function EditorialRankedCard({
+  book,
+  rankNumber,
+  progress,
+  selectionMode,
+  selected,
+  sessionRole,
+  onOpenBook,
+  onToggleSelect,
+  onInspectBook,
+}: EditorialCardProps) {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [isNearViewport, setIsNearViewport] = useState(
+    () => typeof IntersectionObserver === 'undefined',
+  );
+  const [imgFailed, setImgFailed] = useState(false);
+
+  useEffect(() => {
+    setImgFailed(false);
+  }, [book.cover_key]);
+
+  useEffect(() => {
+    if (isNearViewport) return;
+    const node = cardRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setIsNearViewport(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setIsNearViewport(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '320px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [isNearViewport]);
+
+  const coverUrl = useCoverUrl(book.cover_key, isNearViewport);
+  const showImage = Boolean(coverUrl && !imgFailed);
+  const displayTitle = getBookSortTitle(book);
+  const displayAuthor = getDisplayAuthor(book.author);
+  const clothColor = pickClothCoverColor(`${book.id}-${book.title}`);
+  const percent = computeBookProgressPercent(book, progress);
+  const isCompleted = Boolean(progress?.completed);
+  const guestLockLabel = getGuestLockLabel(book, sessionRole);
+  const rankText = String(rankNumber).padStart(2, '0');
+
+  const handleActivate = () => {
+    if (selectionMode) {
+      onToggleSelect(book.id);
+    } else {
+      onOpenBook(book);
+    }
+  };
+
+  return (
+    <div
+      ref={cardRef}
+      role="button"
+      tabIndex={0}
+      aria-pressed={selectionMode ? selected : undefined}
+      onClick={handleActivate}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          handleActivate();
+        }
+      }}
+      className={`group relative aspect-[3/4.15] w-[9.5rem] shrink-0 cursor-pointer overflow-hidden rounded-[4px] border bg-subtle text-left shadow-[0_12px_28px_-12px_rgba(0,0,0,0.45)] transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-[11rem] md:w-[11.75rem] ${
+        selected
+          ? 'border-accent ring-2 ring-accent ring-offset-2 ring-offset-canvas'
+          : 'border-black/12 hover:-translate-y-1 hover:shadow-[0_18px_34px_-12px_rgba(0,0,0,0.58)] dark:border-white/12'
+      }`}
+    >
+      {showImage ? (
+        <img
+          src={coverUrl!}
+          alt={book.title}
+          loading="lazy"
+          decoding="async"
+          onError={() => setImgFailed(true)}
+          className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.04]"
+        />
+      ) : (
+        <div
+          style={{ backgroundColor: clothColor }}
+          className="relative flex h-full w-full flex-col justify-between p-3.5 text-[#f6efe2]"
+        >
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-0 w-2 border-r border-black/25 bg-black/15"
+          />
+          <p className="line-clamp-3 pl-2 pt-1 font-display text-xs font-semibold leading-snug text-[#f6efe2]/90">
+            {displayTitle}
+          </p>
+        </div>
+      )}
+
+      {/* Lớp phủ tối chuyển sắc kiểu tạp chí sách giúp chữ & số thứ tự luôn sắc nét */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-[68%] bg-gradient-to-t from-black/92 via-black/52 to-transparent"
+      />
+
+      {guestLockLabel && (
+        <span className="pointer-events-none absolute left-2 top-2 rounded border border-amber-300/35 bg-black/80 px-1.5 py-0.5 text-[10px] font-medium text-amber-200 backdrop-blur-sm">
+          {guestLockLabel}
+        </span>
+      )}
+
+      {selectionMode ? (
+        <span
+          aria-hidden="true"
+          className={`absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-md border transition-colors ${
+            selected
+              ? 'border-accent bg-accent text-accent-foreground'
+              : 'border-[#f3e9d7]/55 bg-[#16120f]/70 text-transparent'
+          }`}
+        >
+          <Check className="h-3.5 w-3.5 stroke-[2.5]" />
+        </span>
+      ) : (
+        onInspectBook && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onInspectBook(book);
+            }}
+            aria-label={`Xem giới thiệu ${book.title}`}
+            title="Xem giới thiệu & tuỳ chọn"
+            className="absolute right-2 top-2 rounded-md border border-white/20 bg-black/65 p-1.5 text-white/90 opacity-85 backdrop-blur-sm transition-opacity hover:bg-black/90 focus:opacity-100 group-hover:opacity-100 sm:opacity-0"
+          >
+            <Info className="h-3.5 w-3.5" />
+          </button>
+        )
+      )}
+
+      {/* Số thứ tự nghiêng nghệ thuật + Tiêu đề & Tác giả */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col justify-end p-3 sm:p-3.5">
+        <span
+          aria-hidden="true"
+          className="mb-1 select-none font-display text-[2.6rem] font-light italic leading-[0.86] tracking-[-0.04em] text-white/92 drop-shadow-[0_2px_10px_rgba(0,0,0,0.65)] sm:text-[3.05rem]"
+        >
+          {rankText}
+        </span>
+        <h3 className="line-clamp-1 text-xs font-semibold tracking-tight text-white drop-shadow-sm sm:text-[13px]">
+          {displayTitle}
+        </h3>
+        <p className="mt-0.5 truncate text-[10.5px] text-white/72 sm:text-[11px]">
+          {displayAuthor}
+        </p>
+      </div>
+
+      {percent !== null && (
+        <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1 bg-white/15">
+          <div
+            className="h-full bg-amber-400 transition-all duration-300"
+            style={{ width: `${Math.max(percent, isCompleted ? 100 : 6)}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export interface EditorialBookStripProps {
+  eyebrow: string;
+  leadTitle: string;
+  accentTitle: string;
+  books: Book[];
+  progress: Record<string, ReadingProgress>;
+  selectionMode: boolean;
+  selectedIds: Set<string>;
+  sessionRole?: AuthRole;
+  isDark: boolean;
+  onOpenBook: (book: Book) => void;
+  onToggleSelect: (bookId: string) => void;
+  onInspectBook?: (book: Book) => void;
+}
+
+/**
+ * Dải thẻ sách biên tập ngang (D-029 PA-1A, tuân thủ D-027 100% nguyên bản Ofu's Library)
+ * dùng chung cho cả "Thịnh hành tuần này" và "Mới cập nhật gần đây".
+ */
+export function EditorialBookStrip({
+  eyebrow,
+  leadTitle,
+  accentTitle,
+  books,
+  progress,
+  selectionMode,
+  selectedIds,
+  sessionRole,
+  isDark,
+  onOpenBook,
+  onToggleSelect,
+  onInspectBook,
+}: EditorialBookStripProps) {
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const syncScrollState = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 8);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 8);
+  }, []);
+
+  useEffect(() => {
+    syncScrollState();
+    const el = scrollerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(syncScrollState);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [books.length, syncScrollState]);
+
+  const scrollByStep = (direction: -1 | 1) => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const step = Math.max(280, Math.round(el.clientWidth * 0.72));
+    el.scrollBy({ left: direction * step, behavior: 'smooth' });
+  };
+
+  if (books.length === 0) return null;
+
+  return (
+    <section aria-label={`${leadTitle} ${accentTitle}`} className="space-y-4">
+      <div className="flex items-end justify-between gap-4 border-b border-line-strong/70 pb-3">
+        <div className="space-y-1">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#b84a27] dark:text-[#e07a5f]">
+            {eyebrow}
+          </p>
+          <h2 className="font-display text-[1.75rem] font-normal leading-[1.08] tracking-[-0.015em] text-ink sm:text-[2.15rem]">
+            <span>{leadTitle} </span>
+            <span className="italic text-[#b84a27] dark:text-[#e57c5e]">{accentTitle}</span>
+          </h2>
+        </div>
+
+        {(canScrollLeft || canScrollRight) && (
+          <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+            <button
+              type="button"
+              onClick={() => scrollByStep(-1)}
+              disabled={!canScrollLeft}
+              aria-label="Cuộn sang trái"
+              className="rounded-lg border border-line bg-surface p-1.5 text-ink-muted transition-colors hover:border-line-strong hover:text-ink disabled:opacity-35"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollByStep(1)}
+              disabled={!canScrollRight}
+              aria-label="Cuộn sang phải"
+              className="rounded-lg border border-line bg-surface p-1.5 text-ink-muted transition-colors hover:border-line-strong hover:text-ink disabled:opacity-35"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div
+        ref={scrollerRef}
+        onScroll={syncScrollState}
+        className={`flex gap-3.5 overflow-x-auto pb-2.5 pt-0.5 scrollbar-hover sm:gap-4 ${
+          isDark ? 'scrollbar-hover-dark' : ''
+        } ${
+          canScrollRight
+            ? '[mask-image:linear-gradient(to_right,black_0%,black_93%,transparent_100%)]'
+            : ''
+        }`}
+      >
+        {books.map((book, index) => (
+          <EditorialRankedCard
+            key={book.id}
+            book={book}
+            rankNumber={index + 1}
+            progress={progress[book.id]}
+            selectionMode={selectionMode}
+            selected={selectedIds.has(book.id)}
+            sessionRole={sessionRole}
+            onOpenBook={onOpenBook}
+            onToggleSelect={onToggleSelect}
+            onInspectBook={onInspectBook}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}

@@ -1,7 +1,13 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { AuthSessionInfo, Book, ReadingProgress, StorageStats } from '@/types';
-import { fetchLibraryState, isAuthError, setAuthToken, sortBooksByTitle } from '@/lib/api';
+import {
+  clearReadingProgress,
+  fetchLibraryState,
+  isAuthError,
+  setAuthToken,
+  sortBooksByTitle,
+} from '@/lib/api';
 import { DEFAULT_OWNER_SESSION, getActiveAuthSession } from '@/lib/authSession';
 import { replaceGateRoute, syncGateDocumentTitle } from '@/lib/gateRoutes';
 import {
@@ -20,6 +26,7 @@ import { Library3DHost } from '@/components/Library3DHost';
 import { ToastContainer } from '@/components/ToastContainer';
 import { useBookReader } from '@/hooks/useBookReader';
 import { useCanUse3D } from '@/hooks/useCanUse3D';
+import { useGuestLocalFavorites } from '@/hooks/useGuestLocalFavorites';
 import { useLibraryViewState } from '@/hooks/useLibraryViewState';
 import { useTheme } from '@/hooks/useTheme';
 import { useToast } from '@/hooks/useToast';
@@ -61,21 +68,28 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [books, setBooks] = useState<Book[]>([]);
   const [progress, setProgress] = useState<Record<string, ReadingProgress>>({});
+  const [weeklyPopularIds, setWeeklyPopularIds] = useState<string[]>([]);
   const [shelfPrefs, setShelfPrefs] = useState<ShelfPrefsState>(readLocalShelfPrefs);
   const [storage, setStorage] = useState<StorageStats | null>(null);
   const [modal, setModal] = useState<LibraryModalState>({ kind: 'none' });
   const [selectionResetKey, setSelectionResetKey] = useState(0);
   const coreReadersPreloadedRef = useRef(false);
+  const { guestFavoriteKeys, toggleGuestFavorite, syncRenamedGuestFavorite } =
+    useGuestLocalFavorites();
 
-  const favoriteShelfKeys = useMemo(
+  const adminFavoriteShelfKeys = useMemo(
     () => new Set(shelfPrefs.favorites),
     [shelfPrefs.favorites],
   );
+  const effectiveFavoriteShelfKeys =
+    session.role === 'owner' ? adminFavoriteShelfKeys : guestFavoriteKeys;
   const libraryViewState = useLibraryViewState(
     books,
     progress,
     selectionResetKey,
-    favoriteShelfKeys,
+    effectiveFavoriteShelfKeys,
+    weeklyPopularIds,
+    session.role,
   );
 
   const closeModal = useCallback(() => setModal({ kind: 'none' }), []);
@@ -123,6 +137,7 @@ export default function App() {
       const state = await fetchLibraryState();
       setBooks(state.books);
       setProgress(state.progress);
+      setWeeklyPopularIds(state.weeklyPopularIds);
       setShelfPrefs(state.shelfPrefs);
       setStorage(state.storage);
       setSession(state.session);
@@ -209,6 +224,7 @@ export default function App() {
     setModal({ kind: 'none' });
     setBooks([]);
     setProgress({});
+    setWeeklyPopularIds([]);
     setStorage(null);
     replaceGateRoute('locked');
     setAuthenticated(false);
@@ -248,9 +264,10 @@ export default function App() {
         ),
       );
       setShelfPrefs((prev) => renameShelfPrefs(prev, oldName, newName));
+      syncRenamedGuestFavorite(oldName, newName);
       syncRenamedShelf(oldName, newName);
     },
-    [syncRenamedShelf],
+    [syncRenamedGuestFavorite, syncRenamedShelf],
   );
 
   const handleShelfCoverChanged = useCallback((shelfName: string, bookId: string | null) => {
@@ -259,6 +276,16 @@ export default function App() {
 
   const handleToggleFavoriteShelf = useCallback(
     (shelfName: string, nextFavorite: boolean) => {
+      if (session.role !== 'owner') {
+        toggleGuestFavorite(shelfName, nextFavorite);
+        addToast(
+          nextFavorite
+            ? `Đã ghim kệ "${shelfName}" lên đầu trên thiết bị này.`
+            : `Đã bỏ ghim kệ "${shelfName}".`,
+          'info',
+        );
+        return;
+      }
       setShelfPrefs((prev) => patchShelfFavorite(prev, shelfName, nextFavorite));
       addToast(
         nextFavorite
@@ -269,6 +296,21 @@ export default function App() {
       void setShelfFavorite(shelfName, nextFavorite).catch((err) => {
         setShelfPrefs((prev) => patchShelfFavorite(prev, shelfName, !nextFavorite));
         handleApiError(err, 'Không thể cập nhật kệ yêu thích.');
+      });
+    },
+    [addToast, handleApiError, session.role, toggleGuestFavorite],
+  );
+
+  const handleResetBookProgress = useCallback(
+    (book: Book) => {
+      setProgress((prev) => {
+        const next = { ...prev };
+        delete next[book.id];
+        return next;
+      });
+      addToast(`Đã đặt lại tiến độ đọc "${book.title}".`, 'info');
+      void clearReadingProgress(book.id).catch((err) => {
+        handleApiError(err, 'Không thể xoá tiến độ đọc.');
       });
     },
     [addToast, handleApiError],
@@ -378,6 +420,7 @@ export default function App() {
             onRefresh={() => void loadLibrary()}
             onLogout={handleLogout}
             onOpenBook={(book: Book) => void reader.openBook(book)}
+            onDismissContinue={handleResetBookProgress}
             onUploadClick={isOwner ? () => setModal({ kind: 'upload' }) : undefined}
             onProtectionClick={isOwner ? () => setModal({ kind: 'protection' }) : undefined}
             unprotectedBookCount={isOwner ? unprotectedBookCount : 0}
@@ -396,9 +439,9 @@ export default function App() {
                 : undefined
             }
             shelfCovers={shelfPrefs.covers}
-            favoriteShelfKeys={favoriteShelfKeys}
+            favoriteShelfKeys={effectiveFavoriteShelfKeys}
             onShelfCoverChanged={isOwner ? handleShelfCoverChanged : undefined}
-            onToggleFavoriteShelf={isOwner ? handleToggleFavoriteShelf : undefined}
+            onToggleFavoriteShelf={handleToggleFavoriteShelf}
             onApiError={handleApiError}
             onNotify={addToast}
           />

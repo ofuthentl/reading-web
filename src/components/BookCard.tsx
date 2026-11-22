@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, CheckCircle2, Pencil } from 'lucide-react';
-import type { Book, ReadingProgress } from '@/types';
-import { getBookSortTitle, getDisplayAuthor, pickClothCoverColor } from '@/lib/bookMetadata';
+import { Check, CheckCircle2, Info, Pencil, X } from 'lucide-react';
+import type { AuthRole, Book, ReadingProgress } from '@/types';
+import {
+  getBookSortTitle,
+  getDisplayAuthor,
+  getGuestLockLabel,
+  isRecentBookUpload,
+  pickClothCoverColor,
+} from '@/lib/bookMetadata';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 import { computeBookProgressPercent } from '@/hooks/useLibraryViewState';
 
@@ -29,10 +35,13 @@ interface BookCardProps {
   progress?: ReadingProgress;
   selectionMode: boolean;
   selected: boolean;
+  sessionRole?: AuthRole;
   layout?: 'vertical' | 'horizontal';
   onOpen: (book: Book) => void;
   onToggleSelect: (bookId: string) => void;
   onEdit?: (book: Book) => void;
+  onInspect?: (book: Book) => void;
+  onDismissContinue?: (book: Book) => void;
 }
 
 export function BookCard({
@@ -40,10 +49,13 @@ export function BookCard({
   progress,
   selectionMode,
   selected,
+  sessionRole,
   layout = 'vertical',
   onOpen,
   onToggleSelect,
   onEdit,
+  onInspect,
+  onDismissContinue,
 }: BookCardProps) {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [isNearViewport, setIsNearViewport] = useState(
@@ -83,6 +95,8 @@ export function BookCard({
   const percent = computeBookProgressPercent(book, progress);
   const chapterLabel = getProgressChapterLabel(book, progress);
   const isCompleted = Boolean(progress?.completed);
+  const guestLockLabel = getGuestLockLabel(book, sessionRole);
+  const isNew = !guestLockLabel && isRecentBookUpload(book.created_at);
 
   const handleActivate = () => {
     if (selectionMode) {
@@ -149,6 +163,19 @@ export function BookCard({
         {book.file_type}
       </span>
 
+      {/* Nhãn MỚI hoặc trạng thái gói bảo mật khách */}
+      {!compact && (guestLockLabel || isNew) && (
+        <span
+          className={`pointer-events-none absolute bottom-2 left-1.5 rounded border px-1.5 py-0.5 text-[9.5px] font-semibold tracking-wide backdrop-blur-sm ${
+            guestLockLabel
+              ? 'border-amber-300/35 bg-black/80 text-amber-200'
+              : 'border-emerald-300/35 bg-emerald-950/85 text-emerald-200'
+          }`}
+        >
+          {guestLockLabel || 'MỚI'}
+        </span>
+      )}
+
       {/* Checkbox chọn nhiều */}
       {selectionMode && (
         <span
@@ -163,28 +190,43 @@ export function BookCard({
         </span>
       )}
 
-      {/* Nút chỉnh sửa kín đáo (sẵn sàng cho 3.3) */}
-      {!selectionMode && !compact && onEdit && (
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onEdit(book);
-          }}
-          aria-label={`Chỉnh sửa ${book.title}`}
-          title="Chỉnh sửa thông tin"
-          className="absolute left-1.5 top-1.5 rounded-md border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] opacity-85 transition-opacity hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
+      {/* Cụm nút Xem giới thiệu & Chỉnh sửa kín đáo */}
+      {!selectionMode && !compact && (onInspect || onEdit) && (
+        <div className="absolute left-1.5 top-1.5 flex items-center gap-1 opacity-85 transition-opacity focus-within:opacity-100 group-hover:opacity-100 sm:opacity-0">
+          {onInspect && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onInspect(book);
+              }}
+              aria-label={`Xem giới thiệu ${book.title}`}
+              title="Xem giới thiệu & tiến độ"
+              className="rounded-md border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] transition-colors hover:bg-[#16120f]"
+            >
+              <Info className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {onEdit && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onEdit(book);
+              }}
+              aria-label={`Chỉnh sửa ${book.title}`}
+              title="Chỉnh sửa thông tin"
+              className="rounded-md border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] transition-colors hover:bg-[#16120f]"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       )}
 
       {/* Thanh tiến độ đọc trên bìa */}
       {percent !== null && (
-        <div
-          aria-hidden="true"
-          className="absolute inset-x-0 bottom-0 h-1 bg-black/40"
-        >
+        <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1 bg-black/40">
           <div
             className="h-full bg-accent transition-all duration-300"
             style={{ width: `${Math.max(percent, isCompleted ? 100 : 6)}%` }}
@@ -208,14 +250,12 @@ export function BookCard({
             handleActivate();
           }
         }}
-        className={`moonlit-card group flex w-72 shrink-0 cursor-pointer items-center gap-3.5 rounded-xl border bg-surface p-3 text-left shadow-sm transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-80 ${
-          selected
-            ? 'border-accent bg-subtle/60'
-            : 'border-line hover:border-line-strong'
+        className={`moonlit-card group relative flex w-72 shrink-0 cursor-pointer items-center gap-3.5 rounded-xl border bg-surface p-3 text-left shadow-sm transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-80 ${
+          selected ? 'border-accent bg-subtle/60' : 'border-line hover:border-line-strong'
         }`}
       >
         {renderCover(true)}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 pr-5">
           <h3 className="line-clamp-2 font-display text-sm font-semibold leading-snug text-ink transition-colors group-hover:text-accent">
             {displayTitle}
           </h3>
@@ -250,6 +290,39 @@ export function BookCard({
             </div>
           )}
         </div>
+
+        {!selectionMode && (onDismissContinue || onInspect) && (
+          <div className="absolute right-2 top-2 flex items-center gap-0.5 opacity-80 transition-opacity focus-within:opacity-100 group-hover:opacity-100 sm:opacity-0">
+            {onInspect && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onInspect(book);
+                }}
+                aria-label={`Xem giới thiệu ${book.title}`}
+                title="Xem giới thiệu sách"
+                className="rounded-md p-1 text-ink-muted transition-colors hover:bg-subtle hover:text-ink"
+              >
+                <Info className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {onDismissContinue && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDismissContinue(book);
+                }}
+                aria-label={`Bỏ ${book.title} khỏi Tiếp tục đọc`}
+                title="Bỏ khỏi Tiếp tục đọc"
+                className="rounded-md p-1 text-ink-muted transition-colors hover:bg-subtle hover:text-red-700 dark:hover:text-red-300"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -267,7 +340,7 @@ export function BookCard({
           handleActivate();
         }
       }}
-      className="group flex cursor-pointer flex-col text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas rounded-lg"
+      className="group flex cursor-pointer flex-col rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
     >
       {renderCover(false)}
 

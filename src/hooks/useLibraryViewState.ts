@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Book, LibraryTab, ReadingProgress, ShelfGroup } from '@/types';
+import type {
+  AuthRole,
+  Book,
+  LibraryFormatFilter,
+  LibrarySortMode,
+  LibraryStatusFilter,
+  LibraryTab,
+  ReadingProgress,
+  ShelfGroup,
+} from '@/types';
 import { groupBooksIntoShelves } from '@/lib/api';
 import { computeBookProgressPercent } from '@/lib/bookMetadata';
 import { sortShelvesFavoriteFirst } from '@/lib/shelfPrefs';
@@ -48,6 +57,83 @@ export function selectContinueReadingBooks(
     .slice(0, limit);
 }
 
+function matchesBookStatus(
+  book: Book,
+  progress: Readonly<Record<string, ReadingProgress>>,
+  filter: LibraryStatusFilter,
+): boolean {
+  if (filter === 'all') return true;
+  const item = progress[book.id];
+  if (filter === 'unread') return !item;
+  if (filter === 'completed') return Boolean(item?.completed);
+  return Boolean(item && !item.completed);
+}
+
+function matchesShelfStatus(
+  shelf: ShelfGroup,
+  progress: Readonly<Record<string, ReadingProgress>>,
+  filter: LibraryStatusFilter,
+): boolean {
+  if (filter === 'all') return true;
+  const total = shelf.books.length;
+  if (total === 0) return false;
+  let started = 0;
+  let completed = 0;
+  for (const b of shelf.books) {
+    const p = progress[b.id];
+    if (p) {
+      started += 1;
+      if (p.completed) completed += 1;
+    }
+  }
+  if (filter === 'unread') return started === 0;
+  if (filter === 'completed') return completed === total;
+  return started > 0 && completed < total;
+}
+
+function sortShelvesByMode(
+  shelves: ShelfGroup[],
+  sortMode: LibrarySortMode,
+  progress: Readonly<Record<string, ReadingProgress>>,
+  favoriteShelfKeys?: ReadonlySet<string>,
+): ShelfGroup[] {
+  if (sortMode === 'title_asc') {
+    return sortShelvesFavoriteFirst(shelves, favoriteShelfKeys);
+  }
+
+  const getMetric = (shelf: ShelfGroup): number => {
+    if (sortMode === 'volume_desc') return shelf.books.length;
+    if (sortMode === 'recent_upload') {
+      let maxTs = 0;
+      for (const b of shelf.books) {
+        const ts = Date.parse(b.created_at);
+        if (Number.isFinite(ts) && ts > maxTs) maxTs = ts;
+      }
+      return maxTs;
+    }
+    let maxRead = 0;
+    for (const b of shelf.books) {
+      const ts = progress[b.id]?.updatedAt ?? 0;
+      if (ts > maxRead) maxRead = ts;
+    }
+    return maxRead;
+  };
+
+  const sortedByMetric = [...shelves].sort((a, b) => getMetric(b) - getMetric(a));
+  return sortShelvesFavoriteFirst(sortedByMetric, favoriteShelfKeys);
+}
+
+function prioritizeGuestReadable(books: Book[], sessionRole?: AuthRole): Book[] {
+  if (sessionRole !== 'guest') return books;
+  const ready: Book[] = [];
+  const locked: Book[] = [];
+  for (const b of books) {
+    if (b.file_type !== 'pdf' && b.guest_ready !== false) ready.push(b);
+    else locked.push(b);
+  }
+  return [...ready, ...locked];
+}
+
 export interface LibraryViewState {
   activeTab: LibraryTab;
   setActiveTab: (tab: LibraryTab) => void;
@@ -58,6 +144,12 @@ export interface LibraryViewState {
   syncRenamedShelf: (oldName: string, newName: string) => void;
   searchQuery: string;
   setSearchQuery: (value: string) => void;
+  statusFilter: LibraryStatusFilter;
+  setStatusFilter: (value: LibraryStatusFilter) => void;
+  formatFilter: LibraryFormatFilter;
+  setFormatFilter: (value: LibraryFormatFilter) => void;
+  sortMode: LibrarySortMode;
+  setSortMode: (value: LibrarySortMode) => void;
   activeShelfKey: string | null;
   setActiveShelfKey: (key: string | null) => void;
   selectionMode: boolean;
@@ -65,6 +157,8 @@ export interface LibraryViewState {
   allShelves: ShelfGroup[];
   libraryShelves: ShelfGroup[];
   continueReadingBooks: Book[];
+  weeklyPopularBooks: Book[];
+  recentlyAddedBooks: Book[];
   filteredBooks: Book[];
   visibleShelves: ShelfGroup[];
   selectedBooks: Book[];
@@ -82,10 +176,15 @@ export function useLibraryViewState(
   progress: Record<string, ReadingProgress>,
   selectionResetKey?: number,
   favoriteShelfKeys?: ReadonlySet<string>,
+  weeklyPopularIds?: readonly string[],
+  sessionRole?: AuthRole,
 ): LibraryViewState {
   const [activeTab, setActiveTabState] = useState<LibraryTab>(readStoredLibraryTab);
   const [openedLibraryShelfKey, setOpenedLibraryShelfKey] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<LibraryStatusFilter>('all');
+  const [formatFilter, setFormatFilter] = useState<LibraryFormatFilter>('all');
+  const [sortMode, setSortMode] = useState<LibrarySortMode>('title_asc');
   const [activeShelfKey, setActiveShelfKey] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -98,19 +197,14 @@ export function useLibraryViewState(
   }, [selectionResetKey]);
 
   useEffect(() => {
-    if (books.length === 0) {
-      setSelectionMode(false);
-    }
+    if (books.length === 0) setSelectionMode(false);
     const validIds = new Set(books.map((book) => book.id));
     setSelectedIds((prev) => {
       let changed = false;
       const next = new Set<string>();
       for (const id of prev) {
-        if (validIds.has(id)) {
-          next.add(id);
-        } else {
-          changed = true;
-        }
+        if (validIds.has(id)) next.add(id);
+        else changed = true;
       }
       return changed ? next : prev;
     });
@@ -178,18 +272,51 @@ export function useLibraryViewState(
     [books, progress],
   );
 
+  const recentlyAddedBooks = useMemo(() => {
+    const sorted = [...books].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return prioritizeGuestReadable(sorted, sessionRole).slice(0, 10);
+  }, [books, sessionRole]);
+
+  const weeklyPopularBooks = useMemo(() => {
+    if (!weeklyPopularIds || weeklyPopularIds.length === 0) {
+      return recentlyAddedBooks;
+    }
+    const bookMap = new Map(books.map((b) => [b.id, b]));
+    const picked: Book[] = [];
+    const seen = new Set<string>();
+    for (const id of weeklyPopularIds) {
+      const found = bookMap.get(id);
+      if (found && !seen.has(found.id)) {
+        seen.add(found.id);
+        picked.push(found);
+      }
+    }
+    for (const b of recentlyAddedBooks) {
+      if (picked.length >= 10) break;
+      if (!seen.has(b.id)) {
+        seen.add(b.id);
+        picked.push(b);
+      }
+    }
+    return prioritizeGuestReadable(picked, sessionRole).slice(0, 10);
+  }, [books, recentlyAddedBooks, sessionRole, weeklyPopularIds]);
+
   const normalizedQuery = useMemo(() => normalizeSearchText(searchQuery), [searchQuery]);
 
-  // Lọc kệ cho Tab Thư viện: giữ nguyên đủ tập & ảnh bìa Tập 1 ngay cả khi từ khoá khớp tên 1 tập
   const libraryShelves = useMemo(() => {
-    if (!normalizedQuery) return allShelves;
-    return allShelves.filter((shelf) => {
+    const matched = allShelves.filter((shelf) => {
+      if (!matchesShelfStatus(shelf, progress, statusFilter)) return false;
+      if (formatFilter !== 'all' && !shelf.books.some((b) => b.file_type === formatFilter)) {
+        return false;
+      }
+      if (!normalizedQuery) return true;
       if (normalizeSearchText(shelf.name).includes(normalizedQuery)) return true;
       return shelf.books.some((book) =>
         normalizeSearchText(`${book.title} ${book.author}`).includes(normalizedQuery),
       );
     });
-  }, [allShelves, normalizedQuery]);
+    return sortShelvesByMode(matched, sortMode, progress, favoriteShelfKeys);
+  }, [allShelves, favoriteShelfKeys, formatFilter, normalizedQuery, progress, sortMode, statusFilter]);
 
   const filteredBooks = useMemo(() => {
     return books.filter((book) => {
@@ -197,16 +324,29 @@ export function useLibraryViewState(
         const shelfKey = (book.shelf || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi');
         if (shelfKey !== activeShelfKey) return false;
       }
+      if (formatFilter !== 'all' && book.file_type !== formatFilter) return false;
+      if (!matchesBookStatus(book, progress, statusFilter)) return false;
       if (!normalizedQuery) return true;
       const haystack = normalizeSearchText(`${book.title} ${book.author} ${book.shelf}`);
       return haystack.includes(normalizedQuery);
     });
-  }, [books, activeShelfKey, normalizedQuery]);
+  }, [activeShelfKey, books, formatFilter, normalizedQuery, progress, statusFilter]);
 
-  const visibleShelves = useMemo(
-    () => sortShelvesFavoriteFirst(groupBooksIntoShelves(filteredBooks), favoriteShelfKeys),
-    [filteredBooks, favoriteShelfKeys],
-  );
+  const visibleShelves = useMemo(() => {
+    const grouped = groupBooksIntoShelves(filteredBooks);
+    if (sortMode === 'recent_upload') {
+      for (const shelf of grouped) {
+        shelf.books.sort((a, b) => b.created_at.localeCompare(a.created_at));
+      }
+    } else if (sortMode === 'recent_read') {
+      for (const shelf of grouped) {
+        shelf.books.sort(
+          (a, b) => (progress[b.id]?.updatedAt ?? 0) - (progress[a.id]?.updatedAt ?? 0),
+        );
+      }
+    }
+    return sortShelvesByMode(grouped, sortMode, progress, favoriteShelfKeys);
+  }, [favoriteShelfKeys, filteredBooks, progress, sortMode]);
 
   const toggleSelectionMode = useCallback(() => {
     setSelectionMode((prev) => {
@@ -238,6 +378,8 @@ export function useLibraryViewState(
 
   const clearFilters = useCallback(() => {
     setSearchQuery('');
+    setStatusFilter('all');
+    setFormatFilter('all');
     setActiveShelfKey(null);
   }, []);
 
@@ -246,7 +388,9 @@ export function useLibraryViewState(
     [books, selectedIds],
   );
 
-  const isFiltering = Boolean(normalizedQuery || activeShelfKey);
+  const isFiltering = Boolean(
+    normalizedQuery || activeShelfKey || statusFilter !== 'all' || formatFilter !== 'all',
+  );
 
   return {
     activeTab,
@@ -258,6 +402,12 @@ export function useLibraryViewState(
     syncRenamedShelf,
     searchQuery,
     setSearchQuery,
+    statusFilter,
+    setStatusFilter,
+    formatFilter,
+    setFormatFilter,
+    sortMode,
+    setSortMode,
     activeShelfKey,
     setActiveShelfKey,
     selectionMode,
@@ -265,6 +415,8 @@ export function useLibraryViewState(
     allShelves,
     libraryShelves,
     continueReadingBooks,
+    weeklyPopularBooks,
+    recentlyAddedBooks,
     filteredBooks,
     visibleShelves,
     selectedBooks,
