@@ -11,73 +11,48 @@ export const MAX_SHELF_TAGS = 20;
 export const MAX_SHELF_TAG_LENGTH = 40;
 
 /**
- * 64 thể loại chuẩn Light Novel (theo bộ phân loại phổ biến).
+ * 39 thể loại chuẩn Light Novel tinh gọn (tiếng Anh/Nhật, bỏ các tag thừa/trùng lặp, D-032).
  * Module này chỉ được import trong các chunk nạp lười (`AdvancedSearchPanel`, `ShelfTagsModal`)
  * để không làm phình gói entry `index-*.js` (D-013).
  */
 export const PRESET_SHELF_TAGS = [
   'Action',
   'Adapted to Anime',
-  'Adapted to Drama CD',
-  'Adapted to Manga',
-  'Adapted to Manhua',
-  'Adapted to Manhwa',
   'Adventure',
-  'Age Gap',
-  'Boys Love',
-  'Character Growth',
-  'Chinese Novel',
   'Comedy',
-  'Cooking',
-  'Different Social Status',
+  'Dark Fantasy',
   'Drama',
   'Ecchi',
-  'English Novel',
-  'Fanfiction',
   'Fantasy',
   'Female Protagonist',
   'Game',
-  'Gender Bender',
   'Harem',
+  'Healing',
   'Historical',
   'Horror',
   'Isekai',
-  'Josei',
-  'Korean Novel',
+  'Light Novel',
   'Magic',
   'Martial Arts',
   'Mecha',
   'Military',
-  'Misunderstanding',
   'Mystery',
-  'Netorare',
-  'Obsession',
-  'One shot',
-  'Otome Game',
-  'Parody',
+  'One-shot',
+  'Post-Apocalyptic',
   'Psychological',
-  'Reverse Harem',
   'Romance',
-  'Satire',
   'School Life',
-  'Science Fiction',
+  'Sci-Fi',
   'Seinen',
   'Shoujo',
-  'Shoujo ai',
   'Shounen',
-  'Shounen ai',
   'Slice of Life',
   'Slow Life',
   'Sports',
   'Super Power',
   'Supernatural',
-  'Suspense',
   'Tragedy',
-  'Wars',
   'Web Novel',
-  'Workplace',
-  'Wuxia',
-  'Xianxia',
   'Yandere',
   'Yuri',
 ] as const;
@@ -91,7 +66,7 @@ const PRESET_BY_KEY = new Map<string, string>(
 );
 
 /**
- * Chuẩn hoá nhãn tag: nếu khớp 1 trong 64 thể loại chuẩn thì trả về đúng chữ hoa/thường chuẩn.
+ * Chuẩn hoá nhãn tag: nếu khớp 1 trong 39 thể loại chuẩn thì trả về đúng chữ hoa/thường chuẩn.
  */
 export function canonicalizeTagLabel(raw: string): string {
   const cleaned = raw.trim().replace(/\s+/g, ' ').slice(0, MAX_SHELF_TAG_LENGTH).trim();
@@ -107,7 +82,7 @@ export interface TagCatalogItem {
 }
 
 /**
- * Tổng hợp danh mục đầy đủ 64 thể loại chuẩn + mọi tag tuỳ chỉnh đang gắn trên các kệ,
+ * Tổng hợp danh mục đầy đủ 39 thể loại chuẩn + mọi tag tuỳ chỉnh đang gắn trên các kệ,
  * kèm số lượng bộ truyện đang mang từng thể loại.
  */
 export function buildTagCatalogWithCounts(
