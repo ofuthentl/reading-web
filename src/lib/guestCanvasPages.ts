@@ -1,5 +1,13 @@
 import type { ReaderFont, ReaderTheme } from '@/types';
-import type { CanvasLayoutItem } from '@/lib/guestCanvasLayout';
+import {
+  INLINE_FOOTNOTE_TOKEN_RE,
+  normalizeFootnoteKey,
+} from '@/lib/epubFootnotes';
+import {
+  type CanvasLayoutItem,
+  buildCanvasFontSpec,
+  measureCanvasTextWidth,
+} from '@/lib/guestCanvasLayout';
 import {
   drawCanvasLayoutItems,
   prepareProtectedCanvasSurface,
@@ -18,6 +26,15 @@ export interface CanvasImageHitRect {
   height: number;
   mediaIndex: number;
   alt?: string;
+}
+
+export interface CanvasFootnoteHitRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  markerLabel: string;
+  key: string;
 }
 
 /**
@@ -72,7 +89,10 @@ function shiftColumnItems(
   columnWidth: number,
   offsetX: number,
   pageHeight: number,
+  font: ReaderFont,
   hitRects: CanvasImageHitRect[],
+  footnoteRects: CanvasFootnoteHitRect[],
+  footnoteKeys: ReadonlySet<string> | undefined,
   highlightSourceY: number | null,
 ): CanvasLayoutItem[] {
   return page.items.map((item) => {
@@ -100,6 +120,33 @@ function shiftColumnItems(
       };
     }
     if (item.kind === 'text-line') {
+      if (footnoteKeys && footnoteKeys.size > 0) {
+        for (const frag of item.fragments) {
+          if (!frag.text.includes('[') && !frag.text.includes('(')) continue;
+          const spec = buildCanvasFontSpec(
+            item.isHeading ? 'serif' : font,
+            item.fontSize,
+            item.isHeading || frag.bold,
+            frag.italic,
+          );
+          INLINE_FOOTNOTE_TOKEN_RE.lastIndex = 0;
+          let m: RegExpExecArray | null;
+          while ((m = INLINE_FOOTNOTE_TOKEN_RE.exec(frag.text)) !== null) {
+            const key = normalizeFootnoteKey(m[0]);
+            if (!footnoteKeys.has(key)) continue;
+            const prefixW = m.index > 0 ? measureCanvasTextWidth(frag.text.slice(0, m.index), spec) : 0;
+            const tokenW = measureCanvasTextWidth(m[0], spec);
+            footnoteRects.push({
+              x: offsetX + frag.x + prefixW - 4,
+              y: shiftedY - 2,
+              width: tokenW + 8,
+              height: item.height + 4,
+              markerLabel: m[0],
+              key,
+            });
+          }
+        }
+      }
       const flashHighlight =
         highlightSourceY !== null && Math.abs(item.y - highlightSourceY) <= item.height * 1.15;
       return flashHighlight ? { ...item, y: shiftedY, flashHighlight: true } : { ...item, y: shiftedY };
@@ -125,6 +172,8 @@ export function paintGuestPaginatedCanvas(options: {
   watermarkLabel: string;
   bitmaps: ReadonlyMap<number, ImageBitmap>;
   highlightSourceY?: number | null;
+  footnoteKeys?: ReadonlySet<string>;
+  footnoteHitRectsOut?: CanvasFootnoteHitRect[];
 }): CanvasImageHitRect[] {
   const {
     canvas,
@@ -139,6 +188,8 @@ export function paintGuestPaginatedCanvas(options: {
     watermarkLabel,
     bitmaps,
     highlightSourceY = null,
+    footnoteKeys,
+    footnoteHitRectsOut,
   } = options;
 
   const totalCssW = columns === 2 ? columnWidth * 2 + columnGap : columnWidth;
@@ -156,6 +207,7 @@ export function paintGuestPaginatedCanvas(options: {
   if (!surface) return [];
 
   const hitRects: CanvasImageHitRect[] = [];
+  const footnoteRects: CanvasFootnoteHitRect[] = [];
   const { ctx, palette } = surface;
 
   if (leftPage && leftPage.items.length > 0) {
@@ -164,7 +216,10 @@ export function paintGuestPaginatedCanvas(options: {
       columnWidth,
       0,
       pageHeight,
+      font,
       hitRects,
+      footnoteRects,
+      footnoteKeys,
       highlightSourceY,
     );
     drawCanvasLayoutItems({
@@ -179,6 +234,7 @@ export function paintGuestPaginatedCanvas(options: {
       font,
       watermarkLabel,
       bitmaps,
+      footnoteKeys,
     });
   }
 
@@ -189,7 +245,10 @@ export function paintGuestPaginatedCanvas(options: {
       columnWidth,
       rightOffsetX,
       pageHeight,
+      font,
       hitRects,
+      footnoteRects,
+      footnoteKeys,
       highlightSourceY,
     );
     drawCanvasLayoutItems({
@@ -204,8 +263,13 @@ export function paintGuestPaginatedCanvas(options: {
       font,
       watermarkLabel,
       bitmaps,
+      footnoteKeys,
     });
   }
 
+  if (footnoteHitRectsOut) {
+    footnoteHitRectsOut.length = 0;
+    footnoteHitRectsOut.push(...footnoteRects);
+  }
   return hitRects;
 }

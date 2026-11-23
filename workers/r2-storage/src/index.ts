@@ -31,13 +31,14 @@ import {
   deleteBookBookmark,
   listBookBookmarks,
 } from './bookmarksDb';
+import { uploadBookGuestPack } from './guestPack';
+import { tryHandleGuestRoutes } from './guestRoutes';
 import {
-  getGuestBookToc,
-  getGuestEncryptedChapter,
-  getGuestEncryptedMediaResponse,
-  uploadBookGuestPack,
-} from './guestPack';
-import { searchGuestBookChapters } from './guestSearch';
+  createHighlight,
+  deleteHighlight,
+  listHighlights,
+  updateHighlight,
+} from './highlightsDb';
 import {
   assertLoginNotRateLimited,
   clearLoginFailures,
@@ -215,69 +216,19 @@ async function handleApi(
     return jsonResponse(result, 200, origin);
   }
 
-  // Guest-safe TOC, per-chapter AES-GCM encrypted payload & sliced R2 media (D-028)
-  const guestTocMatch = normalizedPath.match(/^\/api\/guest\/books\/([^/]+)\/toc$/);
-  if (guestTocMatch && request.method === 'GET') {
-    const toc = await getGuestBookToc(env, auth, guestTocMatch[1]);
-    return jsonResponse(toc, 200, origin);
-  }
-
-  const guestChapterMatch = normalizedPath.match(/^\/api\/guest\/books\/([^/]+)\/chapters\/(\d+)$/);
-  if (guestChapterMatch && request.method === 'GET') {
-    try {
-      const chapter = await getGuestEncryptedChapter(
-        env,
-        auth,
-        guestChapterMatch[1],
-        Number(guestChapterMatch[2]),
-      );
-      scheduleUsageEvent(ctx, env.DB, {
-        metric: 'guest_chapter_reads',
-        readerScope: auth.role === 'owner' ? 'owner' : `guest:${auth.userId}`,
-        readerRole: auth.role,
-      });
-      return jsonResponse(chapter, 200, origin);
-    } catch (err) {
-      if (err instanceof HttpError && err.status === 429) {
-        scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
-      }
-      throw err;
-    }
-  }
-
-  const guestMediaMatch = normalizedPath.match(/^\/api\/guest\/books\/([^/]+)\/media\/(\d+)$/);
-  if (guestMediaMatch && request.method === 'GET') {
-    return getGuestEncryptedMediaResponse(
-      env,
-      auth,
-      guestMediaMatch[1],
-      Number(guestMediaMatch[2]),
-      (h) => applyCors(h, origin),
-    );
-  }
-
-  const guestSearchMatch = normalizedPath.match(/^\/api\/guest\/books\/([^/]+)\/search$/);
-  if (guestSearchMatch && request.method === 'GET') {
-    try {
-      const result = await searchGuestBookChapters(
-        env,
-        auth,
-        guestSearchMatch[1],
-        url.searchParams.get('q'),
-      );
-      scheduleUsageEvent(ctx, env.DB, {
-        metric: 'guest_searches',
-        readerScope: auth.role === 'owner' ? 'owner' : `guest:${auth.userId}`,
-        readerRole: auth.role,
-      });
-      return jsonResponse(result, 200, origin);
-    } catch (err) {
-      if (err instanceof HttpError && err.status === 429) {
-        scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
-      }
-      throw err;
-    }
-  }
+  // Guest-safe TOC, Illustrations Index, AES-GCM chapter/media & search (D-028/D-029/D-036)
+  const guestRes = await tryHandleGuestRoutes(
+    request,
+    normalizedPath,
+    url,
+    env,
+    auth,
+    origin,
+    ctx,
+    (h) => applyCors(h, origin),
+    jsonResponse,
+  );
+  if (guestRes) return guestRes;
 
   // Bookmarks CRUD isolated by role/userId (D-029 PA-2A)
   const bookmarksListMatch = normalizedPath.match(/^\/api\/books\/([^/]+)\/bookmarks$/);
@@ -293,6 +244,27 @@ async function handleApi(
   const bookmarkDeleteMatch = normalizedPath.match(/^\/api\/books\/([^/]+)\/bookmarks\/([^/]+)$/);
   if (bookmarkDeleteMatch && request.method === 'DELETE') {
     const res = await deleteBookBookmark(env, auth, bookmarkDeleteMatch[1], bookmarkDeleteMatch[2]);
+    return jsonResponse(res, 200, origin);
+  }
+
+  // Highlights & Quote Vault CRUD isolated by user_scope (D-036 Mục 5)
+  if (normalizedPath === '/api/highlights' && request.method === 'GET') {
+    const res = await listHighlights(env, auth, url.searchParams.get('bookId'));
+    return jsonResponse(res, 200, origin);
+  }
+  if (normalizedPath === '/api/highlights' && request.method === 'POST') {
+    const body = await request.json().catch(() => null);
+    const res = await createHighlight(env, auth, body);
+    return jsonResponse(res, 201, origin);
+  }
+  const highlightItemMatch = normalizedPath.match(/^\/api\/highlights\/([^/]+)$/);
+  if (highlightItemMatch && request.method === 'PATCH') {
+    const body = await request.json().catch(() => null);
+    const res = await updateHighlight(env, auth, highlightItemMatch[1], body);
+    return jsonResponse(res, 200, origin);
+  }
+  if (highlightItemMatch && request.method === 'DELETE') {
+    const res = await deleteHighlight(env, auth, highlightItemMatch[1]);
     return jsonResponse(res, 200, origin);
   }
 

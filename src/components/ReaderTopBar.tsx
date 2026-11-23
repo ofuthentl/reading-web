@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ArrowLeft, Bookmark, List, Maximize2, Type } from 'lucide-react';
+import { ArrowLeft, Bookmark, Highlighter, Image as ImageIcon, List, Maximize2, Type } from 'lucide-react';
 import type { ReaderSettings } from '@/types';
 import { ReaderSettingsPopover } from '@/components/ReaderSettingsPopover';
 import type { ReaderDrawerTab } from '@/components/ReaderTocDrawer';
@@ -16,6 +16,7 @@ export interface ReaderTopBarProps {
   statusBadge?: ReactNode;
   onBack: () => void;
   onOpenDrawerTab: (tab: ReaderDrawerTab) => void;
+  onQuickGuestHighlight?: () => void;
   onHideToolbar: () => void;
   onToggleSettings: () => void;
   onCloseSettings: () => void;
@@ -33,6 +34,7 @@ export function ReaderTopBar({
   statusBadge,
   onBack,
   onOpenDrawerTab,
+  onQuickGuestHighlight,
   onHideToolbar,
   onToggleSettings,
   onCloseSettings,
@@ -67,13 +69,35 @@ export function ReaderTopBar({
 
         <button
           type="button"
+          onClick={() => onOpenDrawerTab('illustrations')}
+          className={`hidden rounded-lg p-2 transition sm:inline-flex ${palette.hover}`}
+          aria-label="Minh họa trong tập"
+          title="Xem Minh họa trong tập"
+        >
+          <ImageIcon className="h-4 w-4" />
+        </button>
+
+        <button
+          type="button"
           onClick={() => onOpenDrawerTab('bookmarks')}
           className={`rounded-lg p-2 transition ${palette.hover}`}
-          aria-label="Dấu trang"
-          title="Dấu trang & Ghi chú (B)"
+          aria-label="Dấu trang và Trích dẫn"
+          title="Dấu trang & Trích dẫn (B)"
         >
           <Bookmark className="h-4 w-4" />
         </button>
+
+        {onQuickGuestHighlight && (
+          <button
+            type="button"
+            onClick={onQuickGuestHighlight}
+            className={`rounded-lg p-2 transition ${palette.hover}`}
+            aria-label="Lưu đoạn đang đọc"
+            title="Lưu đoạn đang đọc vào Kho trích dẫn"
+          >
+            <Highlighter className="h-4 w-4 text-accent" />
+          </button>
+        )}
 
         <div className="min-w-0 pl-1">
           <p className="truncate font-display text-sm font-semibold leading-tight">{bookTitle}</p>

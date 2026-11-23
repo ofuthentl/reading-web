@@ -7,6 +7,7 @@ import type {
 } from '@/types';
 import { apiFetch } from '@/lib/authSession';
 import { guessImageMimeType } from '@/lib/docxXml';
+import { extractChapterFootnotesForGuestPack } from '@/lib/epubFootnotes';
 import { parseBookBlob } from '@/lib/parsers';
 import { type ZipSliceInfo, parseZipEntryOffsets } from '@/lib/zipDirectory';
 
@@ -154,6 +155,14 @@ function convertChapterToGuestBlocks(
         blocks.push({ kind: 'img', mediaIndex, ...(alt ? { alt: alt.slice(0, 120) } : {}) });
       }
       return;
+    }
+
+    if (tag === 'a' && (el.getAttribute('href') || '').includes('#')) {
+      const label = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (/^\d{1,3}$|^\*{1,3}$/.test(label)) {
+        appendMergedSpan(pendingSpans, `[${label}]`, bold, italic);
+        return;
+      }
     }
 
     const nextBold = bold || tag === 'strong' || tag === 'b';
@@ -375,11 +384,16 @@ export async function buildGuestPackEnvelope(blob: Blob, book: Book): Promise<Ui
 
     for (const chapter of parsed.chapters) {
       const rawBlocks = convertChapterToGuestBlocks(chapter, zipMap, mediaByZipPath, mediaList);
+      const chapterFootnotes = extractChapterFootnotesForGuestPack(chapter, parsed.chapters);
       const segments = splitOversizedChapter(chapter.id, chapter.title, rawBlocks);
 
       for (const seg of segments) {
         const chapterJsonBytes = new TextEncoder().encode(
-          JSON.stringify({ title: seg.title, blocks: seg.blocks }),
+          JSON.stringify({
+            title: seg.title,
+            blocks: seg.blocks,
+            ...(chapterFootnotes ? { footnotes: chapterFootnotes } : {}),
+          }),
         );
         const compressed = await gzipCompressBytes(chapterJsonBytes);
         manifestChapters.push({

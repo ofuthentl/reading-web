@@ -1,4 +1,8 @@
-import type { GuestChapterPayload, GuestTocItem } from '@/types';
+import type {
+  GuestBookIllustrationItem,
+  GuestChapterPayload,
+  GuestTocItem,
+} from '@/types';
 import { apiFetch, getAuthToken, isCloudMode } from '@/lib/authSession';
 
 export interface DiscordGuestRecord {
@@ -83,6 +87,31 @@ export async function fetchGuestBookToc(bookId: string): Promise<{
     watermarkLabel: body.watermarkLabel || 'Guest',
     chapters: body.chapters,
   };
+}
+
+const guestIllustrationsCache = new Map<string, GuestBookIllustrationItem[]>();
+
+export async function fetchGuestBookIllustrations(
+  bookId: string,
+  signal?: AbortSignal,
+): Promise<GuestBookIllustrationItem[]> {
+  const cached = guestIllustrationsCache.get(bookId);
+  if (cached) return cached;
+
+  const res = await apiFetch(
+    `/api/guest/books/${encodeURIComponent(bookId)}/illustrations`,
+    { signal },
+  );
+  const body = (await res.json().catch(() => ({}))) as {
+    illustrations?: GuestBookIllustrationItem[];
+    error?: string;
+  };
+  if (!res.ok || !Array.isArray(body.illustrations)) {
+    throw new Error(body.error || 'Không thể tải danh sách minh hoạ của tập sách.');
+  }
+  if (guestIllustrationsCache.size > 24) guestIllustrationsCache.clear();
+  guestIllustrationsCache.set(bookId, body.illustrations);
+  return body.illustrations;
 }
 
 export async function fetchGuestChapterDecrypted(

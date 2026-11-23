@@ -130,7 +130,7 @@ export function LibraryHeader({
 
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur-sm transition-colors duration-200 dark:shadow-[0_1px_0_rgba(241,241,241,0.04)]">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-3.5 py-3 sm:gap-3 sm:px-6">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-3.5 py-3 sm:px-5">
         {/* Thương hiệu + Thanh tab điều hướng (Desktop) */}
         <div className="flex min-w-0 items-center gap-2.5 sm:shrink-0 sm:gap-3 lg:gap-4">
           <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
@@ -197,7 +197,7 @@ export function LibraryHeader({
         )}
 
         {/* Cụm nút hành động */}
-        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+        <div className="flex shrink-0 items-center gap-1 lg:gap-1.5">
           {!isOwner && sessionExpiresAt !== null && (
             <span
               className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-canvas px-2.5 py-2 text-xs font-medium text-ink-muted"
@@ -215,10 +215,10 @@ export function LibraryHeader({
               type="button"
               onClick={onUploadClick}
               aria-label="Tải sách lên"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-accent p-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover sm:px-3 dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-accent p-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover xl:px-3 dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
             >
               <Upload className="h-4 w-4" />
-              <span className="hidden sm:inline">Tải sách</span>
+              <span className="hidden xl:inline">Tải sách</span>
             </button>
           )}
 
@@ -269,7 +269,7 @@ export function LibraryHeader({
               }`}
             >
               <CheckSquare className="h-4 w-4" />
-              <span className="hidden md:inline">
+              <span className="hidden xl:inline">
                 {selectionMode
                   ? selectedCount > 0
                     ? `Đang chọn (${selectedCount})`
