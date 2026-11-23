@@ -1,41 +1,49 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FileText, Loader2, Save, Sparkles, UserPen, X } from 'lucide-react';
-import type { Book, ShelfGroup } from '@/types';
+import { FileText, Languages, Loader2, Save, Sparkles, UserPen, Wand2, X } from 'lucide-react';
+import type { AniListNovelCandidate, Book, ShelfGroup } from '@/types';
+import { AniListSuggestPanel } from '@/components/AniListSuggestPanel';
 import {
   type ShelfBatchMode,
   ShelfBatchNoteFields,
 } from '@/components/ShelfBatchNoteFields';
-import { isAuthError, updateBookMetadata } from '@/lib/api';
-import { getBookSortTitle } from '@/lib/bookMetadata';
+import { setShelfAltTitles } from '@/lib/catalogApi';
+import {
+  type BatchMetadataJob,
+  applyAndSaveFullAniListCandidate,
+  buildAuthorSyncJobs,
+  computeShelfAuthorAnalysis,
+  executeBatchMetadataJobs,
+  runShelfEpubAutoExtract,
+} from '@/lib/shelfBatchHelpers';
+import { normalizeClientAltTitles } from '@/lib/shelfPrefs';
 import {
   UNKNOWN_AUTHOR_LABEL,
   getEffectiveAuthorInShelf,
   getHealedTitleInShelf,
 } from '@/lib/shelfSummary';
-import {
-  extractBookAutoAuthor,
-  extractBookAutoDescription,
-} from '@/lib/epubSummaryExtractor';
 import type { ToastType } from '@/hooks/useToast';
-
-type BatchJob = {
-  book: Book;
-  patch: Partial<Pick<Book, 'title' | 'author' | 'description'>>;
-};
 
 export interface ShelfBatchNoteModalProps {
   shelf: ShelfGroup | null;
+  currentAltTitles?: readonly string[];
+  currentTags?: readonly string[];
   onClose: () => void;
   onBooksUpdated: (books: Book[]) => void;
+  onAltTitlesSaved?: (shelfName: string, altTitles: string[]) => void;
+  onTagsSaved?: (shelfName: string, tags: string[]) => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
   onNotify?: (message: string, type?: ToastType) => void;
 }
 
 export function ShelfBatchNoteModal({
   shelf,
+  currentAltTitles = [],
+  currentTags = [],
   onClose,
   onBooksUpdated,
+  onAltTitlesSaved,
+  onTagsSaved,
   onApiError,
   onNotify,
 }: ShelfBatchNoteModalProps) {
@@ -46,13 +54,18 @@ export function ShelfBatchNoteModal({
   const [draftById, setDraftById] = useState<Record<string, string>>({});
   const [authorInput, setAuthorInput] = useState('');
   const [onlyMissingAuthor, setOnlyMissingAuthor] = useState(false);
+  const [altTitlesDraft, setAltTitlesDraft] = useState<string[]>([]);
+  const [anilistOpen, setAnilistOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveDoneCount, setSaveDoneCount] = useState(0);
   const [saveTotalCount, setSaveTotalCount] = useState(0);
   const [extracting, setExtracting] = useState(false);
+
   const mountedRef = useRef(true);
   const shelfRef = useRef(shelf);
   shelfRef.current = shelf;
+  const altRef = useRef(currentAltTitles);
+  altRef.current = currentAltTitles;
   const rawAuthorCountsRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
@@ -67,40 +80,14 @@ export function ShelfBatchNoteModal({
     [shelf],
   );
 
-  const rawAuthorCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    if (!shelf) return map;
-    for (const b of shelf.books) {
-      const k = b.author.trim().toLocaleLowerCase('vi');
-      if (k) map.set(k, (map.get(k) ?? 0) + 1);
-    }
-    return map;
-  }, [shelf]);
-
-  const missingAuthorBooks = useMemo(
-    () =>
-      shelf
-        ? shelf.books.filter(
-            (b) => getEffectiveAuthorInShelf(b, shelf, rawAuthorCounts) === UNKNOWN_AUTHOR_LABEL,
-          )
-        : [],
-    [shelf, rawAuthorCounts],
+  const { rawAuthorCounts, missingAuthorBooks, knownAuthorsInShelf } = useMemo(
+    () => computeShelfAuthorAnalysis(shelf),
+    [shelf],
   );
-
-  const knownAuthorsInShelf = useMemo(() => {
-    if (!shelf) return [];
-    const set = new Set<string>();
-    for (const b of shelf.books) {
-      const clean = getEffectiveAuthorInShelf(b, shelf, rawAuthorCounts);
-      if (clean && clean !== UNKNOWN_AUTHOR_LABEL) set.add(clean);
-    }
-    return Array.from(set);
-  }, [shelf, rawAuthorCounts]);
 
   rawAuthorCountsRef.current = rawAuthorCounts;
   const shelfKey = shelf?.key ?? null;
 
-  // Chỉ reset form khi đổi sang bộ khác (theo shelfKey), chống mất dữ liệu đang gõ (vá M-07)
   useEffect(() => {
     const activeShelf = shelfRef.current;
     if (!shelfKey || !activeShelf) return;
@@ -121,6 +108,8 @@ export function ShelfBatchNoteModal({
         .find((a) => a !== UNKNOWN_AUTHOR_LABEL) ?? '';
     setAuthorInput(firstKnownAuthor);
     setOnlyMissingAuthor(false);
+    setAltTitlesDraft(normalizeClientAltTitles(altRef.current));
+    setAnilistOpen(false);
     setMode('shared');
     setSaving(false);
     setExtracting(false);
@@ -144,78 +133,26 @@ export function ShelfBatchNoteModal({
 
   const handleAutoExtract = async () => {
     if (extracting || saving) return;
-    const epubBooks = shelf.books.filter((b) => b.file_type === 'epub');
-    if (epubBooks.length === 0) {
-      onNotify?.('Kệ này không có tệp EPUB để tự trích dữ liệu.', 'info');
-      return;
-    }
-
     setExtracting(true);
     try {
-      if (mode === 'author') {
-        for (const candidate of epubBooks.slice(0, 3)) {
-          const creator = await extractBookAutoAuthor(candidate);
-          if (creator) {
-            setAuthorInput(creator);
-            onNotify?.(`Đã trích tên tác giả "${creator}" từ tệp EPUB.`, 'success');
-            return;
-          }
-        }
-        onNotify?.('Tệp EPUB không nhúng sẵn thông tin tác giả trong thẻ <dc:creator>.', 'info');
-        return;
-      }
-
-      if (mode === 'shared') {
-        for (const candidate of epubBooks.slice(0, 3)) {
-          const extracted = await extractBookAutoDescription(candidate);
-          if (extracted) {
-            setSharedText(extracted);
-            onNotify?.(
-              `Đã trích nội dung giới thiệu từ "${getBookSortTitle(candidate)}".`,
-              'success',
-            );
-            return;
-          }
-        }
-        onNotify?.('Không tìm thấy mục giới thiệu/tóm tắt tự động trong tệp EPUB đầu bộ.', 'info');
-        return;
-      }
-
-      const candidates = listedVolumes.filter(
-        (b) => b.file_type === 'epub' && !draftById[b.id]?.trim(),
-      );
-      if (candidates.length === 0) {
-        onNotify?.('Không có tập EPUB trống nào cần trích tự động.', 'info');
-        return;
-      }
-      let filled = 0;
-      const nextDrafts = { ...draftById };
-      for (const book of candidates) {
-        try {
-          const text = await extractBookAutoDescription(book);
-          if (text) {
-            nextDrafts[book.id] = text;
-            filled += 1;
-          }
-        } catch {
-          // Bỏ qua tập lỗi lẻ để tiếp tục các tập còn lại
-        }
-      }
-      setDraftById(nextDrafts);
-      onNotify?.(
-        filled > 0
-          ? `Đã tự trích giới thiệu cho ${filled}/${candidates.length} tập EPUB.`
-          : 'Các tệp EPUB này không nhúng sẵn thẻ tóm tắt tự động.',
-        filled > 0 ? 'success' : 'info',
-      );
+      await runShelfEpubAutoExtract({
+        mode,
+        shelf,
+        listedVolumes,
+        draftById,
+        onAuthorExtracted: setAuthorInput,
+        onSharedExtracted: setSharedText,
+        onDraftsUpdated: setDraftById,
+        onNotify,
+      });
     } catch {
       onNotify?.('Không thể đọc tệp EPUB để trích xuất.', 'warning');
     } finally {
-      setExtracting(false);
+      if (mountedRef.current) setExtracting(false);
     }
   };
 
-  const runBatchPatch = async (jobs: BatchJob[], successMessage: string) => {
+  const runBatchPatch = async (jobs: BatchMetadataJob[], successMessage: string) => {
     if (jobs.length === 0) {
       onNotify?.('Tất cả các tập mục tiêu đã khớp sẵn thông tin này.', 'info');
       return;
@@ -223,32 +160,14 @@ export function ShelfBatchNoteModal({
     setSaving(true);
     setSaveDoneCount(0);
     setSaveTotalCount(jobs.length);
-
-    const updatedBooks: Book[] = [];
-    let firstError: unknown = null;
-    let authExpired = false;
-    const CONCURRENCY = 4;
-
-    for (let i = 0; i < jobs.length; i += CONCURRENCY) {
-      if (!mountedRef.current || authExpired) break;
-      const slice = jobs.slice(i, i + CONCURRENCY);
-      const results = await Promise.allSettled(
-        slice.map((job) => updateBookMetadata(job.book.id, job.patch)),
-      );
-      for (const res of results) {
-        if (res.status === 'fulfilled') updatedBooks.push(res.value);
-        else {
-          if (!firstError) firstError = res.reason;
-          if (isAuthError(res.reason)) authExpired = true;
-        }
-      }
-      if (mountedRef.current) setSaveDoneCount(Math.min(jobs.length, i + slice.length));
-    }
-
+    const { updatedBooks, firstError } = await executeBatchMetadataJobs(
+      jobs,
+      () => mountedRef.current,
+      setSaveDoneCount,
+    );
     if (!mountedRef.current) return;
     setSaving(false);
     if (updatedBooks.length > 0) onBooksUpdated(updatedBooks);
-
     if (firstError) {
       onApiError?.(firstError, 'Một số tập chưa lưu được thay đổi.');
       if (updatedBooks.length > 0) {
@@ -256,29 +175,88 @@ export function ShelfBatchNoteModal({
       }
       return;
     }
-
     onNotify?.(successMessage.replace('{count}', String(updatedBooks.length)), 'success');
     onClose();
   };
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleApplyAniListToForm = (candidate: AniListNovelCandidate) => {
+    if (candidate.description) {
+      setSharedText(candidate.description);
+      if (missingBooks.length === 0) setOverwriteExisting(true);
+    }
+    if (candidate.author) setAuthorInput(candidate.author);
+    if (candidate.altTitles.length > 0) {
+      setAltTitlesDraft((prev) => normalizeClientAltTitles([...prev, ...candidate.altTitles]));
+    }
+    setAnilistOpen(false);
+    onNotify?.(
+      `Đã điền gợi ý AniList ("${candidate.primaryTitle}") vào biểu mẫu — hãy kiểm tra các tab và lưu.`,
+      'info',
+    );
+  };
+
+  const handleQuickSaveAllFromAniList = async (candidate: AniListNovelCandidate) => {
+    if (saving || extracting) return;
+    setSaving(true);
+    setSaveDoneCount(0);
+    setSaveTotalCount(0);
+    try {
+      const savedAlt = await applyAndSaveFullAniListCandidate({
+        shelf,
+        candidate,
+        currentAltTitles: altTitlesDraft,
+        currentTags,
+        overwriteExistingDesc: overwriteExisting,
+        rawAuthorCounts,
+        isMounted: () => mountedRef.current,
+        onTotalJobs: setSaveTotalCount,
+        onProgress: setSaveDoneCount,
+        onAltTitlesSaved,
+        onTagsSaved,
+        onBooksUpdated,
+      });
+      if (!mountedRef.current) return;
+      setAltTitlesDraft(savedAlt);
+      onNotify?.(
+        `Đã đồng bộ trọn bộ thông tin AniList cho "${shelf.name}" (tác giả, tên khác, mô tả & thể loại).`,
+        'success',
+      );
+      onClose();
+    } catch (err) {
+      if (mountedRef.current) onApiError?.(err, 'Không thể lưu trọn bộ dữ liệu từ AniList.');
+    } finally {
+      if (mountedRef.current) setSaving(false);
+    }
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (saving || extracting) return;
 
+    if (mode === 'alt-titles') {
+      setSaving(true);
+      setSaveTotalCount(0);
+      try {
+        const saved = await setShelfAltTitles(shelf.name, altTitlesDraft);
+        onAltTitlesSaved?.(shelf.name, saved);
+        onNotify?.(
+          saved.length > 0
+            ? `Đã lưu ${saved.length} tên gọi khác cho "${shelf.name}".`
+            : `Đã xoá tên gọi khác của "${shelf.name}".`,
+          'success',
+        );
+        onClose();
+      } catch (err) {
+        onApiError?.(err, 'Không thể lưu tên gọi khác.');
+      } finally {
+        if (mountedRef.current) setSaving(false);
+      }
+      return;
+    }
+
     if (mode === 'author') {
       const nextAuthor = authorInput.trim() || UNKNOWN_AUTHOR_LABEL;
-      const jobs: BatchJob[] = [];
-      for (const book of targetAuthorBooks) {
-        const healedTitle = getHealedTitleInShelf(book, shelf, rawAuthorCounts);
-        const titleNeedsHeal = healedTitle !== book.title;
-        if (!titleNeedsHeal && book.author === nextAuthor) continue;
-        jobs.push({
-          book,
-          patch: titleNeedsHeal
-            ? { title: healedTitle, author: nextAuthor }
-            : { author: nextAuthor },
-        });
-      }
+      const jobs = buildAuthorSyncJobs(targetAuthorBooks, shelf, rawAuthorCounts, nextAuthor);
       void runBatchPatch(
         jobs,
         `Đã đồng bộ tác giả "${nextAuthor}" cho {count} tập trong "${shelf.name}".`,
@@ -292,14 +270,14 @@ export function ShelfBatchNoteModal({
         onNotify?.('Vui lòng nhập nội dung ghi chú / giới thiệu trước khi lưu.', 'warning');
         return;
       }
-      const jobs: BatchJob[] = targetSharedBooks
+      const jobs: BatchMetadataJob[] = targetSharedBooks
         .filter((b) => (b.description?.trim() ?? '') !== trimmed)
         .map((book) => ({ book, patch: { description: trimmed } }));
       void runBatchPatch(jobs, `Đã cập nhật ghi chú cho {count} tập trong "${shelf.name}".`);
       return;
     }
 
-    const jobs: BatchJob[] = [];
+    const jobs: BatchMetadataJob[] = [];
     for (const book of listedVolumes) {
       const nextVal = (draftById[book.id] ?? '').trim();
       const prevVal = book.description?.trim() ?? '';
@@ -318,17 +296,21 @@ export function ShelfBatchNoteModal({
   }
 
   const submitLabel =
-    mode === 'author'
-      ? `Đồng bộ cho ${targetAuthorBooks.length} tập`
-      : mode === 'shared'
-        ? `Lưu cho ${targetSharedBooks.length} tập`
-        : 'Lưu các tập đã nhập';
+    mode === 'alt-titles'
+      ? `Lưu tên khác (${altTitlesDraft.length})`
+      : mode === 'author'
+        ? `Đồng bộ cho ${targetAuthorBooks.length} tập`
+        : mode === 'shared'
+          ? `Lưu cho ${targetSharedBooks.length} tập`
+          : 'Lưu các tập đã nhập';
 
   const submitDisabled =
     saving ||
     extracting ||
     (mode === 'shared' && (!sharedText.trim() || targetSharedBooks.length === 0)) ||
     (mode === 'author' && (!authorInput.trim() || targetAuthorBooks.length === 0));
+
+  const HeaderIcon = mode === 'author' ? UserPen : mode === 'alt-titles' ? Languages : FileText;
 
   return createPortal(
     <div
@@ -344,23 +326,19 @@ export function ShelfBatchNoteModal({
         className="moonlit-card fade-in flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div className="flex min-w-0 flex-1 items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
-              {mode === 'author' ? <UserPen className="h-5 w-5" /> : <FileText className="h-5 w-5" />}
+              <HeaderIcon className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
               <h2
                 id="shelf-batch-note-title"
                 className="truncate font-display text-lg font-semibold text-ink"
               >
-                Ghi chú &amp; Tác giả bộ truyện
+                Thông tin bộ truyện &amp; Gợi ý AniList
               </h2>
-              <p
-                title={shelf.name}
-                className="mt-0.5 truncate text-xs font-medium text-ink-muted"
-              >
+              <p title={shelf.name} className="mt-0.5 truncate text-xs font-medium text-ink-muted">
                 {shelf.name}
               </p>
               <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-ink-muted">
@@ -370,8 +348,7 @@ export function ShelfBatchNoteModal({
                 </span>
                 <span aria-hidden="true">·</span>
                 <span>
-                  Chưa rõ tác giả: <strong className="text-ink">{missingAuthorBooks.length}</strong>/
-                  {shelf.books.length}
+                  Tên khác: <strong className="text-ink">{altTitlesDraft.length}</strong>
                 </span>
               </p>
             </div>
@@ -388,14 +365,14 @@ export function ShelfBatchNoteModal({
           </button>
         </div>
 
-        {/* Thanh chuyển 3 tab + nút Tự trích từ EPUB */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-canvas/50 px-5 py-2.5">
           <div className="inline-flex flex-wrap rounded-xl border border-line bg-surface p-1 text-xs">
             {(
               [
-                ['shared', 'Ghi chú chung cả bộ'],
-                ['per-volume', `Điền riêng từng tập (${missingBooks.length})`],
-                ['author', 'Tên tác giả'],
+                ['shared', 'Ghi chú chung'],
+                ['per-volume', `Từng tập (${missingBooks.length})`],
+                ['author', 'Tác giả'],
+                ['alt-titles', `Tên khác (${altTitlesDraft.length})`],
               ] as const
             ).map(([tabId, label]) => (
               <button
@@ -403,7 +380,7 @@ export function ShelfBatchNoteModal({
                 type="button"
                 disabled={saving || extracting}
                 onClick={() => setMode(tabId)}
-                className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
+                className={`rounded-lg px-2.5 py-1.5 font-medium transition-colors ${
                   mode === tabId
                     ? 'bg-accent text-accent-foreground shadow-sm'
                     : 'text-ink-muted hover:text-ink'
@@ -414,26 +391,53 @@ export function ShelfBatchNoteModal({
             ))}
           </div>
 
-          {hasEpubCandidates && (
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
               disabled={saving || extracting}
-              onClick={() => void handleAutoExtract()}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-line-strong hover:bg-subtle disabled:opacity-50"
+              onClick={() => setAnilistOpen((v) => !v)}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
+                anilistOpen
+                  ? 'border-crimson-accent bg-crimson-accent/12 text-crimson-accent'
+                  : 'border-crimson-accent/40 bg-surface text-crimson-accent hover:bg-crimson-accent/10'
+              }`}
             >
-              {extracting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
-              ) : (
-                <Sparkles className="h-3.5 w-3.5 text-accent" />
-              )}
-              <span>{extracting ? 'Đang đọc EPUB...' : 'Tự trích từ EPUB'}</span>
+              <Wand2 className="h-3.5 w-3.5" />
+              <span>Gợi ý từ AniList</span>
             </button>
-          )}
+
+            {hasEpubCandidates && mode !== 'alt-titles' && (
+              <button
+                type="button"
+                disabled={saving || extracting}
+                onClick={() => void handleAutoExtract()}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-line-strong hover:bg-subtle disabled:opacity-50"
+              >
+                {extracting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5 text-accent" />
+                )}
+                <span>{extracting ? 'Đang đọc...' : 'Tự trích EPUB'}</span>
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Nội dung form */}
-        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+        <form onSubmit={(e) => void handleSubmit(e)} className="flex min-h-0 flex-1 flex-col">
           <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4 scrollbar-thin">
+            {anilistOpen && (
+              <AniListSuggestPanel
+                initialQuery={altTitlesDraft[0] || shelf.name}
+                mode="full"
+                disabled={saving || extracting}
+                onApplyCandidate={handleApplyAniListToForm}
+                onQuickSaveAll={(cand) => void handleQuickSaveAllFromAniList(cand)}
+                onClose={() => setAnilistOpen(false)}
+                onNotify={onNotify}
+              />
+            )}
+
             <ShelfBatchNoteFields
               mode={mode}
               shelfName={shelf.name}
@@ -450,6 +454,7 @@ export function ShelfBatchNoteModal({
               draftById={draftById}
               authorInput={authorInput}
               onlyMissingAuthor={onlyMissingAuthor}
+              altTitlesDraft={altTitlesDraft}
               disabled={saving || extracting}
               onChangeSharedText={setSharedText}
               onChangeOverwriteExisting={setOverwriteExisting}
@@ -459,6 +464,7 @@ export function ShelfBatchNoteModal({
               }
               onChangeAuthorInput={setAuthorInput}
               onChangeOnlyMissingAuthor={setOnlyMissingAuthor}
+              onChangeAltTitlesDraft={setAltTitlesDraft}
             />
 
             {saving && saveTotalCount > 0 && (

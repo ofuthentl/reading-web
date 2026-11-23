@@ -1,6 +1,11 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type {
-  AuthSessionInfo, Book, ReadingProgress, ShelfAccessSummary, StorageStats,
+  AuthSessionInfo,
+  Book,
+  CustomCollection,
+  ReadingProgress,
+  ShelfAccessSummary,
+  StorageStats,
 } from '@/types';
 import {
   clearReadingProgress,
@@ -11,6 +16,7 @@ import {
 import {
   type ShelfPrefsState,
   patchShelfAccessSummary,
+  patchShelfAltTitles,
   patchShelfCover,
   patchShelfFavorite,
   patchShelfTags,
@@ -18,6 +24,7 @@ import {
   readLocalShelfPrefs,
   renameShelfPrefs,
   setShelfFavorite,
+  toShelfPrefKey,
 } from '@/lib/shelfPrefs';
 import { useGuestLocalFavorites } from '@/hooks/useGuestLocalFavorites';
 import type { ToastType } from '@/hooks/useToast';
@@ -28,6 +35,12 @@ type NetworkNavigator = Navigator & { connection?: { saveData?: boolean } };
 function canPreloadOnIdle(): boolean {
   const nav = typeof navigator !== 'undefined' ? (navigator as NetworkNavigator) : undefined;
   return nav?.onLine !== false && nav?.connection?.saveData !== true;
+}
+
+function sortCollectionsList(items: CustomCollection[]): CustomCollection[] {
+  return [...items].sort((a, b) =>
+    a.sortOrder !== b.sortOrder ? a.sortOrder - b.sortOrder : a.createdAt - b.createdAt,
+  );
 }
 
 interface UseLibraryDataStoreOptions {
@@ -50,6 +63,8 @@ export function useLibraryDataStore({
   const [progress, setProgress] = useState<Record<string, ReadingProgress>>({});
   const [weeklyPopularIds, setWeeklyPopularIds] = useState<string[]>([]);
   const [shelfPrefs, setShelfPrefs] = useState<ShelfPrefsState>(readLocalShelfPrefs);
+  const [planToReadShelfKeys, setPlanToReadShelfKeys] = useState<Set<string>>(() => new Set());
+  const [collections, setCollections] = useState<CustomCollection[]>([]);
   const [storage, setStorage] = useState<StorageStats | null>(null);
   const [selectionResetKey, setSelectionResetKey] = useState(0);
   const coreReadersPreloadedRef = useRef(false);
@@ -112,6 +127,10 @@ export function useLibraryDataStore({
       setProgress(state.progress);
       setWeeklyPopularIds(state.weeklyPopularIds);
       setShelfPrefs(state.shelfPrefs);
+      setPlanToReadShelfKeys(
+        new Set((state.planToReadShelves || []).map(toShelfPrefKey).filter(Boolean)),
+      );
+      setCollections(sortCollectionsList(state.collections || []));
       setStorage(state.storage);
       setSession(state.session);
       if (state.session.role !== 'owner') {
@@ -156,6 +175,8 @@ export function useLibraryDataStore({
     setProgress({});
     setWeeklyPopularIds([]);
     setShelfPrefs({ covers: {}, favorites: [] });
+    setPlanToReadShelfKeys(new Set());
+    setCollections([]);
     setStorage(null);
   }, []);
 
@@ -199,16 +220,35 @@ export function useLibraryDataStore({
 
   const applyShelfRenamed = useCallback(
     (oldName: string, newName: string) => {
-      const oldKey = oldName.trim().toLocaleLowerCase('vi');
+      const oldKey = toShelfPrefKey(oldName);
+      const newKey = toShelfPrefKey(newName);
       setBooks((prev) =>
         prev.map((item) =>
-          (item.shelf || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi') === oldKey
+          toShelfPrefKey(item.shelf || 'Kho chưa phân loại') === oldKey
             ? { ...item, shelf: newName }
             : item,
         ),
       );
       setShelfPrefs((prev) => renameShelfPrefs(prev, oldName, newName));
       syncRenamedGuestFavorite(oldName, newName);
+      if (oldKey && newKey && oldKey !== newKey) {
+        setPlanToReadShelfKeys((prev) => {
+          if (!prev.has(oldKey)) return prev;
+          const next = new Set(prev);
+          next.delete(oldKey);
+          next.add(newKey);
+          return next;
+        });
+        setCollections((prev) =>
+          prev.map((col) => {
+            if (!col.shelfKeys.includes(oldKey)) return col;
+            const merged = Array.from(
+              new Set(col.shelfKeys.map((k) => (k === oldKey ? newKey : k))),
+            );
+            return { ...col, shelfKeys: merged };
+          }),
+        );
+      }
     },
     [syncRenamedGuestFavorite],
   );
@@ -226,6 +266,55 @@ export function useLibraryDataStore({
 
   const handleShelfTagsChanged = useCallback((shelfName: string, tags: string[]) => {
     setShelfPrefs((prev) => patchShelfTags(prev, shelfName, tags));
+  }, []);
+
+  const handleShelfAltTitlesChanged = useCallback((shelfName: string, altTitles: string[]) => {
+    setShelfPrefs((prev) => patchShelfAltTitles(prev, shelfName, altTitles));
+  }, []);
+
+  const handleTogglePlanToRead = useCallback(
+    (shelfName: string, nextPlanToRead: boolean) => {
+      const key = toShelfPrefKey(shelfName);
+      if (!key) return;
+      setPlanToReadShelfKeys((prev) => {
+        const next = new Set(prev);
+        if (nextPlanToRead) next.add(key);
+        else next.delete(key);
+        return next;
+      });
+      addToast(
+        nextPlanToRead
+          ? `Đã thêm "${shelfName}" vào danh sách Đọc sau.`
+          : `Đã gỡ "${shelfName}" khỏi danh sách Đọc sau.`,
+        'info',
+      );
+      void import('@/lib/catalogApi')
+        .then((m) => m.setPlanToReadShelf(shelfName, nextPlanToRead))
+        .catch((err) => {
+          setPlanToReadShelfKeys((prev) => {
+            const reverted = new Set(prev);
+            if (nextPlanToRead) reverted.delete(key);
+            else reverted.add(key);
+            return reverted;
+          });
+          onApiError(err, 'Không thể cập nhật danh sách Đọc sau.');
+        });
+    },
+    [addToast, onApiError],
+  );
+
+  const handleCollectionSaved = useCallback((collection: CustomCollection) => {
+    setCollections((prev) => {
+      const exists = prev.some((c) => c.id === collection.id);
+      const next = exists
+        ? prev.map((c) => (c.id === collection.id ? collection : c))
+        : [...prev, collection];
+      return sortCollectionsList(next);
+    });
+  }, []);
+
+  const handleCollectionDeleted = useCallback((collectionId: string) => {
+    setCollections((prev) => prev.filter((c) => c.id !== collectionId));
   }, []);
 
   const handleToggleFavoriteShelf = useCallback(
@@ -327,6 +416,8 @@ export function useLibraryDataStore({
     progress,
     weeklyPopularIds,
     shelfPrefs,
+    planToReadShelfKeys,
+    collections,
     storage,
     selectionResetKey,
     effectiveFavoriteShelfKeys,
@@ -342,6 +433,10 @@ export function useLibraryDataStore({
     handleShelfCoverChanged,
     handleShelfAccessChanged,
     handleShelfTagsChanged,
+    handleShelfAltTitlesChanged,
+    handleTogglePlanToRead,
+    handleCollectionSaved,
+    handleCollectionDeleted,
     handleToggleFavoriteShelf,
     handleMarkBookCompleted,
     handleResetBookProgress,

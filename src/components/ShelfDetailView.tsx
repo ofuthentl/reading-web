@@ -28,6 +28,7 @@ interface ShelfDetailViewProps {
   onOpenBatchNotes?: () => void;
   onManageAccess?: () => void;
   onToggleFavorite?: (shelfName: string, nextFavorite: boolean) => void;
+  onTogglePlanToRead?: (shelfName: string, nextPlanToRead: boolean) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
 }
@@ -54,6 +55,7 @@ export function ShelfDetailView({
   onOpenBatchNotes,
   onManageAccess,
   onToggleFavorite,
+  onTogglePlanToRead,
   onMoveSelectedToShelf,
   onDeleteSelected,
 }: ShelfDetailViewProps) {
@@ -110,6 +112,7 @@ export function ShelfDetailView({
         onOpenBatchNotes={onOpenBatchNotes}
         onManageAccess={onManageAccess}
         onToggleFavorite={onToggleFavorite}
+        onTogglePlanToRead={onTogglePlanToRead}
       />
 
       {/* Thanh chọn nhiều trong phạm vi kệ đang mở */}

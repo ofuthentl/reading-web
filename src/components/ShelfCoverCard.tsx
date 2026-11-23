@@ -1,5 +1,5 @@
 import { type CSSProperties, useEffect, useState } from 'react';
-import { FolderEdit, Image, Lock, Star } from 'lucide-react';
+import { Bookmark, FolderEdit, Image, Lock, Star } from 'lucide-react';
 import { pickClothCoverColor } from '@/lib/bookMetadata';
 import type { ShelfSummary } from '@/lib/shelfSummary';
 import {
@@ -17,6 +17,7 @@ interface ShelfCoverCardProps {
   onChangeShelfCover?: (summary: ShelfSummary) => void;
   onManageAccess?: (summary: ShelfSummary) => void;
   onToggleFavorite?: (shelfName: string, nextFavorite: boolean) => void;
+  onTogglePlanToRead?: (shelfName: string, nextPlanToRead: boolean) => void;
 }
 
 export function ShelfCoverCard({
@@ -27,11 +28,13 @@ export function ShelfCoverCard({
   onChangeShelfCover,
   onManageAccess,
   onToggleFavorite,
+  onTogglePlanToRead,
 }: ShelfCoverCardProps) {
   const {
     shelf,
     coverBook,
     isFavorite,
+    isPlanToRead,
     authorLabel,
     bookCount,
     completedCount,
@@ -76,11 +79,19 @@ export function ShelfCoverCard({
                 ? `Đang đọc · ${completedCount}/${bookCount}`
                 : `Đang đọc · ${progressPercent ?? 0}%`,
           }
-        : {
-            dotClass: 'bg-ink-faint/60',
-            textClass: 'text-ink-faint',
-            label: 'Chưa đọc',
-          };
+        : isPlanToRead
+          ? {
+              dotClass: 'bg-sky-600 dark:bg-sky-400',
+              textClass: 'text-sky-700 dark:text-sky-400',
+              label: 'Để dành đọc sau',
+            }
+          : {
+              dotClass: 'bg-ink-faint/60',
+              textClass: 'text-ink-faint',
+              label: 'Chưa đọc',
+            };
+
+  const canShowPtr = Boolean(onTogglePlanToRead && !isGuestLocked);
 
   return (
     <div
@@ -192,25 +203,53 @@ export function ShelfCoverCard({
           </div>
         )}
 
-        {/* Nút ghim kệ yêu thích góc trên-phải (luôn nổi khi đã yêu thích) */}
-        {onToggleFavorite && (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggleFavorite(shelf.name, !isFavorite);
-            }}
-            aria-label={isFavorite ? `Bỏ yêu thích kệ ${shelf.name}` : `Yêu thích kệ ${shelf.name}`}
-            aria-pressed={isFavorite}
-            title={isFavorite ? 'Bỏ yêu thích kệ' : 'Ghim kệ yêu thích lên đầu'}
-            className={`absolute right-2 top-2 rounded-lg border p-1.5 transition-all ${
-              isFavorite
-                ? 'border-amber-400/50 bg-[#16120f]/85 text-amber-400 opacity-100 shadow-sm hover:bg-[#16120f]'
-                : 'touch-action-visible border-[#f3e9d7]/20 bg-[#16120f]/75 text-[#f3e9d7] opacity-85 hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0'
-            }`}
-          >
-            <Star className={`h-3.5 w-3.5 ${isFavorite ? 'fill-amber-400' : ''}`} />
-          </button>
+        {/* Cụm nút Đọc sau & Yêu thích góc trên-phải */}
+        {(canShowPtr || onToggleFavorite) && (
+          <div className="absolute right-2 top-2 flex items-center gap-1">
+            {canShowPtr && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onTogglePlanToRead!(shelf.name, !isPlanToRead);
+                }}
+                aria-label={
+                  isPlanToRead
+                    ? `Bỏ Đọc sau bộ ${shelf.name}`
+                    : `Lưu Đọc sau bộ ${shelf.name}`
+                }
+                aria-pressed={isPlanToRead}
+                title={isPlanToRead ? 'Gỡ khỏi danh sách Đọc sau' : 'Để dành đọc sau'}
+                className={`rounded-lg border p-1.5 transition-all ${
+                  isPlanToRead
+                    ? 'border-sky-400/55 bg-[#16120f]/88 text-sky-300 opacity-100 shadow-sm hover:bg-[#16120f]'
+                    : 'touch-action-visible border-[#f3e9d7]/20 bg-[#16120f]/75 text-[#f3e9d7] opacity-85 hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0'
+                }`}
+              >
+                <Bookmark className={`h-3.5 w-3.5 ${isPlanToRead ? 'fill-sky-300' : ''}`} />
+              </button>
+            )}
+
+            {onToggleFavorite && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleFavorite(shelf.name, !isFavorite);
+                }}
+                aria-label={isFavorite ? `Bỏ yêu thích kệ ${shelf.name}` : `Yêu thích kệ ${shelf.name}`}
+                aria-pressed={isFavorite}
+                title={isFavorite ? 'Bỏ yêu thích kệ' : 'Ghim kệ yêu thích lên đầu'}
+                className={`rounded-lg border p-1.5 transition-all ${
+                  isFavorite
+                    ? 'border-amber-400/50 bg-[#16120f]/85 text-amber-400 opacity-100 shadow-sm hover:bg-[#16120f]'
+                    : 'touch-action-visible border-[#f3e9d7]/20 bg-[#16120f]/75 text-[#f3e9d7] opacity-85 hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0'
+                }`}
+              >
+                <Star className={`h-3.5 w-3.5 ${isFavorite ? 'fill-amber-400' : ''}`} />
+              </button>
+            )}
+          </div>
         )}
 
         {/* Huy hiệu ổ khoá khi bộ sách bị giới hạn cho khách hoặc nhãn quản trị cho Admin */}

@@ -9,7 +9,7 @@ import type {
 } from '@/types';
 import { getDisplayAuthor, isVolumeOrSubtitleSegment } from '@/lib/bookMetadata';
 import { isKnownAuthor } from '@/lib/shelfPlacement';
-import { sortShelvesFavoriteFirst } from '@/lib/shelfPrefs';
+import { sortShelvesFavoriteFirst, toShelfPrefKey } from '@/lib/shelfPrefs';
 
 export function normalizeSearchText(input: string): string {
   return input
@@ -50,6 +50,41 @@ export function matchesShelfTagFilters(
     : includedKeys.every((inc) => tagSet.has(inc));
 }
 
+export function matchesShelfSearchQuery(
+  shelf: ShelfGroup,
+  normalizedQuery: string,
+  shelfTags?: Readonly<Record<string, string[]>>,
+  shelfAltTitles?: Readonly<Record<string, string[]>>,
+): boolean {
+  if (!normalizedQuery) return true;
+  if (normalizeSearchText(shelf.name).includes(normalizedQuery)) return true;
+  const altList = shelfAltTitles?.[shelf.key];
+  if (altList && altList.some((alt) => normalizeSearchText(alt).includes(normalizedQuery))) {
+    return true;
+  }
+  const tagsText = (shelfTags?.[shelf.key] || []).join(' ');
+  if (tagsText && normalizeSearchText(tagsText).includes(normalizedQuery)) return true;
+  return shelf.books.some((book) =>
+    normalizeSearchText(`${book.title} ${book.author}`).includes(normalizedQuery),
+  );
+}
+
+export function matchesBookSearchQuery(
+  book: Book,
+  shelfKey: string,
+  normalizedQuery: string,
+  shelfTags?: Readonly<Record<string, string[]>>,
+  shelfAltTitles?: Readonly<Record<string, string[]>>,
+): boolean {
+  if (!normalizedQuery) return true;
+  const altText = (shelfAltTitles?.[shelfKey] || []).join(' ');
+  const tagsText = (shelfTags?.[shelfKey] || []).join(' ');
+  const haystack = normalizeSearchText(
+    `${book.title} ${book.author} ${book.shelf} ${altText} ${tagsText}`,
+  );
+  return haystack.includes(normalizedQuery);
+}
+
 export function collectAvailableAuthors(books: readonly Book[]): string[] {
   const byKey = new Map<string, string>();
   for (const book of books) {
@@ -77,12 +112,46 @@ export function selectContinueReadingBooks(
     .slice(0, limit);
 }
 
+export function selectWeeklyPopularBooks(
+  books: readonly Book[],
+  recentlyAddedBooks: readonly Book[],
+  weeklyPopularIds?: readonly string[],
+  sessionRole?: AuthRole,
+): Book[] {
+  if (!weeklyPopularIds || weeklyPopularIds.length === 0) {
+    return [...recentlyAddedBooks];
+  }
+  const bookMap = new Map(books.map((b) => [b.id, b]));
+  const picked: Book[] = [];
+  const seen = new Set<string>();
+  for (const id of weeklyPopularIds) {
+    const found = bookMap.get(id);
+    if (found && !seen.has(found.id)) {
+      seen.add(found.id);
+      picked.push(found);
+    }
+  }
+  for (const b of recentlyAddedBooks) {
+    if (picked.length >= 10) break;
+    if (!seen.has(b.id)) {
+      seen.add(b.id);
+      picked.push(b);
+    }
+  }
+  return prioritizeGuestReadable(picked, sessionRole).slice(0, 10);
+}
+
 export function matchesBookStatus(
   book: Book,
   progress: Readonly<Record<string, ReadingProgress>>,
   filter: LibraryStatusFilter,
+  planToReadShelfKeys?: ReadonlySet<string>,
 ): boolean {
   if (filter === 'all') return true;
+  if (filter === 'plan_to_read') {
+    const shelfKey = toShelfPrefKey(book.shelf || 'Kho chưa phân loại');
+    return Boolean(planToReadShelfKeys?.has(shelfKey));
+  }
   const item = progress[book.id];
   if (filter === 'unread') return !item;
   if (filter === 'completed') return Boolean(item?.completed);
@@ -93,8 +162,12 @@ export function matchesShelfStatus(
   shelf: ShelfGroup,
   progress: Readonly<Record<string, ReadingProgress>>,
   filter: LibraryStatusFilter,
+  planToReadShelfKeys?: ReadonlySet<string>,
 ): boolean {
   if (filter === 'all') return true;
+  if (filter === 'plan_to_read') {
+    return Boolean(planToReadShelfKeys?.has(shelf.key));
+  }
   const total = shelf.books.length;
   if (total === 0) return false;
   let started = 0;

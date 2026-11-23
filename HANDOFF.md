@@ -1,22 +1,22 @@
 # HANDOFF
-Cập nhật: 2026-11-23 21:35 | Nhánh: feat/catalog-alt-titles-ptr-anilist-collections | Build: 🟢 Worker `tsc --noEmit` xanh
-Nhiệm vụ hiện tại: Triển khai **Wave 3** (`docs/plans/roadmap-v2-upgrades.md` & `D-036`) — đang thực hiện **Phase 3.2 (Frontend Quản lý Kho sách)**.
+Cập nhật: 2026-11-23 21:55 | Nhánh: feat/catalog-alt-titles-ptr-anilist-collections | Build: 🟢 typecheck/lint/Worker tsc/build xanh (`index-*.js = 84.95 kB` gzip <= 86.04 kB)
+Nhiệm vụ hiện tại: Triển khai **Wave 3** (`docs/plans/roadmap-v2-upgrades.md` & `D-036`) — đang thực hiện **Phase 3.3 (Cache Manager Mục 18 & PWA Nâng cao Mục 19)**.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md
 
 ## Đang làm dở
-- Đang triển khai **Phase 3.2** (Frontend Mục 9 `alt_titles`, Mục 11 Để dành đọc sau, Mục 12 Gợi ý AniList 1 chạm, Mục 13 Bộ sưu tập tuỳ chỉnh).
+- Đang triển khai **Phase 3.3**: mở rộng `src/lib/cache.ts` + `CacheManagerModal.tsx` (`Owner`) và hoàn thiện `manifest.webmanifest`, `index.html`, `public/sw.js` (tuân thủ chặt `QĐ-D`) + `src/lib/pwaRegister.ts`.
 
 ## Bước tiếp theo
-1. Hoàn tất Phase 3.2: tích hợp `alt_titles` vào tìm kiếm & `ShelfDetailHero`, nút *Đọc sau* + lọc `plan_to_read`, nút *Gợi ý từ AniList* trong `ShelfBatchNoteModal` / `ShelfTagsModal`, dải Tuyển tập & `CollectionManagerModal`.
-2. Triển khai Phase 3.3: nâng cấp `src/lib/cache.ts` + `CacheManagerModal.tsx` (`Owner`) và PWA nâng cao (`manifest.webmanifest`, `public/sw.js` tuân thủ `QĐ-D`, `src/lib/pwaRegister.ts`).
-3. Kiểm định tổng thể (`typecheck`, `lint`, `build`, D1 local + trình duyệt PC/Mobile Owner & Guest), cập nhật `ARCHITECTURE.md`, chạy migration `0013` remote, deploy Worker & push nhánh.
+1. Hoàn tất Phase 3.3 (Mục 18 & Mục 19).
+2. Chạy kiểm định tổng thể (`typecheck`, `lint`, `build`, `tsc --noEmit` Worker), chạy migration `0013` trên D1 local và kiểm thử E2E PC & Mobile ở cả 2 vai trò `Owner` & `Guest`.
+3. Cập nhật `docs/ARCHITECTURE.md` + `HANDOFF.md`, chạy migration `0013` lên D1 remote, deploy Worker và push nhánh lên GitHub.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn. Lưu ý có 3 tệp chưa theo dõi sẵn từ trước ở thư mục gốc (`Gemini_Generated_Image_u8tpmdu8tpmdu8tp.png`, `IMG_4018.JPG`, `hatsune-miku_b0bf919137_VSTHEMES-ORG/`) — tuyệt đối không dùng `git add .`.
 
 ## Xong gần nhất
-- **Wave 3 · Phase 3.1 (Backend Worker + Migration `0013_catalog_enhancements.sql`):**
-  - Thêm cột `alt_titles_json` vào `shelf_prefs`, tạo bảng `user_plan_to_read`, `custom_collections` & `collection_shelves` kèm đồng bộ `schema.sql`.
-  - Mở rộng `GET /api/books` trả `shelfAltTitles`, `planToReadShelves` (cách ly `user_scope`) & `collections` (tự lọc bỏ kệ `restricted` không được cấp quyền cho `guest` theo `D-030`).
-  - Thêm `PUT /api/shelves/alt-titles`, `PUT /api/plan-to-read`, CRUD `/api/collections`, hợp nhất tự động khi `POST /api/shelves/rename` và `POST /api/admin/anilist/search` (`6s` timeout, làm sạch HTML, map 40 tag chuẩn).
-- **Wave 1 (PR #21)** & **Wave 2 (PR #22)** đã merge vào `origin/main`.
+- **Wave 3 · Phase 3.2 (Frontend Quản lý Kho sách — Mục 9, 11, 12, 13):**
+  - Tích hợp `alt_titles` vào `libraryFiltering.ts` & `ShelfDetailHero.tsx`; thêm nút *Đọc sau* (`ShelfCoverCard`, `ShelfDetailHero`) và bộ lọc `plan_to_read` (`LibraryFilterBar`, `AdvancedSearchPanel`).
+  - Tạo `AniListSuggestPanel.tsx` (0 CDN ảnh ngoài) gắn vào `ShelfBatchNoteModal` & `ShelfTagsModal` cùng tab chỉnh `Tên gọi khác`.
+  - Tạo `CollectionFilterStrip.tsx` + `CollectionManagerModal.tsx` nạp lười trên Tab Thư viện; tách lười `Library3DHost` & `ActiveReaderHost` giữ `index-*.js = 84.95 kB` gzip.
+- **Wave 3 · Phase 3.1:** Migration `0013_catalog_enhancements.sql`, CRUD APIs & proxy AniList trên Worker.

@@ -14,10 +14,8 @@ import {
   subscribeGateRoute,
   syncGateDocumentTitle,
 } from '@/lib/gateRoutes';
-import { ActiveReaderHost } from '@/components/ActiveReaderHost';
 import type { LibraryModalState } from '@/components/AdminModalsHost';
 import { Library2DView } from '@/components/Library2DView';
-import { Library3DHost } from '@/components/Library3DHost';
 import { ToastContainer } from '@/components/ToastContainer';
 import { useBookReader } from '@/hooks/useBookReader';
 import { useCanUse3D } from '@/hooks/useCanUse3D';
@@ -43,6 +41,18 @@ const LazyLibrary2DDialogsHost = lazy(() =>
 const LazyAdminUsageView = lazy(() =>
   import('@/components/AdminUsageView').then((mod) => ({
     default: mod.AdminUsageView,
+  })),
+);
+
+const LazyLibrary3DHost = lazy(() =>
+  import('@/components/Library3DHost').then((mod) => ({
+    default: mod.Library3DHost,
+  })),
+);
+
+const LazyActiveReaderHost = lazy(() =>
+  import('@/components/ActiveReaderHost').then((mod) => ({
+    default: mod.ActiveReaderHost,
   })),
 );
 
@@ -108,6 +118,15 @@ export default function App() {
     addToast,
   });
 
+  const catalogViewOptions = useMemo(
+    () => ({
+      shelfAltTitles: store.shelfPrefs.altTitles,
+      planToReadShelfKeys: store.planToReadShelfKeys,
+      collections: store.collections,
+    }),
+    [store.collections, store.planToReadShelfKeys, store.shelfPrefs.altTitles],
+  );
+
   const libraryViewState = useLibraryViewState(
     store.books,
     store.progress,
@@ -116,6 +135,7 @@ export default function App() {
     store.weeklyPopularIds,
     session.role,
     store.shelfPrefs.tags,
+    catalogViewOptions,
   );
 
   const inspectedBook = useMemo(
@@ -299,35 +319,37 @@ export default function App() {
   return (
     <>
       {render3D ? (
-        <Library3DHost
-          books={store.books}
-          progress={store.progress}
-          storage={store.storage}
-          loading={store.loading}
-          theme={toScene3DTheme(theme)}
-          viewState={libraryViewState}
-          canUse3D={effectiveCanUse3D}
-          viewMode={effectiveMode}
-          onChangeViewMode={setViewMode}
-          onCycleTheme={cycle3DTheme}
-          onRefresh={() => void loadLibrary()}
-          onLogout={handleLogout}
-          onOpenBook={(book: Book) => void reader.openBook(book)}
-          onUploadClick={() => setModal({ kind: 'upload' })}
-          onEditBook={(book: Book) => setModal({ kind: 'edit', book })}
-          onRenameShelf={(shelfName: string) => setModal({ kind: 'rename-shelf', shelfName })}
-          onMoveSelectedToShelf={(selectedBooks: Book[]) =>
-            setModal({ kind: 'bulk-shelf', books: selectedBooks })
-          }
-          onDeleteSelected={(selectedBooks: Book[]) =>
-            setModal({ kind: 'delete', books: selectedBooks })
-          }
-          retryKey={retryKey}
-          prefersReducedMotion={prefersReducedMotion}
-          paused={is3DPaused}
-          dimmed={is3DDimmed}
-          onFallbackTo2D={handleFallbackTo2D}
-        />
+        <Suspense fallback={<div className="theme-canvas min-h-screen" />}>
+          <LazyLibrary3DHost
+            books={store.books}
+            progress={store.progress}
+            storage={store.storage}
+            loading={store.loading}
+            theme={toScene3DTheme(theme)}
+            viewState={libraryViewState}
+            canUse3D={effectiveCanUse3D}
+            viewMode={effectiveMode}
+            onChangeViewMode={setViewMode}
+            onCycleTheme={cycle3DTheme}
+            onRefresh={() => void loadLibrary()}
+            onLogout={handleLogout}
+            onOpenBook={(book: Book) => void reader.openBook(book)}
+            onUploadClick={() => setModal({ kind: 'upload' })}
+            onEditBook={(book: Book) => setModal({ kind: 'edit', book })}
+            onRenameShelf={(shelfName: string) => setModal({ kind: 'rename-shelf', shelfName })}
+            onMoveSelectedToShelf={(selectedBooks: Book[]) =>
+              setModal({ kind: 'bulk-shelf', books: selectedBooks })
+            }
+            onDeleteSelected={(selectedBooks: Book[]) =>
+              setModal({ kind: 'delete', books: selectedBooks })
+            }
+            retryKey={retryKey}
+            prefersReducedMotion={prefersReducedMotion}
+            paused={is3DPaused}
+            dimmed={is3DDimmed}
+            onFallbackTo2D={handleFallbackTo2D}
+          />
+        </Suspense>
       ) : (
         !isReaderOpen && (
           <Library2DView
@@ -371,34 +393,45 @@ export default function App() {
             shelfCovers={store.shelfPrefs.covers}
             shelfAccess={isOwner ? store.shelfPrefs.access : undefined}
             shelfTags={store.shelfPrefs.tags}
+            shelfAltTitles={store.shelfPrefs.altTitles}
             favoriteShelfKeys={store.effectiveFavoriteShelfKeys}
+            planToReadShelfKeys={store.planToReadShelfKeys}
+            collections={store.collections}
             onShelfCoverChanged={isOwner ? store.handleShelfCoverChanged : undefined}
             onShelfAccessChanged={isOwner ? store.handleShelfAccessChanged : undefined}
             onShelfTagsChanged={isOwner ? store.handleShelfTagsChanged : undefined}
+            onShelfAltTitlesChanged={isOwner ? store.handleShelfAltTitlesChanged : undefined}
             onToggleFavoriteShelf={store.handleToggleFavoriteShelf}
+            onTogglePlanToRead={store.handleTogglePlanToRead}
+            onCollectionSaved={isOwner ? store.handleCollectionSaved : undefined}
+            onCollectionDeleted={isOwner ? store.handleCollectionDeleted : undefined}
             onApiError={handleApiError}
             onNotify={addToast}
           />
         )
       )}
 
-      <ActiveReaderHost
-        activeBook={reader.activeBook}
-        openingBook={reader.openingBook}
-        parsedBook={reader.parsedBook}
-        guestSession={reader.guestSession}
-        loadedFromCache={reader.loadedFromCache}
-        settings={reader.settings}
-        session={session}
-        books={store.books}
-        progress={store.progress}
-        onUpdateSettings={reader.updateSettings}
-        onSaveProgress={reader.handleSaveProgress}
-        onOpenBook={(book: Book) => void reader.openBook(book)}
-        onApiError={handleApiError}
-        onCancelOpening={reader.cancelOpeningBook}
-        onClose={reader.closeBook}
-      />
+      {(reader.activeBook || reader.openingBook) && (
+        <Suspense fallback={null}>
+          <LazyActiveReaderHost
+            activeBook={reader.activeBook}
+            openingBook={reader.openingBook}
+            parsedBook={reader.parsedBook}
+            guestSession={reader.guestSession}
+            loadedFromCache={reader.loadedFromCache}
+            settings={reader.settings}
+            session={session}
+            books={store.books}
+            progress={store.progress}
+            onUpdateSettings={reader.updateSettings}
+            onSaveProgress={reader.handleSaveProgress}
+            onOpenBook={(book: Book) => void reader.openBook(book)}
+            onApiError={handleApiError}
+            onCancelOpening={reader.cancelOpeningBook}
+            onClose={reader.closeBook}
+          />
+        </Suspense>
+      )}
 
       {(inspectedBook || statsOpen) && (
         <Suspense fallback={null}>

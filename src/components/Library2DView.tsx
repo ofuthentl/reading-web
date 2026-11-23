@@ -1,7 +1,13 @@
 import { Suspense, lazy, useEffect, useMemo } from 'react';
 import { BookOpen, Clock, Upload } from 'lucide-react';
 import type {
-  AuthRole, Book, ReadingProgress, ShelfAccessSummary, StorageStats, ViewMode,
+  AuthRole,
+  Book,
+  CustomCollection,
+  ReadingProgress,
+  ShelfAccessSummary,
+  StorageStats,
+  ViewMode,
 } from '@/types';
 import { isCloudMode } from '@/lib/api';
 import { BookCard } from '@/components/BookCard';
@@ -31,7 +37,10 @@ interface Library2DViewProps {
   shelfCovers?: Readonly<Record<string, string>>;
   shelfAccess?: Readonly<Record<string, ShelfAccessSummary>>;
   shelfTags?: Readonly<Record<string, string[]>>;
+  shelfAltTitles?: Readonly<Record<string, string[]>>;
   favoriteShelfKeys?: ReadonlySet<string>;
+  planToReadShelfKeys?: ReadonlySet<string>;
+  collections?: readonly CustomCollection[];
   storage: StorageStats | null;
   loading: boolean;
   theme: UiTheme;
@@ -58,7 +67,11 @@ interface Library2DViewProps {
   onShelfCoverChanged?: (shelfName: string, bookId: string | null) => void;
   onShelfAccessChanged?: (shelfName: string, summary: ShelfAccessSummary | null) => void;
   onShelfTagsChanged?: (shelfName: string, tags: string[]) => void;
+  onShelfAltTitlesChanged?: (shelfName: string, altTitles: string[]) => void;
   onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
+  onTogglePlanToRead?: (shelfName: string, nextPlanToRead: boolean) => void;
+  onCollectionSaved?: (collection: CustomCollection) => void;
+  onCollectionDeleted?: (collectionId: string) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
@@ -88,7 +101,10 @@ export function Library2DView({
   shelfCovers,
   shelfAccess,
   shelfTags,
+  shelfAltTitles,
   favoriteShelfKeys,
+  planToReadShelfKeys,
+  collections,
   storage,
   loading,
   theme,
@@ -115,7 +131,11 @@ export function Library2DView({
   onShelfCoverChanged,
   onShelfAccessChanged,
   onShelfTagsChanged,
+  onShelfAltTitlesChanged,
   onToggleFavoriteShelf,
+  onTogglePlanToRead,
+  onCollectionSaved,
+  onCollectionDeleted,
   onMoveSelectedToShelf,
   onDeleteSelected,
   onApiError,
@@ -164,6 +184,8 @@ export function Library2DView({
     filterByAuthor,
     filterByTag,
     availableAuthors,
+    activeCollectionId,
+    setActiveCollectionId,
   } = viewState;
 
   const advancedFilter = useMemo<LibraryAdvancedFilterProps>(
@@ -286,7 +308,11 @@ export function Library2DView({
               shelfCovers={shelfCovers}
               shelfAccess={shelfAccess}
               shelfTags={shelfTags}
+              shelfAltTitles={shelfAltTitles}
               favoriteShelfKeys={favoriteShelfKeys}
+              planToReadShelfKeys={planToReadShelfKeys}
+              collections={collections}
+              activeCollectionId={activeCollectionId}
               sessionRole={sessionRole}
               searchQuery={searchQuery}
               advancedFilter={advancedFilter}
@@ -298,6 +324,7 @@ export function Library2DView({
               onSearchChange={setSearchQuery}
               onSelectAuthor={filterByAuthor}
               onSelectTag={filterByTag}
+              onSelectCollection={setActiveCollectionId}
               onStatusChange={setStatusFilter}
               onSortChange={setSortMode}
               onClearFilters={clearFilters}
@@ -317,7 +344,11 @@ export function Library2DView({
               onShelfCoverChanged={onShelfCoverChanged}
               onShelfAccessChanged={onShelfAccessChanged}
               onShelfTagsChanged={onShelfTagsChanged}
+              onShelfAltTitlesChanged={onShelfAltTitlesChanged}
               onToggleFavoriteShelf={onToggleFavoriteShelf}
+              onTogglePlanToRead={onTogglePlanToRead}
+              onCollectionSaved={onCollectionSaved}
+              onCollectionDeleted={onCollectionDeleted}
               onMoveSelectedToShelf={onMoveSelectedToShelf}
               onDeleteSelected={onDeleteSelected}
               onApiError={onApiError}
