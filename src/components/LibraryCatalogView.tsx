@@ -10,12 +10,16 @@ import type {
   ShelfGroup,
 } from '@/types';
 import { summarizeShelf, type ShelfSummary } from '@/lib/shelfSummary';
-import { LibraryFilterBar } from '@/components/LibraryFilterBar';
+import {
+  type LibraryAdvancedFilterProps,
+  LibraryFilterBar,
+} from '@/components/LibraryFilterBar';
 import { ShelfAccessModal } from '@/components/ShelfAccessModal';
 import { ShelfBatchNoteModal } from '@/components/ShelfBatchNoteModal';
 import { ShelfCoverCard } from '@/components/ShelfCoverCard';
 import { ShelfCoverPickerModal } from '@/components/ShelfCoverPickerModal';
 import { ShelfDetailView } from '@/components/ShelfDetailView';
+import { ShelfTagsModal } from '@/components/ShelfTagsModal';
 import type { ToastType } from '@/hooks/useToast';
 
 export interface LibraryCatalogViewProps {
@@ -25,15 +29,19 @@ export interface LibraryCatalogViewProps {
   progress: Record<string, ReadingProgress>;
   shelfCovers?: Readonly<Record<string, string>>;
   shelfAccess?: Readonly<Record<string, ShelfAccessSummary>>;
+  shelfTags?: Readonly<Record<string, string[]>>;
   favoriteShelfKeys?: ReadonlySet<string>;
   sessionRole?: AuthRole;
   searchQuery: string;
+  advancedFilter: LibraryAdvancedFilterProps;
   statusFilter: LibraryStatusFilter;
   sortMode: LibrarySortMode;
   isFiltering: boolean;
   selectionMode: boolean;
   selectedIds: Set<string>;
   onSearchChange: (value: string) => void;
+  onSelectAuthor: (authorName: string) => void;
+  onSelectTag: (tagName: string) => void;
   onStatusChange: (value: LibraryStatusFilter) => void;
   onSortChange: (value: LibrarySortMode) => void;
   onClearFilters: () => void;
@@ -52,6 +60,7 @@ export interface LibraryCatalogViewProps {
   onRenameShelf?: (shelfName: string) => void;
   onShelfCoverChanged?: (shelfName: string, bookId: string | null) => void;
   onShelfAccessChanged?: (shelfName: string, summary: ShelfAccessSummary | null) => void;
+  onShelfTagsChanged?: (shelfName: string, tags: string[]) => void;
   onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
@@ -66,15 +75,19 @@ export function LibraryCatalogView({
   progress,
   shelfCovers,
   shelfAccess,
+  shelfTags,
   favoriteShelfKeys,
   sessionRole,
   searchQuery,
+  advancedFilter,
   statusFilter,
   sortMode,
   isFiltering,
   selectionMode,
   selectedIds,
   onSearchChange,
+  onSelectAuthor,
+  onSelectTag,
   onStatusChange,
   onSortChange,
   onClearFilters,
@@ -93,6 +106,7 @@ export function LibraryCatalogView({
   onRenameShelf,
   onShelfCoverChanged,
   onShelfAccessChanged,
+  onShelfTagsChanged,
   onToggleFavoriteShelf,
   onMoveSelectedToShelf,
   onDeleteSelected,
@@ -102,6 +116,7 @@ export function LibraryCatalogView({
   const [pickingShelfKey, setPickingShelfKey] = useState<string | null>(null);
   const [accessShelfKey, setAccessShelfKey] = useState<string | null>(null);
   const [batchNoteOpen, setBatchNoteOpen] = useState(false);
+  const [tagsModalOpen, setTagsModalOpen] = useState(false);
 
   const allShelvesCount = allShelves.length;
   const allShelfNames = useMemo(
@@ -118,9 +133,10 @@ export function LibraryCatalogView({
           shelfCovers,
           favoriteShelfKeys,
           shelfAccess?.[shelf.key] ?? null,
+          shelfTags,
         ),
       ),
-    [libraryShelves, progress, shelfCovers, favoriteShelfKeys, shelfAccess],
+    [libraryShelves, progress, shelfCovers, favoriteShelfKeys, shelfAccess, shelfTags],
   );
 
   const openedShelfSummary = useMemo(
@@ -132,9 +148,10 @@ export function LibraryCatalogView({
             shelfCovers,
             favoriteShelfKeys,
             shelfAccess?.[openedLibraryShelf.key] ?? null,
+            shelfTags,
           )
         : null,
-    [openedLibraryShelf, progress, shelfCovers, favoriteShelfKeys, shelfAccess],
+    [openedLibraryShelf, progress, shelfCovers, favoriteShelfKeys, shelfAccess, shelfTags],
   );
 
   const pickingSummary: ShelfSummary | null = useMemo(() => {
@@ -169,6 +186,9 @@ export function LibraryCatalogView({
           onBack={onCloseShelf}
           onOpenBook={onOpenBook}
           onInspectBook={onInspectBook}
+          onSelectAuthor={onSelectAuthor}
+          onSelectTag={onSelectTag}
+          onEditTags={onShelfTagsChanged ? () => setTagsModalOpen(true) : undefined}
           onToggleSelect={onToggleSelect}
           onSelectBookIds={onSelectBookIds}
           onClearSelection={onClearSelection}
@@ -209,13 +229,14 @@ export function LibraryCatalogView({
 
           <LibraryFilterBar
             searchQuery={searchQuery}
+            advanced={advancedFilter}
             statusFilter={statusFilter}
             sortMode={sortMode}
             isFiltering={isFiltering}
             filteredCount={librarySummaries.length}
             totalCount={allShelvesCount}
             unitLabel="kệ"
-            searchPlaceholder="Tìm bộ truyện, tác giả hoặc tên tập..."
+            searchPlaceholder="Tìm bộ truyện, tác giả, thể loại hoặc tên tập..."
             unprotectedBookCount={unprotectedBookCount}
             onProtectionClick={sessionRole === 'owner' ? onProtectionClick : undefined}
             onSearchChange={onSearchChange}
@@ -287,6 +308,18 @@ export function LibraryCatalogView({
           allShelfNames={allShelfNames}
           onClose={() => setAccessShelfKey(null)}
           onAccessSaved={onShelfAccessChanged}
+          onApiError={onApiError}
+          onNotify={onNotify}
+        />
+      )}
+
+      {onShelfTagsChanged && tagsModalOpen && openedShelfSummary && (
+        <ShelfTagsModal
+          shelf={openedShelfSummary.shelf}
+          currentTags={openedShelfSummary.tags}
+          allShelfTags={shelfTags}
+          onClose={() => setTagsModalOpen(false)}
+          onTagsSaved={onShelfTagsChanged}
           onApiError={onApiError}
           onNotify={onNotify}
         />

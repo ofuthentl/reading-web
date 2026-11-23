@@ -5,7 +5,6 @@ import { DEFAULT_OWNER_SESSION, getActiveAuthSession } from '@/lib/authSession';
 import { replaceGateRoute, syncGateDocumentTitle } from '@/lib/gateRoutes';
 import { ActiveReaderHost } from '@/components/ActiveReaderHost';
 import type { LibraryModalState } from '@/components/AdminModalsHost';
-import { AuthGate } from '@/components/AuthGate';
 import { Library2DView } from '@/components/Library2DView';
 import { Library3DHost } from '@/components/Library3DHost';
 import { ToastContainer } from '@/components/ToastContainer';
@@ -15,6 +14,10 @@ import { useLibraryDataStore } from '@/hooks/useLibraryDataStore';
 import { useLibraryViewState } from '@/hooks/useLibraryViewState';
 import { useTheme } from '@/hooks/useTheme';
 import { useToast } from '@/hooks/useToast';
+
+const LazyAuthGate = lazy(() =>
+  import('@/components/AuthGate').then((mod) => ({ default: mod.AuthGate })),
+);
 
 const LazyAdminModalsHost = lazy(() =>
   import('@/components/AdminModalsHost').then((mod) => ({ default: mod.AdminModalsHost })),
@@ -89,6 +92,7 @@ export default function App() {
     store.effectiveFavoriteShelfKeys,
     store.weeklyPopularIds,
     session.role,
+    store.shelfPrefs.tags,
   );
 
   const inspectedBook = useMemo(
@@ -187,16 +191,18 @@ export default function App() {
   if (!authenticated) {
     return (
       <>
-        <AuthGate
-          onAuthenticated={(nextSession) => {
-            setSession(nextSession);
-            setAuthReason(null);
-            setAuthenticated(true);
-          }}
-          authReason={authReason}
-          theme={theme}
-          onCycleTheme={cycleTheme}
-        />
+        <Suspense fallback={<div className="theme-canvas min-h-screen" />}>
+          <LazyAuthGate
+            onAuthenticated={(nextSession) => {
+              setSession(nextSession);
+              setAuthReason(null);
+              setAuthenticated(true);
+            }}
+            authReason={authReason}
+            theme={theme}
+            onCycleTheme={cycleTheme}
+          />
+        </Suspense>
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </>
     );
@@ -292,9 +298,11 @@ export default function App() {
             }
             shelfCovers={store.shelfPrefs.covers}
             shelfAccess={isOwner ? store.shelfPrefs.access : undefined}
+            shelfTags={store.shelfPrefs.tags}
             favoriteShelfKeys={store.effectiveFavoriteShelfKeys}
             onShelfCoverChanged={isOwner ? store.handleShelfCoverChanged : undefined}
             onShelfAccessChanged={isOwner ? store.handleShelfAccessChanged : undefined}
+            onShelfTagsChanged={isOwner ? store.handleShelfTagsChanged : undefined}
             onToggleFavoriteShelf={store.handleToggleFavoriteShelf}
             onApiError={handleApiError}
             onNotify={addToast}
@@ -331,6 +339,7 @@ export default function App() {
             onCloseStats={() => setStatsOpen(false)}
             onOpenBook={(book: Book) => void reader.openBook(book)}
             onJumpToShelf={handleJumpToShelf}
+            onSelectAuthor={libraryViewState.filterByAuthor}
             onMarkCompleted={store.handleMarkBookCompleted}
             onResetProgress={store.handleResetBookProgress}
             onEditBook={isOwner ? (book: Book) => setModal({ kind: 'edit', book }) : undefined}

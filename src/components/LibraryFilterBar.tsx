@@ -1,10 +1,35 @@
+import { Suspense, lazy, useState } from 'react';
 import { ArrowUpDown, CheckSquare, HardDrive, Search, Shield, X } from 'lucide-react';
 import type {
   LibrarySortMode,
   LibraryStatusFilter,
+  ShelfGroup,
   StorageStats,
+  TagMatchMode,
 } from '@/types';
 import { HARD_LIMIT_BYTES, formatBytes } from '@/lib/api';
+
+const LazyAdvancedSearchPanel = lazy(() =>
+  import('@/components/AdvancedSearchPanel').then((mod) => ({
+    default: mod.AdvancedSearchPanel,
+  })),
+);
+
+export interface LibraryAdvancedFilterProps {
+  authorFilter: string;
+  includedTags: readonly string[];
+  excludedTags: readonly string[];
+  tagMatchMode: TagMatchMode;
+  availableAuthors: readonly string[];
+  allShelves: readonly ShelfGroup[];
+  shelfTags?: Readonly<Record<string, string[]>>;
+  onAuthorFilterChange: (value: string) => void;
+  onCycleTagFilter: (tag: string) => void;
+  onRemoveIncludedTag: (tag: string) => void;
+  onRemoveExcludedTag: (tag: string) => void;
+  onClearTagFilters: () => void;
+  onTagMatchModeChange: (mode: TagMatchMode) => void;
+}
 
 const STATUS_OPTIONS: ReadonlyArray<{ id: LibraryStatusFilter; label: string }> = [
   { id: 'all', label: 'Tất cả' },
@@ -41,6 +66,7 @@ export interface LibraryFilterBarProps {
   onStatusChange: (value: LibraryStatusFilter) => void;
   onSortChange?: (value: LibrarySortMode) => void;
   onClearFilters: () => void;
+  advanced?: LibraryAdvancedFilterProps;
 }
 
 export function LibraryFilterBar({
@@ -64,7 +90,16 @@ export function LibraryFilterBar({
   onStatusChange,
   onSortChange,
   onClearFilters,
+  advanced,
 }: LibraryFilterBarProps) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  const activeAdvancedCount = advanced
+    ? (advanced.authorFilter.trim() ? 1 : 0) +
+      advanced.includedTags.length +
+      advanced.excludedTags.length
+    : 0;
+
   const usedBytes = storage?.usedBytes ?? 0;
   const limitBytes = storage?.limitBytes || HARD_LIMIT_BYTES;
   const usagePercent = Math.min(100, Math.max(0, (usedBytes / limitBytes) * 100));
@@ -211,8 +246,8 @@ export function LibraryFilterBar({
         </div>
       </div>
 
-      {/* Hàng chips trạng thái đọc */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Hàng chips trạng thái đọc + nút Tìm kiếm nâng cao */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div
           role="group"
           aria-label="Lọc theo trạng thái đọc"
@@ -237,7 +272,65 @@ export function LibraryFilterBar({
             );
           })}
         </div>
+
+        {advanced && (
+          <button
+            type="button"
+            aria-expanded={advancedOpen}
+            onClick={() => setAdvancedOpen((prev) => !prev)}
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors ${
+              advancedOpen || activeAdvancedCount > 0
+                ? 'border-crimson-accent/45 bg-crimson-accent/10 text-crimson-accent hover:bg-crimson-accent/15'
+                : 'border-line bg-surface text-ink-muted hover:border-line-strong hover:bg-subtle hover:text-ink'
+            }`}
+          >
+            <span>Tìm kiếm nâng cao</span>
+            {activeAdvancedCount > 0 && (
+              <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-crimson-accent px-1.5 text-[10px] font-semibold leading-none tabular-nums text-white">
+                {activeAdvancedCount}
+              </span>
+            )}
+            <span aria-hidden="true" className="text-[10px] leading-none opacity-80">
+              {advancedOpen ? '▲' : '▼'}
+            </span>
+          </button>
+        )}
       </div>
+
+      {/* Dải chip bộ lọc & Panel Tìm kiếm nâng cao nạp lười (0 B ở entry bundle) */}
+      {advanced && (advancedOpen || activeAdvancedCount > 0) && (
+        <Suspense
+          fallback={
+            advancedOpen ? (
+              <div className="rounded-2xl border border-line bg-surface p-4 text-xs text-ink-muted">
+                Đang tải bảng thể loại...
+              </div>
+            ) : null
+          }
+        >
+          <LazyAdvancedSearchPanel
+            open={advancedOpen}
+            authorFilter={advanced.authorFilter}
+            includedTags={advanced.includedTags}
+            excludedTags={advanced.excludedTags}
+            tagMatchMode={advanced.tagMatchMode}
+            availableAuthors={advanced.availableAuthors}
+            allShelves={advanced.allShelves}
+            shelfTags={advanced.shelfTags}
+            statusFilter={statusFilter}
+            sortMode={sortMode}
+            hideSort={hideSort}
+            onAuthorFilterChange={advanced.onAuthorFilterChange}
+            onCycleTagFilter={advanced.onCycleTagFilter}
+            onRemoveIncludedTag={advanced.onRemoveIncludedTag}
+            onRemoveExcludedTag={advanced.onRemoveExcludedTag}
+            onClearTagFilters={advanced.onClearTagFilters}
+            onTagMatchModeChange={advanced.onTagMatchModeChange}
+            onStatusChange={onStatusChange}
+            onSortChange={onSortChange}
+          />
+        </Suspense>
+      )}
     </section>
   );
 }

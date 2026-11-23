@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import {
-  BookOpen, Calendar, CheckCircle2, HardDrive, Library, Lock, Pencil, RotateCcw, X,
+  BookOpen, Calendar, CheckCircle2, HardDrive, Library, Lock, Pencil, RotateCcw, UserRound, X,
 } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
 import { formatBytes } from '@/lib/api';
@@ -9,8 +9,10 @@ import {
   getBookSortTitle,
   getDisplayAuthor,
   getGuestLockLabel,
+  isVolumeOrSubtitleSegment,
   pickClothCoverColor,
 } from '@/lib/bookMetadata';
+import { isKnownAuthor } from '@/lib/shelfPlacement';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 
 export interface BookInfoModalProps {
@@ -20,6 +22,7 @@ export interface BookInfoModalProps {
   onClose: () => void;
   onOpenBook: (book: Book) => void;
   onJumpToShelf: (shelfKey: string) => void;
+  onSelectAuthor?: (authorName: string) => void;
   onMarkCompleted: (book: Book) => void;
   onResetProgress: (book: Book) => void;
   onEditBook?: (book: Book) => void;
@@ -32,6 +35,7 @@ export function BookInfoModal({
   onClose,
   onOpenBook,
   onJumpToShelf,
+  onSelectAuthor,
   onMarkCompleted,
   onResetProgress,
   onEditBook,
@@ -149,7 +153,24 @@ export function BookInfoModal({
                 >
                   {displayTitle}
                 </h2>
-                <p className="mt-1 text-sm text-ink-muted">{displayAuthor}</p>
+                {onSelectAuthor &&
+                isKnownAuthor(displayAuthor) &&
+                !isVolumeOrSubtitleSegment(displayAuthor) ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onSelectAuthor(displayAuthor);
+                    }}
+                    title={`Xem tất cả bộ truyện của ${displayAuthor}`}
+                    className="mt-1 inline-flex items-center gap-1.5 rounded text-sm font-medium text-ink-muted underline-offset-4 transition-colors hover:text-crimson-accent hover:underline"
+                  >
+                    <UserRound className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
+                    <span>{displayAuthor}</span>
+                  </button>
+                ) : (
+                  <p className="mt-1 text-sm text-ink-muted">{displayAuthor}</p>
+                )}
 
                 <div className="mt-2.5 flex flex-wrap items-center gap-3 text-xs text-ink-faint">
                   <span className="inline-flex items-center gap-1">

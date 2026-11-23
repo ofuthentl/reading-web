@@ -6,7 +6,24 @@ const SHELF_PREFS_STORAGE_KEY = 'ofu-library-shelf-prefs-v1';
 export interface ShelfPrefsState {
   covers: Record<string, string>;
   favorites: string[];
+  tags?: Record<string, string[]>;
   access?: Record<string, ShelfAccessSummary>;
+}
+
+export function normalizeClientShelfTags(rawTags: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of rawTags) {
+    if (typeof raw !== 'string') continue;
+    const clean = raw.trim().replace(/\s+/g, ' ').slice(0, 40).trim();
+    if (!clean) continue;
+    const key = clean.toLocaleLowerCase('vi');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+    if (out.length >= 20) break;
+  }
+  return out;
 }
 
 export function toShelfPrefKey(shelfName: string): string {
@@ -17,7 +34,7 @@ export function readLocalShelfPrefs(): ShelfPrefsState {
   try {
     const raw = localStorage.getItem(SHELF_PREFS_STORAGE_KEY);
     if (!raw) return { covers: {}, favorites: [] };
-    const parsed = JSON.parse(raw) as { covers?: unknown; favorites?: unknown };
+    const parsed = JSON.parse(raw) as { covers?: unknown; favorites?: unknown; tags?: unknown };
     const covers: Record<string, string> = {};
     if (parsed?.covers && typeof parsed.covers === 'object' && !Array.isArray(parsed.covers)) {
       for (const [k, v] of Object.entries(parsed.covers as Record<string, unknown>)) {
@@ -33,7 +50,17 @@ export function readLocalShelfPrefs(): ShelfPrefsState {
           ),
         )
       : [];
-    return { covers, favorites };
+    const tags: Record<string, string[]> = {};
+    if (parsed?.tags && typeof parsed.tags === 'object' && !Array.isArray(parsed.tags)) {
+      for (const [k, v] of Object.entries(parsed.tags as Record<string, unknown>)) {
+        if (typeof k !== 'string' || !k.trim() || !Array.isArray(v)) continue;
+        const normalized = normalizeClientShelfTags(
+          v.filter((item): item is string => typeof item === 'string'),
+        );
+        if (normalized.length > 0) tags[toShelfPrefKey(k)] = normalized;
+      }
+    }
+    return { covers, favorites, ...(Object.keys(tags).length > 0 ? { tags } : {}) };
   } catch {
     return { covers: {}, favorites: [] };
   }
@@ -94,6 +121,15 @@ export function renameShelfPrefs(
     favSet.add(newKey);
   }
 
+  let tags = prev.tags;
+  if (tags && oldKey in tags) {
+    const nextTags = { ...tags };
+    const merged = normalizeClientShelfTags([...(nextTags[newKey] || []), ...(nextTags[oldKey] || [])]);
+    if (merged.length > 0) nextTags[newKey] = merged;
+    delete nextTags[oldKey];
+    tags = nextTags;
+  }
+
   let access = prev.access;
   if (access && oldKey in access) {
     const nextAccess = { ...access };
@@ -107,7 +143,26 @@ export function renameShelfPrefs(
     access = nextAccess;
   }
 
-  return { covers, favorites: Array.from(favSet), ...(access ? { access } : {}) };
+  return {
+    covers,
+    favorites: Array.from(favSet),
+    ...(tags ? { tags } : {}),
+    ...(access ? { access } : {}),
+  };
+}
+
+export function patchShelfTags(
+  prev: ShelfPrefsState,
+  shelfName: string,
+  rawTags: readonly string[],
+): ShelfPrefsState {
+  const key = toShelfPrefKey(shelfName);
+  if (!key) return prev;
+  const normalized = normalizeClientShelfTags(rawTags);
+  const nextTags = { ...(prev.tags || {}) };
+  if (normalized.length > 0) nextTags[key] = normalized;
+  else delete nextTags[key];
+  return { ...prev, tags: nextTags };
 }
 
 export function patchShelfAccessSummary(
