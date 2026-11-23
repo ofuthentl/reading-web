@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, Info, Lock } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
 import {
@@ -8,16 +8,13 @@ import {
   getGuestLockLabel,
   pickClothCoverColor,
 } from '@/lib/bookMetadata';
-import {
-  handleCoverTiltLeave,
-  handleCoverTiltMove,
-  useCardReveal,
-} from '@/hooks/useCardReveal';
+import { useCardReveal } from '@/hooks/useCardReveal';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 
 interface EditorialCardProps {
   book: Book;
   rankNumber: number;
+  shouldLoadCover: boolean;
   progress?: ReadingProgress;
   selectionMode: boolean;
   selected: boolean;
@@ -30,6 +27,7 @@ interface EditorialCardProps {
 function EditorialRankedCard({
   book,
   rankNumber,
+  shouldLoadCover,
   progress,
   selectionMode,
   selected,
@@ -38,14 +36,13 @@ function EditorialRankedCard({
   onToggleSelect,
   onInspectBook,
 }: EditorialCardProps) {
-  const { cardRef, isNearViewport, isRevealed } = useCardReveal<HTMLDivElement>();
   const [imgFailed, setImgFailed] = useState(false);
 
   useEffect(() => {
     setImgFailed(false);
   }, [book.cover_key]);
 
-  const coverUrl = useCoverUrl(book.cover_key, isNearViewport);
+  const coverUrl = useCoverUrl(book.cover_key, shouldLoadCover);
   const showImage = Boolean(coverUrl && !imgFailed);
   const displayTitle = getBookSortTitle(book);
   const displayAuthor = getDisplayAuthor(book.author, book.title);
@@ -55,7 +52,6 @@ function EditorialRankedCard({
   const isMemberLocked = sessionRole === 'guest' && Boolean(book.guest_locked);
   const guestLockLabel = getGuestLockLabel(book, sessionRole);
   const rankText = String(rankNumber).padStart(2, '0');
-  const staggerDelayMs = ((rankNumber - 1) % 7) * 48;
 
   const handleActivate = () => {
     if (selectionMode) {
@@ -67,30 +63,22 @@ function EditorialRankedCard({
 
   return (
     <div
-      ref={cardRef}
-      style={{ ['--stagger-delay' as string]: `${staggerDelayMs}ms` } as CSSProperties}
-      className={`card-scroll-reveal shrink-0 ${isRevealed ? 'is-revealed' : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-pressed={selectionMode ? selected : undefined}
+      onClick={handleActivate}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          handleActivate();
+        }
+      }}
+      className={`group relative aspect-[7/10] w-[9.5rem] shrink-0 cursor-pointer overflow-hidden rounded-lg border bg-subtle text-left transition-[border-color,box-shadow] duration-300 ease-out focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-[11rem] md:w-[11.75rem] ${
+        selected
+          ? 'border-accent ring-2 ring-accent ring-offset-2 ring-offset-canvas'
+          : 'border-line hover:border-line-strong hover:shadow-[0_14px_28px_-12px_rgba(43,36,29,0.34)] dark:hover:border-line-strong dark:hover:shadow-[0_16px_30px_-12px_rgba(0,0,0,0.88)]'
+      }`}
     >
-      <div
-        role="button"
-        tabIndex={0}
-        aria-pressed={selectionMode ? selected : undefined}
-        onClick={handleActivate}
-        onPointerMove={handleCoverTiltMove}
-        onPointerLeave={handleCoverTiltLeave}
-        onPointerCancel={handleCoverTiltLeave}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            handleActivate();
-          }
-        }}
-        className={`tilt-card group relative aspect-[7/10] w-[9.5rem] cursor-pointer overflow-hidden rounded-lg border bg-subtle text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-[11rem] md:w-[11.75rem] ${
-          selected
-            ? 'border-accent ring-2 ring-accent ring-offset-2 ring-offset-canvas'
-            : 'border-line hover:border-line-strong hover:shadow-[0_16px_30px_-12px_rgba(43,36,29,0.38)] dark:hover:border-line-strong dark:hover:shadow-[0_18px_34px_-12px_rgba(0,0,0,0.9)]'
-        }`}
-      >
         {showImage ? (
           <img
             src={coverUrl!}
@@ -169,7 +157,7 @@ function EditorialRankedCard({
             }}
             aria-label={`Xem giới thiệu ${book.title}`}
             title="Xem giới thiệu & tuỳ chọn"
-            className="absolute right-2 top-2 rounded-md border border-white/20 bg-black/65 p-1.5 text-white/90 opacity-85 backdrop-blur-sm transition-opacity hover:bg-black/90 focus:opacity-100 group-hover:opacity-100 sm:opacity-0"
+            className="touch-action-visible absolute right-2 top-2 rounded-md border border-white/20 bg-black/65 p-1.5 text-white/90 opacity-85 backdrop-blur-sm transition-opacity hover:bg-black/90 focus:opacity-100 group-hover:opacity-100 sm:opacity-0"
           >
             <Info className="h-3.5 w-3.5" />
           </button>
@@ -190,7 +178,7 @@ function EditorialRankedCard({
         </span>
         <span
           aria-hidden="true"
-          className="my-2 block h-[2px] w-6 rounded-full bg-[#B22222] shadow-[0_1px_4px_rgba(0,0,0,0.75)] transition-all duration-300 ease-out group-hover:w-10 group-hover:bg-[#d62828]"
+          className="my-2 block h-[2px] w-6 rounded-full bg-[#B22222] shadow-[0_1px_4px_rgba(0,0,0,0.75)] transition-[width,background-color] duration-300 ease-out group-hover:w-10 group-hover:bg-[#d62828]"
         />
         <h3 className="line-clamp-2 text-[12.5px] font-semibold leading-snug tracking-tight text-white transition-colors duration-200 group-hover:text-[#ffd6d6] [text-shadow:0_1px_4px_rgba(0,0,0,0.92)] sm:text-[13.5px]">
           {displayTitle}
@@ -208,7 +196,6 @@ function EditorialRankedCard({
           />
         </div>
       )}
-      </div>
     </div>
   );
 }
@@ -246,6 +233,7 @@ export function EditorialBookStrip({
   onToggleSelect,
   onInspectBook,
 }: EditorialBookStripProps) {
+  const { cardRef: sectionRef, isNearViewport } = useCardReveal<HTMLElement>();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -276,7 +264,7 @@ export function EditorialBookStrip({
   if (books.length === 0) return null;
 
   return (
-    <section aria-label={`${leadTitle} ${accentTitle}`} className="space-y-4">
+    <section ref={sectionRef} aria-label={`${leadTitle} ${accentTitle}`} className="space-y-4">
       <div className="flex items-end justify-between gap-4 border-b border-line-strong/70 pb-3">
         <div className="space-y-1">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-crimson-accent">
@@ -289,13 +277,13 @@ export function EditorialBookStrip({
         </div>
 
         {(canScrollLeft || canScrollRight) && (
-          <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+          <div className="flex shrink-0 items-center gap-1.5">
             <button
               type="button"
               onClick={() => scrollByStep(-1)}
               disabled={!canScrollLeft}
               aria-label="Cuộn sang trái"
-              className="rounded-lg border border-line bg-surface p-1.5 text-ink-muted transition-colors hover:border-line-strong hover:text-ink disabled:opacity-35"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-line bg-surface text-ink-muted transition-colors hover:border-line-strong hover:text-ink disabled:opacity-30"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -304,7 +292,7 @@ export function EditorialBookStrip({
               onClick={() => scrollByStep(1)}
               disabled={!canScrollRight}
               aria-label="Cuộn sang phải"
-              className="rounded-lg border border-line bg-surface p-1.5 text-ink-muted transition-colors hover:border-line-strong hover:text-ink disabled:opacity-35"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-line bg-surface text-ink-muted transition-colors hover:border-line-strong hover:text-ink disabled:opacity-30"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -315,7 +303,7 @@ export function EditorialBookStrip({
       <div
         ref={scrollerRef}
         onScroll={syncScrollState}
-        className={`-mx-1 flex gap-3.5 overflow-x-auto px-1 py-2.5 scrollbar-hover sm:gap-4 ${
+        className={`-mx-1 flex gap-3.5 overflow-x-auto overscroll-x-contain px-1 py-1.5 scrollbar-hover sm:gap-4 ${
           isDark ? 'scrollbar-hover-dark' : ''
         }`}
       >
@@ -324,6 +312,7 @@ export function EditorialBookStrip({
             key={book.id}
             book={book}
             rankNumber={index + 1}
+            shouldLoadCover={isNearViewport}
             progress={progress[book.id]}
             selectionMode={selectionMode}
             selected={selectedIds.has(book.id)}

@@ -45,7 +45,7 @@ export function ShelfCoverCard({
   const [imgFailed, setImgFailed] = useState(false);
 
   const coverKey = coverBook?.cover_key ?? null;
-  const staggerDelayMs = (staggerIndex % 6) * 48;
+  const staggerDelayMs = (staggerIndex % 4) * 28;
 
   useEffect(() => {
     setImgFailed(false);
@@ -145,7 +145,7 @@ export function ShelfCoverCard({
 
         {/* Nhóm nút thao tác kệ kín đáo khi hover */}
         {(onRenameShelf || onChangeShelfCover || onManageAccess) && (
-          <div className="absolute left-2 top-2 flex items-center gap-1 opacity-85 transition-opacity focus-within:opacity-100 group-hover:opacity-100 sm:opacity-0">
+          <div className="touch-action-visible absolute left-2 top-2 flex items-center gap-1 opacity-85 transition-opacity focus-within:opacity-100 group-hover:opacity-100 sm:opacity-0">
             {onRenameShelf && (
               <button
                 type="button"
@@ -205,7 +205,7 @@ export function ShelfCoverCard({
             className={`absolute right-2 top-2 rounded-lg border p-1.5 transition-all ${
               isFavorite
                 ? 'border-amber-400/50 bg-[#16120f]/85 text-amber-400 opacity-100 shadow-sm hover:bg-[#16120f]'
-                : 'border-[#f3e9d7]/20 bg-[#16120f]/75 text-[#f3e9d7] opacity-85 hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0'
+                : 'touch-action-visible border-[#f3e9d7]/20 bg-[#16120f]/75 text-[#f3e9d7] opacity-85 hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0'
             }`}
           >
             <Star className={`h-3.5 w-3.5 ${isFavorite ? 'fill-amber-400' : ''}`} />

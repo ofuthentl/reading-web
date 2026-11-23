@@ -360,30 +360,29 @@
     background-color: rgb(var(--color-crimson));
   }
 
-  .group:hover .group-hover-crimson {
-    color: rgb(var(--color-crimson));
-  }
-
   .editorial-rank-num {
     color: rgba(255, 255, 255, 0.1);
     -webkit-text-stroke: 1.15px rgba(255, 255, 255, 0.92);
     text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
-    transition:
-      color 260ms ease,
-      transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition: color 240ms ease;
   }
 
-  .group:hover .editorial-rank-num {
-    color: rgba(178, 34, 34, 0.28);
-    transform: translate3d(0, -2px, 0);
+  @media (hover: hover) and (pointer: fine) {
+    .group:hover .group-hover-crimson {
+      color: rgb(var(--color-crimson));
+    }
+
+    .group:hover .editorial-rank-num {
+      color: rgba(178, 34, 34, 0.28);
+    }
   }
 
   .card-scroll-reveal {
     opacity: 0;
-    transform: translate3d(0, 18px, 0) scale(0.985);
+    transform: translate3d(0, 8px, 0) scale(0.992);
     transition:
-      opacity 520ms cubic-bezier(0.22, 1, 0.36, 1) var(--stagger-delay, 0ms),
-      transform 560ms cubic-bezier(0.22, 1, 0.36, 1) var(--stagger-delay, 0ms);
+      opacity 260ms cubic-bezier(0.22, 1, 0.36, 1) var(--stagger-delay, 0ms),
+      transform 280ms cubic-bezier(0.22, 1, 0.36, 1) var(--stagger-delay, 0ms);
     will-change: opacity, transform;
   }
 
@@ -391,6 +390,22 @@
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
     will-change: auto;
+  }
+
+  @media (hover: none), (pointer: coarse) {
+    .card-scroll-reveal {
+      transform: none;
+      transition: opacity 180ms ease-out;
+      will-change: auto;
+    }
+
+    .card-scroll-reveal.is-revealed {
+      transform: none;
+    }
+
+    .touch-action-visible {
+      opacity: 0.85 !important;
+    }
   }
 
   .shelf-cv-auto {
