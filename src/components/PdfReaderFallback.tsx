@@ -7,7 +7,7 @@ interface PdfReaderFallbackProps {
 
 export function PdfReaderFallback({ errorMessage, onClose }: PdfReaderFallbackProps) {
   return (
-    <div className="theme-canvas flex h-[calc(100vh-3.25rem)] items-center justify-center p-6 text-ink">
+    <div className="theme-canvas flex min-h-0 flex-1 items-center justify-center p-6 text-ink">
       <div className="moonlit-card w-full max-w-md rounded-2xl border border-line bg-surface p-6 text-center shadow-sm">
         <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-red-700/20 bg-red-500/10 text-red-700 dark:border-red-400/25 dark:text-red-300">
           <AlertTriangle className="h-5 w-5" />

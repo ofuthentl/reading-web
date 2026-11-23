@@ -56,15 +56,17 @@ export function SupportView({ onNotify }: SupportViewProps) {
               thư viện cá nhân được xây dựng và duy trì bằng tâm huyết của người thực hiện.
             </p>
             <p>
-              Toàn bộ không gian đọc và tài liệu trên website đều được chia sẻ miễn phí, không quảng
-              cáo, và mình mong muốn sẽ tiếp tục duy trì điều đó lâu dài trong tương lai.
+              Toàn bộ không gian đọc và tài liệu trên website đều được chia sẻ miễn phí trên nền
+              tảng web, không quảng cáo, và mình mong muốn sẽ tiếp tục duy trì điều đó lâu dài
+              trong tương lai.
             </p>
             <p>
               Nếu bạn cảm thấy dự án mang lại giá trị và muốn góp một phần nhỏ để ủng hộ chi phí vận
-              hành, lưu trữ cũng như phát triển tính năng mới, bạn có thể quét mã QR bên cạnh.
+              hành, lưu trữ cũng như phát triển tính năng mới, bạn có thể quét mã QR bên cạnh, điều
+              đó sẽ giúp mình rất nhiều.
             </p>
             <p>
-              Mỗi sự đóng góp, dù lớn hay nhỏ, đều là nguồn động viên quý giá để{' '}
+              Mỗi sự đóng góp, dù lớn hay nhỏ, đều là nguồn động lực quý giá để{' '}
               <span className="font-medium text-ink">Ofu&apos;s Library</span> tiếp tục được duy trì
               và hoàn thiện hơn mỗi ngày.
             </p>

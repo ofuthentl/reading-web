@@ -231,10 +231,10 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
     };
 
     return (
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* Vùng trang sách lật ngang (CSS Multi-column 1–2 cột, D-011) */}
         <div
-          className={`relative flex flex-1 items-center justify-center overflow-hidden px-4 pb-2 transition-all duration-200 sm:px-8 ${
+          className={`relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4 pb-2 transition-all duration-200 sm:px-8 ${
             immersiveHidden ? 'pt-5 sm:pt-6' : 'pt-[4.25rem] sm:pt-[4.5rem]'
           }`}
           onClick={(event) => {
@@ -338,7 +338,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
 
         {/* Thanh chân trang số trang & nút lật trang / hoàn thành */}
         <footer
-          className={`flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-xs sm:px-6 ${palette.border} ${palette.headerBg}`}
+          className={`flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 text-xs sm:px-6 ${palette.border} ${palette.headerBg}`}
         >
           <button
             type="button"
@@ -364,7 +364,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
                 <button
                   type="button"
                   onClick={() => onCompleteBook(nextBook)}
-                  className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 font-semibold text-accent-foreground transition hover:bg-accent-hover"
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 font-semibold text-accent-foreground transition hover:bg-accent-hover sm:max-w-[16rem]"
                 >
                   <span className="truncate">Đọc tiếp: {getBookSortTitle(nextBook)}</span>
                   <ArrowRight className="h-3.5 w-3.5 shrink-0" />

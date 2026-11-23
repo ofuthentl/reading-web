@@ -65,7 +65,7 @@ export function ReaderTocDrawer({
       />
       <aside
         aria-label="Mục lục, tìm kiếm và dấu trang"
-        className={`slide-in fixed bottom-0 left-0 top-0 z-50 flex w-[21.5rem] max-w-[90vw] flex-col border-r shadow-2xl ${palette.panelBg} ${palette.border}`}
+        className={`slide-in fixed bottom-0 left-0 top-0 z-50 flex max-h-dvh w-[21.5rem] max-w-[90vw] flex-col border-r shadow-2xl ${palette.panelBg} ${palette.border}`}
       >
         <div className={`flex items-center justify-between border-b px-4 py-3 ${palette.border}`}>
           <div className="min-w-0">
@@ -166,7 +166,7 @@ export function ReaderTocDrawer({
               </div>
             </div>
 
-            <ul className="scrollbar-thin flex-1 space-y-0.5 overflow-y-auto p-2">
+            <ul className="scrollbar-thin min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-y-contain p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
               {filteredChapters.length === 0 ? (
                 <li className={`px-3 py-6 text-center text-xs ${palette.textSecondary}`}>
                   Không tìm thấy mục nào phù hợp.

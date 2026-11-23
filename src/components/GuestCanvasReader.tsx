@@ -351,7 +351,7 @@ export function GuestCanvasReader({
 
   return (
     <div
-      className={`guest-protected-reader relative flex h-screen select-none flex-col overflow-hidden transition-colors duration-200 ${palette.pageBg} ${palette.textPrimary}`}
+      className={`guest-protected-reader relative flex h-full min-h-0 flex-1 select-none flex-col overflow-hidden transition-colors duration-200 ${palette.pageBg} ${palette.textPrimary}`}
       onContextMenu={(e) => e.preventDefault()}
       onCopy={(e) => e.preventDefault()}
       onCut={(e) => e.preventDefault()}
@@ -479,7 +479,7 @@ export function GuestCanvasReader({
             else if (settings.sideTapNavigation && ratio > 0.84) goNextChapter();
             else if (immersiveHidden && ratio >= 0.22 && ratio <= 0.78) setImmersiveHidden(false);
           }}
-          className={`scrollbar-thin flex-1 overflow-y-auto px-3.5 pb-8 pt-16 transition-all sm:px-7 sm:pb-10 sm:pt-[4.5rem] ${
+          className={`scrollbar-thin min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-3.5 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-16 transition-all sm:px-7 sm:pb-[calc(2.5rem+env(safe-area-inset-bottom))] sm:pt-[4.5rem] ${
             pageHidden ? 'blur-lg' : ''
           }`}
         >

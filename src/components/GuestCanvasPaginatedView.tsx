@@ -228,9 +228,9 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     const isFirstSpread = safeSpreadIndex === 0 && chapterIndex === 0;
 
     return (
-      <div className={`flex flex-1 flex-col overflow-hidden transition-all ${pageHidden ? 'blur-lg' : ''}`}>
+      <div className={`flex min-h-0 flex-1 flex-col overflow-hidden transition-all ${pageHidden ? 'blur-lg' : ''}`}>
         <div
-          className={`relative flex flex-1 items-center justify-center overflow-hidden px-3.5 pb-2 transition-all duration-200 sm:px-7 ${
+          className={`relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-3.5 pb-2 transition-all duration-200 sm:px-7 ${
             immersiveHidden ? 'pt-5 sm:pt-6' : 'pt-[4.25rem] sm:pt-[4.5rem]'
           }`}
           onClick={(event) => {
@@ -313,7 +313,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
         </div>
 
         <footer
-          className={`flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-xs sm:px-6 ${palette.border} ${palette.headerBg}`}
+          className={`flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 text-xs sm:px-6 ${palette.border} ${palette.headerBg}`}
         >
           <button
             type="button"
@@ -339,7 +339,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
                 <button
                   type="button"
                   onClick={() => onCompleteBook(nextBook)}
-                  className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 font-semibold text-accent-foreground transition hover:bg-accent-hover"
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 font-semibold text-accent-foreground transition hover:bg-accent-hover sm:max-w-[16rem]"
                 >
                   <span className="truncate">Đọc tiếp: {getBookSortTitle(nextBook)}</span>
                   <ArrowRight className="h-3.5 w-3.5 shrink-0" />
