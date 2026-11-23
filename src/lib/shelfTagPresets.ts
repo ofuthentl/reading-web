@@ -11,11 +11,12 @@ export const MAX_SHELF_TAGS = 20;
 export const MAX_SHELF_TAG_LENGTH = 40;
 
 /**
- * 38 thể loại chuẩn Light Novel tinh gọn (tiếng Anh/Nhật, bỏ các tag thừa/trùng lặp, D-032).
+ * 40 thể loại chuẩn Light Novel tinh gọn (tiếng Anh/Nhật, bỏ các tag thừa/trùng lặp, D-032).
  * Module này chỉ được import trong các chunk nạp lười (`AdvancedSearchPanel`, `ShelfTagsModal`)
  * để không làm phình gói entry `index-*.js` (D-013).
  */
 export const PRESET_SHELF_TAGS = [
+  '18+',
   'Action',
   'Adventure',
   'Comedy',
@@ -51,6 +52,7 @@ export const PRESET_SHELF_TAGS = [
   'Super Power',
   'Supernatural',
   'Tragedy',
+  'Tsundere',
   'Web Novel',
   'Yandere',
   'Yuri',
@@ -65,7 +67,7 @@ const PRESET_BY_KEY = new Map<string, string>(
 );
 
 /**
- * Chuẩn hoá nhãn tag: nếu khớp 1 trong 38 thể loại chuẩn thì trả về đúng chữ hoa/thường chuẩn.
+ * Chuẩn hoá nhãn tag: nếu khớp 1 trong 40 thể loại chuẩn thì trả về đúng chữ hoa/thường chuẩn.
  */
 export function canonicalizeTagLabel(raw: string): string {
   const cleaned = raw.trim().replace(/\s+/g, ' ').slice(0, MAX_SHELF_TAG_LENGTH).trim();
@@ -81,7 +83,7 @@ export interface TagCatalogItem {
 }
 
 /**
- * Tổng hợp danh mục đầy đủ 38 thể loại chuẩn + mọi tag tuỳ chỉnh đang gắn trên các kệ,
+ * Tổng hợp danh mục đầy đủ 40 thể loại chuẩn + mọi tag tuỳ chỉnh đang gắn trên các kệ,
  * kèm số lượng bộ truyện đang mang từng thể loại.
  */
 export function buildTagCatalogWithCounts(
