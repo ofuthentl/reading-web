@@ -52,6 +52,15 @@ export function replaceGateRoute(route: GateRoute): void {
   window.dispatchEvent(new Event(GATE_ROUTE_EVENT));
 }
 
+export function navigateGateRoute(route: GateRoute): void {
+  if (typeof window === 'undefined') return;
+  const targetHref = buildGateHref(route);
+  if (window.location.pathname !== targetHref) {
+    window.history.pushState(null, '', targetHref);
+  }
+  window.dispatchEvent(new Event(GATE_ROUTE_EVENT));
+}
+
 export function subscribeGateRoute(listener: () => void): () => void {
   if (typeof window === 'undefined') return () => undefined;
   window.addEventListener('popstate', listener);
