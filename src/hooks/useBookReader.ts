@@ -73,14 +73,10 @@ export function useBookReader({
 
   // Tải cài đặt trình đọc đồng bộ từ D1 khi đăng nhập thành công (D-036 Mục 7)
   useEffect(() => {
-    if (!authenticated) return;
-    if (sessionRole !== 'owner') {
-      setSettings((prev) => (prev.verticalMode ? { ...prev, verticalMode: false } : prev));
-    }
-    if (!isCloudMode) return;
+    if (!authenticated || !isCloudMode) return;
     let cancelled = false;
     void import('@/lib/readerSettingsSync')
-      .then((m) => m.fetchRemoteReaderSettings(sessionRole, appThemeToReaderTheme(appTheme)))
+      .then((m) => m.fetchRemoteReaderSettings(appThemeToReaderTheme(appTheme)))
       .then((remote) => {
         if (cancelled || !remote) return;
         saveReaderSettings(remote);
@@ -90,7 +86,7 @@ export function useBookReader({
     return () => {
       cancelled = true;
     };
-  }, [appTheme, authenticated, sessionRole]);
+  }, [appTheme, authenticated]);
 
   const disposeCurrent = useCallback(() => {
     if (parsedBookRef.current) {
@@ -111,11 +107,7 @@ export function useBookReader({
   const updateSettings = useCallback(
     (patch: Partial<ReaderSettings>) => {
       setSettings((prev) => {
-        const merged = {
-          ...prev,
-          ...patch,
-          ...(sessionRole !== 'owner' ? { verticalMode: false } : {}),
-        };
+        const merged = { ...prev, ...patch };
         saveReaderSettings(merged);
         if (authenticated && isCloudMode) {
           void import('@/lib/readerSettingsSync')
@@ -125,7 +117,7 @@ export function useBookReader({
         return merged;
       });
     },
-    [authenticated, sessionRole],
+    [authenticated],
   );
 
   /** Chỉ huỷ lượt tải sách mới mà không đóng cuốn đang mở phía dưới (vá M-10) */

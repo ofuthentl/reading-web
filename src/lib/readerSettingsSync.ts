@@ -1,4 +1,4 @@
-import type { AuthRole, ReaderSettings } from '@/types';
+import type { ReaderSettings } from '@/types';
 import { apiFetch, isCloudMode } from '@/lib/authSession';
 import { normalizeReaderSettings, saveReaderSettings } from '@/lib/readerConfig';
 
@@ -8,7 +8,6 @@ let syncTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingSettings: ReaderSettings | null = null;
 
 export async function fetchRemoteReaderSettings(
-  role: AuthRole,
   fallbackTheme?: ReaderSettings['theme'],
 ): Promise<ReaderSettings | null> {
   if (!isCloudMode) return null;
@@ -18,8 +17,7 @@ export async function fetchRemoteReaderSettings(
     settings?: Partial<ReaderSettings> | null;
   };
   if (!data.settings || typeof data.settings !== 'object') return null;
-  const normalized = normalizeReaderSettings(data.settings, fallbackTheme);
-  return role === 'owner' ? normalized : { ...normalized, verticalMode: false };
+  return normalizeReaderSettings(data.settings, fallbackTheme);
 }
 
 async function flushRemoteReaderSettings(): Promise<void> {

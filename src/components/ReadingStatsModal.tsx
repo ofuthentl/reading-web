@@ -68,6 +68,7 @@ export function ReadingStatsModal({
       .then((res) => {
         if (!controller.signal.aborted) setActivity(res);
       })
+      .catch(() => undefined)
       .finally(() => {
         if (!controller.signal.aborted) setActivityLoading(false);
       });

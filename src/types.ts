@@ -81,7 +81,6 @@ export type ReaderSettings = {
   paragraphIndent: boolean;
   paragraphSpacing: ReaderParagraphSpacing;
   nightDimPercent: number;
-  verticalMode: boolean;
 };
 
 export type ViewMode = '3d' | '2d';

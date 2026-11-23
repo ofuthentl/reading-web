@@ -1,4 +1,4 @@
-import { type AuthContext, type AuthRole, HttpError } from './auth';
+import { type AuthContext, HttpError } from './auth';
 
 export interface StoredReaderSettings {
   theme: 'paper' | 'sepia' | 'dark' | 'midnight';
@@ -12,7 +12,6 @@ export interface StoredReaderSettings {
   paragraphIndent: boolean;
   paragraphSpacing: 'compact' | 'normal' | 'relaxed';
   nightDimPercent: number;
-  verticalMode: boolean;
 }
 
 const VALID_THEMES = new Set<StoredReaderSettings['theme']>(['paper', 'sepia', 'dark', 'midnight']);
@@ -46,10 +45,7 @@ function resolveUserScope(auth: AuthContext): string {
   return auth.role === 'owner' ? 'owner' : `guest:${auth.userId}`;
 }
 
-export function sanitizeReaderSettingsPayload(
-  raw: unknown,
-  role: AuthRole,
-): StoredReaderSettings {
+export function sanitizeReaderSettingsPayload(raw: unknown): StoredReaderSettings {
   if (!raw || typeof raw !== 'object') {
     throw new HttpError('Dữ liệu cài đặt trình đọc không hợp lệ.', 400);
   }
@@ -95,9 +91,6 @@ export function sanitizeReaderSettingsPayload(
     ? Math.min(50, Math.max(0, Math.round(rawDim)))
     : 0;
 
-  // Chế độ chữ dọc kiểu Nhật (Tategaki, Mục 8) chỉ mở cho Owner
-  const verticalMode = role === 'owner' ? Boolean(obj.verticalMode) : false;
-
   return {
     theme,
     font,
@@ -110,7 +103,6 @@ export function sanitizeReaderSettingsPayload(
     paragraphIndent,
     paragraphSpacing,
     nightDimPercent,
-    verticalMode,
   };
 }
 
@@ -128,7 +120,7 @@ export async function getUserReaderPrefs(db: D1Database, auth: AuthContext) {
 
   try {
     const parsed = JSON.parse(row.settings_json) as unknown;
-    const sanitized = sanitizeReaderSettingsPayload(parsed, auth.role);
+    const sanitized = sanitizeReaderSettingsPayload(parsed);
     return { settings: sanitized, updatedAt: Number(row.updated_at) };
   } catch {
     return { settings: null, updatedAt: null };
@@ -141,7 +133,7 @@ export async function putUserReaderPrefs(db: D1Database, auth: AuthContext, body
     body && typeof body === 'object' && 'settings' in (body as Record<string, unknown>)
       ? (body as Record<string, unknown>).settings
       : body;
-  const sanitized = sanitizeReaderSettingsPayload(rawSettings, auth.role);
+  const sanitized = sanitizeReaderSettingsPayload(rawSettings);
   const scope = resolveUserScope(auth);
   const updatedAt = Date.now();
   const settingsJson = JSON.stringify(sanitized);

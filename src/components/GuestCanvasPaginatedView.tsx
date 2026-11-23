@@ -23,6 +23,10 @@ import {
   type ReaderThemePalette,
   resolvePaginatedSpreadWidth,
 } from '@/lib/readerConfig';
+import {
+  type ReaderSearchJumpTarget,
+  findCanvasItemIndexForQuery,
+} from '@/lib/readerSearchJump';
 
 interface GuestCanvasPaginatedViewProps {
   bookTitle: string;
@@ -38,6 +42,8 @@ interface GuestCanvasPaginatedViewProps {
   palette: ReaderThemePalette;
   immersiveHidden: boolean;
   pageHidden: boolean;
+  remainingEstimate?: string;
+  searchTarget?: ReaderSearchJumpTarget | null;
   onToggleImmersive: () => void;
   onCloseSettings: () => boolean;
   onRatioChange: (ratio: number, isEndOfChapter: boolean) => void;
@@ -63,6 +69,8 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       palette,
       immersiveHidden,
       pageHidden,
+      remainingEstimate,
+      searchTarget = null,
       onToggleImmersive,
       onCloseSettings,
       onRatioChange,
@@ -89,6 +97,8 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       };
     });
     const [spreadIndex, setSpreadIndex] = useState(0);
+    const [flashSourceY, setFlashSourceY] = useState<number | null>(null);
+    const appliedSearchNonceRef = useRef(0);
     const fontVersion = useReaderCanvasFontVersion(settings.font);
 
     useLayoutEffect(() => {
@@ -120,7 +130,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       return { columns, columnGap, columnWidth, pageHeight };
     }, [settings.width, stageSize.height, stageSize.width]);
 
-    const columnPages = useMemo(() => {
+    const { layoutItems, columnPages } = useMemo(() => {
       void fontVersion;
       const layout = computeChapterCanvasLayout({
         chapterTitle: chapterData.title,
@@ -131,7 +141,10 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
         containerWidth: geometry.columnWidth,
         imageSizes,
       });
-      return paginateCanvasLayoutItems(layout.items, geometry.pageHeight - 18);
+      return {
+        layoutItems: layout.items,
+        columnPages: paginateCanvasLayoutItems(layout.items, geometry.pageHeight - 18),
+      };
     }, [
       chapterData,
       chapterIndex,
@@ -185,10 +198,12 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
         font: settings.font,
         watermarkLabel,
         bitmaps: bitmapsRef.current,
+        highlightSourceY: flashSourceY,
       });
     }, [
       bitmapsRef,
       columnPages,
+      flashSourceY,
       geometry.columnGap,
       geometry.columnWidth,
       geometry.columns,
@@ -239,6 +254,37 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       () => ({ stepPrev, stepNext, jumpToRatio }),
       [jumpToRatio, stepNext, stepPrev],
     );
+
+    useEffect(() => {
+      if (!searchTarget || searchTarget.chapterIndex !== chapterIndex) return;
+      if (appliedSearchNonceRef.current === searchTarget.nonce) return;
+      appliedSearchNonceRef.current = searchTarget.nonce;
+
+      const idx = findCanvasItemIndexForQuery(
+        layoutItems,
+        searchTarget.query,
+        searchTarget.occurrenceIndex,
+      );
+      if (idx < 0) return;
+      const matched = layoutItems[idx];
+      const colIdx = columnPages.findIndex(
+        (p) => matched.y >= p.startY - 2 && matched.y <= p.endY + 2,
+      );
+      if (colIdx >= 0) {
+        commitSpread(Math.floor(colIdx / geometry.columns));
+      }
+      setFlashSourceY(matched.y);
+      const timer = window.setTimeout(() => setFlashSourceY(null), 2250);
+      return () => window.clearTimeout(timer);
+    }, [
+      chapterData.id,
+      chapterIndex,
+      columnPages,
+      commitSpread,
+      geometry.columns,
+      layoutItems,
+      searchTarget,
+    ]);
 
     const isLastChapter = chapterIndex >= totalChapters - 1;
     const isLastSpread = safeSpreadIndex >= totalSpreads - 1;
@@ -364,7 +410,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
               )}
             </div>
           ) : (
-            <div className={`flex items-center gap-2 tabular-nums ${palette.textSecondary}`}>
+            <div className={`flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 tabular-nums ${palette.textSecondary}`}>
               <span>
                 Trang <strong className={palette.textPrimary}>{safeSpreadIndex + 1}</strong> / {totalSpreads}
               </span>
@@ -372,6 +418,12 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
               <span>
                 Chương {chapterIndex + 1}/{totalChapters}
               </span>
+              {remainingEstimate && (
+                <>
+                  <span aria-hidden="true" className="hidden sm:inline">·</span>
+                  <span className="hidden sm:inline">{remainingEstimate}</span>
+                </>
+              )}
             </div>
           )}
 

@@ -18,6 +18,12 @@ import {
   handleReaderContentLinkClick,
   resolvePaginatedSpreadWidth,
 } from '@/lib/readerConfig';
+import { buildReaderTypographyStyle } from '@/lib/readingEstimate';
+import {
+  type ReaderSearchJumpTarget,
+  findDomBlockForSearchQuery,
+  flashDomSearchElement,
+} from '@/lib/readerSearchJump';
 
 export interface PaginatedStageHandle {
   stepPrev: () => void;
@@ -35,6 +41,8 @@ interface ReaderPaginatedViewProps {
   settings: ReaderSettings;
   palette: ReaderThemePalette;
   immersiveHidden: boolean;
+  remainingEstimate?: string;
+  searchTarget?: ReaderSearchJumpTarget | null;
   onToggleImmersive: () => void;
   onCloseSettings: () => boolean;
   onRatioChange: (ratio: number, isEndOfChapter: boolean) => void;
@@ -56,6 +64,8 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       settings,
       palette,
       immersiveHidden,
+      remainingEstimate,
+      searchTarget = null,
       onToggleImmersive,
       onCloseSettings,
       onRatioChange,
@@ -171,6 +181,9 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       settings.font,
       settings.fontSizePx,
       settings.lineHeight,
+      settings.paragraphIndent,
+      settings.paragraphSpacing,
+      settings.textAlign,
     ]);
 
     const safePageIndex = Math.max(0, Math.min(pageIndex, totalPages - 1));
@@ -234,6 +247,54 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       () => ({ stepPrev, stepNext, jumpToRatio }),
       [jumpToRatio, stepNext, stepPrev],
     );
+
+    const flashCleanupRef = useRef<(() => void) | null>(null);
+    const appliedSearchNonceRef = useRef(0);
+
+    useEffect(() => {
+      return () => {
+        flashCleanupRef.current?.();
+        flashCleanupRef.current = null;
+      };
+    }, []);
+
+    useEffect(() => {
+      if (!searchTarget || searchTarget.chapterIndex !== chapterIndex) return;
+      if (appliedSearchNonceRef.current === searchTarget.nonce) return;
+      const timer = window.setTimeout(() => {
+        const track = trackRef.current;
+        if (!track) return;
+        const matched = findDomBlockForSearchQuery(
+          track,
+          searchTarget.query,
+          searchTarget.occurrenceIndex,
+        );
+        appliedSearchNonceRef.current = searchTarget.nonce;
+        if (!matched) return;
+        const trackRect = track.getBoundingClientRect();
+        const mRect = matched.getBoundingClientRect();
+        const relLeft = Math.max(0, mRect.left - trackRect.left);
+        const step = Math.max(1, geometry.colWidth + geometry.gap);
+        const colIdx = Math.floor((relLeft + 4) / step);
+        const targetPage = Math.min(
+          totalPages - 1,
+          Math.max(0, Math.floor(colIdx / geometry.columns)),
+        );
+        commitPage(targetPage, false);
+        flashCleanupRef.current?.();
+        flashCleanupRef.current = flashDomSearchElement(matched);
+      }, 60);
+      return () => window.clearTimeout(timer);
+    }, [
+      chapter.id,
+      chapterIndex,
+      commitPage,
+      geometry.colWidth,
+      geometry.columns,
+      geometry.gap,
+      searchTarget,
+      totalPages,
+    ]);
 
     const isLastChapter = chapterIndex >= totalChapters - 1;
     const isLastSpread = safePageIndex >= totalPages - 1;
@@ -341,10 +402,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
 
                 <div
                   className={`reading-content ${READER_FONT_CLASS[settings.font]}`}
-                  style={{
-                    fontSize: `${settings.fontSizePx}px`,
-                    lineHeight: settings.lineHeight,
-                  }}
+                  style={buildReaderTypographyStyle(settings)}
                 >
                   {chapter.content_html ? (
                     <div dangerouslySetInnerHTML={{ __html: chapter.content_html }} />
@@ -393,7 +451,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
               )}
             </div>
           ) : (
-            <div className={`flex items-center gap-2 tabular-nums ${palette.textSecondary}`}>
+            <div className={`flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 tabular-nums ${palette.textSecondary}`}>
               <span>
                 Trang <strong className={palette.textPrimary}>{safePageIndex + 1}</strong> / {totalPages}
               </span>
@@ -401,6 +459,12 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
               <span>
                 Chương {chapterIndex + 1}/{totalChapters}
               </span>
+              {remainingEstimate && (
+                <>
+                  <span aria-hidden="true" className="hidden sm:inline">·</span>
+                  <span className="hidden sm:inline">{remainingEstimate}</span>
+                </>
+              )}
             </div>
           )}
 

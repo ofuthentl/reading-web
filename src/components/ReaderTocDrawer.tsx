@@ -22,6 +22,12 @@ interface ReaderTocDrawerProps {
   palette: ReaderThemePalette;
   onSelectChapter: (index: number) => void;
   onJumpToBookmark?: (chapterIndex: number, scrollRatio: number) => void;
+  onJumpToSearchResult?: (target: {
+    chapterIndex: number;
+    query: string;
+    occurrenceIndex: number;
+    approximateRatio: number;
+  }) => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
   onClose: () => void;
 }
@@ -38,6 +44,7 @@ export function ReaderTocDrawer({
   palette,
   onSelectChapter,
   onJumpToBookmark,
+  onJumpToSearchResult,
   onApiError,
   onClose,
 }: ReaderTocDrawerProps) {
@@ -129,6 +136,14 @@ export function ReaderTocDrawer({
             parsedChapters={parsedChapters}
             palette={palette}
             onSelectChapter={onSelectChapter}
+            onJumpToSearchResult={(target) => {
+              if (onJumpToSearchResult) {
+                onJumpToSearchResult(target);
+              } else {
+                onSelectChapter(target.chapterIndex);
+              }
+              onClose();
+            }}
             onApiError={onApiError}
           />
         ) : activeTab === 'bookmarks' ? (

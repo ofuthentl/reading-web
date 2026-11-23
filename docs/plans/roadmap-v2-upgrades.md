@@ -1,15 +1,15 @@
-# Kế hoạch tổng thể — Nâng cấp Ofu's Library v2 (18 hạng mục)
+# Kế hoạch tổng thể — Nâng cấp Ofu's Library v2 (17 hạng mục)
 
 - **Ngày lập:** 2026-11-23
-- **Phạm vi bao gồm (18 hạng mục):**
-  - **P0:** Thống kê thời gian đọc thực tế (Phương án 1: client active timer + gửi ghép vào `PUT /api/progress/:bookId` + `pagehide keepalive`) và vá lỗi hiển thị biểu đồ `/usage` (lặp nhãn trục `0, 1, 1` & dòng ghi chú khi trống).
-  - **Nhóm I — Trình đọc Light Novel:** Mục **1** (Popup Chú thích dịch giả), **2** (Tab Minh họa + chống spoiler), **3** (Nhảy & nhấp nháy đúng đoạn Tìm chữ), **4** (Ước tính thời gian đọc còn lại), **5** (Highlight bôi màu & Kho trích dẫn), **6** (Typography nâng cao), **7** (Đồng bộ `ReaderSettings` lên D1), **8** (Chữ dọc Nhật *Tategaki*).
+- **Phạm vi bao gồm (17 hạng mục):**
+  - **P0:** Thống kê thời gian đọc thực tế (Phương án 1: client active timer + gửi ghép vào `PUT /api/progress/:bookId` + `pagehide keepalive`) và nâng cấp `/usage` (vá lặp nhãn trục `0, 1, 1`, ghi chú khi trống, ưu tiên hiện độc giả/hoàn thành trước tên kệ, xổ chi tiết tủ sách theo thành viên Discord).
+  - **Nhóm I — Trình đọc Light Novel:** Mục **1** (Popup Chú thích dịch giả), **2** (Tab Minh họa + chống spoiler), **3** (Nhảy & nhấp nháy đúng đoạn Tìm chữ), **4** (Ước tính thời gian đọc còn lại), **5** (Highlight bôi màu & Kho trích dẫn), **6** (Typography nâng cao), **7** (Đồng bộ `ReaderSettings` lên D1).
   - **Nhóm II — Quản lý Kho sách:** Mục **9** (Tên gọi khác `alt_titles`), **11** (Danh sách *Để dành đọc sau*), **12** (Gợi ý thông tin từ AniList), **13** (Bộ sưu tập tuỳ chỉnh *Custom Collections*).
   - **Nhóm III — Cộng đồng Discord:** Mục **14** (Bot Discord tự báo tập mới), **15** (Bình luận & Chấm điểm sao có `||Spoiler||`).
   - **Nhóm IV — Thói quen đọc & Tiện ích:** Mục **17** (Reading Streak & Lịch nhiệt 90 ngày), **18** (Quản lý Cache IndexedDB), **19** (Cài PWA nâng cao).
-- **Đã loại theo yêu cầu người dùng:** Mục **10** (Trạng thái bộ truyện), **16** (Góc Yêu cầu sách), **20** (3D Aincrad PR 4C).
+- **Đã loại theo yêu cầu người dùng:** Mục **8** (Chữ dọc Nhật *Tategaki*), **10** (Trạng thái bộ truyện), **16** (Góc Yêu cầu sách), **20** (3D Aincrad PR 4C).
 - **Ràng buộc bất biến (`AGENTS.md` & `DECISIONS.md`):**
-  - Chi phí vận hành **\$0** trên Cloudflare Free Tier, **0 CDN ngoài**, **0 byte R2 phát sinh** cho toàn bộ 18 hạng mục này (chỉ thêm bảng nhẹ trên D1).
+  - Chi phí vận hành **\$0** trên Cloudflare Free Tier, **0 CDN ngoài**, **0 byte R2 phát sinh** cho toàn bộ 17 hạng mục này (chỉ thêm bảng nhẹ trên D1).
   - Giữ entry 2D/mobile siêu nhẹ (nạp lười qua `React.lazy` cho mọi panel/modal mới, bảo toàn `D-013`).
   - Bảo toàn tuyệt đối 4 lớp chống crawl `guest` (`D-028`), phân quyền bộ kín `restricted` (`D-030`) và chế độ tàng hình `/usage` (`D-035`).
   - Mọi file mã nguồn `<= 500` dòng (ESLint `max-lines`), thu hồi 100% `URL.createObjectURL`, không lưu dữ liệu lớn vào `localStorage`.
@@ -45,27 +45,27 @@
 
 ### Wave 1 — Thời gian đọc, Streak 90 ngày, Vá `/usage` & Nâng cấp Lõi Trình đọc
 - **Nhánh:** `feat/reading-time-streak-and-reader-ux` *(tách từ `origin/main`)*
-- **Hạng mục:** **P0** + **Mục 17, 4, 6, 7, 8, 3** (7 hạng mục)
+- **Hạng mục:** **P0** + **Mục 17, 4, 6, 7, 3** (6 hạng mục; đã loại Mục 8 *Tategaki* theo yêu cầu người dùng)
 - **Migration D1:** `workers/r2-storage/migrations/0011_reading_time_and_prefs.sql`
   - Thêm `owner_reading_seconds INTEGER NOT NULL DEFAULT 0`, `guest_reading_seconds INTEGER NOT NULL DEFAULT 0` vào `usage_daily_stats`.
-  - Thêm `reading_seconds INTEGER NOT NULL DEFAULT 0` vào `usage_daily_readers`, `reading_progress`, `guest_reading_progress`.
+  - Thêm `reading_seconds INTEGER NOT NULL DEFAULT 0` và `last_reading_sync_at INTEGER NOT NULL DEFAULT 0` vào `usage_daily_readers`; thêm `reading_seconds INTEGER NOT NULL DEFAULT 0` vào `reading_progress`, `guest_reading_progress`.
   - Tạo bảng `user_reader_prefs (user_scope TEXT PRIMARY KEY, settings_json TEXT NOT NULL, updated_at INTEGER NOT NULL)`.
 - **Các Phase nhỏ trong Wave 1:**
   - **Phase 1.1 (Backend Worker):**
-    - Cập nhật `progressDb.ts` nhận `readingDeltaSec` (kẹp trần an toàn `0..300s` và đối chiếu `updated_at` gần nhất chống gian lận), cộng dồn vào `reading_progress` / `guest_reading_progress` và đẩy sang `usageRecorder.ts` (`usage_daily_stats` + `usage_daily_readers`).
-    - Mở rộng `usageDb.ts` trả thêm dữ liệu thời gian đọc theo ngày, tổng 7N/30N, giờ đọc theo từng tập & từng thành viên Discord.
+    - Cập nhật `progressDb.ts` nhận `readingDeltaSec` (kẹp trần an toàn `0..300s` và đối chiếu `updated_at` + ngân sách đồng hồ thực `last_reading_sync_at` trong `usageRecorder.ts` chống gian lận), cộng dồn vào `reading_progress` / `guest_reading_progress` và đẩy sang `usage_daily_stats` + `usage_daily_readers`.
+    - Mở rộng `usageDb.ts` + `usageQueries.ts` trả thêm dữ liệu thời gian đọc theo ngày, tổng 7N/30N, giờ đọc theo từng tập & từng thành viên Discord, kèm endpoint `GET /api/admin/usage/guests/:discordUserId` trả toàn bộ danh sách tập 1 thành viên đã mở/đọc.
     - Thêm `GET /api/reading-stats/activity` (trả chuỗi 90 ngày gần nhất của chính `auth` đang đăng nhập cho Streak & Lịch nhiệt, cách ly tuyệt đối theo `reader_scope`).
     - Thêm `GET / PUT /api/reader-settings` (lưu/tải `ReaderSettings` theo `user_scope`, xác thực chặt từng trường).
   - **Phase 1.2 (Frontend Timer, `/usage` & Streak 90 ngày):**
     - Tạo hook `src/hooks/useActiveReadingTimer.ts`: chỉ đếm giây khi `visibilityState === 'visible'` và có thao tác cuộn/chạm/phím trong `90s` gần nhất; gửi ghép vào `saveReadingProgress` + `keepalive` khi `pagehide`/đóng sách.
-    - Cập nhật `AdminUsageCharts.tsx`, `AdminUsageView.tsx`, `AdminUsageGuestTable.tsx`: thêm tab biểu đồ **`Thời gian đọc`**, cột giờ đọc theo khách/tập, **vá lỗi lặp trục Y `0, 1, 1`** và thêm dòng ghi chú thân thiện khi biểu đồ trống.
-    - Nâng cấp `ReadingStatsModal.tsx` (kèm helper `src/lib/readingStreak.ts`): hiển thị **Tổng giờ đọc**, **Chuỗi đọc liên tiếp (Streak hiện tại / kỷ lục)** và **Lịch nhiệt 90 ngày** SVG thuần (0 CDN, đồng bộ 4 theme).
-  - **Phase 1.3 (Frontend Reader Core UX — Mục 4, 6, 7, 8, 3):**
-    - **Mục 4:** Helper `src/lib/readingEstimate.ts` tính thời gian đọc còn lại trong chương (~220 từ/phút tiếng Việt) hiển thị ở chân `ReaderView` & `GuestCanvasReader`.
-    - **Mục 6 & 7 & 8:** Mở rộng `ReaderSettings` (`textAlign`, `paragraphIndent`, `paragraphSpacing`, `nightDimPercent`, `verticalMode` cho `Owner`), đồng bộ D1 qua `src/lib/readerSettingsSync.ts` (cache tức thì ở `localStorage`, đồng bộ nền debounce `1.2s`), cập nhật `ReaderSettingsPopover.tsx`, `ReaderView.tsx`, `GuestCanvasReader.tsx` & `GuestCanvasPaginatedView.tsx`.
-    - **Mục 3:** Nâng cấp `ReaderSearchAndBookmarks.tsx` + `ReaderView.tsx` + `GuestCanvasReader.tsx`: bấm kết quả tìm chữ cuộn/lật tới đúng đoạn khớp và nhấp nháy sáng tạm thời `~2.2s`.
+    - Cập nhật `AdminUsageCharts.tsx`, `AdminUsageView.tsx`, `AdminUsageGuestTable.tsx` + `AdminUsageGuestDetailPanel.tsx`: thêm tab biểu đồ **`Thời gian đọc`**, cột giờ đọc theo khách/tập, **vá lỗi lặp trục Y `0, 1, 1`**, thêm dòng ghi chú thân thiện khi biểu đồ trống, ưu tiên hiện số độc giả/hoàn thành trước tên kệ, và xổ chi tiết tập đọc theo thành viên Discord.
+    - Nâng cấp `ReadingStatsModal.tsx` (kèm helper `src/lib/readingStreak.ts` & `ReadingHeatmapSection.tsx`): hiển thị **Tổng giờ đọc**, **Chuỗi đọc liên tiếp (Streak hiện tại / kỷ lục)** và **Lịch nhiệt 90 ngày** SVG thuần (0 CDN, đồng bộ 4 theme).
+  - **Phase 1.3 (Frontend Reader Core UX — Mục 4, 6, 7, 3):**
+    - **Mục 4:** Helper `src/lib/readingEstimate.ts` tính thời gian đọc còn lại trong chương (~220 từ/phút tiếng Việt) hiển thị ở chân `ReaderView` & `GuestCanvasReader` qua `ReaderFooterStatusBar.tsx`.
+    - **Mục 6 & 7:** Mở rộng `ReaderSettings` (`textAlign`, `paragraphIndent`, `paragraphSpacing`, `nightDimPercent`), đồng bộ D1 qua `src/lib/readerSettingsSync.ts` (cache tức thì ở `localStorage`, đồng bộ nền debounce `1.2s`), cập nhật `ReaderSettingsPopover.tsx`, `ReaderView.tsx`, `GuestCanvasReader.tsx` & `GuestCanvasPaginatedView.tsx`.
+    - **Mục 3:** Nâng cấp `ReaderSearchAndBookmarks.tsx` + `ReaderView.tsx` + `GuestCanvasReader.tsx` + `readerSearchJump.ts`: bấm kết quả tìm chữ cuộn/lật tới đúng đoạn khớp và nhấp nháy sáng tạm thời `~2.2s` trên cả DOM lẫn `<canvas>`.
 - **Rủi ro & Hoàn tác:**
-  - *Rủi ro:* Đồng hồ client gửi trùng khi chuyển chương nhanh; CSS `writing-mode: vertical-rl` xung đột với lật trang 2 cột (`Tategaki` tự động chuyển về chế độ cuộn ngang riêng khi bật, tắt đi trả lại `layoutMode` cũ).
+  - *Rủi ro:* Đồng hồ client gửi trùng khi chuyển chương nhanh hoặc mở nhiều tab → đã chặn bằng `consumeElapsedReadingDelta` ở client và ngân sách đồng hồ thực `last_reading_sync_at` ở server.
   - *Hoàn tác:* Các cột mới trên D1 đều `DEFAULT 0` (tương thích ngược 100%), có thể `git revert` PR mà không làm hỏng dữ liệu hiện có.
 
 ---

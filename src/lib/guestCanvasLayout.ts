@@ -28,6 +28,7 @@ export type CanvasLayoutItem =
       quoteBarBottom?: boolean;
       listMarker?: string;
       markerX?: number;
+      flashHighlight?: boolean;
       fragments: CanvasSpanFragment[];
     }
   | {
@@ -159,6 +160,55 @@ function splitWordToFit(word: string, maxWidth: number, fontSpec: string): strin
   return parts.length > 0 ? parts : [word];
 }
 
+function justifyLineFragments(
+  fragments: CanvasSpanFragment[],
+  font: ReaderFont,
+  fontSize: number,
+  lineStartX: number,
+  targetEndX: number,
+  forceBold: boolean,
+): CanvasSpanFragment[] {
+  const tokens: Array<{ text: string; isSpace: boolean; width: number; bold: boolean; italic: boolean }> = [];
+  for (const frag of fragments) {
+    const bold = forceBold || frag.bold;
+    const spec = buildCanvasFontSpec(font, fontSize, bold, frag.italic);
+    const parts = frag.text.match(/\S+|\s+/g) || [];
+    for (const part of parts) {
+      const isSpace = /^\s+$/.test(part);
+      tokens.push({
+        text: isSpace ? ' ' : part,
+        isSpace,
+        width: measureTokenWidth(isSpace ? ' ' : part, spec),
+        bold: frag.bold,
+        italic: frag.italic,
+      });
+    }
+  }
+  while (tokens.length > 0 && tokens[tokens.length - 1].isSpace) {
+    tokens.pop();
+  }
+  const spaceCount = tokens.reduce((acc, tk) => acc + (tk.isSpace ? 1 : 0), 0);
+  if (spaceCount <= 0) return fragments;
+
+  const naturalWidth = tokens.reduce((acc, tk) => acc + tk.width, 0);
+  const availWidth = targetEndX - lineStartX;
+  const slack = availWidth - naturalWidth;
+  if (slack <= 0.5 || slack > availWidth * 0.28) return fragments;
+
+  const extraPerSpace = slack / spaceCount;
+  const justified: CanvasSpanFragment[] = [];
+  let x = lineStartX;
+  for (const tk of tokens) {
+    if (tk.isSpace) {
+      x += tk.width + extraPerSpace;
+    } else {
+      justified.push({ text: tk.text, x, bold: tk.bold, italic: tk.italic });
+      x += tk.width;
+    }
+  }
+  return justified;
+}
+
 function wrapInlineSpans(
   spans: GuestInlineSpan[],
   font: ReaderFont,
@@ -166,10 +216,12 @@ function wrapInlineSpans(
   maxWidth: number,
   startX: number,
   forceBold = false,
+  wrapOptions?: { firstLineIndent?: number; justify?: boolean },
 ): CanvasSpanFragment[][] {
+  const firstIndent = Math.max(0, wrapOptions?.firstLineIndent ?? 0);
   const lines: CanvasSpanFragment[][] = [];
   let currentLine: CanvasSpanFragment[] = [];
-  let cursorX = startX;
+  let cursorX = startX + firstIndent;
   const limitX = startX + Math.max(80, maxWidth);
 
   const pushFragment = (text: string, x: number, bold: boolean, italic: boolean) => {
@@ -237,6 +289,12 @@ function wrapInlineSpans(
   }
 
   commitLine();
+  if (wrapOptions?.justify && lines.length > 1) {
+    for (let i = 0; i < lines.length - 1; i += 1) {
+      const lineStart = i === 0 ? startX + firstIndent : startX;
+      lines[i] = justifyLineFragments(lines[i], font, fontSize, lineStart, limitX, forceBold);
+    }
+  }
   return lines;
 }
 
@@ -268,7 +326,15 @@ export function computeChapterCanvasLayout(options: {
   const contentWidth = Math.max(240, Math.min(containerWidth, maxTargetWidth));
   const baseSize = settings.fontSizePx;
   const baseLineHeight = Math.round(baseSize * settings.lineHeight);
-  const paragraphGap = Math.round(baseSize * 1.18);
+  const paraGapScale =
+    settings.paragraphSpacing === 'compact'
+      ? 0.64
+      : settings.paragraphSpacing === 'relaxed'
+        ? 1.56
+        : 1.1;
+  const paragraphGap = Math.round(baseSize * paraGapScale);
+  const firstLineIndent = settings.paragraphIndent ? Math.round(baseSize * 1.6) : 0;
+  const doJustify = settings.textAlign === 'justify';
 
   const items: CanvasLayoutItem[] = [];
   let y = 12;
@@ -361,6 +427,8 @@ export function computeChapterCanvasLayout(options: {
         baseSize,
         contentWidth - quoteIndent - 6,
         quoteIndent,
+        false,
+        { justify: doJustify },
       );
       for (let i = 0; i < lines.length; i += 1) {
         items.push({
@@ -411,7 +479,10 @@ export function computeChapterCanvasLayout(options: {
     }
 
     // Đoạn văn xuôi thông thường ('p')
-    const lines = wrapInlineSpans(block.spans, settings.font, baseSize, contentWidth, 0);
+    const lines = wrapInlineSpans(block.spans, settings.font, baseSize, contentWidth, 0, false, {
+      firstLineIndent,
+      justify: doJustify,
+    });
     for (const fragments of lines) {
       items.push({
         kind: 'text-line',

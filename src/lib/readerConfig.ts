@@ -31,7 +31,6 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   paragraphIndent: false,
   paragraphSpacing: 'normal',
   nightDimPercent: 0,
-  verticalMode: false,
 };
 
 export interface ReaderThemePalette {
@@ -199,7 +198,6 @@ export function normalizeReaderSettings(
       typeof parsed.nightDimPercent === 'number' && Number.isFinite(parsed.nightDimPercent)
         ? Math.min(50, Math.max(0, Math.round(parsed.nightDimPercent)))
         : DEFAULT_READER_SETTINGS.nightDimPercent,
-    verticalMode: Boolean(parsed.verticalMode),
   };
 }
 

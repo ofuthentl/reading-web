@@ -1,17 +1,43 @@
-import { lazy, Suspense, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import { HardDrive, Sparkles } from 'lucide-react';
-import type { Book, ParsedBook, ReaderSettings, ReadingProgress } from '@/types';
+import type {
+  Book,
+  ParsedBook,
+  ReaderSettings,
+  ReadingProgress,
+  SaveProgressOptions,
+} from '@/types';
 import { ReaderChapterEndNav } from '@/components/ReaderChapterEndNav';
+import {
+  ReaderFooterStatusBar,
+  ReaderNightDimOverlay,
+} from '@/components/ReaderFooterStatusBar';
 import { type PaginatedStageHandle, ReaderPaginatedView } from '@/components/ReaderPaginatedView';
 import { ReaderTocDrawer } from '@/components/ReaderTocDrawer';
 import { ReaderTopBar } from '@/components/ReaderTopBar';
-import { useReaderController } from '@/hooks/useReaderController';
+import { useReaderChapterProgress } from '@/hooks/useReaderChapterProgress';
 import {
   READER_FONT_CLASS,
   READER_THEME_STYLES,
   READER_WIDTH_MAX,
   handleReaderContentLinkClick,
 } from '@/lib/readerConfig';
+import {
+  buildReaderTypographyStyle,
+  countWordsInPlainText,
+} from '@/lib/readingEstimate';
+import {
+  findDomBlockForSearchQuery,
+  flashDomSearchElement,
+} from '@/lib/readerSearchJump';
 
 const LazyReaderImageLightbox = lazy(() =>
   import('@/components/ReaderImageLightbox').then((mod) => ({
@@ -27,7 +53,7 @@ type ReaderViewProps = {
   nextBook?: Book | null;
   settings: ReaderSettings;
   onUpdateSettings: (next: Partial<ReaderSettings>) => void;
-  onSaveProgress: (progress: ReadingProgress) => void;
+  onSaveProgress: (progress: ReadingProgress, options?: SaveProgressOptions) => void;
   onOpenNextBook?: (nextBook: Book) => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
   onClose: () => void;
@@ -48,41 +74,43 @@ export function ReaderView({
 }: ReaderViewProps) {
   const { chapters } = parsedBook;
   const isPaginated = settings.layoutMode === 'paginated';
-
-  const initialIdx = useMemo(() => {
-    if (!initialProgress) return 0;
-    const byId = chapters.findIndex((c) => c.id === initialProgress.chapterId);
-    if (byId >= 0) return byId;
-    return Math.max(0, Math.min(initialProgress.chapterIndex || 0, chapters.length - 1));
-  }, [chapters, initialProgress]);
-
-  const initialStartRatio =
-    initialProgress && initialProgress.chapterId === chapters[initialIdx]?.id
-      ? initialProgress.scrollRatio
-      : 0;
-
-  const [chapterIndex, setChapterIndex] = useState(initialIdx);
-  const [chapterScrollRatio, setChapterScrollRatio] = useState(initialStartRatio);
-  const [paginatedStartRatio, setPaginatedStartRatio] = useState(initialStartRatio);
+  const palette = READER_THEME_STYLES[settings.theme];
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const paginatedRef = useRef<PaginatedStageHandle>(null);
-  const restoreTargetRatioRef = useRef<number | null>(
-    initialProgress && initialProgress.chapterId === chapters[initialIdx]?.id
-      ? initialProgress.scrollRatio
-      : null,
-  );
-  const suppressSaveRef = useRef(false);
-  const goPrevRef = useRef<() => void>(() => undefined);
-  const goNextRef = useRef<() => void>(() => undefined);
+  const flashCleanupRef = useRef<(() => void) | null>(null);
+  const appliedSearchNonceRef = useRef(0);
 
-  const ctrl = useReaderController({
-    initialCompleted: Boolean(initialProgress?.completed),
+  const {
+    ctrl,
+    chapterIndex,
+    chapterScrollRatio,
+    setChapterScrollRatio,
+    paginatedStartRatio,
+    setPaginatedStartRatio,
+    searchTarget,
+    restoreTargetRatioRef,
+    suppressSaveRef,
+    overallPercent,
+    computeRemainingEstimate,
+    goToChapter,
+    goPrevChapter,
+    goNextChapter,
+    handlePaginatedRatioChange,
+    handleJumpToSearchResult,
+    completeBook,
+  } = useReaderChapterProgress({
+    chapters,
+    initialProgress,
     settings,
+    isPaginated,
+    scrollContainerRef,
+    paginatedRef,
     onSaveProgress,
-    onPrev: () => goPrevRef.current(),
-    onNext: () => goNextRef.current(),
+    onOpenNextBook,
+    onClose,
   });
+
   const {
     tocOpen,
     setTocOpen,
@@ -102,110 +130,23 @@ export function ReaderView({
   } = ctrl;
 
   const currentChapter = chapters[chapterIndex];
-  const palette = READER_THEME_STYLES[settings.theme];
+
+  useEffect(() => {
+    return () => {
+      flashCleanupRef.current?.();
+      flashCleanupRef.current = null;
+    };
+  }, []);
 
   const handleUpdateSettings = useCallback(
     (patch: Partial<ReaderSettings>) => {
       if (patch.layoutMode && patch.layoutMode !== settings.layoutMode) {
-        if (patch.layoutMode === 'paginated') {
-          setPaginatedStartRatio(chapterScrollRatio);
-        } else {
-          restoreTargetRatioRef.current = chapterScrollRatio;
-        }
+        if (patch.layoutMode === 'paginated') setPaginatedStartRatio(chapterScrollRatio);
+        else restoreTargetRatioRef.current = chapterScrollRatio;
       }
       onUpdateSettings(patch);
     },
-    [chapterScrollRatio, onUpdateSettings, settings.layoutMode],
-  );
-
-  const goToChapter = useCallback(
-    (nextIndex: number, targetRatio = 0) => {
-      const clamped = Math.max(0, Math.min(nextIndex, chapters.length - 1));
-      const target = chapters[clamped];
-      if (!target) return;
-
-      const safeRatio = Math.min(1, Math.max(0, targetRatio));
-      setTocOpen(false);
-      setImmersiveHidden(false);
-
-      if (clamped === chapterIndex) {
-        setChapterScrollRatio(safeRatio);
-        if (isPaginated) {
-          paginatedRef.current?.jumpToRatio(safeRatio);
-        } else if (scrollContainerRef.current) {
-          const el = scrollContainerRef.current;
-          const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
-          el.scrollTop = Math.round(maxScroll * safeRatio);
-        }
-        return;
-      }
-
-      suppressSaveRef.current = true;
-      restoreTargetRatioRef.current = safeRatio;
-      lastScrollTopRef.current = 0;
-      setPaginatedStartRatio(safeRatio);
-      setChapterScrollRatio(safeRatio);
-      setChapterIndex(clamped);
-
-      queueProgressSave(
-        {
-          chapterId: target.id,
-          chapterIndex: clamped,
-          chapterTitle: target.title,
-          totalChapters: chapters.length,
-          scrollRatio: safeRatio,
-          scrollTop: 0,
-          completed: completedRef.current,
-          updatedAt: Date.now(),
-        },
-        true,
-      );
-    },
-    [
-      chapterIndex,
-      chapters,
-      completedRef,
-      isPaginated,
-      lastScrollTopRef,
-      queueProgressSave,
-      setImmersiveHidden,
-      setTocOpen,
-    ],
-  );
-
-  const goPrevChapter = useCallback(() => {
-    if (chapterIndex > 0) goToChapter(chapterIndex - 1, 0);
-  }, [chapterIndex, goToChapter]);
-
-  const goNextChapter = useCallback(() => {
-    if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1, 0);
-  }, [chapterIndex, chapters.length, goToChapter]);
-
-  goPrevRef.current = isPaginated ? () => paginatedRef.current?.stepPrev() : goPrevChapter;
-  goNextRef.current = isPaginated ? () => paginatedRef.current?.stepNext() : goNextChapter;
-
-  const handlePaginatedRatioChange = useCallback(
-    (ratio: number, isEndOfChapter: boolean) => {
-      if (!currentChapter) return;
-      setChapterScrollRatio(ratio);
-      const reachedEnd = chapterIndex === chapters.length - 1 && isEndOfChapter;
-      if (reachedEnd) completedRef.current = true;
-
-      queueProgressSave(
-        {
-          chapterId: currentChapter.id,
-          chapterIndex,
-          chapterTitle: currentChapter.title,
-          totalChapters: chapters.length,
-          scrollRatio: ratio,
-          scrollTop: 0,
-          completed: completedRef.current,
-          updatedAt: Date.now(),
-        },
-        reachedEnd,
-      );
-    },
-    [chapterIndex, chapters.length, completedRef, currentChapter, queueProgressSave],
+    [chapterScrollRatio, onUpdateSettings, restoreTargetRatioRef, setPaginatedStartRatio, settings.layoutMode],
   );
 
   const handleScroll = useCallback(() => {
@@ -218,7 +159,6 @@ export function ReaderView({
     const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
     const ratio = maxScroll > 0 ? Math.min(1, Math.max(0, currentTop / maxScroll)) : 1;
     setChapterScrollRatio(ratio);
-
     if (suppressSaveRef.current) return;
 
     const reachedEndOfBook =
@@ -245,6 +185,8 @@ export function ReaderView({
     currentChapter,
     isPaginated,
     queueProgressSave,
+    setChapterScrollRatio,
+    suppressSaveRef,
     updateImmersiveOnScroll,
   ]);
 
@@ -272,38 +214,38 @@ export function ReaderView({
     };
     frame = requestAnimationFrame(apply);
     return () => cancelAnimationFrame(frame);
-  }, [currentChapter, handleScroll, isPaginated, lastScrollTopRef]);
+  }, [currentChapter, handleScroll, isPaginated, lastScrollTopRef, restoreTargetRatioRef, suppressSaveRef]);
 
-  const completeBook = useCallback(
-    (targetNextBook?: Book) => {
-      if (currentChapter) {
-        completedRef.current = true;
-        queueProgressSave(
-          {
-            chapterId: currentChapter.id,
-            chapterIndex,
-            chapterTitle: currentChapter.title,
-            totalChapters: chapters.length,
-            scrollRatio: 1,
-            scrollTop: scrollContainerRef.current?.scrollTop || 0,
-            completed: true,
-            updatedAt: Date.now(),
-          },
-          true,
-        );
-      }
-      if (targetNextBook && onOpenNextBook) onOpenNextBook(targetNextBook);
-      else onClose();
-    },
-    [chapterIndex, chapters.length, completedRef, currentChapter, onClose, onOpenNextBook, queueProgressSave],
+  useEffect(() => {
+    if (isPaginated || !searchTarget || searchTarget.chapterIndex !== chapterIndex) return;
+    if (appliedSearchNonceRef.current === searchTarget.nonce) return;
+
+    const timer = window.setTimeout(() => {
+      const el = scrollContainerRef.current;
+      if (!el) return;
+      const matched = findDomBlockForSearchQuery(
+        el,
+        searchTarget.query,
+        searchTarget.occurrenceIndex,
+      );
+      appliedSearchNonceRef.current = searchTarget.nonce;
+      if (!matched) return;
+      const cRect = el.getBoundingClientRect();
+      const mRect = matched.getBoundingClientRect();
+      const targetTop = el.scrollTop + (mRect.top - cRect.top) - el.clientHeight * 0.28;
+      el.scrollTop = Math.max(0, Math.round(targetTop));
+      flashCleanupRef.current?.();
+      flashCleanupRef.current = flashDomSearchElement(matched);
+      handleScroll();
+    }, 90);
+    return () => window.clearTimeout(timer);
+  }, [chapterIndex, currentChapter?.id, handleScroll, isPaginated, searchTarget]);
+
+  const chapterWords = useMemo(
+    () => countWordsInPlainText(currentChapter?.content),
+    [currentChapter?.content],
   );
-
-  const overallPercent = useMemo(() => {
-    if (chapters.length === 0) return 0;
-    const base = chapterIndex / chapters.length;
-    const intra = chapterScrollRatio / chapters.length;
-    return Math.min(100, Math.round((base + intra) * 100));
-  }, [chapterIndex, chapterScrollRatio, chapters.length]);
+  const remainingEstimate = computeRemainingEstimate(chapterWords);
 
   const cacheBadge = (
     <span
@@ -327,6 +269,11 @@ export function ReaderView({
     <div
       className={`relative flex h-full min-h-0 flex-1 flex-col overflow-hidden transition-colors duration-200 ${palette.pageBg} ${palette.textPrimary}`}
     >
+      <ReaderNightDimOverlay
+        nightDimPercent={settings.nightDimPercent}
+        settingsOpen={settingsOpen}
+      />
+
       <ReaderTopBar
         bookTitle={book.title}
         chapterTitle={currentChapter?.title}
@@ -337,7 +284,7 @@ export function ReaderView({
         palette={palette}
         statusBadge={cacheBadge}
         onBack={() => {
-          flushProgress();
+          flushProgress({ forceTimeFlush: true, keepalive: true });
           onClose();
         }}
         onOpenDrawerTab={openDrawerTab}
@@ -366,125 +313,135 @@ export function ReaderView({
           palette={palette}
           onSelectChapter={(idx) => goToChapter(idx, 0)}
           onJumpToBookmark={goToChapter}
+          onJumpToSearchResult={handleJumpToSearchResult}
           onApiError={onApiError}
           onClose={() => setTocOpen(false)}
         />
       )}
 
       {isPaginated && currentChapter ? (
-        <ReaderPaginatedView
-          ref={paginatedRef}
-          bookTitle={book.title}
-          chapter={currentChapter}
-          chapterIndex={chapterIndex}
-          totalChapters={chapters.length}
-          initialRatio={paginatedStartRatio}
-          nextBook={nextBook}
-          settings={settings}
-          palette={palette}
-          immersiveHidden={immersiveHidden}
-          onToggleImmersive={() => setImmersiveHidden((prev) => !prev)}
-          onCloseSettings={() => {
-            if (!settingsOpen) return false;
-            setSettingsOpen(false);
-            return true;
-          }}
-          onRatioChange={handlePaginatedRatioChange}
-          onPrevChapterEnd={() => {
-            if (chapterIndex > 0) goToChapter(chapterIndex - 1, 1);
-          }}
-          onNextChapterStart={() => {
-            if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1, 0);
-          }}
-          onCompleteBook={completeBook}
-          onOpenImage={(src, alt) => setLightboxTarget({ kind: 'dom', src, alt })}
-        />
-      ) : (
-        <main
-          ref={scrollContainerRef}
-          onScroll={handleScroll}
-          onClick={(event) => {
-            if (settingsOpen) {
+        <>
+          <ReaderPaginatedView
+            ref={paginatedRef}
+            bookTitle={book.title}
+            chapter={currentChapter}
+            chapterIndex={chapterIndex}
+            totalChapters={chapters.length}
+            initialRatio={paginatedStartRatio}
+            nextBook={nextBook}
+            settings={settings}
+            palette={palette}
+            immersiveHidden={immersiveHidden}
+            remainingEstimate={remainingEstimate}
+            searchTarget={searchTarget}
+            onToggleImmersive={() => setImmersiveHidden((prev) => !prev)}
+            onCloseSettings={() => {
+              if (!settingsOpen) return false;
               setSettingsOpen(false);
-              return;
-            }
-            if (handleReaderContentLinkClick(event, scrollContainerRef.current)) return;
+              return true;
+            }}
+            onRatioChange={handlePaginatedRatioChange}
+            onPrevChapterEnd={() => {
+              if (chapterIndex > 0) goToChapter(chapterIndex - 1, 1);
+            }}
+            onNextChapterStart={() => {
+              if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1, 0);
+            }}
+            onCompleteBook={completeBook}
+            onOpenImage={(src, alt) => setLightboxTarget({ kind: 'dom', src, alt })}
+          />
+          <div className="h-1 w-full shrink-0 bg-black/10">
+            <div
+              className={`h-full transition-all duration-150 ${palette.progressBar}`}
+              style={{ width: `${overallPercent}%` }}
+            />
+          </div>
+        </>
+      ) : (
+        <>
+          <main
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            onClick={(event) => {
+              if (settingsOpen) {
+                setSettingsOpen(false);
+                return;
+              }
+              if (handleReaderContentLinkClick(event, scrollContainerRef.current)) return;
+              if (window.getSelection()?.toString()) return;
 
-            const selection = window.getSelection()?.toString();
-            if (selection) return;
+              const target = event.target as HTMLElement | null;
+              const clickedImg = target?.closest('.reading-content img') as HTMLImageElement | null;
+              if (clickedImg?.src) {
+                setLightboxTarget({
+                  kind: 'dom',
+                  src: clickedImg.src,
+                  alt: clickedImg.alt || book.title,
+                });
+                return;
+              }
 
-            const target = event.target as HTMLElement | null;
-            const clickedImg = target?.closest('.reading-content img') as HTMLImageElement | null;
-            if (clickedImg?.src) {
-              setLightboxTarget({
-                kind: 'dom',
-                src: clickedImg.src,
-                alt: clickedImg.alt || book.title,
-              });
-              return;
-            }
-
-            if (target?.closest('button, a, input, select, textarea')) return;
-            const rect = event.currentTarget.getBoundingClientRect();
-            const ratio = (event.clientX - rect.left) / rect.width;
-            if (settings.sideTapNavigation && ratio < 0.16) goPrevChapter();
-            else if (settings.sideTapNavigation && ratio > 0.84) goNextChapter();
-            else if (immersiveHidden && ratio >= 0.22 && ratio <= 0.78) setImmersiveHidden(false);
-          }}
-          className="scrollbar-thin min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-4 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-[4.75rem] sm:px-8 sm:pb-[calc(3rem+env(safe-area-inset-bottom))] sm:pt-20"
-        >
-          {currentChapter && (
-            <article
-              key={currentChapter.id}
-              className="fade-in mx-auto w-full min-w-0"
-              style={{ maxWidth: READER_WIDTH_MAX[settings.width] }}
-            >
-              <header className={`mb-8 border-b pb-5 text-center ${palette.border}`}>
-                <p className={`mb-1.5 text-xs uppercase tracking-[0.2em] ${palette.textSecondary}`}>
-                  {`Phần ${chapterIndex + 1} / ${chapters.length}`}
-                </p>
-                <h1 className="font-display text-2xl font-bold leading-snug sm:text-3xl">
-                  {currentChapter.title}
-                </h1>
-              </header>
-
-              <div
-                className={`reading-content ${READER_FONT_CLASS[settings.font]}`}
-                style={{
-                  fontSize: `${settings.fontSizePx}px`,
-                  lineHeight: settings.lineHeight,
-                }}
+              if (target?.closest('button, a, input, select, textarea')) return;
+              const rect = event.currentTarget.getBoundingClientRect();
+              const ratio = (event.clientX - rect.left) / rect.width;
+              if (settings.sideTapNavigation && ratio < 0.16) goPrevChapter();
+              else if (settings.sideTapNavigation && ratio > 0.84) goNextChapter();
+              else if (immersiveHidden && ratio >= 0.22 && ratio <= 0.78) setImmersiveHidden(false);
+            }}
+            className="scrollbar-thin min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-4 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-[4.75rem] sm:px-8 sm:pb-[calc(3rem+env(safe-area-inset-bottom))] sm:pt-20"
+          >
+            {currentChapter && (
+              <article
+                key={currentChapter.id}
+                className="fade-in mx-auto w-full min-w-0"
+                style={{ maxWidth: READER_WIDTH_MAX[settings.width] }}
               >
-                {currentChapter.content_html ? (
-                  <div dangerouslySetInnerHTML={{ __html: currentChapter.content_html }} />
-                ) : (
-                  currentChapter.content
-                    .split('\n\n')
-                    .map((para, i) => <p key={i}>{para}</p>)
-                )}
-              </div>
+                <header className={`mb-8 border-b pb-5 text-center ${palette.border}`}>
+                  <p className={`mb-1.5 text-xs uppercase tracking-[0.2em] ${palette.textSecondary}`}>
+                    {`Phần ${chapterIndex + 1} / ${chapters.length}`}
+                  </p>
+                  <h1 className="font-display text-2xl font-bold leading-snug sm:text-3xl">
+                    {currentChapter.title}
+                  </h1>
+                </header>
 
-              <ReaderChapterEndNav
-                chapterIndex={chapterIndex}
-                totalChapters={chapters.length}
-                palette={palette}
-                nextBook={nextBook}
-                onPrev={goPrevChapter}
-                onNext={goNextChapter}
-                onCompleteAndClose={() => completeBook()}
-                onCompleteAndOpenNext={(nb) => completeBook(nb)}
-              />
-            </article>
-          )}
-        </main>
+                <div
+                  className={`reading-content ${READER_FONT_CLASS[settings.font]}`}
+                  style={buildReaderTypographyStyle(settings)}
+                >
+                  {currentChapter.content_html ? (
+                    <div dangerouslySetInnerHTML={{ __html: currentChapter.content_html }} />
+                  ) : (
+                    currentChapter.content
+                      .split('\n\n')
+                      .map((para, i) => <p key={i}>{para}</p>)
+                  )}
+                </div>
+
+                <ReaderChapterEndNav
+                  chapterIndex={chapterIndex}
+                  totalChapters={chapters.length}
+                  palette={palette}
+                  nextBook={nextBook}
+                  onPrev={goPrevChapter}
+                  onNext={goNextChapter}
+                  onCompleteAndClose={() => completeBook()}
+                  onCompleteAndOpenNext={(nb) => completeBook(nb)}
+                />
+              </article>
+            )}
+          </main>
+
+          <ReaderFooterStatusBar
+            chapterIndex={chapterIndex}
+            totalChapters={chapters.length}
+            overallPercent={overallPercent}
+            remainingEstimate={remainingEstimate}
+            immersiveHidden={immersiveHidden}
+            palette={palette}
+          />
+        </>
       )}
-
-      <div className="h-1 w-full shrink-0 bg-black/10">
-        <div
-          className={`h-full transition-all duration-150 ${palette.progressBar}`}
-          style={{ width: `${overallPercent}%` }}
-        />
-      </div>
 
       {lightboxTarget && (
         <Suspense fallback={null}>
