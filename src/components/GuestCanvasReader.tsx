@@ -479,12 +479,12 @@ export function GuestCanvasReader({
             else if (settings.sideTapNavigation && ratio > 0.84) goNextChapter();
             else if (immersiveHidden && ratio >= 0.22 && ratio <= 0.78) setImmersiveHidden(false);
           }}
-          className={`scrollbar-thin min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-3.5 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-16 transition-all sm:px-7 sm:pb-[calc(2.5rem+env(safe-area-inset-bottom))] sm:pt-[4.5rem] ${
+          className={`scrollbar-thin min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-3.5 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-16 transition-all sm:px-7 sm:pb-[calc(2.5rem+env(safe-area-inset-bottom))] sm:pt-[4.5rem] ${
             pageHidden ? 'blur-lg' : ''
           }`}
         >
           {layout && (
-            <div className="mx-auto" style={{ width: `${stageBox.width}px` }}>
+            <div className="mx-auto max-w-full" style={{ width: `${stageBox.width}px` }}>
               <div
                 ref={stageWrapRef}
                 className="relative w-full overflow-hidden rounded-lg"

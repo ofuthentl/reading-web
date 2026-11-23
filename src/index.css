@@ -162,6 +162,12 @@
     line-height: 1.9;
     font-size: 1.125rem;
     margin: 0 auto;
+    overflow-wrap: break-word;
+  }
+
+  .reading-content pre {
+    max-width: 100%;
+    overflow-x: auto;
   }
 
   .reading-content-full {
