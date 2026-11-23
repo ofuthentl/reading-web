@@ -258,7 +258,7 @@ export function Library2DView({
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-ink-muted">
               {onUploadClick
-                ? 'Tải lên những cuốn EPUB, PDF hoặc DOCX yêu thích để bắt đầu xây dựng thư viện đồng bộ của riêng bạn.'
+                ? 'Tải lên những cuốn EPUB hoặc DOCX yêu thích để bắt đầu xây dựng thư viện đồng bộ của riêng bạn.'
                 : 'Thư viện hiện chưa có cuốn sách nào được đưa lên kệ.'}
             </p>
             {onUploadClick && (

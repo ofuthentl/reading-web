@@ -153,9 +153,9 @@ export function parseFileMetadata(fileName: string): {
   shelf: string;
   extension: BookFileType | null;
 } {
-  const extMatch = fileName.match(/\.(epub|pdf|docx)$/i);
+  const extMatch = fileName.match(/\.(epub|docx)$/i);
   const extension = extMatch ? (extMatch[1].toLowerCase() as BookFileType) : null;
-  const baseLabel = fileName.replace(/\.(epub|pdf|docx)$/i, '').trim() || 'Sách chưa đặt tên';
+  const baseLabel = fileName.replace(/\.(epub|docx)$/i, '').trim() || 'Sách chưa đặt tên';
   const segments = baseLabel
     .split(/\s+[-–—―−]\s+/)
     .map((part) => part.trim())
@@ -190,16 +190,13 @@ export function bookDuplicateKey(title: string, author: string): string {
 }
 
 export function computeBookProgressPercent(
-  book: Book,
+  _book: Book,
   progress?: ReadingProgress,
 ): number | null {
   if (!progress) return null;
   if (progress.completed) return 100;
   const clamped = Math.min(1, Math.max(0, progress.scrollRatio || 0));
   if (progress.totalChapters && progress.totalChapters > 0) {
-    if (book.file_type === 'pdf') {
-      return Math.min(100, Math.round(((progress.chapterIndex + 1) / progress.totalChapters) * 100));
-    }
     return Math.min(
       100,
       Math.round(((progress.chapterIndex + clamped) / progress.totalChapters) * 100),
@@ -271,7 +268,6 @@ export function isRecentBookUpload(createdAt: string, withinDays = RECENT_UPLOAD
 export function getGuestLockLabel(book: Book, sessionRole?: AuthRole): string | null {
   if (sessionRole !== 'guest') return null;
   if (book.guest_locked) return 'Giới hạn';
-  if (book.file_type === 'pdf') return 'Chỉ Admin';
   if (book.guest_ready === false) return 'Chờ đồng bộ';
   return null;
 }

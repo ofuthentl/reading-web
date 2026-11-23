@@ -99,14 +99,6 @@ export function useBookReader({
         return;
       }
 
-      if (isCloudMode && sessionRole === 'guest' && book.file_type === 'pdf') {
-        onApiError(
-          new Error('Định dạng PDF chỉ dành cho Quản trị viên thư viện.'),
-          'Định dạng PDF chỉ dành cho Quản trị viên thư viện.',
-        );
-        return;
-      }
-
       const requestId = requestIdRef.current + 1;
       requestIdRef.current = requestId;
       const syncedTheme = appThemeToReaderTheme(appTheme);

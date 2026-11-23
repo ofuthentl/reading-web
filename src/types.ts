@@ -1,4 +1,4 @@
-export type BookFileType = 'epub' | 'pdf' | 'docx';
+export type BookFileType = 'epub' | 'docx';
 
 export type Book = {
   id: string;
@@ -24,13 +24,10 @@ export type Chapter = {
   content: string;
   content_html?: string;
   chapter_number: number;
-  pdf_page_number?: number;
 };
 
 export type ParsedBook = {
   chapters: Chapter[];
-  /** Present for PDF books: a local Blob URL ready for PdfReader */
-  pdfBlobUrl?: string;
   /** Revokes all Object URLs created while parsing this book (prevents memory leaks) */
   dispose: () => void;
 };

@@ -1,10 +1,9 @@
 import type JSZip from 'jszip';
-import type { Book, BookFileType, Chapter, ParsedBook } from '@/types';
+import type { Book, BookFileType, ParsedBook } from '@/types';
 import { isChunkLoadError, recoverFromChunkError } from '@/lib/chunkReload';
 import { compressCoverBlob } from '@/lib/coverImage';
 import { extractDocxCover, parseDocxZip } from '@/lib/docxParser';
 import { buildEpubChapters, type RawEpubSection } from '@/lib/epubChapters';
-import { loadPdfJs, pdfWasmUrl } from '@/lib/pdfjsLoader';
 import { sanitizeBookDocument } from '@/lib/sanitizeHtml';
 
 type JSZipStatic = typeof JSZip;
@@ -100,29 +99,6 @@ export async function extractCoverAtUpload(file: File, fileType: BookFileType): 
       const JSZip = await loadJSZip();
       const zip = await JSZip.loadAsync(await file.arrayBuffer());
       return await extractDocxCover(zip);
-    }
-
-    if (fileType === 'pdf') {
-      const pdfjsLib = await loadPdfJs();
-      const data = new Uint8Array(await file.arrayBuffer());
-      const loadingTask = pdfjsLib.getDocument({ data, wasmUrl: pdfWasmUrl });
-      try {
-        const pdf = await loadingTask.promise;
-        const page = await pdf.getPage(1);
-        const viewport = page.getViewport({ scale: 0.7 });
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return null;
-        await page.render({ canvas, canvasContext: ctx, viewport }).promise;
-        const rawBlob = await new Promise<Blob | null>((resolve) =>
-          canvas.toBlob(resolve, 'image/jpeg', 0.85),
-        );
-        return rawBlob ? await compressCoverBlob(rawBlob) : null;
-      } finally {
-        await loadingTask.destroy();
-      }
     }
   } catch (err) {
     if (isChunkLoadError(err)) throw err;
@@ -347,34 +323,6 @@ async function parseEpubBlob(
   }
 }
 
-async function parsePdfBlob(blob: Blob, book: Book): Promise<ParsedBook> {
-  const pdfjsLib = await loadPdfJs();
-  const pdfBlobUrl = URL.createObjectURL(blob);
-  const dispose = () => URL.revokeObjectURL(pdfBlobUrl);
-
-  const loadingTask = pdfjsLib.getDocument({ url: pdfBlobUrl, wasmUrl: pdfWasmUrl });
-  try {
-    const pdf = await loadingTask.promise;
-    if (pdf.numPages === 0) throw new Error('PDF này không có trang để hiển thị.');
-
-    const chapters: Chapter[] = Array.from({ length: pdf.numPages }, (_, index) => ({
-      id: `${book.id}-pdf-${index + 1}`,
-      book_id: book.id,
-      title: `Trang ${index + 1}`,
-      content: '',
-      chapter_number: index + 1,
-      pdf_page_number: index + 1,
-    }));
-
-    return { chapters, pdfBlobUrl, dispose };
-  } catch (err) {
-    dispose();
-    throw err;
-  } finally {
-    await loadingTask.destroy();
-  }
-}
-
 async function parseDocxBlob(blob: Blob, book: Book): Promise<ParsedBook> {
   const JSZip = await loadJSZip();
   const zip = await JSZip.loadAsync(await blob.arrayBuffer());
@@ -389,8 +337,6 @@ export async function parseBookBlob(
   switch (book.file_type) {
     case 'epub':
       return parseEpubBlob(blob, book, options);
-    case 'pdf':
-      return parsePdfBlob(blob, book);
     case 'docx':
       return parseDocxBlob(blob, book);
     default:

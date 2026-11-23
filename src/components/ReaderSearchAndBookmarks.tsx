@@ -252,7 +252,6 @@ export interface ReaderBookmarksPanelProps {
   currentChapterId: string;
   currentChapterTitle: string;
   currentScrollRatio: number;
-  isPdf: boolean;
   palette: ReaderThemePalette;
   onJumpToBookmark: (chapterIndex: number, scrollRatio: number) => void;
 }
@@ -263,7 +262,6 @@ export function ReaderBookmarksPanel({
   currentChapterId,
   currentChapterTitle,
   currentScrollRatio,
-  isPdf,
   palette,
   onJumpToBookmark,
 }: ReaderBookmarksPanelProps) {
@@ -294,9 +292,7 @@ export function ReaderBookmarksPanel({
     };
   }, [book.id]);
 
-  const positionLabel = isPdf
-    ? `Trang ${activeIndex + 1}`
-    : `${currentChapterTitle || `Phần ${activeIndex + 1}`} · ${Math.round(currentScrollRatio * 100)}%`;
+  const positionLabel = `${currentChapterTitle || `Phần ${activeIndex + 1}`} · ${Math.round(currentScrollRatio * 100)}%`;
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -17,7 +17,7 @@ export async function streamR2FileResponse(
   if (!key || key.includes('..') || (!key.startsWith('books/') && !key.startsWith('covers/'))) {
     throw new HttpError('Đường dẫn tệp không hợp lệ.', 400);
   }
-  // Chốt chặn cứng D-028: Khách tuyệt đối không bao giờ tải được file sách gốc (.epub/.pdf/.docx)
+  // Chốt chặn cứng D-028: Khách tuyệt đối không bao giờ tải được file sách gốc (.epub/.docx)
   if (key.startsWith('books/')) {
     requireOwner(auth);
   }

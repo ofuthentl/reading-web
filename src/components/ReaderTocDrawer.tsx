@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Bookmark, List, Search, X } from 'lucide-react';
 import type { Book, Chapter } from '@/types';
+import { getDisplayAuthor } from '@/lib/bookMetadata';
 import {
   ReaderBookmarksPanel,
   ReaderSearchPanel,
@@ -18,7 +19,6 @@ interface ReaderTocDrawerProps {
   currentChapterTitle?: string;
   currentScrollRatio?: number;
   initialTab?: ReaderDrawerTab;
-  isPdf: boolean;
   palette: ReaderThemePalette;
   onSelectChapter: (index: number) => void;
   onJumpToBookmark?: (chapterIndex: number, scrollRatio: number) => void;
@@ -34,20 +34,17 @@ export function ReaderTocDrawer({
   currentChapterTitle = '',
   currentScrollRatio = 0,
   initialTab = 'toc',
-  isPdf,
   palette,
   onSelectChapter,
   onJumpToBookmark,
   onClose,
 }: ReaderTocDrawerProps) {
-  const [activeTab, setActiveTab] = useState<ReaderDrawerTab>(() =>
-    isPdf && initialTab === 'search' ? 'toc' : initialTab,
-  );
+  const [activeTab, setActiveTab] = useState<ReaderDrawerTab>(initialTab);
   const [query, setQuery] = useState('');
 
   useEffect(() => {
-    setActiveTab(isPdf && initialTab === 'search' ? 'toc' : initialTab);
-  }, [initialTab, isPdf]);
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   const filteredChapters = useMemo(() => {
     const q = query.trim().toLocaleLowerCase('vi');
@@ -71,7 +68,7 @@ export function ReaderTocDrawer({
           <div className="min-w-0">
             <h2 className="truncate font-display text-sm font-bold">{book.title}</h2>
             <p className={`truncate text-xs ${palette.textSecondary}`}>
-              {book.author} · {chapters.length} {isPdf ? 'trang' : 'chương'}
+              {getDisplayAuthor(book.author, book.title)} · {chapters.length} chương
             </p>
           </div>
           <button
@@ -85,7 +82,7 @@ export function ReaderTocDrawer({
         </div>
 
         {/* Thanh chuyển 3 tab: Mục lục · Tìm chữ · Dấu trang */}
-        <div className={`grid ${isPdf ? 'grid-cols-2' : 'grid-cols-3'} gap-1 border-b p-2 ${palette.border}`}>
+        <div className={`grid grid-cols-3 gap-1 border-b p-2 ${palette.border}`}>
           <button
             type="button"
             onClick={() => setActiveTab('toc')}
@@ -94,23 +91,21 @@ export function ReaderTocDrawer({
             }`}
           >
             <List className="h-3.5 w-3.5" />
-            <span>{isPdf ? 'Trang' : 'Mục lục'}</span>
+            <span>Mục lục</span>
           </button>
 
-          {!isPdf && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('search')}
-              className={`inline-flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition ${
-                activeTab === 'search'
-                  ? `border font-semibold ${palette.active}`
-                  : `border border-transparent ${palette.hover}`
-              }`}
-            >
-              <Search className="h-3.5 w-3.5" />
-              <span>Tìm chữ</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setActiveTab('search')}
+            className={`inline-flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition ${
+              activeTab === 'search'
+                ? `border font-semibold ${palette.active}`
+                : `border border-transparent ${palette.hover}`
+            }`}
+          >
+            <Search className="h-3.5 w-3.5" />
+            <span>Tìm chữ</span>
+          </button>
 
           <button
             type="button"
@@ -126,7 +121,7 @@ export function ReaderTocDrawer({
           </button>
         </div>
 
-        {activeTab === 'search' && !isPdf ? (
+        {activeTab === 'search' ? (
           <ReaderSearchPanel
             book={book}
             parsedChapters={parsedChapters}
@@ -140,7 +135,6 @@ export function ReaderTocDrawer({
             currentChapterId={currentChapterId}
             currentChapterTitle={currentChapterTitle}
             currentScrollRatio={currentScrollRatio}
-            isPdf={isPdf}
             palette={palette}
             onJumpToBookmark={(chapterIdx, ratio) => {
               if (onJumpToBookmark) onJumpToBookmark(chapterIdx, ratio);
@@ -159,7 +153,7 @@ export function ReaderTocDrawer({
                   type="text"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder={isPdf ? 'Lọc nhanh số trang...' : 'Lọc tên chương nhanh...'}
+                  placeholder="Lọc tên chương nhanh..."
                   aria-label="Lọc chương nhanh"
                   className={`w-full rounded-lg border bg-transparent py-1.5 pl-8 pr-3 text-xs outline-none focus:border-accent ${palette.border}`}
                 />

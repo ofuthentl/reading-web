@@ -89,7 +89,6 @@ export function GuestCanvasReader({
 
   const ctrl = useReaderController({
     initialCompleted: Boolean(initialProgress?.completed),
-    isPdf: false,
     settings,
     blockCopyShortcuts: true,
     onSaveProgress,
@@ -383,7 +382,6 @@ export function GuestCanvasReader({
           currentChapterTitle={currentTocItem?.title || ''}
           currentScrollRatio={chapterScrollRatio}
           initialTab={drawerTab}
-          isPdf={false}
           palette={palette}
           onSelectChapter={(idx) => goToChapter(idx, 0)}
           onJumpToBookmark={goToChapter}

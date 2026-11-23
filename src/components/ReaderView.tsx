@@ -1,8 +1,6 @@
 import { lazy, Suspense, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { HardDrive, Loader2, Sparkles } from 'lucide-react';
+import { HardDrive, Sparkles } from 'lucide-react';
 import type { Book, ParsedBook, ReaderSettings, ReadingProgress } from '@/types';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { PdfReaderFallback } from '@/components/PdfReaderFallback';
 import { ReaderChapterEndNav } from '@/components/ReaderChapterEndNav';
 import { type PaginatedStageHandle, ReaderPaginatedView } from '@/components/ReaderPaginatedView';
 import { ReaderTocDrawer } from '@/components/ReaderTocDrawer';
@@ -13,10 +11,6 @@ import {
   READER_THEME_STYLES,
   READER_WIDTH_MAX,
 } from '@/lib/readerConfig';
-
-const LazyPdfReader = lazy(() =>
-  import('@/components/PdfReader').then((mod) => ({ default: mod.PdfReader })),
-);
 
 const LazyReaderImageLightbox = lazy(() =>
   import('@/components/ReaderImageLightbox').then((mod) => ({
@@ -49,9 +43,8 @@ export function ReaderView({
   onOpenNextBook,
   onClose,
 }: ReaderViewProps) {
-  const { chapters, pdfBlobUrl } = parsedBook;
-  const isPdf = book.file_type === 'pdf' && Boolean(pdfBlobUrl);
-  const isPaginated = !isPdf && settings.layoutMode === 'paginated';
+  const { chapters } = parsedBook;
+  const isPaginated = settings.layoutMode === 'paginated';
 
   const initialIdx = useMemo(() => {
     if (!initialProgress) return 0;
@@ -82,7 +75,6 @@ export function ReaderView({
 
   const ctrl = useReaderController({
     initialCompleted: Boolean(initialProgress?.completed),
-    isPdf,
     settings,
     onSaveProgress,
     onPrev: () => goPrevRef.current(),
@@ -133,7 +125,7 @@ export function ReaderView({
       setTocOpen(false);
       setImmersiveHidden(false);
 
-      if (clamped === chapterIndex && !isPdf) {
+      if (clamped === chapterIndex) {
         setChapterScrollRatio(safeRatio);
         if (isPaginated) {
           paginatedRef.current?.jumpToRatio(safeRatio);
@@ -152,19 +144,15 @@ export function ReaderView({
       setChapterScrollRatio(safeRatio);
       setChapterIndex(clamped);
 
-      const isCompleted = completedRef.current || (isPdf && clamped === chapters.length - 1);
-      completedRef.current = isCompleted;
-      const pdfRatio = isPdf && chapters.length > 0 ? (clamped + 1) / chapters.length : safeRatio;
-
       queueProgressSave(
         {
           chapterId: target.id,
           chapterIndex: clamped,
           chapterTitle: target.title,
           totalChapters: chapters.length,
-          scrollRatio: pdfRatio,
+          scrollRatio: safeRatio,
           scrollTop: 0,
-          completed: isCompleted,
+          completed: completedRef.current,
           updatedAt: Date.now(),
         },
         true,
@@ -175,7 +163,6 @@ export function ReaderView({
       chapters,
       completedRef,
       isPaginated,
-      isPdf,
       lastScrollTopRef,
       queueProgressSave,
       setImmersiveHidden,
@@ -220,7 +207,7 @@ export function ReaderView({
 
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current;
-    if (!el || !currentChapter || isPdf || isPaginated) return;
+    if (!el || !currentChapter || isPaginated) return;
 
     const currentTop = el.scrollTop;
     updateImmersiveOnScroll(currentTop, suppressSaveRef.current);
@@ -254,13 +241,12 @@ export function ReaderView({
     completedRef,
     currentChapter,
     isPaginated,
-    isPdf,
     queueProgressSave,
     updateImmersiveOnScroll,
   ]);
 
   useLayoutEffect(() => {
-    if (isPdf || isPaginated || !currentChapter || !scrollContainerRef.current) return;
+    if (isPaginated || !currentChapter || !scrollContainerRef.current) return;
     suppressSaveRef.current = true;
     const targetRatio = restoreTargetRatioRef.current ?? 0;
 
@@ -283,7 +269,7 @@ export function ReaderView({
     };
     frame = requestAnimationFrame(apply);
     return () => cancelAnimationFrame(frame);
-  }, [currentChapter, handleScroll, isPaginated, isPdf, lastScrollTopRef]);
+  }, [currentChapter, handleScroll, isPaginated, lastScrollTopRef]);
 
   const completeBook = useCallback(
     (targetNextBook?: Book) => {
@@ -311,11 +297,10 @@ export function ReaderView({
 
   const overallPercent = useMemo(() => {
     if (chapters.length === 0) return 0;
-    if (isPdf) return Math.round(((chapterIndex + 1) / chapters.length) * 100);
     const base = chapterIndex / chapters.length;
     const intra = chapterScrollRatio / chapters.length;
     return Math.min(100, Math.round((base + intra) * 100));
-  }, [chapterIndex, chapterScrollRatio, chapters.length, isPdf]);
+  }, [chapterIndex, chapterScrollRatio, chapters.length]);
 
   const cacheBadge = (
     <span
@@ -337,15 +322,12 @@ export function ReaderView({
 
   return (
     <div
-      className={`relative flex h-full min-h-0 flex-1 flex-col overflow-hidden transition-colors duration-200 ${
-        isPdf ? 'bg-canvas text-ink' : `${palette.pageBg} ${palette.textPrimary}`
-      }`}
+      className={`relative flex h-full min-h-0 flex-1 flex-col overflow-hidden transition-colors duration-200 ${palette.pageBg} ${palette.textPrimary}`}
     >
       <ReaderTopBar
         bookTitle={book.title}
         chapterTitle={currentChapter?.title}
         overallPercent={overallPercent}
-        isPdf={isPdf}
         immersiveHidden={immersiveHidden}
         settingsOpen={settingsOpen}
         settings={settings}
@@ -372,13 +354,12 @@ export function ReaderView({
         <ReaderTocDrawer
           book={book}
           chapters={chapters}
-          parsedChapters={isPdf ? undefined : chapters}
+          parsedChapters={chapters}
           activeIndex={chapterIndex}
           currentChapterId={currentChapter?.id || ''}
           currentChapterTitle={currentChapter?.title || ''}
-          currentScrollRatio={isPdf ? 0 : chapterScrollRatio}
+          currentScrollRatio={chapterScrollRatio}
           initialTab={drawerTab}
-          isPdf={isPdf}
           palette={palette}
           onSelectChapter={(idx) => goToChapter(idx, 0)}
           onJumpToBookmark={goToChapter}
@@ -386,36 +367,7 @@ export function ReaderView({
         />
       )}
 
-      {isPdf && pdfBlobUrl ? (
-        <ErrorBoundary
-          fallback={(errorMessage) => (
-            <PdfReaderFallback
-              errorMessage={errorMessage}
-              onClose={() => {
-                flushProgress();
-                onClose();
-              }}
-            />
-          )}
-        >
-          <Suspense
-            fallback={
-              <div className="theme-canvas flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-ink-muted">
-                <Loader2 className="h-6 w-6 animate-spin text-accent" />
-                <p className="text-sm">Đang tải trình đọc PDF...</p>
-              </div>
-            }
-          >
-            <LazyPdfReader
-              url={pdfBlobUrl}
-              fileName={book.title}
-              pageNumber={chapterIndex + 1}
-              pageCount={chapters.length}
-              onPageChange={(page) => goToChapter(page - 1)}
-            />
-          </Suspense>
-        </ErrorBoundary>
-      ) : isPaginated && currentChapter ? (
+      {isPaginated && currentChapter ? (
         <ReaderPaginatedView
           ref={paginatedRef}
           bookTitle={book.title}
@@ -519,14 +471,12 @@ export function ReaderView({
         </main>
       )}
 
-      {!isPdf && (
-        <div className="h-1 w-full shrink-0 bg-black/10">
-          <div
-            className={`h-full transition-all duration-150 ${palette.progressBar}`}
-            style={{ width: `${overallPercent}%` }}
-          />
-        </div>
-      )}
+      <div className="h-1 w-full shrink-0 bg-black/10">
+        <div
+          className={`h-full transition-all duration-150 ${palette.progressBar}`}
+          style={{ width: `${overallPercent}%` }}
+        />
+      </div>
 
       {lightboxTarget && (
         <Suspense fallback={null}>

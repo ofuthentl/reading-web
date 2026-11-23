@@ -246,7 +246,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
 
     const fileType = (request.headers.get('X-File-Type') || '').toLowerCase();
     if (!ACCEPTED_FILE_TYPES.has(fileType)) {
-      throw new HttpError('Chỉ hỗ trợ định dạng EPUB, PDF hoặc DOCX.', 400);
+      throw new HttpError('Chỉ hỗ trợ định dạng EPUB hoặc DOCX.', 400);
     }
 
     const existingBook = await env.DB.prepare('SELECT id FROM books WHERE id = ?')

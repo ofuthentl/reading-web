@@ -34,7 +34,7 @@ export interface BookRow {
   cover_color: string;
   cover_key: string | null;
   file_key: string;
-  file_type: 'epub' | 'pdf' | 'docx';
+  file_type: 'epub' | 'docx';
   file_size: number;
   cover_size: number;
   created_at: string;
@@ -56,10 +56,9 @@ export const MAX_TEXT_FIELD_LENGTH = 300;
 export const MAX_DESCRIPTION_LENGTH = 5000;
 export const BULK_D1_CHUNK_SIZE = 50;
 
-export const ACCEPTED_FILE_TYPES = new Set(['epub', 'pdf', 'docx']);
+export const ACCEPTED_FILE_TYPES = new Set(['epub', 'docx']);
 export const CONTENT_TYPES: Record<string, string> = {
   epub: 'application/epub+zip',
-  pdf: 'application/pdf',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 };
 
@@ -213,7 +212,7 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     return {
       ...book,
       file_key: isGuest ? '' : book.file_key,
-      guest_ready: book.file_type === 'pdf' ? false : guestReadyIds.has(book.id),
+      guest_ready: guestReadyIds.has(book.id),
       ...(isGuestLocked ? { guest_locked: true } : {}),
     };
   });

@@ -148,7 +148,7 @@ export function prioritizeGuestReadable(books: Book[], sessionRole?: AuthRole): 
   const ready: Book[] = [];
   const locked: Book[] = [];
   for (const b of books) {
-    if (b.file_type !== 'pdf' && b.guest_ready !== false) ready.push(b);
+    if (!b.guest_locked && b.guest_ready !== false) ready.push(b);
     else locked.push(b);
   }
   return [...ready, ...locked];

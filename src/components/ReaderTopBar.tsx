@@ -9,7 +9,6 @@ export interface ReaderTopBarProps {
   bookTitle: string;
   chapterTitle?: string;
   overallPercent: number;
-  isPdf?: boolean;
   immersiveHidden: boolean;
   settingsOpen: boolean;
   settings: ReaderSettings;
@@ -27,7 +26,6 @@ export function ReaderTopBar({
   bookTitle,
   chapterTitle,
   overallPercent,
-  isPdf = false,
   immersiveHidden,
   settingsOpen,
   settings,
@@ -42,12 +40,8 @@ export function ReaderTopBar({
 }: ReaderTopBarProps) {
   return (
     <header
-      className={`${
-        isPdf
-          ? 'relative border-line bg-surface/95'
-          : `fixed inset-x-0 top-0 ${palette.headerBg} ${palette.border}`
-      } z-30 flex h-[3.25rem] shrink-0 items-center justify-between border-b px-3 backdrop-blur-md transition-transform duration-200 sm:px-5 ${
-        !isPdf && immersiveHidden ? '-translate-y-full pointer-events-none' : 'translate-y-0'
+      className={`fixed inset-x-0 top-0 ${palette.headerBg} ${palette.border} z-30 flex h-[3.25rem] shrink-0 items-center justify-between border-b px-3 backdrop-blur-md transition-transform duration-200 sm:px-5 ${
+        immersiveHidden ? '-translate-y-full pointer-events-none' : 'translate-y-0'
       }`}
     >
       <div className="flex min-w-0 items-center gap-1 sm:gap-2">
@@ -92,32 +86,28 @@ export function ReaderTopBar({
       <div className="flex shrink-0 items-center gap-1">
         {statusBadge}
 
-        {!isPdf && (
-          <>
-            <button
-              type="button"
-              onClick={onHideToolbar}
-              className={`rounded-lg p-2 transition ${palette.hover}`}
-              aria-label="Ẩn thanh công cụ để tập trung đọc"
-              title="Ẩn thanh công cụ (F)"
-            >
-              <Maximize2 className="h-4 w-4" />
-            </button>
+        <button
+          type="button"
+          onClick={onHideToolbar}
+          className={`rounded-lg p-2 transition ${palette.hover}`}
+          aria-label="Ẩn thanh công cụ để tập trung đọc"
+          title="Ẩn thanh công cụ (F)"
+        >
+          <Maximize2 className="h-4 w-4" />
+        </button>
 
-            <button
-              type="button"
-              onClick={onToggleSettings}
-              className={`rounded-lg p-2 transition ${settingsOpen ? palette.active : palette.hover}`}
-              aria-label="Tùy chỉnh trình đọc"
-              title="Cài đặt đọc sách"
-            >
-              <Type className="h-4 w-4" />
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          onClick={onToggleSettings}
+          className={`rounded-lg p-2 transition ${settingsOpen ? palette.active : palette.hover}`}
+          aria-label="Tùy chỉnh trình đọc"
+          title="Cài đặt đọc sách"
+        >
+          <Type className="h-4 w-4" />
+        </button>
       </div>
 
-      {settingsOpen && !isPdf && (
+      {settingsOpen && (
         <ReaderSettingsPopover
           settings={settings}
           palette={palette}

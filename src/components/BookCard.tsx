@@ -17,11 +17,11 @@ import {
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 import { computeBookProgressPercent } from '@/hooks/useLibraryViewState';
 
-function getProgressChapterLabel(book: Book, progress?: ReadingProgress): string {
+function getProgressChapterLabel(progress?: ReadingProgress): string {
   if (!progress) return '';
   if (progress.chapterTitle?.trim()) return progress.chapterTitle.trim();
   const num = (progress.chapterIndex ?? 0) + 1;
-  return book.file_type === 'pdf' ? `Trang ${num}` : `Phần ${num}`;
+  return `Phần ${num}`;
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -78,7 +78,7 @@ export function BookCard({
   const displayAuthor = getDisplayAuthor(book.author, book.title);
   const clothColor = pickClothCoverColor(`${book.id}-${book.title}`);
   const percent = computeBookProgressPercent(book, progress);
-  const chapterLabel = getProgressChapterLabel(book, progress);
+  const chapterLabel = getProgressChapterLabel(progress);
   const isCompleted = Boolean(progress?.completed);
   const isMemberLocked = sessionRole === 'guest' && Boolean(book.guest_locked);
   const guestLockLabel = getGuestLockLabel(book, sessionRole);

@@ -182,8 +182,7 @@ export function ReadingStatsModal({
               <strong className="text-ink">{insights.unreadBooks}</strong> cuốn
             </span>
             <span className="text-ink-faint">
-              EPUB {insights.formatCounts.epub} · PDF {insights.formatCounts.pdf} · DOCX{' '}
-              {insights.formatCounts.docx}
+              EPUB {insights.formatCounts.epub} · DOCX {insights.formatCounts.docx}
             </span>
           </div>
 

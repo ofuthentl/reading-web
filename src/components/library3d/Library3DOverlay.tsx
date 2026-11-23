@@ -306,7 +306,7 @@ export function Library3DOverlay({
                   Đại sảnh sách còn trống
                 </h2>
                 <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
-                  Tải lên sách EPUB, PDF hoặc DOCX để bày lên các kệ gỗ cổ điển của bạn.
+                  Tải lên sách EPUB hoặc DOCX để bày lên các kệ gỗ cổ điển của bạn.
                 </p>
                 <button
                   type="button"

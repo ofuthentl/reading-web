@@ -232,9 +232,8 @@ export function computeCabinetWidth(bayCount: number): number {
 function computeBookDimensions(book: Book): { thickness: number; height: number; depth: number } {
   const heightJitter = unitFloat(`${book.id}:h`);
   const thicknessJitter = unitFloat(`${book.id}:t`);
-  const formatBonus = book.file_type === 'pdf' ? 0.014 : 0;
 
-  const height = Number((0.345 + heightJitter * 0.072 + formatBonus).toFixed(4));
+  const height = Number((0.345 + heightJitter * 0.072).toFixed(4));
   const sizeRatio = Math.min(1, Math.max(0, Math.log10(Math.max(1, book.file_size / 65536)) / 2.6));
   const thickness = Number((0.050 + thicknessJitter * 0.018 + sizeRatio * 0.020).toFixed(4));
   const depth = Number(Math.min(0.285, Math.max(0.228, height * 0.67)).toFixed(4));
