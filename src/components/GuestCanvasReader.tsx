@@ -388,6 +388,7 @@ export function GuestCanvasReader({
           palette={palette}
           onSelectChapter={(idx) => goToChapter(idx, 0)}
           onJumpToBookmark={goToChapter}
+          onApiError={onApiError}
           onClose={() => setTocOpen(false)}
         />
       )}
@@ -428,7 +429,9 @@ export function GuestCanvasReader({
           pageHidden={pageHidden}
           onToggleImmersive={() => setImmersiveHidden((prev) => !prev)}
           onCloseSettings={() => {
-            if (settingsOpen) setSettingsOpen(false);
+            if (!settingsOpen) return false;
+            setSettingsOpen(false);
+            return true;
           }}
           onRatioChange={handlePaginatedRatioChange}
           onPrevChapterEnd={() => {

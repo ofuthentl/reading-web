@@ -7,6 +7,7 @@ import {
 } from '@/lib/guestCrypto';
 
 const MAX_RAM_CHAPTERS = 12;
+const MAX_RAM_BITMAPS = 24;
 
 interface UseGuestChapterStreamOptions {
   bookId: string;
@@ -85,18 +86,45 @@ export function useGuestChapterStream({
     return () => controller.abort();
   }, [bookId, chapterIndex, onApiError, retryNonce]);
 
-  // Nạp & giải mã trực tiếp các ảnh minh hoạ trong chương sang ImageBitmap (0 blob: URL)
+  // Nạp & giải mã trực tiếp các ảnh minh hoạ trong chương sang ImageBitmap (0 blob: URL, giới hạn LRU GPU H-04)
   useEffect(() => {
     if (!chapterData) return;
-    const neededIndices = Array.from(
+    const activeMediaIndices = Array.from(
       new Set(
         chapterData.blocks
           .filter((b): b is Extract<typeof b, { kind: 'img' }> => b.kind === 'img')
           .map((b) => b.mediaIndex),
       ),
-    ).filter((idx) => !bitmapsRef.current.has(idx));
+    );
+    const activeMediaSet = new Set(activeMediaIndices);
 
+    // Làm mới thứ tự LRU cho ảnh đã nằm sẵn trong RAM thuộc chương hiện tại
+    for (const idx of activeMediaIndices) {
+      const existing = bitmapsRef.current.get(idx);
+      if (existing) {
+        bitmapsRef.current.delete(idx);
+        bitmapsRef.current.set(idx, existing);
+      }
+    }
+
+    const neededIndices = activeMediaIndices.filter((idx) => !bitmapsRef.current.has(idx));
     if (neededIndices.length === 0) return;
+
+    const evictOldBitmaps = () => {
+      const map = bitmapsRef.current;
+      while (map.size >= MAX_RAM_BITMAPS) {
+        let evicted = false;
+        for (const [key, bmp] of map.entries()) {
+          if (!activeMediaSet.has(key)) {
+            bmp.close();
+            map.delete(key);
+            evicted = true;
+            break;
+          }
+        }
+        if (!evicted) break;
+      }
+    };
 
     const controller = new AbortController();
     const run = async () => {
@@ -108,6 +136,7 @@ export function useGuestChapterStream({
             bmp.close();
             return;
           }
+          evictOldBitmaps();
           bitmapsRef.current.set(mediaIndex, bmp);
           setImageSizes((prev) => {
             const next = new Map(prev);

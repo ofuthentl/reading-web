@@ -36,6 +36,10 @@ export function useReaderController({
   const pendingProgressRef = useRef<ReadingProgress | null>(null);
   const completedRef = useRef(initialCompleted);
 
+  useEffect(() => {
+    completedRef.current = initialCompleted;
+  }, [initialCompleted]);
+
   const flushProgress = useCallback(() => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -127,7 +131,8 @@ export function useReaderController({
         }
       }
 
-      if (!settings.sideTapNavigation) return;
+      if (!settings.sideTapNavigation || tocOpen || settingsOpen) return;
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
       if (event.key === 'ArrowLeft') onPrev();
       else if (event.key === 'ArrowRight') onNext();
     };

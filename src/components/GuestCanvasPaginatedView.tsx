@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -38,7 +39,7 @@ interface GuestCanvasPaginatedViewProps {
   immersiveHidden: boolean;
   pageHidden: boolean;
   onToggleImmersive: () => void;
-  onCloseSettings: () => void;
+  onCloseSettings: () => boolean;
   onRatioChange: (ratio: number, isEndOfChapter: boolean) => void;
   onPrevChapterEnd: () => void;
   onNextChapterStart: () => void;
@@ -144,6 +145,18 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
 
     const totalSpreads = Math.max(1, Math.ceil(columnPages.length / geometry.columns));
     const safeSpreadIndex = Math.max(0, Math.min(spreadIndex, totalSpreads - 1));
+    const singleSpreadEndReportedRef = useRef<string | null>(null);
+
+    useEffect(() => {
+      if (chapterIndex === totalChapters - 1 && totalSpreads === 1) {
+        if (singleSpreadEndReportedRef.current !== chapterData.id) {
+          singleSpreadEndReportedRef.current = chapterData.id;
+          onRatioChange(1, true);
+        }
+      } else {
+        singleSpreadEndReportedRef.current = null;
+      }
+    }, [chapterData.id, chapterIndex, onRatioChange, totalChapters, totalSpreads]);
 
     useLayoutEffect(() => {
       const target = Math.min(
@@ -238,7 +251,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
             immersiveHidden ? 'pt-5 sm:pt-6' : 'pt-[4.25rem] sm:pt-[4.5rem]'
           }`}
           onClick={(event) => {
-            onCloseSettings();
+            if (onCloseSettings()) return;
             const target = event.target as HTMLElement | null;
             if (target?.closest('button, a, input, select, textarea')) return;
 

@@ -2,6 +2,7 @@ import {
   type CSSProperties,
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -35,7 +36,7 @@ interface ReaderPaginatedViewProps {
   palette: ReaderThemePalette;
   immersiveHidden: boolean;
   onToggleImmersive: () => void;
-  onCloseSettings: () => void;
+  onCloseSettings: () => boolean;
   onRatioChange: (ratio: number, isEndOfChapter: boolean) => void;
   onPrevChapterEnd: () => void;
   onNextChapterStart: () => void;
@@ -138,7 +139,11 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       if (!track) return;
 
       const imgs = Array.from(track.querySelectorAll('img'));
-      const onImgDone = () => requestAnimationFrame(measurePages);
+      let imgRaf = 0;
+      const onImgDone = () => {
+        if (imgRaf) cancelAnimationFrame(imgRaf);
+        imgRaf = requestAnimationFrame(measurePages);
+      };
       for (const img of imgs) {
         img.loading = 'eager';
         if (!img.complete) {
@@ -151,6 +156,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       const raf1 = requestAnimationFrame(measurePages);
       return () => {
         cancelAnimationFrame(raf1);
+        if (imgRaf) cancelAnimationFrame(imgRaf);
         for (const img of imgs) {
           img.removeEventListener('load', onImgDone);
           img.removeEventListener('error', onImgDone);
@@ -168,6 +174,19 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
     ]);
 
     const safePageIndex = Math.max(0, Math.min(pageIndex, totalPages - 1));
+    const singlePageEndReportedRef = useRef<string | null>(null);
+
+    // Tự động ghi nhận hoàn thành khi chương cuối chỉ có đúng 1 trang (vá M-05)
+    useEffect(() => {
+      if (chapterIndex === totalChapters - 1 && totalPages === 1) {
+        if (singlePageEndReportedRef.current !== chapter.id) {
+          singlePageEndReportedRef.current = chapter.id;
+          onRatioChange(1, true);
+        }
+      } else {
+        singlePageEndReportedRef.current = null;
+      }
+    }, [chapter.id, chapterIndex, onRatioChange, totalChapters, totalPages]);
 
     const commitPage = useCallback(
       (nextPage: number, animate = true) => {
@@ -239,8 +258,8 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
             immersiveHidden ? 'pt-5 sm:pt-6' : 'pt-[4.25rem] sm:pt-[4.5rem]'
           }`}
           onClick={(event) => {
+            if (onCloseSettings()) return;
             if (handleReaderContentLinkClick(event, trackRef.current)) return;
-            onCloseSettings();
             const selection = window.getSelection()?.toString();
             if (selection) return;
 

@@ -22,6 +22,7 @@ interface ReaderTocDrawerProps {
   palette: ReaderThemePalette;
   onSelectChapter: (index: number) => void;
   onJumpToBookmark?: (chapterIndex: number, scrollRatio: number) => void;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
   onClose: () => void;
 }
 
@@ -37,6 +38,7 @@ export function ReaderTocDrawer({
   palette,
   onSelectChapter,
   onJumpToBookmark,
+  onApiError,
   onClose,
 }: ReaderTocDrawerProps) {
   const [activeTab, setActiveTab] = useState<ReaderDrawerTab>(initialTab);
@@ -127,6 +129,7 @@ export function ReaderTocDrawer({
             parsedChapters={parsedChapters}
             palette={palette}
             onSelectChapter={onSelectChapter}
+            onApiError={onApiError}
           />
         ) : activeTab === 'bookmarks' ? (
           <ReaderBookmarksPanel
@@ -136,6 +139,7 @@ export function ReaderTocDrawer({
             currentChapterTitle={currentChapterTitle}
             currentScrollRatio={currentScrollRatio}
             palette={palette}
+            onApiError={onApiError}
             onJumpToBookmark={(chapterIdx, ratio) => {
               if (onJumpToBookmark) onJumpToBookmark(chapterIdx, ratio);
               else onSelectChapter(chapterIdx);

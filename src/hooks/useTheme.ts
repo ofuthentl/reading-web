@@ -18,8 +18,8 @@ export const THEME_LABELS: Record<UiTheme, string> = {
 const THEME_STORAGE_KEY = 'ofu-library-theme';
 
 const THEME_META_COLORS: Record<UiTheme, string> = {
-  light: '#f6f1e7',
-  noon: '#fcfbf8',
+  light: '#fcfbf8',
+  noon: '#f6f1e7',
   dim: '#0d1117',
   midnight: '#060608',
 };

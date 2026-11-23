@@ -11,14 +11,14 @@ import type { UiTheme } from '@/hooks/useTheme';
 const READER_SETTINGS_KEY = 'ofu-library-reader-settings';
 
 export function appThemeToReaderTheme(appTheme: UiTheme): ReaderTheme {
-  if (appTheme === 'noon') return 'paper';
+  if (appTheme === 'noon') return 'sepia';
   if (appTheme === 'dim') return 'dark';
   if (appTheme === 'midnight') return 'midnight';
-  return 'sepia';
+  return 'paper';
 }
 
 export const DEFAULT_READER_SETTINGS: ReaderSettings = {
-  theme: 'sepia',
+  theme: 'paper',
   font: 'serif',
   fontSizePx: 19,
   lineHeight: 1.8,
@@ -44,23 +44,8 @@ export interface ReaderThemePalette {
 }
 
 export const READER_THEME_STYLES: Record<ReaderTheme, ReaderThemePalette> = {
-  sepia: {
-    label: 'Ban ngày',
-    swatch: 'bg-[#f4ecd8] border-[#c8b28a]',
-    pageBg: 'bg-[#f4ecd8]',
-    headerBg: 'bg-[#f4ecd8]/92',
-    panelBg: 'bg-[#efe4ca]',
-    textPrimary: 'text-[#3c2f1e]',
-    textSecondary: 'text-[#7c664a]',
-    border: 'border-[#dfd0b0]',
-    hover: 'hover:bg-[#e6d6b4]',
-    active: 'bg-[#8c5e35]/15 text-[#3c2f1e] border-[#8c5e35]/35',
-    accentRing: 'border-[#8c5e35] ring-2 ring-[#8c5e35]/25',
-    progressBar: 'bg-[#B22222]',
-    isDark: false,
-  },
   paper: {
-    label: 'Giữa trưa',
+    label: 'Ban ngày',
     swatch: 'bg-[#fcfbf8] border-[#cbbca3]',
     pageBg: 'bg-[#fcfbf8]',
     headerBg: 'bg-[#fcfbf8]/92',
@@ -70,6 +55,21 @@ export const READER_THEME_STYLES: Record<ReaderTheme, ReaderThemePalette> = {
     border: 'border-[#e5dccb]',
     hover: 'hover:bg-[#efe8da]',
     active: 'bg-[#8c5e35]/12 text-[#734b28] border-[#8c5e35]/35',
+    accentRing: 'border-[#8c5e35] ring-2 ring-[#8c5e35]/25',
+    progressBar: 'bg-[#B22222]',
+    isDark: false,
+  },
+  sepia: {
+    label: 'Giữa trưa',
+    swatch: 'bg-[#f4ecd8] border-[#c8b28a]',
+    pageBg: 'bg-[#f4ecd8]',
+    headerBg: 'bg-[#f4ecd8]/92',
+    panelBg: 'bg-[#efe4ca]',
+    textPrimary: 'text-[#3c2f1e]',
+    textSecondary: 'text-[#7c664a]',
+    border: 'border-[#dfd0b0]',
+    hover: 'hover:bg-[#e6d6b4]',
+    active: 'bg-[#8c5e35]/15 text-[#3c2f1e] border-[#8c5e35]/35',
     accentRing: 'border-[#8c5e35] ring-2 ring-[#8c5e35]/25',
     progressBar: 'bg-[#B22222]',
     isDark: false,

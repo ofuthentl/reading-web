@@ -29,6 +29,7 @@ type ReaderViewProps = {
   onUpdateSettings: (next: Partial<ReaderSettings>) => void;
   onSaveProgress: (progress: ReadingProgress) => void;
   onOpenNextBook?: (nextBook: Book) => void;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
   onClose: () => void;
 };
 
@@ -42,6 +43,7 @@ export function ReaderView({
   onUpdateSettings,
   onSaveProgress,
   onOpenNextBook,
+  onApiError,
   onClose,
 }: ReaderViewProps) {
   const { chapters } = parsedBook;
@@ -364,6 +366,7 @@ export function ReaderView({
           palette={palette}
           onSelectChapter={(idx) => goToChapter(idx, 0)}
           onJumpToBookmark={goToChapter}
+          onApiError={onApiError}
           onClose={() => setTocOpen(false)}
         />
       )}
@@ -382,7 +385,9 @@ export function ReaderView({
           immersiveHidden={immersiveHidden}
           onToggleImmersive={() => setImmersiveHidden((prev) => !prev)}
           onCloseSettings={() => {
-            if (settingsOpen) setSettingsOpen(false);
+            if (!settingsOpen) return false;
+            setSettingsOpen(false);
+            return true;
           }}
           onRatioChange={handlePaginatedRatioChange}
           onPrevChapterEnd={() => {

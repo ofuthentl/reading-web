@@ -103,7 +103,12 @@ export async function fetchLibraryState(): Promise<{
   }
   const fallbackSession = getActiveAuthSession();
   const resolvedSession: AuthSessionInfo = {
-    role: data.session?.role === 'guest' ? 'guest' : fallbackSession.role,
+    role:
+      data.session?.role === 'owner'
+        ? 'owner'
+        : data.session?.role === 'guest'
+          ? 'guest'
+          : fallbackSession.role,
     expiresAt:
       typeof data.session?.expiresAt === 'number'
         ? data.session.expiresAt

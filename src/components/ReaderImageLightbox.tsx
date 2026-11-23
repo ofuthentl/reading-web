@@ -38,7 +38,7 @@ function drawProtectedZoomedBitmap(
 
   // Phủ lưới thuỷ vân định danh Discord lên ảnh phóng to (D-028 / D-029)
   const label = watermarkLabel.trim() || 'Ofu Library';
-  ctx.font = '500 13px "Segoe UI", system-ui, sans-serif';
+  ctx.font = '500 13px "Be Vietnam Pro", system-ui, sans-serif';
   ctx.textBaseline = 'middle';
   const stepX = 230;
   const stepY = 148;
@@ -68,11 +68,31 @@ export function ReaderImageLightbox({ target, onClose }: ReaderImageLightboxProp
     origX: 0,
     origY: 0,
   });
+  const didDragRef = useRef(false);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const guestCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
+    didDragRef.current = false;
+  }, [target]);
+
+  // Đăng ký wheel listener với { passive: false } để e.preventDefault() hoạt động chuẩn (vá H-09)
+  useEffect(() => {
+    const el = overlayRef.current;
+    if (!target || !el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.2 : -0.2;
+      setZoom((prev) => {
+        const next = Math.min(3.5, Math.max(0.75, Math.round((prev + delta) * 100) / 100));
+        if (next <= 1) setPan({ x: 0, y: 0 });
+        return next;
+      });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
   }, [target]);
 
   useEffect(() => {
@@ -122,14 +142,17 @@ export function ReaderImageLightbox({ target, onClose }: ReaderImageLightboxProp
 
   return (
     <div
+      ref={overlayRef}
       role="dialog"
       aria-modal="true"
       aria-label="Xem ảnh minh hoạ phóng to"
       onContextMenu={(e) => e.preventDefault()}
-      onClick={onClose}
-      onWheel={(e) => {
-        e.preventDefault();
-        adjustZoom(e.deltaY < 0 ? 0.2 : -0.2);
+      onClick={() => {
+        if (didDragRef.current) {
+          didDragRef.current = false;
+          return;
+        }
+        onClose();
       }}
       className="fixed inset-0 z-50 flex select-none flex-col bg-black/88 backdrop-blur-md"
     >
@@ -193,13 +216,14 @@ export function ReaderImageLightbox({ target, onClose }: ReaderImageLightboxProp
 
       {/* Vùng hiển thị ảnh kéo/zoom */}
       <div
-        className={`flex flex-1 items-center justify-center overflow-hidden p-4 ${
+        className={`flex flex-1 touch-none items-center justify-center overflow-hidden p-4 ${
           zoom > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-out'
         }`}
         onPointerDown={(e) => {
           if (zoom <= 1) return;
           e.stopPropagation();
           e.currentTarget.setPointerCapture(e.pointerId);
+          didDragRef.current = false;
           dragRef.current = {
             active: true,
             startX: e.clientX,
@@ -210,9 +234,14 @@ export function ReaderImageLightbox({ target, onClose }: ReaderImageLightboxProp
         }}
         onPointerMove={(e) => {
           if (!dragRef.current.active) return;
+          const dx = e.clientX - dragRef.current.startX;
+          const dy = e.clientY - dragRef.current.startY;
+          if (!didDragRef.current && Math.hypot(dx, dy) > 4) {
+            didDragRef.current = true;
+          }
           setPan({
-            x: dragRef.current.origX + (e.clientX - dragRef.current.startX),
-            y: dragRef.current.origY + (e.clientY - dragRef.current.startY),
+            x: dragRef.current.origX + dx,
+            y: dragRef.current.origY + dy,
           });
         }}
         onPointerUp={() => {
@@ -220,6 +249,7 @@ export function ReaderImageLightbox({ target, onClose }: ReaderImageLightboxProp
         }}
         onPointerCancel={() => {
           dragRef.current.active = false;
+          didDragRef.current = false;
         }}
       >
         <div

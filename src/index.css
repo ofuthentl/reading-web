@@ -4,24 +4,7 @@
 
 @layer base {
   :root {
-    /* Mode 1: Ban ngày — Warm Parchment */
-    --color-canvas: 246 241 231; /* #f6f1e7 */
-    --color-surface: 253 250 244; /* #fdfaf4 */
-    --color-subtle: 239 232 218; /* #efe8da */
-    --color-line: 229 220 203; /* #e5dccb */
-    --color-line-strong: 203 188 163; /* #cbbca3 */
-    --color-ink: 43 36 29; /* #2b241d */
-    --color-ink-muted: 109 97 84; /* #6d6154 */
-    --color-ink-faint: 149 135 119; /* #958777 */
-    --color-accent: 140 94 53; /* #8c5e35 */
-    --color-accent-hover: 115 75 40; /* #734b28 */
-    --color-accent-fg: 253 250 244; /* #fdfaf4 */
-    --color-crimson: 178 34 34; /* #B22222 — Đỏ đô đặc trưng Ofu's Library */
-    color-scheme: light;
-  }
-
-  /* Mode 2: Giữa trưa — Giấy trắng sáng tinh sắc nét */
-  [data-theme='noon'] {
+    /* Mode 1: Ban ngày — Giấy trắng sáng sắc nét */
     --color-canvas: 252 251 248; /* #fcfbf8 */
     --color-surface: 255 255 255; /* #ffffff */
     --color-subtle: 243 241 236; /* #f3f1ec */
@@ -33,6 +16,23 @@
     --color-accent: 132 86 46; /* #84562e */
     --color-accent-hover: 108 68 34; /* #6c4422 */
     --color-accent-fg: 255 255 255; /* #ffffff */
+    --color-crimson: 178 34 34; /* #B22222 — Đỏ đô đặc trưng Ofu's Library */
+    color-scheme: light;
+  }
+
+  /* Mode 2: Giữa trưa — Warm Parchment (giấy kem ấm cũ) */
+  [data-theme='noon'] {
+    --color-canvas: 246 241 231; /* #f6f1e7 */
+    --color-surface: 253 250 244; /* #fdfaf4 */
+    --color-subtle: 239 232 218; /* #efe8da */
+    --color-line: 229 220 203; /* #e5dccb */
+    --color-line-strong: 203 188 163; /* #cbbca3 */
+    --color-ink: 43 36 29; /* #2b241d */
+    --color-ink-muted: 109 97 84; /* #6d6154 */
+    --color-ink-faint: 149 135 119; /* #958777 */
+    --color-accent: 140 94 53; /* #8c5e35 */
+    --color-accent-hover: 115 75 40; /* #734b28 */
+    --color-accent-fg: 253 250 244; /* #fdfaf4 */
     --color-crimson: 178 34 34; /* #B22222 */
     color-scheme: light;
   }

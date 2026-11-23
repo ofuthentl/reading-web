@@ -26,6 +26,11 @@ export const DEFAULT_OWNER_SESSION: AuthSessionInfo = {
   expiresAt: null,
 };
 
+export const DEFAULT_GUEST_SESSION: AuthSessionInfo = {
+  role: 'guest',
+  expiresAt: null,
+};
+
 function decodeBase64UrlJson(segment: string): RawTokenClaims | null {
   try {
     const normalized = segment.replace(/-/g, '+').replace(/_/g, '/');
@@ -97,7 +102,9 @@ export function inspectStoredSession():
 
 export function getActiveAuthSession(): AuthSessionInfo {
   const inspected = inspectStoredSession();
-  return inspected.status === 'active' ? inspected.session : DEFAULT_OWNER_SESSION;
+  if (inspected.status === 'active') return inspected.session;
+  // Vá H-02: ở Cloud Mode khi chưa có token hợp lệ tuyệt đối không fallback về 'owner'
+  return isCloudMode ? DEFAULT_GUEST_SESSION : DEFAULT_OWNER_SESSION;
 }
 
 export function formatRemainingSessionTime(expiresAt: number, now = Date.now()): string {
