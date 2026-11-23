@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   BookOpen,
   Bookmark,
+  Clock,
   FolderOpen,
   HardDrive,
   LogOut,
@@ -13,6 +14,7 @@ import {
   Users,
 } from 'lucide-react';
 import { formatBytes, isCloudMode } from '@/lib/api';
+import { formatReadingDuration } from '@/lib/readingStreak';
 import {
   type AdminUsageReport,
   type AdminUsageWindowDays,
@@ -232,16 +234,22 @@ export function AdminUsageView({
 
               <div className="moonlit-card rounded-2xl border border-line bg-surface p-4 shadow-sm dark:border-line-strong/60">
                 <div className="flex items-center justify-between text-xs text-ink-muted">
-                  <span>Lượt đọc ({days} ngày)</span>
-                  <BookOpen className="h-4 w-4 text-crimson-accent" />
+                  <span>Thời gian đọc ({days} ngày)</span>
+                  <Clock className="h-4 w-4 text-crimson-accent" />
                 </div>
                 <p className="mt-2 font-display text-2xl font-semibold tabular-nums text-ink">
-                  {report.overview.windowTotals.guestChapterReads}
-                  <span className="ml-1.5 text-sm font-normal text-ink-muted">chương khách</span>
+                  {formatReadingDuration(
+                    report.overview.windowTotals.totalReadingSeconds ?? 0,
+                    true,
+                  )}
+                  <span className="ml-1.5 text-sm font-normal text-ink-muted">
+                    · {report.overview.windowTotals.guestChapterReads} chương khách
+                  </span>
                 </p>
                 <p className="mt-1 text-[11px] text-ink-faint">
-                  Tiến độ Admin: {report.overview.windowTotals.ownerProgressUpdates} · Tìm kiếm:{' '}
-                  {report.overview.windowTotals.guestSearches}
+                  30N: {formatReadingDuration(report.overview.readingSeconds30d ?? 0, true)} (Khách{' '}
+                  {formatReadingDuration(report.overview.guestReadingSeconds30d ?? 0, true)} · Admin{' '}
+                  {formatReadingDuration(report.overview.ownerReadingSeconds30d ?? 0, true)})
                 </p>
               </div>
 
@@ -337,10 +345,17 @@ export function AdminUsageView({
                               />
                             )}
                           </div>
-                          <p className="truncate text-[11px] text-ink-muted">
-                            {book.shelf} · {book.readersTotal} độc giả ({book.guestReaders} khách) ·{' '}
-                            {book.completedTotal} xong
-                          </p>
+                          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-muted">
+                            <span className="shrink-0 tabular-nums text-ink/85">
+                              {book.readersTotal} độc giả ({book.guestReaders} khách) ·{' '}
+                              {book.completedTotal} xong
+                              {book.readingSecondsTotal > 0
+                                ? ` · ${formatReadingDuration(book.readingSecondsTotal, true)}`
+                                : ''}
+                            </span>
+                            <span className="shrink-0 text-ink-faint">·</span>
+                            <span className="truncate">{book.shelf}</span>
+                          </div>
                         </div>
                         <div className="shrink-0 text-right">
                           <p className="text-xs font-semibold tabular-nums text-ink">
@@ -381,6 +396,9 @@ export function AdminUsageView({
                           <p className="text-[11px] text-ink-muted">
                             {shelf.bookCount} tập · {shelf.activeReaders} độc giả ·{' '}
                             {shelf.completedReads} lượt đọc xong
+                            {shelf.readingSecondsTotal > 0
+                              ? ` · ${formatReadingDuration(shelf.readingSecondsTotal, true)}`
+                              : ''}
                           </p>
                         </div>
                         <span className="shrink-0 text-[11px] text-ink-faint">

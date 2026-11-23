@@ -1,6 +1,7 @@
 import { isCloudMode } from '@/lib/api';
 import { apiFetch, assertApiConfigured } from '@/lib/authSession';
 import { getAllLocalProgress, getLocalBooks } from '@/lib/cache';
+import { buildLocalReaderActivityFallback } from '@/lib/readingStreak';
 
 export type AdminUsageWindowDays = 7 | 14 | 30;
 
@@ -16,6 +17,9 @@ export interface AdminUsageDailyPoint {
   ownerProgressUpdates: number;
   guestSearches: number;
   rateLimitHits: number;
+  ownerReadingSeconds: number;
+  guestReadingSeconds: number;
+  totalReadingSeconds: number;
 }
 
 export interface AdminUsageTopBook {
@@ -30,6 +34,7 @@ export interface AdminUsageTopBook {
   readersInWindow: number;
   completedTotal: number;
   avgPercent: number;
+  readingSecondsTotal: number;
   lastReadAt: number;
 }
 
@@ -38,6 +43,7 @@ export interface AdminUsageTopShelf {
   bookCount: number;
   activeReaders: number;
   completedReads: number;
+  readingSecondsTotal: number;
   lastReadAt: number | null;
 }
 
@@ -53,12 +59,42 @@ export interface AdminUsageGuestRow {
   startedBooks: number;
   completedBooks: number;
   bookmarkCount: number;
+  readingSecondsTotal: number;
+  readingSeconds7d: number;
+  readingSeconds30d: number;
   lastReadAt: number | null;
   lastBookTitle: string | null;
   lastBookShelf: string | null;
   lastChapterTitle: string | null;
   lastChapterIndex: number | null;
   updatedAt: number;
+}
+
+export interface AdminGuestBookHistoryItem {
+  bookId: string;
+  title: string;
+  author: string;
+  shelf: string;
+  fileType: 'epub' | 'docx';
+  chapterIndex: number;
+  chapterTitle: string | null;
+  totalChapters: number | null;
+  percent: number;
+  completed: boolean;
+  readingSeconds: number;
+  bookmarkCount: number;
+  lastReadAt: number;
+}
+
+export interface AdminGuestUsageDetail {
+  generatedAt: number;
+  discordUserId: string;
+  discordUsername: string;
+  tagTail: string;
+  readingSeconds7d: number;
+  readingSeconds30d: number;
+  readingSecondsTotal: number;
+  books: AdminGuestBookHistoryItem[];
 }
 
 export interface AdminUsageReport {
@@ -81,6 +117,12 @@ export interface AdminUsageReport {
     uniqueReaders30d: number;
     guestReaders7d: number;
     guestReaders30d: number;
+    readingSeconds7d: number;
+    readingSeconds30d: number;
+    ownerReadingSeconds30d: number;
+    guestReadingSeconds30d: number;
+    ownerReadingSecondsTotal: number;
+    guestReadingSecondsTotal: number;
     ownerCompletedBooks: number;
     ownerStartedBooks: number;
     guestCompletedBooks: number;
@@ -97,6 +139,9 @@ export interface AdminUsageReport {
       guestSearches: number;
       loginFailures: number;
       rateLimitHits: number;
+      ownerReadingSeconds: number;
+      guestReadingSeconds: number;
+      totalReadingSeconds: number;
     };
   };
   storage: {
@@ -143,15 +188,23 @@ function buildLocalFallbackReport(
     else epubCount += 1;
   }
 
+  const localActivity = buildLocalReaderActivityFallback(progress);
+  const byDaySec = new Map(localActivity.days.map((d) => [d.dayKey, d]));
+
   const progEntries = Object.entries(progress);
   const ownerCompletedBooks = progEntries.filter(([, p]) => p.completed).length;
+  let windowOwnerReadingSeconds = 0;
+
   const dailySeries: AdminUsageDailyPoint[] = Array.from({ length: days }, (_, idx) => {
     const dayKey = new Date(now - (days - 1 - idx) * dayMs + vnOffsetMs)
       .toISOString()
       .slice(0, 10);
+    const act = byDaySec.get(dayKey);
+    const ownerReadingSeconds = act?.readingSeconds ?? 0;
+    windowOwnerReadingSeconds += ownerReadingSeconds;
     return {
       dayKey,
-      uniqueReaders: 0,
+      uniqueReaders: act?.active ? 1 : 0,
       guestReaders: 0,
       ownerLogins: 0,
       guestLogins: 0,
@@ -161,6 +214,9 @@ function buildLocalFallbackReport(
       ownerProgressUpdates: 0,
       guestSearches: 0,
       rateLimitHits: 0,
+      ownerReadingSeconds,
+      guestReadingSeconds: 0,
+      totalReadingSeconds: ownerReadingSeconds,
     };
   });
 
@@ -186,15 +242,23 @@ function buildLocalFallbackReport(
         readersInWindow: p.updatedAt >= now - days * dayMs ? 1 : 0,
         completedTotal: p.completed ? 1 : 0,
         avgPercent: pct,
+        readingSecondsTotal: Math.max(0, Math.floor(p.readingSeconds ?? 0)),
         lastReadAt: p.updatedAt,
       };
     })
     .filter((item): item is AdminUsageTopBook => Boolean(item))
-    .sort((a, b) => b.lastReadAt - a.lastReadAt)
+    .sort((a, b) => b.readingSecondsTotal - a.readingSecondsTotal || b.lastReadAt - a.lastReadAt)
     .slice(0, 12);
 
   const usedBytes = fileBytes + coverBytes;
   const limitBytes = 9 * 1024 ** 3;
+  const reading7d = localActivity.days
+    .slice(-7)
+    .reduce((acc, item) => acc + item.readingSeconds, 0);
+  const reading30d = localActivity.days
+    .slice(-30)
+    .reduce((acc, item) => acc + item.readingSeconds, 0);
+
   return {
     generatedAt: now,
     timezone: 'UTC+7',
@@ -215,6 +279,12 @@ function buildLocalFallbackReport(
       uniqueReaders30d: progEntries.some(([, p]) => p.updatedAt >= now - 30 * dayMs) ? 1 : 0,
       guestReaders7d: 0,
       guestReaders30d: 0,
+      readingSeconds7d: reading7d,
+      readingSeconds30d: reading30d,
+      ownerReadingSeconds30d: reading30d,
+      guestReadingSeconds30d: 0,
+      ownerReadingSecondsTotal: localActivity.totalReadingSeconds,
+      guestReadingSecondsTotal: 0,
       ownerCompletedBooks,
       ownerStartedBooks: progEntries.length,
       guestCompletedBooks: 0,
@@ -231,6 +301,9 @@ function buildLocalFallbackReport(
         guestSearches: 0,
         loginFailures: 0,
         rateLimitHits: 0,
+        ownerReadingSeconds: windowOwnerReadingSeconds,
+        guestReadingSeconds: 0,
+        totalReadingSeconds: windowOwnerReadingSeconds,
       },
     },
     storage: {
@@ -274,4 +347,34 @@ export async function fetchAdminUsageReport(
     throw new Error(data.error || 'Không thể tải báo cáo thống kê hệ thống.');
   }
   return data as AdminUsageReport;
+}
+
+export async function fetchAdminGuestUsageDetail(
+  discordUserId: string,
+  signal?: AbortSignal,
+): Promise<AdminGuestUsageDetail> {
+  assertApiConfigured();
+  if (!isCloudMode) {
+    return {
+      generatedAt: Date.now(),
+      discordUserId,
+      discordUsername: `Guest ${discordUserId.slice(-4)}`,
+      tagTail: discordUserId.slice(-4).padStart(4, '0'),
+      readingSeconds7d: 0,
+      readingSeconds30d: 0,
+      readingSecondsTotal: 0,
+      books: [],
+    };
+  }
+
+  const res = await apiFetch(`/api/admin/usage/guests/${encodeURIComponent(discordUserId)}`, {
+    signal,
+  });
+  const data = (await res.json().catch(() => ({}))) as Partial<AdminGuestUsageDetail> & {
+    error?: string;
+  };
+  if (!res.ok || !Array.isArray(data.books)) {
+    throw new Error(data.error || 'Không thể tải lịch sử đọc của thành viên này.');
+  }
+  return data as AdminGuestUsageDetail;
 }

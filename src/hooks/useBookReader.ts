@@ -6,6 +6,7 @@ import type {
   ParsedBook,
   ReaderSettings,
   ReadingProgress,
+  SaveProgressOptions,
 } from '@/types';
 import type { UiTheme } from '@/hooks/useTheme';
 import { fetchBookBlobCached, isAuthError, isCloudMode, saveReadingProgress } from '@/lib/api';
@@ -24,13 +25,15 @@ export interface GuestReaderSessionState {
 interface UseBookReaderOptions {
   appTheme: UiTheme;
   sessionRole: AuthRole;
-  onProgressUpdated: (bookId: string, progress: ReadingProgress) => void;
+  authenticated?: boolean;
+  onProgressUpdated: (bookId: string, progress: ReadingProgress, readingDeltaSec?: number) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
 }
 
 export function useBookReader({
   appTheme,
   sessionRole,
+  authenticated = false,
   onProgressUpdated,
   onApiError,
 }: UseBookReaderOptions) {
@@ -59,9 +62,31 @@ export function useBookReader({
       if (prev.theme === syncedTheme) return prev;
       const next = { ...prev, theme: syncedTheme };
       saveReaderSettings(next);
+      if (authenticated && isCloudMode) {
+        void import('@/lib/readerSettingsSync')
+          .then((m) => m.scheduleRemoteReaderSettingsSync(next))
+          .catch(() => undefined);
+      }
       return next;
     });
-  }, [appTheme]);
+  }, [appTheme, authenticated]);
+
+  // Tải cài đặt trình đọc đồng bộ từ D1 khi đăng nhập thành công (D-036 Mục 7)
+  useEffect(() => {
+    if (!authenticated || !isCloudMode) return;
+    let cancelled = false;
+    void import('@/lib/readerSettingsSync')
+      .then((m) => m.fetchRemoteReaderSettings(appThemeToReaderTheme(appTheme)))
+      .then((remote) => {
+        if (cancelled || !remote) return;
+        saveReaderSettings(remote);
+        setSettings(remote);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [appTheme, authenticated]);
 
   const disposeCurrent = useCallback(() => {
     if (parsedBookRef.current) {
@@ -79,13 +104,21 @@ export function useBookReader({
     };
   }, [disposeCurrent]);
 
-  const updateSettings = useCallback((patch: Partial<ReaderSettings>) => {
-    setSettings((prev) => {
-      const next = { ...prev, ...patch };
-      saveReaderSettings(next);
-      return next;
-    });
-  }, []);
+  const updateSettings = useCallback(
+    (patch: Partial<ReaderSettings>) => {
+      setSettings((prev) => {
+        const merged = { ...prev, ...patch };
+        saveReaderSettings(merged);
+        if (authenticated && isCloudMode) {
+          void import('@/lib/readerSettingsSync')
+            .then((m) => m.scheduleRemoteReaderSettingsSync(merged))
+            .catch(() => undefined);
+        }
+        return merged;
+      });
+    },
+    [authenticated],
+  );
 
   /** Chỉ huỷ lượt tải sách mới mà không đóng cuốn đang mở phía dưới (vá M-10) */
   const cancelOpeningBook = useCallback(() => {
@@ -184,12 +217,12 @@ export function useBookReader({
   );
 
   const handleSaveProgress = useCallback(
-    (nextProgress: ReadingProgress) => {
+    (nextProgress: ReadingProgress, options?: SaveProgressOptions) => {
       if (!activeBook) return;
       const bookId = activeBook.id;
-      onProgressUpdated(bookId, nextProgress);
+      onProgressUpdated(bookId, nextProgress, options?.readingDeltaSec);
 
-      void saveReadingProgress(bookId, nextProgress).catch((err) => {
+      void saveReadingProgress(bookId, nextProgress, options).catch((err) => {
         if (isAuthError(err)) {
           closeBook();
           onApiError(err, 'Phiên đăng nhập đã hết hạn.');

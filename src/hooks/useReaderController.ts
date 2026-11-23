@@ -1,26 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ReaderSettings, ReadingProgress } from '@/types';
+import type { ReaderSettings, ReadingProgress, SaveProgressOptions } from '@/types';
 import type { ReaderLightboxTarget } from '@/components/ReaderImageLightbox';
 import type { ReaderDrawerTab } from '@/components/ReaderTocDrawer';
+import { useActiveReadingTimer } from '@/hooks/useActiveReadingTimer';
 
 interface UseReaderControllerOptions {
   initialCompleted: boolean;
   settings: ReaderSettings;
   blockCopyShortcuts?: boolean;
-  onSaveProgress: (progress: ReadingProgress) => void;
+  timerEnabled?: boolean;
+  fallbackProgress?: ReadingProgress | null;
+  onSaveProgress: (progress: ReadingProgress, options?: SaveProgressOptions) => void;
   onPrev: () => void;
   onNext: () => void;
 }
 
 /**
- * Điều phối dùng chung cho cả `ReaderView` (`owner`) và `GuestCanvasReader` (`guest`, D-029):
- * quản lý hàng đợi lưu tiến độ đọc (debounce 600ms + flush khi đóng), ngăn kéo 3 tab,
- * chế độ tự ẩn thanh công cụ (`Immersive Mode`), Lightbox ảnh và phím tắt `M` / `B` / `F` / `←` / `→`.
+ * Điều phối dùng chung cho cả `ReaderView` (`owner`) và `GuestCanvasReader` (`guest`, D-029/D-036):
+ * quản lý hàng đợi lưu tiến độ đọc + thời gian đọc chủ động (debounce 600ms, checkpoint 60s,
+ * flush `keepalive` khi `pagehide`/đóng sách), ngăn kéo 3 tab, chế độ tự ẩn thanh công cụ
+ * (`Immersive Mode`), Lightbox ảnh và phím tắt `M` / `B` / `F` / `←` / `→`.
  */
 export function useReaderController({
   initialCompleted,
   settings,
   blockCopyShortcuts = false,
+  timerEnabled = true,
+  fallbackProgress = null,
   onSaveProgress,
   onPrev,
   onNext,
@@ -34,34 +40,74 @@ export function useReaderController({
   const lastScrollTopRef = useRef(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingProgressRef = useRef<ReadingProgress | null>(null);
+  const fallbackProgressRef = useRef<ReadingProgress | null>(fallbackProgress);
+  const lastSentProgressRef = useRef<ReadingProgress | null>(fallbackProgress);
   const completedRef = useRef(initialCompleted);
+
+  fallbackProgressRef.current = fallbackProgress;
+  if (fallbackProgress && !lastSentProgressRef.current) {
+    lastSentProgressRef.current = fallbackProgress;
+  }
 
   useEffect(() => {
     completedRef.current = initialCompleted;
   }, [initialCompleted]);
 
-  const flushProgress = useCallback(() => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-    if (pendingProgressRef.current) {
-      onSaveProgress(pendingProgressRef.current);
+  const flushRef = useRef<(opts?: { forceTimeFlush?: boolean; keepalive?: boolean }) => void>(
+    () => undefined,
+  );
+
+  const { consumeDeltaSec } = useActiveReadingTimer({
+    enabled: timerEnabled && !lightboxTarget,
+    onAutoCheckpoint: () => flushRef.current({ forceTimeFlush: true }),
+    onKeepaliveFlush: () => flushRef.current({ forceTimeFlush: true, keepalive: true }),
+  });
+
+  const flushProgress = useCallback(
+    (opts?: { forceTimeFlush?: boolean; keepalive?: boolean }) => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      const minSec = opts?.forceTimeFlush || opts?.keepalive ? 1 : 5;
+      const deltaSec = consumeDeltaSec(minSec);
+      const target =
+        pendingProgressRef.current ??
+        (deltaSec > 0 ? (fallbackProgressRef.current ?? lastSentProgressRef.current) : null);
+
+      if (!target) return;
       pendingProgressRef.current = null;
-    }
-  }, [onSaveProgress]);
+      lastSentProgressRef.current = target;
+
+      const saveOpts: SaveProgressOptions | undefined =
+        deltaSec > 0 || opts?.keepalive
+          ? {
+              ...(deltaSec > 0 ? { readingDeltaSec: deltaSec } : {}),
+              ...(opts?.keepalive ? { keepalive: true } : {}),
+            }
+          : undefined;
+      onSaveProgress(target, saveOpts);
+    },
+    [consumeDeltaSec, onSaveProgress],
+  );
+
+  flushRef.current = flushProgress;
 
   const queueProgressSave = useCallback(
     (progress: ReadingProgress, immediate = false) => {
       pendingProgressRef.current = progress;
+      lastSentProgressRef.current = progress;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      if (immediate) flushProgress();
-      else saveTimerRef.current = setTimeout(flushProgress, 600);
+      if (immediate) flushProgress({ forceTimeFlush: true });
+      else saveTimerRef.current = setTimeout(() => flushProgress(), 600);
     },
     [flushProgress],
   );
 
-  useEffect(() => () => flushProgress(), [flushProgress]);
+  useEffect(
+    () => () => flushProgress({ forceTimeFlush: true, keepalive: true }),
+    [flushProgress],
+  );
 
   const openDrawerTab = useCallback((tab: ReaderDrawerTab) => {
     setSettingsOpen(false);

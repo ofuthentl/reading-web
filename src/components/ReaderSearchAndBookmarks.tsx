@@ -18,10 +18,13 @@ function stripDiacritics(input: string): string {
 }
 
 interface LocalSearchHit {
+  id: string;
   chapterIndex: number;
   chapterNumber: number;
   chapterTitle: string;
-  matchCount: number;
+  occurrenceIndex: number;
+  totalInChapter: number;
+  approximateRatio: number;
   before: string;
   matched: string;
   after: string;
@@ -41,44 +44,48 @@ function searchParsedChaptersLocally(chapters: Chapter[], rawQuery: string): Loc
     if (!cleanText) continue;
 
     const hayLower = cleanText.toLocaleLowerCase('vi');
-    let firstPos = hayLower.indexOf(needleLower);
-    let matchCount = 0;
+    const positions: number[] = [];
 
-    if (firstPos !== -1) {
-      let cursor = 0;
-      while (cursor <= hayLower.length - needleLower.length) {
-        const found = hayLower.indexOf(needleLower, cursor);
-        if (found === -1) break;
-        matchCount += 1;
-        cursor = found + needleLower.length;
-      }
-    } else if (!queryHasDiacritics && needleAscii.length >= 2) {
+    let cursor = 0;
+    while (cursor <= hayLower.length - needleLower.length) {
+      const found = hayLower.indexOf(needleLower, cursor);
+      if (found === -1) break;
+      positions.push(found);
+      cursor = found + needleLower.length;
+    }
+
+    if (positions.length === 0 && !queryHasDiacritics && needleAscii.length >= 2) {
       const hayAscii = stripDiacritics(hayLower);
-      firstPos = hayAscii.indexOf(needleAscii);
-      if (firstPos !== -1) {
-        let cursor = 0;
-        while (cursor <= hayAscii.length - needleAscii.length) {
-          const found = hayAscii.indexOf(needleAscii, cursor);
-          if (found === -1) break;
-          matchCount += 1;
-          cursor = found + needleAscii.length;
-        }
+      cursor = 0;
+      while (cursor <= hayAscii.length - needleAscii.length) {
+        const found = hayAscii.indexOf(needleAscii, cursor);
+        if (found === -1) break;
+        positions.push(found);
+        cursor = found + needleAscii.length;
       }
     }
 
-    if (matchCount > 0 && firstPos !== -1) {
-      const start = Math.max(0, firstPos - 36);
-      const end = Math.min(cleanText.length, firstPos + q.length + 46);
-      results.push({
-        chapterIndex: idx,
-        chapterNumber: ch.chapter_number || idx + 1,
-        chapterTitle: ch.title,
-        matchCount,
-        before: (start > 0 ? '…' : '') + cleanText.slice(start, firstPos),
-        matched: cleanText.slice(firstPos, firstPos + q.length),
-        after: cleanText.slice(firstPos + q.length, end) + (end < cleanText.length ? '…' : ''),
-      });
-      if (results.length >= 40) break;
+    if (positions.length > 0) {
+      const shownPositions = positions.slice(0, 3);
+      for (let occIdx = 0; occIdx < shownPositions.length; occIdx += 1) {
+        const pos = shownPositions[occIdx];
+        const start = Math.max(0, pos - 36);
+        const end = Math.min(cleanText.length, pos + q.length + 46);
+        results.push({
+          id: `${idx}-${occIdx}`,
+          chapterIndex: idx,
+          chapterNumber: ch.chapter_number || idx + 1,
+          chapterTitle: ch.title,
+          occurrenceIndex: occIdx,
+          totalInChapter: positions.length,
+          approximateRatio: Math.min(1, Math.max(0, pos / Math.max(1, cleanText.length))),
+          before: (start > 0 ? '…' : '') + cleanText.slice(start, pos),
+          matched: cleanText.slice(pos, pos + q.length),
+          after: cleanText.slice(pos + q.length, end) + (end < cleanText.length ? '…' : ''),
+        });
+        if (results.length >= 50) break;
+      }
+      if (results.length >= 50) break;
     }
   }
   return results;
@@ -89,6 +96,12 @@ export interface ReaderSearchPanelProps {
   parsedChapters?: Chapter[];
   palette: ReaderThemePalette;
   onSelectChapter: (chapterIndex: number) => void;
+  onJumpToSearchResult?: (target: {
+    chapterIndex: number;
+    query: string;
+    occurrenceIndex: number;
+    approximateRatio: number;
+  }) => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
 
@@ -97,6 +110,7 @@ export function ReaderSearchPanel({
   parsedChapters,
   palette,
   onSelectChapter,
+  onJumpToSearchResult,
   onApiError,
 }: ReaderSearchPanelProps) {
   const [query, setQuery] = useState('');
@@ -197,10 +211,21 @@ export function ReaderSearchPanel({
           ) : (
             <ul className="space-y-1.5">
               {localHits.map((hit) => (
-                <li key={hit.chapterIndex}>
+                <li key={hit.id}>
                   <button
                     type="button"
-                    onClick={() => onSelectChapter(hit.chapterIndex)}
+                    onClick={() => {
+                      if (onJumpToSearchResult) {
+                        onJumpToSearchResult({
+                          chapterIndex: hit.chapterIndex,
+                          query: trimmed,
+                          occurrenceIndex: hit.occurrenceIndex,
+                          approximateRatio: hit.approximateRatio,
+                        });
+                      } else {
+                        onSelectChapter(hit.chapterIndex);
+                      }
+                    }}
                     className={`w-full rounded-xl border p-2.5 text-left text-xs transition ${palette.border} ${palette.hover}`}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -208,7 +233,9 @@ export function ReaderSearchPanel({
                         {String(hit.chapterNumber).padStart(2, '0')}. {hit.chapterTitle}
                       </span>
                       <span className={`shrink-0 text-[10px] ${palette.textSecondary}`}>
-                        {hit.matchCount} lần
+                        {hit.totalInChapter > 1
+                          ? `#${hit.occurrenceIndex + 1} / ${hit.totalInChapter}`
+                          : '1 lần'}
                       </span>
                     </div>
                     <p className={`mt-1 line-clamp-2 text-[11px] leading-relaxed ${palette.textSecondary}`}>
@@ -233,7 +260,18 @@ export function ReaderSearchPanel({
               <li key={item.chapterIndex}>
                 <button
                   type="button"
-                  onClick={() => onSelectChapter(item.chapterIndex)}
+                  onClick={() => {
+                    if (onJumpToSearchResult) {
+                      onJumpToSearchResult({
+                        chapterIndex: item.chapterIndex,
+                        query: trimmed,
+                        occurrenceIndex: 0,
+                        approximateRatio: 0,
+                      });
+                    } else {
+                      onSelectChapter(item.chapterIndex);
+                    }
+                  }}
                   className={`flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-xs transition ${palette.border} ${palette.hover}`}
                 >
                   <span className="truncate font-medium">

@@ -1,6 +1,9 @@
 import { type AuthContext, HttpError } from './auth';
 import { type Env, isValidId } from './booksDb';
 import { assertGuestBookAccess } from './shelfAccessDb';
+import { MAX_READING_DELTA_SEC } from './usageRecorder';
+
+const FIRST_BOOK_SAVE_MAX_SEC = 180;
 
 export interface ProgressRow {
   book_id: string;
@@ -11,43 +14,94 @@ export interface ProgressRow {
   scroll_ratio: number;
   scroll_top: number;
   completed: number;
+  reading_seconds?: number;
   updated_at: number;
 }
 
 const ensuredProgressDbs = new WeakSet<D1Database>();
+const ensuredReadingSecDbs = new WeakSet<D1Database>();
+
+async function ensureReadingSecondsColumn(
+  db: D1Database,
+  table: 'reading_progress' | 'guest_reading_progress',
+): Promise<void> {
+  const cols = await db.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>();
+  if ((cols.results || []).some((c) => c.name === 'reading_seconds')) return;
+  try {
+    await db
+      .prepare(`ALTER TABLE ${table} ADD COLUMN reading_seconds INTEGER NOT NULL DEFAULT 0`)
+      .run();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.toLowerCase().includes('duplicate column')) throw err;
+  }
+}
 
 export async function ensureGuestProgressTable(env: Env): Promise<void> {
-  if (ensuredProgressDbs.has(env.DB)) return;
-  await env.DB.batch([
-    env.DB.prepare(
-      `CREATE TABLE IF NOT EXISTS guest_reading_progress (
-         discord_user_id TEXT NOT NULL,
-         book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-         chapter_id TEXT NOT NULL,
-         chapter_index INTEGER NOT NULL DEFAULT 0,
-         chapter_title TEXT,
-         total_chapters INTEGER,
-         scroll_ratio REAL NOT NULL DEFAULT 0,
-         scroll_top REAL NOT NULL DEFAULT 0,
-         completed INTEGER NOT NULL DEFAULT 0,
-         updated_at INTEGER NOT NULL,
-         PRIMARY KEY (discord_user_id, book_id)
-       )`,
-    ),
-    env.DB.prepare(
-      `CREATE INDEX IF NOT EXISTS idx_guest_progress_user_updated
-       ON guest_reading_progress(discord_user_id, updated_at DESC)`,
-    ),
-    env.DB.prepare(
-      `CREATE INDEX IF NOT EXISTS idx_guest_progress_updated_at
-       ON guest_reading_progress(updated_at DESC)`,
-    ),
-    env.DB.prepare(
-      `CREATE INDEX IF NOT EXISTS idx_guest_progress_book_id
-       ON guest_reading_progress(book_id)`,
-    ),
-  ]);
-  ensuredProgressDbs.add(env.DB);
+  if (!ensuredProgressDbs.has(env.DB)) {
+    await env.DB.batch([
+      env.DB.prepare(
+        `CREATE TABLE IF NOT EXISTS guest_reading_progress (
+           discord_user_id TEXT NOT NULL,
+           book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+           chapter_id TEXT NOT NULL,
+           chapter_index INTEGER NOT NULL DEFAULT 0,
+           chapter_title TEXT,
+           total_chapters INTEGER,
+           scroll_ratio REAL NOT NULL DEFAULT 0,
+           scroll_top REAL NOT NULL DEFAULT 0,
+           completed INTEGER NOT NULL DEFAULT 0,
+           reading_seconds INTEGER NOT NULL DEFAULT 0,
+           updated_at INTEGER NOT NULL,
+           PRIMARY KEY (discord_user_id, book_id)
+         )`,
+      ),
+      env.DB.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_guest_progress_user_updated
+         ON guest_reading_progress(discord_user_id, updated_at DESC)`,
+      ),
+      env.DB.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_guest_progress_updated_at
+         ON guest_reading_progress(updated_at DESC)`,
+      ),
+      env.DB.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_guest_progress_book_id
+         ON guest_reading_progress(book_id)`,
+      ),
+    ]);
+    ensuredProgressDbs.add(env.DB);
+  }
+  await ensureProgressReadingTimeColumns(env);
+}
+
+export async function ensureProgressReadingTimeColumns(env: Env): Promise<void> {
+  if (ensuredReadingSecDbs.has(env.DB)) return;
+  await ensureReadingSecondsColumn(env.DB, 'reading_progress');
+  if (ensuredProgressDbs.has(env.DB)) {
+    await ensureReadingSecondsColumn(env.DB, 'guest_reading_progress');
+    ensuredReadingSecDbs.add(env.DB);
+    return;
+  }
+  const guestTbl = await env.DB.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'guest_reading_progress'",
+  ).first<{ name: string }>();
+  if (guestTbl) {
+    await ensureReadingSecondsColumn(env.DB, 'guest_reading_progress');
+    ensuredReadingSecDbs.add(env.DB);
+  }
+}
+
+function clampAcceptedReadingDelta(
+  requestedDelta: number,
+  updatedAt: number,
+  prevUpdatedAt: number | null,
+): number {
+  if (requestedDelta <= 0) return 0;
+  if (prevUpdatedAt && prevUpdatedAt > 0) {
+    const elapsedSec = Math.max(0, Math.ceil((updatedAt - prevUpdatedAt) / 1000));
+    return Math.min(requestedDelta, Math.min(MAX_READING_DELTA_SEC, elapsedSec + 3));
+  }
+  return Math.min(requestedDelta, FIRST_BOOK_SAVE_MAX_SEC);
 }
 
 export async function upsertReadingProgress(
@@ -63,6 +117,7 @@ export async function upsertReadingProgress(
     scrollTop?: unknown;
     completed?: unknown;
     updatedAt?: unknown;
+    readingDeltaSec?: unknown;
   } | null,
 ) {
   if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
@@ -106,10 +161,32 @@ export async function upsertReadingProgress(
       ? Math.min(100_000, Math.floor(rawTotalChapters))
       : null;
 
+  const rawReadingDelta = Number(body.readingDeltaSec ?? 0);
+  const requestedDelta =
+    Number.isFinite(rawReadingDelta) && rawReadingDelta > 0
+      ? Math.min(MAX_READING_DELTA_SEC, Math.floor(rawReadingDelta))
+      : 0;
+
+  let readingDeltaAccepted = 0;
+
   if (auth.role === 'owner') {
+    await ensureProgressReadingTimeColumns(env);
+    if (requestedDelta > 0) {
+      const prevRow = await env.DB.prepare(
+        'SELECT updated_at FROM reading_progress WHERE book_id = ?',
+      )
+        .bind(bookId)
+        .first<{ updated_at: number }>();
+      readingDeltaAccepted = clampAcceptedReadingDelta(
+        requestedDelta,
+        updatedAt,
+        prevRow?.updated_at ?? null,
+      );
+    }
+
     await env.DB.prepare(
-      `INSERT INTO reading_progress (book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO reading_progress (book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(book_id) DO UPDATE SET
          chapter_id = excluded.chapter_id,
          chapter_index = excluded.chapter_index,
@@ -118,6 +195,7 @@ export async function upsertReadingProgress(
          scroll_ratio = excluded.scroll_ratio,
          scroll_top = excluded.scroll_top,
          completed = excluded.completed,
+         reading_seconds = COALESCE(reading_progress.reading_seconds, 0) + excluded.reading_seconds,
          updated_at = excluded.updated_at`,
     )
       .bind(
@@ -129,14 +207,28 @@ export async function upsertReadingProgress(
         scrollRatio,
         scrollTop,
         completed,
+        readingDeltaAccepted,
         updatedAt,
       )
       .run();
   } else {
     await ensureGuestProgressTable(env);
+    if (requestedDelta > 0) {
+      const prevRow = await env.DB.prepare(
+        'SELECT updated_at FROM guest_reading_progress WHERE discord_user_id = ? AND book_id = ?',
+      )
+        .bind(auth.userId, bookId)
+        .first<{ updated_at: number }>();
+      readingDeltaAccepted = clampAcceptedReadingDelta(
+        requestedDelta,
+        updatedAt,
+        prevRow?.updated_at ?? null,
+      );
+    }
+
     await env.DB.prepare(
-      `INSERT INTO guest_reading_progress (discord_user_id, book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO guest_reading_progress (discord_user_id, book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(discord_user_id, book_id) DO UPDATE SET
          chapter_id = excluded.chapter_id,
          chapter_index = excluded.chapter_index,
@@ -145,6 +237,7 @@ export async function upsertReadingProgress(
          scroll_ratio = excluded.scroll_ratio,
          scroll_top = excluded.scroll_top,
          completed = excluded.completed,
+         reading_seconds = COALESCE(guest_reading_progress.reading_seconds, 0) + excluded.reading_seconds,
          updated_at = excluded.updated_at`,
     )
       .bind(
@@ -157,12 +250,13 @@ export async function upsertReadingProgress(
         scrollRatio,
         scrollTop,
         completed,
+        readingDeltaAccepted,
         updatedAt,
       )
       .run();
   }
 
-  return { ok: true, updatedAt };
+  return { ok: true, updatedAt, readingDeltaAccepted };
 }
 
 export async function deleteReadingProgress(env: Env, auth: AuthContext, bookId: string) {

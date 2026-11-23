@@ -226,6 +226,7 @@ export function drawCanvasLayoutItems(options: {
   font: ReaderFont;
   watermarkLabel: string;
   bitmaps: ReadonlyMap<number, ImageBitmap>;
+  highlightSourceY?: number | null;
 }) {
   const {
     ctx,
@@ -239,6 +240,7 @@ export function drawCanvasLayoutItems(options: {
     font,
     watermarkLabel,
     bitmaps,
+    highlightSourceY = null,
   } = options;
 
   const sliceBottom = sliceTop + sliceHeight;
@@ -346,6 +348,16 @@ export function drawCanvasLayoutItems(options: {
     }
 
     ctx.save();
+    const isFlashed =
+      item.flashHighlight === true ||
+      (highlightSourceY !== null && Math.abs(item.y - highlightSourceY) <= item.height * 1.15);
+    if (isFlashed) {
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.32)';
+      ctx.fillRect(offsetX - 6, localY - 2, contentWidth + 12, item.height + 2);
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.85)';
+      ctx.fillRect(offsetX - 6, localY - 2, 3, item.height + 2);
+    }
+
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     const baselineY = localY + Math.round(item.fontSize * 1.05);
@@ -387,6 +399,7 @@ export function paintGuestViewportCanvas(options: {
   font: ReaderFont;
   watermarkLabel: string;
   bitmaps: ReadonlyMap<number, ImageBitmap>;
+  highlightSourceY?: number | null;
 }) {
   const {
     canvas,
@@ -398,6 +411,7 @@ export function paintGuestViewportCanvas(options: {
     font,
     watermarkLabel,
     bitmaps,
+    highlightSourceY = null,
   } = options;
 
   const surface = prepareProtectedCanvasSurface({
@@ -423,5 +437,6 @@ export function paintGuestViewportCanvas(options: {
     font,
     watermarkLabel,
     bitmaps,
+    highlightSourceY,
   });
 }

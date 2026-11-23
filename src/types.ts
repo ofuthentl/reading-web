@@ -40,7 +40,13 @@ export type ReadingProgress = {
   scrollRatio: number;
   scrollTop: number;
   completed: boolean;
+  readingSeconds?: number;
   updatedAt: number;
+};
+
+export type SaveProgressOptions = {
+  readingDeltaSec?: number;
+  keepalive?: boolean;
 };
 
 export type StorageStats = {
@@ -60,6 +66,8 @@ export type ReaderTheme = 'paper' | 'sepia' | 'dark' | 'midnight';
 export type ReaderFont = 'serif' | 'sans' | 'mono';
 export type ReaderWidth = 'narrow' | 'medium' | 'wide';
 export type ReaderLayoutMode = 'scroll' | 'paginated';
+export type ReaderTextAlign = 'justify' | 'left';
+export type ReaderParagraphSpacing = 'compact' | 'normal' | 'relaxed';
 
 export type ReaderSettings = {
   theme: ReaderTheme;
@@ -69,6 +77,10 @@ export type ReaderSettings = {
   width: ReaderWidth;
   layoutMode: ReaderLayoutMode;
   sideTapNavigation: boolean;
+  textAlign: ReaderTextAlign;
+  paragraphIndent: boolean;
+  paragraphSpacing: ReaderParagraphSpacing;
+  nightDimPercent: number;
 };
 
 export type ViewMode = '3d' | '2d';

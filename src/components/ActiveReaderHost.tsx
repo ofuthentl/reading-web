@@ -6,6 +6,7 @@ import type {
   ParsedBook,
   ReaderSettings,
   ReadingProgress,
+  SaveProgressOptions,
 } from '@/types';
 import { findNextBookInShelf } from '@/lib/nextVolume';
 import type { GuestReaderSessionState } from '@/hooks/useBookReader';
@@ -29,7 +30,7 @@ export interface ActiveReaderHostProps {
   books: Book[];
   progress: Record<string, ReadingProgress>;
   onUpdateSettings: (patch: Partial<ReaderSettings>) => void;
-  onSaveProgress: (progress: ReadingProgress) => void;
+  onSaveProgress: (progress: ReadingProgress, options?: SaveProgressOptions) => void;
   onOpenBook: (book: Book) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
   onCancelOpening: () => void;

@@ -126,6 +126,7 @@ export default function App() {
   const reader = useBookReader({
     appTheme: theme,
     sessionRole: session.role,
+    authenticated,
     onProgressUpdated: store.handleProgressUpdated,
     onApiError: handleApiError,
   });

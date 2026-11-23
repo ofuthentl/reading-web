@@ -43,6 +43,8 @@ import {
   clearLoginFailures,
   recordLoginFailure,
 } from './rateLimitDb';
+import { getReaderActivityStats } from './readingActivityDb';
+import { getUserReaderPrefs, putUserReaderPrefs } from './readerPrefsDb';
 import { streamR2FileResponse } from './r2Files';
 import { upsertShelfTags } from './shelfTagsDb';
 import { scheduleUsageEvent } from './usageDb';
@@ -400,7 +402,24 @@ async function handleApi(
     return jsonResponse(result, 200, origin);
   }
 
-  // Upsert / delete reading progress (isolated per Owner vs Discord Guest, D-026)
+  // Personal 90-day reading streak & heatmap activity isolated per reader_scope (D-036 Wave 1)
+  if (normalizedPath === '/api/reading-stats/activity' && request.method === 'GET') {
+    const activity = await getReaderActivityStats(env, auth);
+    return jsonResponse(activity, 200, origin);
+  }
+
+  // Synced ReaderSettings isolated per user_scope (Owner & Discord Guest, D-036 Mục 7)
+  if (normalizedPath === '/api/reader-settings' && request.method === 'GET') {
+    const prefs = await getUserReaderPrefs(env.DB, auth);
+    return jsonResponse(prefs, 200, origin);
+  }
+  if (normalizedPath === '/api/reader-settings' && request.method === 'PUT') {
+    const body = await request.json().catch(() => null);
+    const updated = await putUserReaderPrefs(env.DB, auth, body);
+    return jsonResponse(updated, 200, origin);
+  }
+
+  // Upsert / delete reading progress (isolated per Owner vs Discord Guest, D-026 + PA-1 readingDeltaSec)
   const progressMatch = normalizedPath.match(/^\/api\/progress\/([^/]+)$/);
   if (progressMatch && request.method === 'PUT') {
     const body = (await request.json().catch(() => null)) as Parameters<
@@ -411,6 +430,7 @@ async function handleApi(
       ...(auth.role === 'owner' ? { metric: 'owner_progress_updates' as const } : {}),
       readerScope: auth.role === 'owner' ? 'owner' : `guest:${auth.userId}`,
       readerRole: auth.role,
+      readingSeconds: result.readingDeltaAccepted,
     });
     return jsonResponse(result, 200, origin);
   }

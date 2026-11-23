@@ -159,9 +159,20 @@ export function useLibraryDataStore({
     setStorage(null);
   }, []);
 
-  const handleProgressUpdated = useCallback((bookId: string, nextProgress: ReadingProgress) => {
-    setProgress((prev) => ({ ...prev, [bookId]: nextProgress }));
-  }, []);
+  const handleProgressUpdated = useCallback(
+    (bookId: string, nextProgress: ReadingProgress, readingDeltaSec = 0) => {
+      setProgress((prev) => {
+        const prevSec = prev[bookId]?.readingSeconds ?? 0;
+        const baseSec = Math.max(prevSec, nextProgress.readingSeconds ?? 0);
+        const totalSec = baseSec + Math.max(0, Math.floor(readingDeltaSec));
+        return {
+          ...prev,
+          [bookId]: totalSec > 0 ? { ...nextProgress, readingSeconds: totalSec } : nextProgress,
+        };
+      });
+    },
+    [],
+  );
 
   const handleBookUploaded = useCallback((book: Book, nextStorage: StorageStats) => {
     setBooks((prev) => sortBooksByTitle([...prev.filter((item) => item.id !== book.id), book]));
@@ -255,6 +266,7 @@ export function useLibraryDataStore({
         scrollRatio: 1,
         scrollTop: existing?.scrollTop ?? 0,
         completed: true,
+        ...(existing?.readingSeconds ? { readingSeconds: existing.readingSeconds } : {}),
         updatedAt: Date.now(),
       };
       setProgress((prev) => ({ ...prev, [book.id]: nextProgress }));

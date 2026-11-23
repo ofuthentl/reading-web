@@ -1,22 +1,21 @@
 # HANDOFF
-Cập nhật: 2026-11-23 15:31 | Nhánh: feat/admin-usage-dashboard | Build: 🟢 typecheck · 🟢 ESLint 0/0 · 🟢 build (`85.89 kB` gzip) · 🟢 Worker tsc
-Nhiệm vụ hiện tại: **Hoàn tất trọn bộ cả 2 gói thay đổi trên `feat/admin-usage-dashboard`** (gồm toàn bộ bản vá audit + bỏ PDF `D-033` + font tiếng Việt cục bộ & 4 chế độ nền `D-034` + trang thống kê Admin `/usage` chống rò rỉ `D-035`).
+Cập nhật: 2026-11-23 18:19 | Nhánh: feat/reading-time-streak-and-reader-ux | Build: 🟢 typecheck/lint/Worker tsc/build xanh (`index-*.js = 84.94 kB` gzip <= 86.04 kB)
+Nhiệm vụ hiện tại: Hoàn tất **Wave 1** của Lộ trình Nâng cấp v2 (`docs/plans/roadmap-v2-upgrades.md` & `D-036`), sẵn sàng chạy migration `0011`, deploy Worker và mở PR vào `main`.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md
 
 ## Đang làm dở
-- Toàn bộ 4/4 Phase của `/usage` (và 5/5 Phase của bản vá audit trước đó) đã hoàn tất, kiểm định tĩnh + bảo mật Worker + trình duyệt PC/Mobile ĐẠT 100%, sẵn sàng gộp 1 PR duy nhất lên `main` để publish cả 2 cùng lúc.
+- Không còn việc dở trong **Wave 1** (đã hoàn tất trọn vẹn Phase 1.1 → 1.2 → 1.3 + 2 nâng cấp bổ sung cho `/usage`, bỏ Mục 8 *Tategaki* theo yêu cầu người dùng).
 
-## Bước tiếp theo (Triển khai Production — chờ người dùng thực hiện)
-1. **Chạy 3 migration D1 lên production** *(theo thứ tự)*:
-   - `cd workers/r2-storage`
-   - `npx wrangler d1 execute library-db --remote --file=./migrations/0008_drop_pdf.sql`
-   - `npx wrangler d1 execute library-db --remote --file=./migrations/0009_perf_indexes.sql`
-   - `npx wrangler d1 execute library-db --remote --file=./migrations/0010_usage_stats.sql`
-2. **Deploy Cloudflare Worker:** `cd workers/r2-storage && npm run deploy`
-3. **Push nhánh & mở 1 Pull Request duy nhất vào `main`:** `git push -u origin feat/admin-usage-dashboard` rồi merge PR khi CI xanh để auto-deploy `ofu.lol`.
+## Bước tiếp theo
+1. Chạy migration `0011_reading_time_and_prefs.sql` lên D1 production (`--remote`), deploy Cloudflare Worker (`wrangler deploy`), đẩy nhánh `feat/reading-time-streak-and-reader-ux` và mở/merge PR Wave 1 vào `main`.
+2. Sau khi Wave 1 merge `main`: tách nhánh `feat/reader-footnotes-gallery-highlights` triển khai **Wave 2** (Mục 1 Chú thích dịch giả, Mục 2 Tab Minh họa chống spoiler từ `guest-pack` sẵn có, Mục 5 Highlight bôi màu & Kho trích dẫn).
+3. Tiếp nối **Wave 3** (`9, 11, 12, 13, 18, 19`) → **Wave 4** (`14, 15`).
 
 ## Lỗi / chặn
-- Không có lỗi/chặn nào. Các điểm phát hiện trong kiểm định thực tế đã được vá dứt điểm: tách tiền tố `discord:` tránh đếm trùng DAU ở `index.ts`, xác thực `/api/auth/session` trước khi tải chunk `AdminUsageView` ở `AuthGate.tsx`, sửa màu cột SVG `--color-crimson` + bỏ khung xám nền ở `AdminUsageCharts.tsx`, đồng bộ màu icon `text-accent` ở `LibraryHeader.tsx` & `AdminUsageView.tsx`.
+- Không có lỗi/chặn. Lưu ý có 3 tệp chưa theo dõi sẵn từ trước ở thư mục gốc (`Gemini_Generated_Image_u8tpmdu8tpmdu8tp.png`, `IMG_4018.JPG`, `hatsune-miku_b0bf919137_VSTHEMES-ORG/`) — tuyệt đối không dùng `git add .`.
 
 ## Xong gần nhất
-- **Trang `/usage` (`D-035`):** Migration `0010_usage_stats.sql`, `usageRecorder.ts`, `usageDb.ts`, `GET /api/admin/usage` (`requireOwner`, `no-store`/`noindex`, 0 trường nhạy cảm), Stealth `/usage` (`dist/usage/index.html`, `gateRoutes.ts`, `AuthGate.tsx`, `App.tsx`), giao diện nạp lười `AdminUsageView` (`7.99 kB` gzip) + biểu đồ SVG 0 CDN + bảng hoạt động khách Discord; đồng bộ `DECISIONS.md` & `ARCHITECTURE.md`.
+- **Wave 1 (`feat/reading-time-streak-and-reader-ux`, `D-036`):**
+  - **Phase 1.1:** Migration `0011_reading_time_and_prefs.sql`, cộng dồn `reading_seconds` kèm kẹp trần & ngân sách đồng hồ thực `last_reading_sync_at`, mở rộng `/api/admin/usage` + thêm `GET /api/admin/usage/guests/:discordUserId`, `GET /api/reading-stats/activity` (90N cách ly `reader_scope`), `GET/PUT /api/reader-settings`.
+  - **Phase 1.2:** `useActiveReadingTimer.ts` (`keepalive` khi `pagehide`/ẩn tab), nâng cấp `/usage` (tab `Thời gian đọc`, vá trục `0, 1, 1`, ghi chú trống, đưa số độc giả/xong lên trước tên kệ, xổ chi tiết tập đọc theo từng thành viên Discord), Streak & Lịch nhiệt 90 ngày SVG thuần trong `ReadingStatsModal.tsx` cho cả Owner & Guest.
+  - **Phase 1.3:** Ước tính `"Còn ~X phút hết chương"`, Typography nâng cao (Căn đều/trái, thụt đầu dòng, giãn đoạn, dịu mắt ban đêm) đồng bộ D1 cho cả `ReaderView` & `GuestCanvasReader`, nhảy & nhấp nháy sáng `~2.2s` đúng đoạn khớp Tìm chữ trên DOM & `<canvas>`, kiểm thử E2E PC/Mobile cho Owner & Guest xanh 100%.

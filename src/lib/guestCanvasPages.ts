@@ -73,6 +73,7 @@ function shiftColumnItems(
   offsetX: number,
   pageHeight: number,
   hitRects: CanvasImageHitRect[],
+  highlightSourceY: number | null,
 ): CanvasLayoutItem[] {
   return page.items.map((item) => {
     const shiftedY = item.y - page.startY + 8;
@@ -98,6 +99,11 @@ function shiftColumnItems(
         height: drawH + 24,
       };
     }
+    if (item.kind === 'text-line') {
+      const flashHighlight =
+        highlightSourceY !== null && Math.abs(item.y - highlightSourceY) <= item.height * 1.15;
+      return flashHighlight ? { ...item, y: shiftedY, flashHighlight: true } : { ...item, y: shiftedY };
+    }
     return { ...item, y: shiftedY };
   });
 }
@@ -118,6 +124,7 @@ export function paintGuestPaginatedCanvas(options: {
   font: ReaderFont;
   watermarkLabel: string;
   bitmaps: ReadonlyMap<number, ImageBitmap>;
+  highlightSourceY?: number | null;
 }): CanvasImageHitRect[] {
   const {
     canvas,
@@ -131,6 +138,7 @@ export function paintGuestPaginatedCanvas(options: {
     font,
     watermarkLabel,
     bitmaps,
+    highlightSourceY = null,
   } = options;
 
   const totalCssW = columns === 2 ? columnWidth * 2 + columnGap : columnWidth;
@@ -151,7 +159,14 @@ export function paintGuestPaginatedCanvas(options: {
   const { ctx, palette } = surface;
 
   if (leftPage && leftPage.items.length > 0) {
-    const shiftedLeft = shiftColumnItems(leftPage, columnWidth, 0, pageHeight, hitRects);
+    const shiftedLeft = shiftColumnItems(
+      leftPage,
+      columnWidth,
+      0,
+      pageHeight,
+      hitRects,
+      highlightSourceY,
+    );
     drawCanvasLayoutItems({
       ctx,
       items: shiftedLeft,
@@ -175,6 +190,7 @@ export function paintGuestPaginatedCanvas(options: {
       rightOffsetX,
       pageHeight,
       hitRects,
+      highlightSourceY,
     );
     drawCanvasLayoutItems({
       ctx,

@@ -173,7 +173,7 @@ export function LibraryHeader({
         {isOwner && !hideStorage && (
           <div
             className={`hidden min-w-[160px] max-w-[240px] flex-1 flex-col gap-1.5 rounded-xl border border-line bg-canvas px-3 py-2 ${
-              showTabs ? 'xl:flex' : 'lg:flex'
+              showTabs ? '2xl:flex' : 'lg:flex'
             }`}
             title={`Đã dùng ${formatBytes(usedBytes)} / ${formatBytes(limitBytes)}`}
           >
@@ -340,7 +340,7 @@ export function LibraryHeader({
       {isOwner && !hideStorage && (
         <div
           className={`border-t border-line/70 bg-canvas/60 px-4 py-2 ${
-            showTabs ? 'xl:hidden' : 'lg:hidden'
+            showTabs ? '2xl:hidden' : 'lg:hidden'
           }`}
         >
           <div className="mx-auto flex max-w-7xl items-center gap-3 text-xs">

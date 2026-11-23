@@ -180,6 +180,7 @@
     font-size: 1.125rem;
     margin: 0 auto;
     overflow-wrap: break-word;
+    text-align: var(--reader-text-align, justify);
   }
 
   .reading-content pre {
@@ -192,12 +193,8 @@
   }
 
   .reading-content p {
-    margin-bottom: 1.45rem;
-    text-indent: 0;
-  }
-
-  .reading-content p:first-child {
-    text-indent: 0;
+    margin-bottom: var(--reader-para-gap, 1.15em);
+    text-indent: var(--reader-para-indent, 0px);
   }
 
   .reading-content p:first-child::first-letter {
@@ -296,6 +293,27 @@
   .reading-paginated-content h4 {
     break-after: avoid;
     page-break-after: avoid;
+  }
+
+  /* Hiệu ứng nhấp nháy sáng ~2.2s khi nhảy tới đoạn khớp Tìm chữ (D-036 Mục 3) */
+  @keyframes readerSearchFlashPulse {
+    0% {
+      background-color: rgba(245, 158, 11, 0.42);
+      box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.24);
+    }
+    35% {
+      background-color: rgba(245, 158, 11, 0.34);
+      box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.18);
+    }
+    100% {
+      background-color: transparent;
+      box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+    }
+  }
+
+  .reader-search-flash {
+    border-radius: 0.45rem;
+    animation: readerSearchFlashPulse 2.2s ease-out forwards;
   }
 
   .scrollbar-thin {
