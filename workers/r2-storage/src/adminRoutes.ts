@@ -1,3 +1,4 @@
+import { searchAniListLightNovels } from './anilistProxy';
 import { type AuthContext, HttpError, requireOwner } from './auth';
 import type { Env } from './booksDb';
 import {
@@ -84,6 +85,12 @@ export async function tryHandleAdminRoutes(
     const body = await request.json().catch(() => null);
     const updated = await putAdminShelfAccessConfig(env.DB, body);
     return jsonResponse(updated, 200, origin);
+  }
+
+  if (normalizedPath === '/api/admin/anilist/search' && request.method === 'POST') {
+    const body = await request.json().catch(() => null);
+    const result = await searchAniListLightNovels(body);
+    return jsonResponse(result, 200, origin);
   }
 
   return null;
