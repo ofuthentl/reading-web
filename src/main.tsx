@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { reloadOnceForStaleChunk } from '@/lib/chunkReload';
 import App from './App.tsx';
+import './fonts.css';
 import './index.css';
 
 window.addEventListener('vite:preloadError', (event) => {

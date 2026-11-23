@@ -10,6 +10,7 @@ import {
 import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Book, GuestChapterPayload, ReaderSettings } from '@/types';
 import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
+import { useReaderCanvasFontVersion } from '@/hooks/useReaderCanvasFontVersion';
 import { getBookSortTitle } from '@/lib/bookMetadata';
 import { computeChapterCanvasLayout } from '@/lib/guestCanvasLayout';
 import {
@@ -87,6 +88,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       };
     });
     const [spreadIndex, setSpreadIndex] = useState(0);
+    const fontVersion = useReaderCanvasFontVersion(settings.font);
 
     useLayoutEffect(() => {
       anchorRatioRef.current = Math.min(1, Math.max(0, initialRatio));
@@ -118,6 +120,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     }, [settings.width, stageSize.height, stageSize.width]);
 
     const columnPages = useMemo(() => {
+      void fontVersion;
       const layout = computeChapterCanvasLayout({
         chapterTitle: chapterData.title,
         chapterIndex,
@@ -131,6 +134,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     }, [
       chapterData,
       chapterIndex,
+      fontVersion,
       geometry.columnWidth,
       geometry.pageHeight,
       imageSizes,

@@ -17,14 +17,14 @@ import { HARD_LIMIT_BYTES, formatBytes, isCloudMode } from '@/lib/api';
 import { formatRemainingSessionTime } from '@/lib/authSession';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { ViewModeToggle } from '@/components/ViewModeToggle';
-import type { AppTheme } from '@/hooks/useTheme';
+import type { UiTheme } from '@/hooks/useTheme';
 
 interface LibraryHeaderProps {
   storage: StorageStats | null;
   hideStorage?: boolean;
   bookCount: number;
   loading: boolean;
-  theme: AppTheme;
+  theme: UiTheme;
   selectionMode: boolean;
   selectedCount: number;
   showSelectionToggle?: boolean;

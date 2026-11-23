@@ -12,7 +12,7 @@ import { useBookReader } from '@/hooks/useBookReader';
 import { useCanUse3D } from '@/hooks/useCanUse3D';
 import { useLibraryDataStore } from '@/hooks/useLibraryDataStore';
 import { useLibraryViewState } from '@/hooks/useLibraryViewState';
-import { useTheme } from '@/hooks/useTheme';
+import { toScene3DTheme, useTheme } from '@/hooks/useTheme';
 import { useToast } from '@/hooks/useToast';
 
 const LazyAuthGate = lazy(() =>
@@ -30,7 +30,7 @@ const LazyLibrary2DDialogsHost = lazy(() =>
 );
 
 export default function App() {
-  const { theme, cycleTheme } = useTheme();
+  const { theme, cycleTheme, cycle3DTheme } = useTheme();
   const { toasts, addToast, dismissToast } = useToast();
   const {
     canUse3D,
@@ -233,12 +233,12 @@ export default function App() {
           progress={store.progress}
           storage={store.storage}
           loading={store.loading}
-          theme={theme}
+          theme={toScene3DTheme(theme)}
           viewState={libraryViewState}
           canUse3D={effectiveCanUse3D}
           viewMode={effectiveMode}
           onChangeViewMode={setViewMode}
-          onCycleTheme={cycleTheme}
+          onCycleTheme={cycle3DTheme}
           onRefresh={() => void loadLibrary()}
           onLogout={handleLogout}
           onOpenBook={(book: Book) => void reader.openBook(book)}

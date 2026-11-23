@@ -27,7 +27,8 @@ export default {
         },
       },
       fontFamily: {
-        display: ['"Iowan Old Style"', '"Palatino Linotype"', 'Georgia', 'Cambria', 'serif'],
+        sans: ['"Be Vietnam Pro"', 'system-ui', '-apple-system', '"Segoe UI"', 'sans-serif'],
+        display: ['"Literata"', 'Georgia', '"Times New Roman"', 'serif'],
       },
     },
   },

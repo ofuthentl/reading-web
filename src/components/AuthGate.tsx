@@ -36,7 +36,7 @@ import {
   syncGateDocumentTitle,
 } from '@/lib/gateRoutes';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import type { AppTheme } from '@/hooks/useTheme';
+import { type UiTheme, isDarkTheme } from '@/hooks/useTheme';
 
 const LazyGateBackdropArt = lazy(() =>
   import('@/components/GateBackdropArt').then((mod) => ({ default: mod.GateBackdropArt })),
@@ -45,7 +45,7 @@ const LazyGateBackdropArt = lazy(() =>
 interface AuthGateProps {
   onAuthenticated: (session: AuthSessionInfo) => void;
   authReason?: string | null;
-  theme?: AppTheme;
+  theme?: UiTheme;
   onCycleTheme?: (origin?: { x: number; y: number }) => void;
 }
 
@@ -189,7 +189,7 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
   }
 
   const isEntrance = route === 'entrance';
-  const isDark = Boolean(theme && theme !== 'light');
+  const isDark = Boolean(theme && isDarkTheme(theme));
 
   return (
     <div className="theme-canvas relative flex min-h-screen flex-col justify-between overflow-hidden text-ink transition-colors duration-200">

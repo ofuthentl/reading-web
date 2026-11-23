@@ -9,7 +9,7 @@ import { type LibraryAdvancedFilterProps, LibraryFilterBar } from '@/components/
 import { LibraryHeader } from '@/components/LibraryHeader';
 import { LibraryHomeShelvesSection } from '@/components/LibraryHomeShelvesSection';
 import type { LibraryViewState } from '@/hooks/useLibraryViewState';
-import type { AppTheme } from '@/hooks/useTheme';
+import { type UiTheme, isDarkTheme } from '@/hooks/useTheme';
 import type { ToastType } from '@/hooks/useToast';
 
 const LazyBulkSelectionBar = lazy(() =>
@@ -33,7 +33,7 @@ interface Library2DViewProps {
   favoriteShelfKeys?: ReadonlySet<string>;
   storage: StorageStats | null;
   loading: boolean;
-  theme: AppTheme;
+  theme: UiTheme;
   viewState: LibraryViewState;
   sessionRole?: AuthRole;
   sessionExpiresAt?: number | null;
@@ -118,7 +118,7 @@ export function Library2DView({
   onApiError,
   onNotify,
 }: Library2DViewProps) {
-  const isDark = theme !== 'light';
+  const isDark = isDarkTheme(theme);
   const {
     activeTab,
     setActiveTab,

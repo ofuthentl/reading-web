@@ -10,6 +10,7 @@ import {
   READER_FONT_CLASS,
   READER_THEME_STYLES,
   READER_WIDTH_MAX,
+  handleReaderContentLinkClick,
 } from '@/lib/readerConfig';
 
 const LazyReaderImageLightbox = lazy(() =>
@@ -402,6 +403,8 @@ export function ReaderView({
               setSettingsOpen(false);
               return;
             }
+            if (handleReaderContentLinkClick(event, scrollContainerRef.current)) return;
+
             const selection = window.getSelection()?.toString();
             if (selection) return;
 

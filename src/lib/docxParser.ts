@@ -54,7 +54,12 @@ async function resolveImagePlaceholder(ctx: DocxRenderContext, relId: string): P
 
   let blobUrl = ctx.imageUrlByZipPath.get(zipPath);
   if (!blobUrl) {
-    const entry = ctx.zip.file(zipPath);
+    let entry = ctx.zip.file(zipPath);
+    if (!entry) {
+      const targetLower = zipPath.toLowerCase();
+      const ciKey = Object.keys(ctx.zip.files).find((k) => k.toLowerCase() === targetLower);
+      if (ciKey) entry = ctx.zip.file(ciKey);
+    }
     if (!entry) return null;
     const rawBlob = await entry.async('blob');
     blobUrl = URL.createObjectURL(new Blob([rawBlob], { type: guessImageMimeType(zipPath) }));
@@ -79,7 +84,7 @@ async function renderRunElement(
   const walkRunChild = async (child: Element): Promise<void> => {
     switch (child.localName) {
       case 't': {
-        const value = child.textContent || '';
+        const value = (child.textContent || '').normalize('NFC');
         html += escapeHtml(value);
         text += value;
         break;
@@ -170,7 +175,9 @@ async function renderParagraphContent(
         const rel = relId ? ctx.rels.get(relId) : undefined;
         const safeHref =
           rel?.external && /^(?:https?:|mailto:)/i.test(rel.target) ? escapeHtml(rel.target) : null;
-        html += safeHref ? `<a href="${safeHref}">${linkHtml}</a>` : linkHtml;
+        html += safeHref
+          ? `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${linkHtml}</a>`
+          : linkHtml;
         text += linkText;
         break;
       }

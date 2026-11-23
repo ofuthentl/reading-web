@@ -42,6 +42,9 @@ export default defineConfig({
     },
     dedupe: ['react', 'react-dom'],
   },
+  build: {
+    assetsInlineLimit: (filePath) => (filePath.endsWith('.woff2') ? false : undefined),
+  },
   optimizeDeps: {
     exclude: ['lucide-react'],
   },

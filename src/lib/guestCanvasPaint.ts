@@ -253,7 +253,7 @@ export function drawCanvasLayoutItems(options: {
       ctx.save();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.font = '600 11px "Segoe UI", system-ui, sans-serif';
+      ctx.font = '600 11px "Be Vietnam Pro", system-ui, sans-serif';
       ctx.fillStyle = palette.inkSecondary;
       ctx.fillText(item.partLabel, offsetX + contentWidth / 2, localY + 2);
 
@@ -332,7 +332,7 @@ export function drawCanvasLayoutItems(options: {
         ctx.fillRect(imgX, imgY, item.drawWidth, item.drawHeight);
         ctx.strokeRect(imgX, imgY, item.drawWidth, item.drawHeight);
         ctx.fillStyle = palette.inkSecondary;
-        ctx.font = '12px "Segoe UI", system-ui, sans-serif';
+        ctx.font = '12px "Be Vietnam Pro", system-ui, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(

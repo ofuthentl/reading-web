@@ -14,6 +14,7 @@ import { getBookSortTitle } from '@/lib/bookMetadata';
 import {
   READER_FONT_CLASS,
   type ReaderThemePalette,
+  handleReaderContentLinkClick,
   resolvePaginatedSpreadWidth,
 } from '@/lib/readerConfig';
 
@@ -238,6 +239,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
             immersiveHidden ? 'pt-5 sm:pt-6' : 'pt-[4.25rem] sm:pt-[4.5rem]'
           }`}
           onClick={(event) => {
+            if (handleReaderContentLinkClick(event, trackRef.current)) return;
             onCloseSettings();
             const selection = window.getSelection()?.toString();
             if (selection) return;

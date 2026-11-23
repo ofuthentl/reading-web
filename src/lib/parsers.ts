@@ -48,6 +48,30 @@ function safeDecodeUri(value: string): string {
   }
 }
 
+function buildCaseInsensitiveZipLookup(zip: JSZip): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const name of Object.keys(zip.files)) {
+    const lower = name.toLowerCase();
+    if (!map.has(lower)) map.set(lower, name);
+  }
+  return map;
+}
+
+function resolveZipFilePath(
+  zip: JSZip,
+  lowerLookup: ReadonlyMap<string, string>,
+  candidates: string[],
+): string | null {
+  for (const candidate of candidates) {
+    if (zip.file(candidate)) return candidate;
+  }
+  for (const candidate of candidates) {
+    const ci = lowerLookup.get(candidate.toLowerCase());
+    if (ci && zip.file(ci)) return ci;
+  }
+  return null;
+}
+
 /**
  * Extracts and compresses a lightweight (~35-60KB) JPEG cover ONCE at upload time,
  * so the library view never has to download full book files just to show thumbnails.
@@ -85,9 +109,11 @@ export async function extractCoverAtUpload(file: File, fileType: BookFileType): 
         }
       });
 
+      const zipLowerLookup = buildCaseInsensitiveZipLookup(zip);
       for (const href of candidates) {
         const imagePath = resolveZipPath(pkgDir, safeDecodeUri(href.split('#')[0]));
-        const entry = zip.file(imagePath);
+        const matched = resolveZipFilePath(zip, zipLowerLookup, [imagePath]);
+        const entry = matched ? zip.file(matched) : null;
         if (entry) {
           return await compressCoverBlob(await entry.async('blob'));
         }
@@ -180,7 +206,7 @@ async function parseEpubBlob(
         const navDoc = new DOMParser().parseFromString(navXml, 'text/html');
         navDoc.querySelectorAll('nav a[href]').forEach((link) => {
           const href = link.getAttribute('href') || '';
-          const label = link.textContent?.replace(/\s+/g, ' ').trim();
+          const label = link.textContent?.replace(/\s+/g, ' ').trim().normalize('NFC');
           if (href && label) {
             const targetPath = resolveZipPath(navDir, safeDecodeUri(href.split('#')[0]));
             if (!tocTitlesByPath.has(targetPath)) tocTitlesByPath.set(targetPath, label);
@@ -199,7 +225,11 @@ async function parseEpubBlob(
           const ncxDir = ncxPath.includes('/') ? ncxPath.slice(0, ncxPath.lastIndexOf('/')) : '';
           const ncxDoc = new DOMParser().parseFromString(ncxXml, 'application/xml');
           ncxDoc.querySelectorAll('navPoint').forEach((point) => {
-            const label = point.querySelector('navLabel text')?.textContent?.replace(/\s+/g, ' ').trim();
+            const label = point
+              .querySelector('navLabel text')
+              ?.textContent?.replace(/\s+/g, ' ')
+              .trim()
+              .normalize('NFC');
             const src = point.querySelector('content')?.getAttribute('src') || '';
             if (label && src) {
               const targetPath = resolveZipPath(ncxDir, safeDecodeUri(src.split('#')[0]));
@@ -225,6 +255,7 @@ async function parseEpubBlob(
       );
 
     const imageUrlByZipPath = new Map<string, string>();
+    const zipLowerLookup = buildCaseInsensitiveZipLookup(zip);
 
     async function getZipImageEntry(
       docPath: string,
@@ -237,7 +268,7 @@ async function parseEpubBlob(
         `${docDir}/${cleanSrc}`.replace(/^\/+/, ''),
         cleanSrc.replace(/^(\.\.\/)+/, ''),
       ];
-      const matchedPath = candidates.find((candidate) => Boolean(zip.file(candidate)));
+      const matchedPath = resolveZipFilePath(zip, zipLowerLookup, candidates);
       if (!matchedPath) return null;
 
       if (options?.skipMediaBlobs) {
@@ -298,12 +329,16 @@ async function parseEpubBlob(
         }
       }
 
-      const bodyHtml = doc.body?.innerHTML?.trim() || '';
-      const plainText = doc.body?.textContent?.replace(/\s+/g, ' ').trim() || '';
+      const bodyHtml = (doc.body?.innerHTML?.trim() || '').normalize('NFC');
+      const plainText = (doc.body?.textContent?.replace(/\s+/g, ' ').trim() || '').normalize('NFC');
       const hasMedia = doc.querySelectorAll('img, svg image').length > 0;
       if (!plainText && !hasMedia) continue;
 
-      const headingText = doc.querySelector('h1, h2, h3')?.textContent?.replace(/\s+/g, ' ').trim();
+      const headingText = doc
+        .querySelector('h1, h2, h3')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim()
+        .normalize('NFC');
       rawSections.push({
         tocTitle: tocTitlesByPath.get(path) ?? null,
         filenameTitle: getFilenameChapterTitle(path),
