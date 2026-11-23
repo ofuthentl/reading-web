@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, FolderKanban, Pencil } from 'lucide-react';
+import { Bell, Check, FolderKanban, Pencil } from 'lucide-react';
 
 const MAX_SHELF_NAME_LENGTH = 120;
 
@@ -146,5 +146,45 @@ export function UploadBatchShelfBar({
         </div>
       )}
     </div>
+  );
+}
+
+interface UploadDiscordReleaseToggleProps {
+  checked: boolean;
+  disabled: boolean;
+  onChange: (nextChecked: boolean) => void;
+}
+
+export function UploadDiscordReleaseToggle({
+  checked,
+  disabled,
+  onChange,
+}: UploadDiscordReleaseToggleProps) {
+  return (
+    <label
+      className={`flex cursor-pointer items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs transition-colors ${
+        checked
+          ? 'border-amber-500/45 bg-amber-500/10 text-ink'
+          : 'border-line bg-canvas text-ink-muted hover:border-line-strong'
+      } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-0.5 h-3.5 w-3.5 shrink-0 cursor-pointer rounded border-line text-accent accent-accent focus:ring-accent disabled:cursor-not-allowed"
+      />
+      <span className="min-w-0 flex-1 space-y-0.5">
+        <span className="inline-flex items-center gap-1.5 font-medium text-ink">
+          <Bell className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>Thông báo tập mới lên kênh Discord</span>
+        </span>
+        <span className="block text-[11px] leading-relaxed text-ink-muted">
+          Tự gom các tập cùng bộ thành 1 thẻ thông báo im lặng (0 ping) kèm ảnh bìa &amp; nút mở thư
+          viện sau khi tải xong.
+        </span>
+      </span>
+    </label>
   );
 }

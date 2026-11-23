@@ -32,6 +32,7 @@ import {
   listBookBookmarks,
 } from './bookmarksDb';
 import { tryHandleCatalogRoutes } from './catalogEnhancementsDb';
+import { tryHandleCommunityRoutes } from './communityDb';
 import { uploadBookGuestPack } from './guestPack';
 import { tryHandleGuestRoutes } from './guestRoutes';
 import {
@@ -385,6 +386,18 @@ async function handleApi(
     jsonResponse,
   );
   if (catalogRes) return catalogRes;
+
+  // Community Ratings & Spoiler Comments isolated/protected by D-030 (D-036 Wave 4)
+  const communityRes = await tryHandleCommunityRoutes(
+    request,
+    normalizedPath,
+    url,
+    env.DB,
+    auth,
+    origin,
+    jsonResponse,
+  );
+  if (communityRes) return communityRes;
 
   // Personal 90-day reading streak & heatmap activity isolated per reader_scope (D-036 Wave 1)
   if (normalizedPath === '/api/reading-stats/activity' && request.method === 'GET') {

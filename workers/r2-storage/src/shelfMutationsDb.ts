@@ -7,6 +7,7 @@ import {
   isValidId,
 } from './booksDb';
 import { mergeCatalogRelationsOnShelfRename } from './catalogEnhancementsDb';
+import { mergeCommunityRelationsOnShelfRename } from './communityDb';
 import {
   cleanupOldShelfAccessAfterRename,
   prepareShelfAccessForRename,
@@ -163,6 +164,7 @@ export async function renameShelfCaseInsensitive(
     })().catch(() => undefined);
 
     await mergeCatalogRelationsOnShelfRename(env.DB, targetKey, newKey).catch(() => undefined);
+    await mergeCommunityRelationsOnShelfRename(env.DB, targetKey, newKey).catch(() => undefined);
 
     // Pha 2 (vá H-5): chỉ xoá rule/grants cũ sau khi toàn bộ sách đã đổi sang tên mới
     await cleanupOldShelfAccessAfterRename(env.DB, targetKey, newKey);

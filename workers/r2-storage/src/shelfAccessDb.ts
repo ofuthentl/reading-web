@@ -114,21 +114,15 @@ export async function loadShelfAccessSnapshot(
   return { restrictedKeys, allowedRestrictedKeys, ownerShelfAccess };
 }
 
-export async function assertGuestBookAccess(
+export async function assertGuestShelfAccess(
   db: D1Database,
   auth: AuthContext,
-  bookId: string,
+  rawShelfName: string,
 ): Promise<void> {
   if (auth.role === 'owner') return;
 
   await ensureShelfAccessTables(db);
-  const bookRow = await db
-    .prepare('SELECT shelf FROM books WHERE id = ?')
-    .bind(bookId)
-    .first<{ shelf: string }>();
-  if (!bookRow) return;
-
-  const shelfKey = toShelfAccessKey(bookRow.shelf);
+  const shelfKey = toShelfAccessKey(rawShelfName);
   const accessRow = await db
     .prepare(
       `SELECT r.access_mode, g.discord_user_id AS granted_user
@@ -146,6 +140,23 @@ export async function assertGuestBookAccess(
       403,
     );
   }
+}
+
+export async function assertGuestBookAccess(
+  db: D1Database,
+  auth: AuthContext,
+  bookId: string,
+): Promise<void> {
+  if (auth.role === 'owner') return;
+
+  await ensureShelfAccessTables(db);
+  const bookRow = await db
+    .prepare('SELECT shelf FROM books WHERE id = ?')
+    .bind(bookId)
+    .first<{ shelf: string }>();
+  if (!bookRow) return;
+
+  await assertGuestShelfAccess(db, auth, bookRow.shelf);
 }
 
 export async function getAdminShelfAccessOverview(

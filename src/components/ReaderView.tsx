@@ -14,6 +14,7 @@ import type {
   ReadingProgress,
   SaveProgressOptions,
 } from '@/types';
+import { ReaderBookCommunityBlock } from '@/components/ReaderBookCommunityBlock';
 import { ReaderChapterEndNav } from '@/components/ReaderChapterEndNav';
 import {
   ReaderFooterStatusBar,
@@ -326,6 +327,7 @@ export function ReaderView({
         <>
           <ReaderPaginatedView
             ref={paginatedRef}
+            bookId={book.id}
             bookTitle={book.title}
             chapter={currentChapter}
             chapterIndex={chapterIndex}
@@ -351,6 +353,7 @@ export function ReaderView({
             onNextChapterStart={() => { if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1, 0); }}
             onCompleteBook={completeBook}
             onOpenImage={(src, alt) => setLightboxTarget({ kind: 'dom', src, alt })}
+            onApiError={onApiError}
           />
           <div className="h-1 w-full shrink-0 bg-black/10">
             <div className={`h-full transition-all duration-150 ${palette.progressBar}`} style={{ width: `${overallPercent}%` }} />
@@ -376,7 +379,9 @@ export function ReaderView({
                 return;
               }
 
-              if (target?.closest('button, a, input, select, textarea')) return;
+              if (target?.closest('button, a, input, select, textarea, [data-community-section]')) {
+                return;
+              }
               const rect = event.currentTarget.getBoundingClientRect();
               const ratio = (event.clientX - rect.left) / rect.width;
               if (settings.sideTapNavigation && ratio < 0.16) goPrevChapter();
@@ -421,6 +426,15 @@ export function ReaderView({
                   onCompleteAndClose={() => completeBook()}
                   onCompleteAndOpenNext={(nb) => completeBook(nb)}
                 />
+
+                {chapterIndex >= chapters.length - 1 && (
+                  <ReaderBookCommunityBlock
+                    bookId={book.id}
+                    bookTitle={book.title}
+                    palette={palette}
+                    onApiError={onApiError}
+                  />
+                )}
               </article>
             )}
           </main>

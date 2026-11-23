@@ -273,6 +273,8 @@ export function LibraryCatalogView({
           onTogglePlanToReadBook={onTogglePlanToReadBook}
           onMoveSelectedToShelf={onMoveSelectedToShelf}
           onDeleteSelected={onDeleteSelected}
+          onApiError={onApiError}
+          onNotify={onNotify}
         />
       ) : (
         <section aria-label="Thư viện theo kệ" className="fade-in space-y-6">

@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import type { Book, ReaderSettings } from '@/types';
+import { ReaderBookCommunityBlock } from '@/components/ReaderBookCommunityBlock';
 import { ReaderChapterEndNav } from '@/components/ReaderChapterEndNav';
 import {
   type ResolvedFootnoteItem,
@@ -12,6 +13,7 @@ import {
 import type { ReaderThemePalette } from '@/lib/readerConfig';
 
 export interface GuestCanvasScrollStageProps {
+  bookId: string;
   bookTitle: string;
   chapterIndex: number;
   totalChapters: number;
@@ -35,9 +37,11 @@ export interface GuestCanvasScrollStageProps {
   onCompleteBook: (nextBook?: Book) => void;
   onOpenFootnote: (fn: ResolvedFootnoteItem) => void;
   onOpenGuestImage: (bitmap: ImageBitmap, alt: string) => void;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
 
 export function GuestCanvasScrollStage({
+  bookId,
   bookTitle,
   chapterIndex,
   totalChapters,
@@ -61,6 +65,7 @@ export function GuestCanvasScrollStage({
   onCompleteBook,
   onOpenFootnote,
   onOpenGuestImage,
+  onApiError,
 }: GuestCanvasScrollStageProps) {
   const stageWrapRef = useRef<HTMLDivElement>(null);
 
@@ -74,7 +79,7 @@ export function GuestCanvasScrollStage({
           return;
         }
         const target = event.target as HTMLElement | null;
-        if (target?.closest('button, a, input, select, textarea')) return;
+        if (target?.closest('button, a, input, select, textarea, [data-community-section]')) return;
 
         if (layout && stageWrapRef.current) {
           const stageRect = stageWrapRef.current.getBoundingClientRect();
@@ -140,6 +145,14 @@ export function GuestCanvasScrollStage({
             onCompleteAndClose={() => onCompleteBook()}
             onCompleteAndOpenNext={(nb) => onCompleteBook(nb)}
           />
+          {chapterIndex >= totalChapters - 1 && (
+            <ReaderBookCommunityBlock
+              bookId={bookId}
+              bookTitle={bookTitle}
+              palette={palette}
+              onApiError={onApiError}
+            />
+          )}
         </div>
       )}
     </main>
