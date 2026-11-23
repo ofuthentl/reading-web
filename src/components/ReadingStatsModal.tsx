@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Award,
   BarChart3,
@@ -10,8 +10,14 @@ import {
   X,
 } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
+import { ReadingHeatmapSection } from '@/components/ReadingHeatmapSection';
 import { getBookSortTitle, getDisplayAuthor } from '@/lib/bookMetadata';
 import { computeDetailedLibraryInsights } from '@/lib/readingStats';
+import {
+  type ReaderActivityReport,
+  fetchReaderActivityStats,
+  formatReadingDuration,
+} from '@/lib/readingStreak';
 
 export interface ReadingStatsModalProps {
   open: boolean;
@@ -42,6 +48,9 @@ export function ReadingStatsModal({
   onClose,
   onOpenBook,
 }: ReadingStatsModalProps) {
+  const [activity, setActivity] = useState<ReaderActivityReport | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -50,6 +59,29 @@ export function ReadingStatsModal({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    setActivityLoading(true);
+    void fetchReaderActivityStats(progress, controller.signal)
+      .then((res) => {
+        if (!controller.signal.aborted) setActivity(res);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setActivityLoading(false);
+      });
+    return () => controller.abort();
+  }, [open, progress]);
+
+  const liveProgressSeconds = useMemo(() => {
+    if (!open) return 0;
+    let sum = 0;
+    for (const item of Object.values(progress)) {
+      sum += Math.max(0, Math.floor(item.readingSeconds ?? 0));
+    }
+    return sum;
+  }, [open, progress]);
 
   const insights = useMemo(
     () => (open ? computeDetailedLibraryInsights(books, progress) : null),
@@ -123,6 +155,13 @@ export function ReadingStatsModal({
               />
             </div>
           </div>
+
+          {/* Thời gian đọc thực tế, Streak & Lịch nhiệt 90 ngày (D-036 Mục 17) */}
+          <ReadingHeatmapSection
+            activity={activity}
+            loading={activityLoading}
+            liveProgressSeconds={liveProgressSeconds}
+          />
 
           {/* 4 thẻ số liệu chính */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -221,7 +260,12 @@ export function ReadingStatsModal({
                         </p>
                       </div>
                       <div className="shrink-0 text-right">
-                        <p className="text-xs font-semibold tabular-nums text-accent">{percent}%</p>
+                        <p className="text-xs font-semibold tabular-nums text-accent">
+                          {percent}%
+                          {itemProg.readingSeconds && itemProg.readingSeconds >= 60
+                            ? ` · ${formatReadingDuration(itemProg.readingSeconds, true)}`
+                            : ''}
+                        </p>
                         <p className="text-[11px] text-ink-faint">
                           {formatRecentReadTime(itemProg.updatedAt)}
                         </p>

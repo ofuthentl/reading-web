@@ -9,7 +9,7 @@ import {
   getAdminShelfAccessOverview,
   putAdminShelfAccessConfig,
 } from './shelfAccessDb';
-import { getAdminUsageReport } from './usageDb';
+import { getAdminGuestUsageDetail, getAdminUsageReport } from './usageDb';
 
 export async function tryHandleAdminRoutes(
   request: Request,
@@ -32,6 +32,15 @@ export async function tryHandleAdminRoutes(
   if (normalizedPath === '/api/admin/usage' && request.method === 'GET') {
     const report = await getAdminUsageReport(env, url.searchParams.get('days'));
     return jsonResponse(report, 200, origin, {
+      'Cache-Control': 'no-store, private',
+      'X-Robots-Tag': 'noindex, nofollow',
+    });
+  }
+
+  const adminGuestUsageMatch = normalizedPath.match(/^\/api\/admin\/usage\/guests\/([^/]+)$/);
+  if (adminGuestUsageMatch && request.method === 'GET') {
+    const detail = await getAdminGuestUsageDetail(env, adminGuestUsageMatch[1]);
+    return jsonResponse(detail, 200, origin, {
       'Cache-Control': 'no-store, private',
       'X-Robots-Tag': 'noindex, nofollow',
     });

@@ -65,6 +65,57 @@ export interface GuestActivityRow {
   last_chapter_index: number | null;
 }
 
+export interface GuestBookHistoryRow {
+  book_id: string;
+  title: string;
+  author: string;
+  shelf: string;
+  file_type: 'epub' | 'docx';
+  chapter_index: number;
+  chapter_title: string | null;
+  total_chapters: number | null;
+  scroll_ratio: number;
+  completed: number;
+  reading_seconds: number;
+  bookmark_count: number;
+  updated_at: number;
+}
+
+export function queryGuestBookHistoryRows(db: D1Database, discordUserId: string) {
+  const userScope = `guest:${discordUserId}`;
+  return db
+    .prepare(
+      `SELECT
+         gp.book_id,
+         b.title,
+         b.author,
+         b.shelf,
+         b.file_type,
+         gp.chapter_index,
+         gp.chapter_title,
+         gp.total_chapters,
+         gp.scroll_ratio,
+         gp.completed,
+         COALESCE(gp.reading_seconds, 0) AS reading_seconds,
+         COALESCE(bm.bookmark_count, 0) AS bookmark_count,
+         gp.updated_at
+       FROM guest_reading_progress gp
+       INNER JOIN books b ON b.id = gp.book_id
+       LEFT JOIN (
+         SELECT book_id, COUNT(*) AS bookmark_count
+         FROM book_bookmarks
+         WHERE user_scope = ?
+         GROUP BY book_id
+       ) bm ON bm.book_id = gp.book_id
+       WHERE gp.discord_user_id = ?
+       ORDER BY gp.updated_at DESC
+       LIMIT 300`,
+    )
+    .bind(userScope, discordUserId)
+    .all<GuestBookHistoryRow>()
+    .catch(() => ({ results: [] as GuestBookHistoryRow[] }));
+}
+
 export function queryTopBooksAndShelves(db: D1Database, windowCutoffMs: number) {
   const topBooksPromise = db
     .prepare(

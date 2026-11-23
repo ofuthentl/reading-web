@@ -1,4 +1,4 @@
-import { ensureDiscordAccessTable } from './auth';
+import { HttpError, ensureDiscordAccessTable } from './auth';
 import { type Env, getLimitBytes } from './booksDb';
 import { ensureBookmarksTable } from './bookmarksDb';
 import { ensureGuestProgressTable, ensureProgressReadingTimeColumns } from './progressDb';
@@ -8,6 +8,7 @@ import {
   type DailyReaderAggRow,
   type DailyStatRow,
   queryGuestActivityRows,
+  queryGuestBookHistoryRows,
   queryTopBooksAndShelves,
 } from './usageQueries';
 import {
@@ -418,5 +419,100 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
           : null,
       updatedAt: Number(row.updated_at ?? 0),
     })),
+  };
+}
+
+export async function getAdminGuestUsageDetail(env: Env, rawDiscordUserId: string) {
+  let discordUserId = '';
+  try {
+    discordUserId = decodeURIComponent(rawDiscordUserId || '').trim();
+  } catch {
+    discordUserId = (rawDiscordUserId || '').trim();
+  }
+  if (!/^[a-zA-Z0-9_-]{3,40}$/.test(discordUserId)) {
+    throw new HttpError('Discord User ID không hợp lệ.', 400);
+  }
+
+  await Promise.all([
+    ensureDiscordAccessTable(env.DB).catch(() => undefined),
+    ensureGuestProgressTable(env).catch(() => undefined),
+    ensureBookmarksTable(env.DB).catch(() => undefined),
+    ensureUsageTables(env.DB).catch(() => undefined),
+  ]);
+
+  const now = Date.now();
+  const day7Key = toVietnamDayKey(now - 6 * DAY_MS);
+  const day30Key = toVietnamDayKey(now - 29 * DAY_MS);
+  const readerScope = `guest:${discordUserId}`;
+
+  const [memberRow, dailySumRow, booksRes] = await Promise.all([
+    env.DB.prepare(
+      'SELECT discord_user_id, discord_username FROM discord_access WHERE discord_user_id = ?',
+    )
+      .bind(discordUserId)
+      .first<{ discord_user_id: string; discord_username: string }>()
+      .catch(() => null),
+    env.DB.prepare(
+      `SELECT
+         COALESCE(SUM(CASE WHEN day_key >= ? THEN reading_seconds ELSE 0 END), 0) AS reading_7d,
+         COALESCE(SUM(CASE WHEN day_key >= ? THEN reading_seconds ELSE 0 END), 0) AS reading_30d,
+         COALESCE(SUM(reading_seconds), 0) AS reading_90d
+       FROM usage_daily_readers
+       WHERE reader_scope = ?`,
+    )
+      .bind(day7Key, day30Key, readerScope)
+      .first<{ reading_7d: number; reading_30d: number; reading_90d: number }>()
+      .catch(() => ({ reading_7d: 0, reading_30d: 0, reading_90d: 0 })),
+    queryGuestBookHistoryRows(env.DB, discordUserId),
+  ]);
+
+  if (!memberRow && (booksRes.results || []).length === 0) {
+    throw new HttpError('Không tìm thấy thành viên Discord này.', 404);
+  }
+
+  let booksReadingSecondsSum = 0;
+  const books = (booksRes.results || []).map((row) => {
+    const completed = row.completed === 1;
+    const totalChapters =
+      typeof row.total_chapters === 'number' && row.total_chapters > 0 ? row.total_chapters : null;
+    const rawPercent = completed
+      ? 100
+      : totalChapters
+        ? ((Math.max(0, row.chapter_index) + Math.min(1, Math.max(0, row.scroll_ratio))) * 100) /
+          totalChapters
+        : Math.min(1, Math.max(0, row.scroll_ratio)) * 100;
+    const percent = Math.max(0, Math.min(100, Math.round(rawPercent)));
+    const readingSeconds = Math.max(0, Number(row.reading_seconds ?? 0));
+    booksReadingSecondsSum += readingSeconds;
+
+    return {
+      bookId: row.book_id,
+      title: row.title,
+      author: row.author,
+      shelf: row.shelf,
+      fileType: row.file_type,
+      chapterIndex: Math.max(0, Number(row.chapter_index ?? 0)),
+      chapterTitle: row.chapter_title ?? null,
+      totalChapters,
+      percent,
+      completed,
+      readingSeconds,
+      bookmarkCount: Math.max(0, Number(row.bookmark_count ?? 0)),
+      lastReadAt: Number(row.updated_at ?? 0),
+    };
+  });
+
+  return {
+    generatedAt: now,
+    discordUserId,
+    discordUsername: memberRow?.discord_username ?? `Guest ${discordUserId.slice(-4)}`,
+    tagTail: discordUserId.slice(-4).padStart(4, '0'),
+    readingSeconds7d: Math.max(0, Number(dailySumRow?.reading_7d ?? 0)),
+    readingSeconds30d: Math.max(0, Number(dailySumRow?.reading_30d ?? 0)),
+    readingSecondsTotal: Math.max(
+      booksReadingSecondsSum,
+      Math.max(0, Number(dailySumRow?.reading_90d ?? 0)),
+    ),
+    books,
   };
 }

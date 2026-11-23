@@ -1,14 +1,25 @@
 import { useMemo, useState } from 'react';
 import { HardDrive, ShieldAlert } from 'lucide-react';
 import { formatBytes } from '@/lib/api';
+import { formatReadingDuration } from '@/lib/readingStreak';
 import type { AdminUsageDailyPoint, AdminUsageReport } from '@/lib/usageApi';
 
-type ChartMetricTab = 'reads' | 'readers' | 'auth';
+type ChartMetricTab = 'time' | 'reads' | 'readers' | 'auth';
 
 function formatShortDay(dayKey: string): string {
   const parts = dayKey.split('-');
   if (parts.length !== 3) return dayKey;
   return `${parts[2]}/${parts[1]}`;
+}
+
+function formatAxisLabel(val: number, tab: ChartMetricTab, maxScale: number): string {
+  if (tab !== 'time') return String(Math.round(val));
+  if (val <= 0) return '0p';
+  const mins = Math.round(val / 60);
+  if (maxScale >= 7200 && mins % 60 === 0) {
+    return `${mins / 60}g`;
+  }
+  return `${mins}p`;
 }
 
 export interface DailyActivityChartProps {
@@ -17,7 +28,7 @@ export interface DailyActivityChartProps {
 }
 
 export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
-  const [tab, setTab] = useState<ChartMetricTab>('reads');
+  const [tab, setTab] = useState<ChartMetricTab>('time');
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
   const selectedPoint =
@@ -27,6 +38,16 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
 
   const chartData = useMemo(() => {
     return series.map((d) => {
+      if (tab === 'time') {
+        const guestSec = d.guestReadingSeconds ?? 0;
+        const ownerSec = d.ownerReadingSeconds ?? 0;
+        return {
+          dayKey: d.dayKey,
+          primary: guestSec,
+          secondary: ownerSec,
+          total: guestSec + ownerSec,
+        };
+      }
       if (tab === 'reads') {
         return {
           dayKey: d.dayKey,
@@ -47,24 +68,34 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
         dayKey: d.dayKey,
         primary: d.discordKeysIssued + d.guestLogins + d.ownerLogins,
         secondary: d.loginFailures + d.rateLimitHits,
-        total: d.discordKeysIssued + d.guestLogins + d.ownerLogins + d.loginFailures + d.rateLimitHits,
+        total:
+          d.discordKeysIssued + d.guestLogins + d.ownerLogins + d.loginFailures + d.rateLimitHits,
       };
     });
   }, [series, tab]);
 
-  const maxVal = useMemo(() => {
-    let m = 1;
+  const { maxVal, isAllZero } = useMemo(() => {
+    let rawMax = 0;
     for (const item of chartData) {
-      if (item.primary > m) m = item.primary;
-      if (item.secondary > m) m = item.secondary;
-      if (tab === 'reads' && item.total > m) m = item.total;
+      const candidate =
+        tab === 'time' || tab === 'reads' ? item.total : Math.max(item.primary, item.secondary);
+      if (candidate > rawMax) rawMax = candidate;
     }
-    return m;
+    if (tab === 'time') {
+      // Kẹp thang đo bội số chẵn của 10 phút (hoặc 2 giờ) để 0% / 50% / 100% không bao giờ trùng nhãn
+      const rawMins = Math.ceil(rawMax / 60);
+      const niceMins =
+        rawMins >= 120 ? Math.ceil(rawMins / 120) * 120 : Math.max(10, Math.ceil(rawMins / 10) * 10);
+      return { maxVal: niceMins * 60, isAllZero: rawMax <= 0 };
+    }
+    // Luôn lấy số nguyên chẵn >= 2 để 3 mốc trục Y là 0, maxVal/2, maxVal (vá triệt để lỗi lặp 0, 1, 1)
+    const evenMax = Math.max(2, rawMax % 2 === 0 ? rawMax : rawMax + 1);
+    return { maxVal: evenMax, isAllZero: rawMax <= 0 };
   }, [chartData, tab]);
 
   const svgWidth = 640;
   const svgHeight = 196;
-  const padLeft = 34;
+  const padLeft = 38;
   const padRight = 10;
   const padTop = 14;
   const padBottom = 26;
@@ -87,9 +118,10 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
           </p>
         </div>
 
-        <div className="inline-flex rounded-xl border border-line bg-canvas p-1 text-xs">
+        <div className="inline-flex flex-wrap rounded-xl border border-line bg-canvas p-1 text-xs">
           {(
             [
+              ['time', 'Thời gian đọc'],
               ['reads', 'Lượt đọc'],
               ['readers', 'Độc giả (DAU)'],
               ['auth', 'Cổng & 429'],
@@ -111,12 +143,35 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
         </div>
       </div>
 
-      {/* Dải số liệu chi tiết ngày đang chọn (luôn vừa vặn cả PC lẫn Mobile) */}
       {selectedPoint && (
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-line/80 bg-canvas/80 px-3 py-2 text-xs">
           <span className="font-semibold text-ink">
             Ngày {formatShortDay(selectedPoint.dayKey)}
           </span>
+          {tab === 'time' && (
+            <>
+              <span className="inline-flex items-center gap-1.5 text-ink-muted">
+                <span className="h-2 w-2 rounded-full bg-crimson-accent" />
+                Khách Discord:{' '}
+                <strong className="tabular-nums text-ink">
+                  {formatReadingDuration(selectedPoint.guestReadingSeconds ?? 0, true)}
+                </strong>
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-ink-muted">
+                <span className="h-2 w-2 rounded-full bg-accent" />
+                Admin:{' '}
+                <strong className="tabular-nums text-ink">
+                  {formatReadingDuration(selectedPoint.ownerReadingSeconds ?? 0, true)}
+                </strong>
+              </span>
+              <span className="text-ink-muted">
+                Tổng ngày:{' '}
+                <strong className="tabular-nums text-ink">
+                  {formatReadingDuration(selectedPoint.totalReadingSeconds ?? 0)}
+                </strong>
+              </span>
+            </>
+          )}
           {tab === 'reads' && (
             <>
               <span className="inline-flex items-center gap-1.5 text-ink-muted">
@@ -177,17 +232,16 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
       )}
 
       {/* Biểu đồ SVG thuần 0 CDN */}
-      <div className="mt-3 w-full overflow-hidden">
+      <div className="relative mt-3 w-full overflow-hidden">
         <svg
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
           className="h-48 w-full select-none sm:h-52"
           role="img"
           aria-label={`Biểu đồ thống kê ${days} ngày`}
         >
-          {/* Đường lưới ngang (0%, 50%, 100%) */}
           {[0, 0.5, 1].map((ratio) => {
             const y = padTop + plotH * (1 - ratio);
-            const val = Math.round(maxVal * ratio);
+            const val = maxVal * ratio;
             return (
               <g key={ratio}>
                 <line
@@ -205,7 +259,7 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
                   textAnchor="end"
                   className="fill-ink-faint text-[10px] tabular-nums"
                 >
-                  {val}
+                  {formatAxisLabel(val, tab, maxVal)}
                 </text>
               </g>
             );
@@ -216,7 +270,6 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
             const isSelected =
               activeIndex !== null ? activeIndex === idx : idx === chartData.length - 1;
             const showLabel = idx % labelEvery === 0 || idx === chartData.length - 1;
-
             const primaryH = (d.primary / maxVal) * plotH;
             const secondaryH = (d.secondary / maxVal) * plotH;
 
@@ -227,7 +280,6 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
                 onMouseEnter={() => setActiveIndex(idx)}
                 onClick={() => setActiveIndex(idx)}
               >
-                {/* Vùng chạm rộng theo cột (trong suốt, không vẽ khung xám nền sau cột) */}
                 <rect
                   x={padLeft + idx * slotW}
                   y={padTop}
@@ -236,9 +288,8 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
                   fill="transparent"
                 />
 
-                {tab === 'reads' ? (
+                {tab === 'time' || tab === 'reads' ? (
                   <>
-                    {/* Cột xếp chồng: Admin tiến độ (trên) + Khách mở chương (dưới) */}
                     {d.primary > 0 && (
                       <rect
                         x={cx - barW / 2}
@@ -247,7 +298,6 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
                         height={Math.max(2, primaryH)}
                         rx={3}
                         fill="rgb(var(--color-crimson))"
-                        className="transition-opacity"
                         opacity={isSelected ? 1 : 0.82}
                       />
                     )}
@@ -259,8 +309,7 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
                         height={Math.max(2, secondaryH)}
                         rx={3}
                         fill="rgb(var(--color-accent))"
-                        className="transition-opacity"
-                        opacity={isSelected ? 0.95 : 0.65}
+                        opacity={isSelected ? 0.95 : 0.68}
                       />
                     )}
                   </>
@@ -274,7 +323,6 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
                         height={Math.max(3, primaryH)}
                         rx={3}
                         fill="rgb(var(--color-accent))"
-                        className="transition-opacity"
                         opacity={isSelected ? 0.95 : 0.72}
                       />
                     )}
@@ -286,7 +334,6 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
                         height={Math.max(3, secondaryH)}
                         rx={3}
                         fill="rgb(var(--color-crimson))"
-                        className="transition-opacity"
                         opacity={isSelected ? 1 : 0.85}
                       />
                     )}
@@ -334,6 +381,14 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
             );
           })}
         </svg>
+
+        {isAllZero && (
+          <div className="pointer-events-none absolute inset-x-10 top-1/2 -translate-y-1/2 flex justify-center">
+            <span className="rounded-xl border border-dashed border-line bg-surface/90 px-3.5 py-1.5 text-center text-[11px] text-ink-muted shadow-sm backdrop-blur-xs">
+              Chưa ghi nhận số liệu cho mục này trong {days} ngày qua — cột sẽ tự hiển thị ngay khi có hoạt động mới.
+            </span>
+          </div>
+        )}
       </div>
     </section>
   );

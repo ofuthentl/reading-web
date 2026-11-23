@@ -1,11 +1,11 @@
 # HANDOFF
-Cập nhật: 2026-11-23 16:11 | Nhánh: feat/reading-time-streak-and-reader-ux | Build: 🟢 Worker `tsc` & `eslint` xanh (xong Phase 1.1)
+Cập nhật: 2026-11-23 17:40 | Nhánh: feat/reading-time-streak-and-reader-ux | Build: 🟢 typecheck/lint/build xanh (`index-*.js = 84.98 kB` gzip, xong Phase 1.1 & 1.2)
 Nhiệm vụ hiện tại: Triển khai **Wave 1** của Lộ trình Nâng cấp v2 (`docs/plans/roadmap-v2-upgrades.md` & `D-036`).
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md
 
 ## Đang làm dở
-- **Phase 1.1 (Backend Worker & Migration `0011`) đã xong:** `0011_reading_time_and_prefs.sql`, `progressDb.ts` + `usageRecorder.ts` (kẹp trần `0..300s` & chống gian lận theo đồng hồ thực), `usageDb.ts` (`usageQueries.ts`), `readingActivityDb.ts` (`GET /api/reading-stats/activity`), `readerPrefsDb.ts` (`GET/PUT /api/reader-settings`), tách `shelfMutationsDb.ts`.
-- Đang triển khai **Phase 1.2** (`useActiveReadingTimer.ts`, nâng cấp `/usage` + vá trục Y `0, 1, 1` & Lịch nhiệt Streak 90 ngày trong `ReadingStatsModal.tsx`).
+- **Phase 1.1 & Phase 1.2 đã xong:** migration `0011`, Worker thời gian đọc/Streak/ReaderSettings + `GET /api/admin/usage/guests/:discordUserId`, `useActiveReadingTimer.ts`, nâng cấp `/usage` (tab `Thời gian đọc`, vá nhãn trục `0, 1, 1`, ghi chú trống, ưu tiên hiển thị độc giả/xong trước tên kệ, xổ chi tiết tập đọc theo từng khách Discord) & Lịch nhiệt Streak 90 ngày SVG thuần trong `ReadingStatsModal.tsx`.
+- Đang triển khai **Phase 1.3** (Mục 4 ước tính phút còn lại, Mục 6 Typography nâng cao, Mục 7 đồng bộ `ReaderSettings` D1, Mục 8 chữ dọc *Tategaki* cho Owner, Mục 3 nhảy & nhấp nháy đoạn khớp Tìm chữ).
 
 ## Bước tiếp theo
 1. **Wave 1 (`feat/reading-time-streak-and-reader-ux`):**
