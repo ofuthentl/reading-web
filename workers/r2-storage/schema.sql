@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS shelf_prefs (
   shelf_key TEXT PRIMARY KEY,
   cover_book_id TEXT,
   is_favorite INTEGER NOT NULL DEFAULT 0,
+  tags_json TEXT,
   updated_at INTEGER NOT NULL
 );
 

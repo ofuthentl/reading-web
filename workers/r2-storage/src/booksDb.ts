@@ -5,6 +5,11 @@ import {
   mergeShelfAccessOnRename,
   toShelfAccessKey,
 } from './shelfAccessDb';
+import {
+  ensureShelfTagsSchema,
+  mergeShelfTagsJson,
+  parseShelfTagsJson,
+} from './shelfTagsDb';
 import { computeWeeklyPopularBookIds } from './weeklyPopular';
 
 export { type ProgressRow, deleteReadingProgress, upsertReadingProgress };
@@ -39,6 +44,7 @@ export interface ShelfPrefRow {
   shelf_key: string;
   cover_book_id: string | null;
   is_favorite: number;
+  tags_json?: string | null;
   updated_at: number;
 }
 
@@ -115,17 +121,12 @@ export function assertQuota(usedBytes: number, incomingBytes: number, limitBytes
 }
 
 async function ensureShelfPrefsTable(env: Env): Promise<void> {
-  await env.DB.prepare(
-    `CREATE TABLE IF NOT EXISTS shelf_prefs (
-       shelf_key TEXT PRIMARY KEY,
-       cover_book_id TEXT,
-       is_favorite INTEGER NOT NULL DEFAULT 0,
-       updated_at INTEGER NOT NULL
-     )`,
-  ).run();
+  await ensureShelfTagsSchema(env.DB);
 }
 
 export async function listBooksAndProgress(env: Env, auth: AuthContext) {
+  await ensureShelfTagsSchema(env.DB).catch(() => undefined);
+
   const progressQuery =
     auth.role === 'owner'
       ? env.DB.prepare('SELECT * FROM reading_progress').all<ProgressRow>()
@@ -142,10 +143,12 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     await Promise.all([
       env.DB.prepare('SELECT * FROM books ORDER BY created_at DESC').all<BookRow>(),
       progressQuery,
-      env.DB.prepare('SELECT shelf_key, cover_book_id, is_favorite FROM shelf_prefs')
-        .all<Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite'>>()
+      env.DB.prepare('SELECT shelf_key, cover_book_id, is_favorite, tags_json FROM shelf_prefs')
+        .all<Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite' | 'tags_json'>>()
         .catch(() => ({
-          results: [] as Array<Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite'>>,
+          results: [] as Array<
+            Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite' | 'tags_json'>
+          >,
         })),
       env.DB.prepare('SELECT book_id FROM book_guest_packs')
         .all<{ book_id: string }>()
@@ -189,10 +192,13 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
 
   const shelfCovers: Record<string, string> = {};
   const favoriteShelves: string[] = [];
+  const shelfTags: Record<string, string[]> = {};
   for (const row of shelfPrefsRes.results || []) {
     if (!row.shelf_key) continue;
     if (row.cover_book_id) shelfCovers[row.shelf_key] = row.cover_book_id;
     if (row.is_favorite === 1) favoriteShelves.push(row.shelf_key);
+    const parsedTags = parseShelfTagsJson(row.tags_json);
+    if (parsedTags.length > 0) shelfTags[row.shelf_key] = parsedTags;
   }
 
   const guestReadyIds = new Set((guestPacksRes.results || []).map((r) => r.book_id));
@@ -219,6 +225,7 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     weeklyPopular,
     shelfCovers,
     favoriteShelves,
+    shelfTags,
     ...(auth.role === 'owner' ? { shelfAccess: accessSnapshot.ownerShelfAccess } : {}),
     storage,
     session: {
@@ -255,7 +262,7 @@ export async function deleteSingleBook(env: Env, bookId: string) {
     .catch(() => undefined);
   await env.DB.batch([
     env.DB.prepare('UPDATE shelf_prefs SET cover_book_id = NULL WHERE cover_book_id = ?').bind(bookId),
-    env.DB.prepare('DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0'),
+    env.DB.prepare('DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0 AND tags_json IS NULL'),
   ]).catch(() => undefined);
   await env.DB.prepare('DELETE FROM guest_reading_progress WHERE book_id = ?')
     .bind(bookId)
@@ -312,7 +319,7 @@ export async function bulkDeleteBooks(env: Env, rawIds: unknown) {
       env.DB.prepare(
         `UPDATE shelf_prefs SET cover_book_id = NULL WHERE cover_book_id IN (${placeholders})`,
       ).bind(...chunk),
-      env.DB.prepare('DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0'),
+      env.DB.prepare('DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0 AND tags_json IS NULL'),
     ]).catch(() => undefined);
     await env.DB.prepare(`DELETE FROM guest_reading_progress WHERE book_id IN (${placeholders})`)
       .bind(...chunk)
@@ -387,26 +394,29 @@ export async function renameShelfCaseInsensitive(env: Env, rawOldName: unknown, 
 
   if (targetKey !== newKey) {
     await (async () => {
+      await ensureShelfTagsSchema(env.DB);
       const existingRows = await env.DB.prepare(
-        'SELECT shelf_key, cover_book_id, is_favorite FROM shelf_prefs WHERE shelf_key IN (?, ?)',
+        'SELECT shelf_key, cover_book_id, is_favorite, tags_json FROM shelf_prefs WHERE shelf_key IN (?, ?)',
       )
         .bind(targetKey, newKey)
-        .all<Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite'>>();
+        .all<Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite' | 'tags_json'>>();
       const list = existingRows.results || [];
       const src = list.find((r) => r.shelf_key === targetKey);
       if (!src) return;
       const dest = list.find((r) => r.shelf_key === newKey);
       const mergedCover = dest?.cover_book_id || src.cover_book_id || null;
       const mergedFav = dest?.is_favorite === 1 || src.is_favorite === 1 ? 1 : 0;
+      const mergedTags = mergeShelfTagsJson(src.tags_json, dest?.tags_json);
       await env.DB.batch([
         env.DB.prepare(
-          `INSERT INTO shelf_prefs (shelf_key, cover_book_id, is_favorite, updated_at)
-           VALUES (?, ?, ?, ?)
+          `INSERT INTO shelf_prefs (shelf_key, cover_book_id, is_favorite, tags_json, updated_at)
+           VALUES (?, ?, ?, ?, ?)
            ON CONFLICT(shelf_key) DO UPDATE SET
              cover_book_id = excluded.cover_book_id,
              is_favorite = excluded.is_favorite,
+             tags_json = excluded.tags_json,
              updated_at = excluded.updated_at`,
-        ).bind(newKey, mergedCover, mergedFav, Date.now()),
+        ).bind(newKey, mergedCover, mergedFav, mergedTags, Date.now()),
         env.DB.prepare('DELETE FROM shelf_prefs WHERE shelf_key = ?').bind(targetKey),
       ]);
     })().catch(() => undefined);
@@ -439,7 +449,7 @@ export async function upsertShelfCover(env: Env, rawShelfName: unknown, rawBookI
          updated_at = excluded.updated_at`,
     ).bind(shelfKey, nextBookId, updatedAt),
     env.DB.prepare(
-      'DELETE FROM shelf_prefs WHERE shelf_key = ? AND cover_book_id IS NULL AND is_favorite = 0',
+      'DELETE FROM shelf_prefs WHERE shelf_key = ? AND cover_book_id IS NULL AND is_favorite = 0 AND tags_json IS NULL',
     ).bind(shelfKey),
   ]);
 
@@ -468,7 +478,7 @@ export async function upsertShelfFavorite(env: Env, rawShelfName: unknown, rawFa
          updated_at = excluded.updated_at`,
     ).bind(shelfKey, isFav, updatedAt),
     env.DB.prepare(
-      'DELETE FROM shelf_prefs WHERE shelf_key = ? AND cover_book_id IS NULL AND is_favorite = 0',
+      'DELETE FROM shelf_prefs WHERE shelf_key = ? AND cover_book_id IS NULL AND is_favorite = 0 AND tags_json IS NULL',
     ).bind(shelfKey),
   ]);
 

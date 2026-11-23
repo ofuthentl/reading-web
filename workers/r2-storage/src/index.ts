@@ -45,6 +45,7 @@ import {
 } from './guestPack';
 import { searchGuestBookChapters } from './guestSearch';
 import { streamR2FileResponse } from './r2Files';
+import { upsertShelfTags } from './shelfTagsDb';
 
 function resolveAllowedOrigin(request: Request, env: Env): string | null {
   const origin = request.headers.get('Origin');
@@ -494,6 +495,17 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
       favorite?: unknown;
     } | null;
     const result = await upsertShelfFavorite(env, body?.shelfName, body?.favorite);
+    return jsonResponse(result, 200, origin);
+  }
+
+  // Upsert tags for a shelf / series (Owner only, D-032)
+  if (pathname === '/api/shelves/tags' && request.method === 'PUT') {
+    requireOwner(auth);
+    const body = (await request.json().catch(() => null)) as {
+      shelfName?: unknown;
+      tags?: unknown;
+    } | null;
+    const result = await upsertShelfTags(env.DB, body?.shelfName, body?.tags);
     return jsonResponse(result, 200, origin);
   }
 
