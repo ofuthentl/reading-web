@@ -1,21 +1,41 @@
 {
+  "id": "./",
   "name": "Ofu's Library",
   "short_name": "Ofu's Library",
-  "description": "Thư viện cá nhân & trình đọc sách EPUB, DOCX",
-  "start_url": ".",
+  "description": "Thư viện cá nhân & trình đọc Light Novel EPUB, DOCX",
+  "lang": "vi",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#f6f1e7",
-  "theme_color": "#f6f1e7",
+  "orientation": "any",
+  "background_color": "#fcfbf8",
+  "theme_color": "#fcfbf8",
+  "categories": ["books", "entertainment"],
   "icons": [
     {
       "src": "logo-128.png",
       "sizes": "128x128",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "title.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
