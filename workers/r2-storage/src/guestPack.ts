@@ -10,6 +10,7 @@ import {
   applyForensicWatermarkToBlocks,
   deriveUserWatermarkBits,
   matchForensicCandidates,
+  watermarkTextString,
 } from './forensicWatermark';
 import { consumeGuestRateToken } from './rateLimitDb';
 import { assertGuestBookAccess } from './shelfAccessDb';
@@ -41,6 +42,7 @@ export interface GuestBookManifest {
 interface StoredChapterData {
   title: string;
   blocks: WatermarkBlock[];
+  footnotes?: Record<string, string>;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -305,6 +307,7 @@ export async function getGuestBookToc(env: Env, auth: AuthContext, bookId: strin
       id: ch.id,
       title: ch.title,
       chapterNumber: idx + 1,
+      compressedBytes: ch.length,
     })),
   };
 }
@@ -344,9 +347,20 @@ export async function getGuestEncryptedChapter(
   const parsedChapter = JSON.parse(rawJsonText) as StoredChapterData;
 
   let blocks = parsedChapter.blocks || [];
+  let footnotes: Record<string, string> | undefined;
+  if (parsedChapter.footnotes && typeof parsedChapter.footnotes === 'object') {
+    footnotes = { ...parsedChapter.footnotes };
+  }
   if (auth.role === 'guest') {
     const bits32 = await deriveUserWatermarkBits(resolveSigningSecret(env), auth.userId);
     blocks = applyForensicWatermarkToBlocks(blocks, bits32);
+    if (footnotes) {
+      for (const [k, val] of Object.entries(footnotes)) {
+        if (typeof val === 'string') {
+          footnotes[k] = watermarkTextString(val, bits32);
+        }
+      }
+    }
   }
 
   const payloadBytes = new TextEncoder().encode(
@@ -356,6 +370,7 @@ export async function getGuestEncryptedChapter(
       chapterNumber: chapterIndex + 1,
       watermarkLabel: auth.watermarkLabel ?? 'Ofu Library',
       blocks,
+      ...(footnotes && Object.keys(footnotes).length > 0 ? { footnotes } : {}),
     }),
   );
 
