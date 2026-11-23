@@ -1,6 +1,6 @@
 # HANDOFF
-Cập nhật: 2026-11-23 09:38 | Nhánh: fix/mobile-reader-viewport | Build: 🟢 frontend (`85.81 kB` gzip, `0 B` three) · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: **Sửa lỗi thanh chuyển chương cuối trang và chân trang trình đọc bị thanh công cụ đáy trình duyệt điện thoại che khuất (`100vh` → `max-h-dvh` + `safe-area-inset-bottom`)**.
+Cập nhật: 2026-11-23 09:43 | Nhánh: fix/mobile-reader-viewport | Build: 🟢 frontend (`85.81 kB` gzip, `0 B` three) · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: **Sửa lỗi thanh chuyển chương cuối trang trình đọc bị che trên điện thoại (`100vh` → `max-h-dvh`) & cập nhật lời giới thiệu tab Ủng hộ**.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md
 
 ## Đang làm dở
@@ -9,7 +9,8 @@ Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md
      - `ActiveReaderHost.tsx`: bọc trình đọc bằng `fixed inset-0 z-40 flex max-h-dvh flex-col overflow-hidden`.
      - `ReaderView.tsx` & `GuestCanvasReader.tsx`: thay `h-screen` bằng `h-full min-h-0 flex-1`, thêm `min-h-0 overscroll-y-contain` và đệm đáy `env(safe-area-inset-bottom)` cho `<main>`; bỏ `h-[calc(100vh-3.25rem)]` ở PDF Suspense fallback.
      - `ReaderChapterEndNav.tsx`, `ReaderPaginatedView.tsx`, `GuestCanvasPaginatedView.tsx`, `PdfReader.tsx`, `PdfReaderFallback.tsx`, `ReaderTocDrawer.tsx`, `ReaderSearchAndBookmarks.tsx`: đồng bộ `min-h-0 flex-1`, `max-h-dvh`, `max-w-full` mobile và đệm đáy `env(safe-area-inset-bottom)`.
-  2. Đã kiểm định `typecheck`, `lint` (`0/0`), `build` (`85.81 kB` gzip) và kiểm thử trực tiếp trên viewport `390×652` (Cuộn dọc, Lật trang, Ngăn kéo Mục lục).
+  2. **Cập nhật nội dung mô tả tab Ủng hộ (`src/components/SupportView.tsx`):** bổ sung cụm *"trên nền tảng web"*, *", điều đó sẽ giúp mình rất nhiều."* và đổi *"động viên"* → *"động lực"*.
+  3. Đã kiểm định `typecheck`, `lint` (`0/0`), `build` (`85.81 kB` gzip) và kiểm thử trực tiếp trên viewport `390×652`.
 
 ## Bước tiếp theo
 1. Push nhánh `fix/mobile-reader-viewport` và mở Pull Request vào `main`, bấm Merge khi CI xanh để cập nhật lên `ofu.lol`.
