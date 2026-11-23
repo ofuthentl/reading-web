@@ -258,7 +258,8 @@ export async function searchAniListLightNovelsApi(
     throw new Error('Từ khoá tìm kiếm AniList cần ít nhất 2 ký tự.');
   }
   if (!isCloudMode) {
-    throw new Error('Gợi ý AniList chỉ hoạt động khi kết nối Cloudflare Worker.');
+    const { searchAniListDirectBrowser } = await import('@/lib/anilistDirect');
+    return searchAniListDirectBrowser(trimmed);
   }
 
   const res = await apiFetch('/api/admin/anilist/search', {
@@ -270,10 +271,17 @@ export async function searchAniListLightNovelsApi(
     candidates?: AniListNovelCandidate[];
     error?: string;
   };
-  if (!res.ok) {
-    throw new Error(
-      data.error || 'AniList tạm thời không phản hồi. Bạn vẫn có thể nhập thông tin thủ công.',
-    );
+  if (res.ok) {
+    return Array.isArray(data.candidates) ? data.candidates : [];
   }
-  return Array.isArray(data.candidates) ? data.candidates : [];
+
+  // Nếu Cloudflare WAF phía AniList chặn IP Worker (502/504), fallback trực tiếp từ trình duyệt Admin (CORS ACAO: *)
+  if (res.status === 502 || res.status === 504) {
+    const { searchAniListDirectBrowser } = await import('@/lib/anilistDirect');
+    return searchAniListDirectBrowser(trimmed);
+  }
+
+  throw new Error(
+    data.error || 'AniList tạm thời không phản hồi. Bạn vẫn có thể nhập thông tin thủ công.',
+  );
 }
