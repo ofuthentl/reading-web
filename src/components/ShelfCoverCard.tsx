@@ -89,6 +89,7 @@ export function ShelfCoverCard({
       tabIndex={0}
       onClick={() => onOpenShelf(shelf.key)}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           onOpenShelf(shelf.key);

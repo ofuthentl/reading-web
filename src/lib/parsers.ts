@@ -1,10 +1,9 @@
 import type JSZip from 'jszip';
-import type { Book, BookFileType, Chapter, ParsedBook } from '@/types';
+import type { Book, BookFileType, ParsedBook } from '@/types';
 import { isChunkLoadError, recoverFromChunkError } from '@/lib/chunkReload';
 import { compressCoverBlob } from '@/lib/coverImage';
 import { extractDocxCover, parseDocxZip } from '@/lib/docxParser';
 import { buildEpubChapters, type RawEpubSection } from '@/lib/epubChapters';
-import { loadPdfJs, pdfWasmUrl } from '@/lib/pdfjsLoader';
 import { sanitizeBookDocument } from '@/lib/sanitizeHtml';
 
 type JSZipStatic = typeof JSZip;
@@ -49,6 +48,30 @@ function safeDecodeUri(value: string): string {
   }
 }
 
+function buildCaseInsensitiveZipLookup(zip: JSZip): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const name of Object.keys(zip.files)) {
+    const lower = name.toLowerCase();
+    if (!map.has(lower)) map.set(lower, name);
+  }
+  return map;
+}
+
+function resolveZipFilePath(
+  zip: JSZip,
+  lowerLookup: ReadonlyMap<string, string>,
+  candidates: string[],
+): string | null {
+  for (const candidate of candidates) {
+    if (zip.file(candidate)) return candidate;
+  }
+  for (const candidate of candidates) {
+    const ci = lowerLookup.get(candidate.toLowerCase());
+    if (ci && zip.file(ci)) return ci;
+  }
+  return null;
+}
+
 /**
  * Extracts and compresses a lightweight (~35-60KB) JPEG cover ONCE at upload time,
  * so the library view never has to download full book files just to show thumbnails.
@@ -86,9 +109,11 @@ export async function extractCoverAtUpload(file: File, fileType: BookFileType): 
         }
       });
 
+      const zipLowerLookup = buildCaseInsensitiveZipLookup(zip);
       for (const href of candidates) {
         const imagePath = resolveZipPath(pkgDir, safeDecodeUri(href.split('#')[0]));
-        const entry = zip.file(imagePath);
+        const matched = resolveZipFilePath(zip, zipLowerLookup, [imagePath]);
+        const entry = matched ? zip.file(matched) : null;
         if (entry) {
           return await compressCoverBlob(await entry.async('blob'));
         }
@@ -100,29 +125,6 @@ export async function extractCoverAtUpload(file: File, fileType: BookFileType): 
       const JSZip = await loadJSZip();
       const zip = await JSZip.loadAsync(await file.arrayBuffer());
       return await extractDocxCover(zip);
-    }
-
-    if (fileType === 'pdf') {
-      const pdfjsLib = await loadPdfJs();
-      const data = new Uint8Array(await file.arrayBuffer());
-      const loadingTask = pdfjsLib.getDocument({ data, wasmUrl: pdfWasmUrl });
-      try {
-        const pdf = await loadingTask.promise;
-        const page = await pdf.getPage(1);
-        const viewport = page.getViewport({ scale: 0.7 });
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return null;
-        await page.render({ canvas, canvasContext: ctx, viewport }).promise;
-        const rawBlob = await new Promise<Blob | null>((resolve) =>
-          canvas.toBlob(resolve, 'image/jpeg', 0.85),
-        );
-        return rawBlob ? await compressCoverBlob(rawBlob) : null;
-      } finally {
-        await loadingTask.destroy();
-      }
     }
   } catch (err) {
     if (isChunkLoadError(err)) throw err;
@@ -149,6 +151,8 @@ function getFilenameChapterTitle(path: string): string | null {
 export interface ParseBookOptions {
   /** Bỏ qua giải nén nhị phân ảnh sang Blob URL khi chỉ cần đọc chữ & đường dẫn `data-zip-path` */
   skipMediaBlobs?: boolean;
+  /** Truyền sẵn ArrayBuffer nếu caller đã đọc để tránh nhân đôi RAM (vá M-12) */
+  arrayBuffer?: ArrayBuffer;
 }
 
 async function parseEpubBlob(
@@ -164,7 +168,7 @@ async function parseEpubBlob(
 
   try {
     const JSZip = await loadJSZip();
-    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    const zip = await JSZip.loadAsync(options?.arrayBuffer ?? (await blob.arrayBuffer()));
     const containerXml = await zip.file('META-INF/container.xml')?.async('string');
     if (!containerXml) throw new Error('EPUB không có tệp container.');
 
@@ -204,7 +208,7 @@ async function parseEpubBlob(
         const navDoc = new DOMParser().parseFromString(navXml, 'text/html');
         navDoc.querySelectorAll('nav a[href]').forEach((link) => {
           const href = link.getAttribute('href') || '';
-          const label = link.textContent?.replace(/\s+/g, ' ').trim();
+          const label = link.textContent?.replace(/\s+/g, ' ').trim().normalize('NFC');
           if (href && label) {
             const targetPath = resolveZipPath(navDir, safeDecodeUri(href.split('#')[0]));
             if (!tocTitlesByPath.has(targetPath)) tocTitlesByPath.set(targetPath, label);
@@ -223,7 +227,11 @@ async function parseEpubBlob(
           const ncxDir = ncxPath.includes('/') ? ncxPath.slice(0, ncxPath.lastIndexOf('/')) : '';
           const ncxDoc = new DOMParser().parseFromString(ncxXml, 'application/xml');
           ncxDoc.querySelectorAll('navPoint').forEach((point) => {
-            const label = point.querySelector('navLabel text')?.textContent?.replace(/\s+/g, ' ').trim();
+            const label = point
+              .querySelector('navLabel text')
+              ?.textContent?.replace(/\s+/g, ' ')
+              .trim()
+              .normalize('NFC');
             const src = point.querySelector('content')?.getAttribute('src') || '';
             if (label && src) {
               const targetPath = resolveZipPath(ncxDir, safeDecodeUri(src.split('#')[0]));
@@ -249,6 +257,7 @@ async function parseEpubBlob(
       );
 
     const imageUrlByZipPath = new Map<string, string>();
+    const zipLowerLookup = buildCaseInsensitiveZipLookup(zip);
 
     async function getZipImageEntry(
       docPath: string,
@@ -261,7 +270,7 @@ async function parseEpubBlob(
         `${docDir}/${cleanSrc}`.replace(/^\/+/, ''),
         cleanSrc.replace(/^(\.\.\/)+/, ''),
       ];
-      const matchedPath = candidates.find((candidate) => Boolean(zip.file(candidate)));
+      const matchedPath = resolveZipFilePath(zip, zipLowerLookup, candidates);
       if (!matchedPath) return null;
 
       if (options?.skipMediaBlobs) {
@@ -322,12 +331,16 @@ async function parseEpubBlob(
         }
       }
 
-      const bodyHtml = doc.body?.innerHTML?.trim() || '';
-      const plainText = doc.body?.textContent?.replace(/\s+/g, ' ').trim() || '';
+      const bodyHtml = (doc.body?.innerHTML?.trim() || '').normalize('NFC');
+      const plainText = (doc.body?.textContent?.replace(/\s+/g, ' ').trim() || '').normalize('NFC');
       const hasMedia = doc.querySelectorAll('img, svg image').length > 0;
       if (!plainText && !hasMedia) continue;
 
-      const headingText = doc.querySelector('h1, h2, h3')?.textContent?.replace(/\s+/g, ' ').trim();
+      const headingText = doc
+        .querySelector('h1, h2, h3')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim()
+        .normalize('NFC');
       rawSections.push({
         tocTitle: tocTitlesByPath.get(path) ?? null,
         filenameTitle: getFilenameChapterTitle(path),
@@ -347,38 +360,14 @@ async function parseEpubBlob(
   }
 }
 
-async function parsePdfBlob(blob: Blob, book: Book): Promise<ParsedBook> {
-  const pdfjsLib = await loadPdfJs();
-  const pdfBlobUrl = URL.createObjectURL(blob);
-  const dispose = () => URL.revokeObjectURL(pdfBlobUrl);
-
-  const loadingTask = pdfjsLib.getDocument({ url: pdfBlobUrl, wasmUrl: pdfWasmUrl });
-  try {
-    const pdf = await loadingTask.promise;
-    if (pdf.numPages === 0) throw new Error('PDF này không có trang để hiển thị.');
-
-    const chapters: Chapter[] = Array.from({ length: pdf.numPages }, (_, index) => ({
-      id: `${book.id}-pdf-${index + 1}`,
-      book_id: book.id,
-      title: `Trang ${index + 1}`,
-      content: '',
-      chapter_number: index + 1,
-      pdf_page_number: index + 1,
-    }));
-
-    return { chapters, pdfBlobUrl, dispose };
-  } catch (err) {
-    dispose();
-    throw err;
-  } finally {
-    await loadingTask.destroy();
-  }
-}
-
-async function parseDocxBlob(blob: Blob, book: Book): Promise<ParsedBook> {
+async function parseDocxBlob(
+  blob: Blob,
+  book: Book,
+  options?: ParseBookOptions,
+): Promise<ParsedBook> {
   const JSZip = await loadJSZip();
-  const zip = await JSZip.loadAsync(await blob.arrayBuffer());
-  return parseDocxZip(zip, book);
+  const zip = await JSZip.loadAsync(options?.arrayBuffer ?? (await blob.arrayBuffer()));
+  return parseDocxZip(zip, book, options);
 }
 
 export async function parseBookBlob(
@@ -389,10 +378,8 @@ export async function parseBookBlob(
   switch (book.file_type) {
     case 'epub':
       return parseEpubBlob(blob, book, options);
-    case 'pdf':
-      return parsePdfBlob(blob, book);
     case 'docx':
-      return parseDocxBlob(blob, book);
+      return parseDocxBlob(blob, book, options);
     default:
       throw new Error('Định dạng sách chưa được hỗ trợ.');
   }

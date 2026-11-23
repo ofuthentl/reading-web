@@ -34,7 +34,7 @@ export function findNextBookInShelf(
       continue;
     }
     if (isCloudMode && sessionRole === 'guest') {
-      if (candidate.file_type === 'pdf' || candidate.guest_ready === false) {
+      if (candidate.guest_ready === false) {
         continue;
       }
     }

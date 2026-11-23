@@ -106,9 +106,9 @@ export function WorldQuickBar({
   }, [floorMenuOpen, searchOpen]);
 
   useEffect(() => {
-    if (searchOpen) {
-      window.setTimeout(() => searchInputRef.current?.focus(), 0);
-    }
+    if (!searchOpen) return undefined;
+    const timer = window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
   }, [searchOpen]);
 
   const filteredFloors = useMemo(() => {

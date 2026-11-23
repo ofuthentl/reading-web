@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS books (
   cover_color TEXT NOT NULL DEFAULT '#4f46e5',
   cover_key TEXT,
   file_key TEXT NOT NULL,
-  file_type TEXT NOT NULL CHECK (file_type IN ('epub', 'pdf', 'docx')),
+  file_type TEXT NOT NULL CHECK (file_type IN ('epub', 'docx')),
   file_size INTEGER NOT NULL DEFAULT 0,
   cover_size INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
@@ -100,10 +100,42 @@ CREATE TABLE IF NOT EXISTS shelf_guest_grants (
   PRIMARY KEY (shelf_key, discord_user_id)
 );
 
+CREATE TABLE IF NOT EXISTS login_rate_limits (
+  ip_hash TEXT PRIMARY KEY,
+  fail_count INTEGER NOT NULL DEFAULT 0,
+  window_start INTEGER NOT NULL,
+  locked_until INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS usage_daily_stats (
+  day_key TEXT PRIMARY KEY,
+  owner_logins INTEGER NOT NULL DEFAULT 0,
+  guest_logins INTEGER NOT NULL DEFAULT 0,
+  discord_keys_issued INTEGER NOT NULL DEFAULT 0,
+  login_failures INTEGER NOT NULL DEFAULT 0,
+  guest_chapter_reads INTEGER NOT NULL DEFAULT 0,
+  owner_progress_updates INTEGER NOT NULL DEFAULT 0,
+  guest_searches INTEGER NOT NULL DEFAULT 0,
+  rate_limit_hits INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS usage_daily_readers (
+  day_key TEXT NOT NULL,
+  reader_scope TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('owner', 'guest')),
+  last_seen_at INTEGER NOT NULL,
+  PRIMARY KEY (day_key, reader_scope)
+);
+
 CREATE INDEX IF NOT EXISTS idx_books_shelf ON books(shelf);
 CREATE INDEX IF NOT EXISTS idx_books_created_at ON books(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_progress_updated_at ON reading_progress(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_discord_access_key_hash ON discord_access(key_hash) WHERE key_hash IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_guest_progress_user_updated ON guest_reading_progress(discord_user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_guest_progress_updated_at ON guest_reading_progress(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_guest_progress_book_id ON guest_reading_progress(book_id);
 CREATE INDEX IF NOT EXISTS idx_bookmarks_user_book ON book_bookmarks(user_scope, book_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON book_bookmarks(book_id);
 CREATE INDEX IF NOT EXISTS idx_shelf_grants_user ON shelf_guest_grants(discord_user_id);
+CREATE INDEX IF NOT EXISTS idx_usage_daily_readers_day ON usage_daily_readers(day_key);

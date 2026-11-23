@@ -93,36 +93,46 @@ function resolveSlotBitIndex(fullText: string, start: number, end: number, pairI
   return fnv1a32(`${beforeKey}:${pairId}:${afterKey}`) & 31;
 }
 
-export async function deriveUserWatermarkBits(secret: string, discordUserId: string): Promise<number> {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
+async function importWatermarkHmacKey(secret: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
     'raw',
-    encoder.encode(secret),
+    new TextEncoder().encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
   );
+}
+
+async function deriveUserWatermarkBitsWithKey(
+  key: CryptoKey,
+  discordUserId: string,
+): Promise<number> {
   const sig = await crypto.subtle.sign(
     'HMAC',
     key,
-    encoder.encode(`forensic-v1:${discordUserId.trim()}`),
+    new TextEncoder().encode(`forensic-v1:${discordUserId.trim()}`),
   );
-  const view = new DataView(sig);
-  return view.getUint32(0, false);
+  return new DataView(sig).getUint32(0, false);
+}
+
+export async function deriveUserWatermarkBits(secret: string, discordUserId: string): Promise<number> {
+  const key = await importWatermarkHmacKey(secret);
+  return deriveUserWatermarkBitsWithKey(key, discordUserId);
 }
 
 export function watermarkTextString(text: string, bits32: number): string {
   if (!text || text.length < 3) return text;
+  const normalized = text.normalize('NFC');
   SLOT_REGEX.lastIndex = 0;
-  return text.replace(SLOT_REGEX, (matched, offset: number) => {
+  return normalized.replace(SLOT_REGEX, (matched, offset: number) => {
     const entry = PAIR_BY_TOKEN.get(matched);
     if (!entry) return matched;
     // Với nhóm uy*, chỉ biến đổi khi đứng sau phụ âm hợp lệ (vd tuỳ/tùy, thuỷ/thủy, luỹ/lũy, nguỵ/ngụy)
     if (entry.pair.id.startsWith('uy')) {
-      const prevChar = offset > 0 ? text[offset - 1] : '';
+      const prevChar = offset > 0 ? normalized[offset - 1] : '';
       if (!/[tThHlLnNgGkKcCsS]/.test(prevChar)) return matched;
     }
-    const bitIdx = resolveSlotBitIndex(text, offset, offset + matched.length, entry.pair.id);
+    const bitIdx = resolveSlotBitIndex(normalized, offset, offset + matched.length, entry.pair.id);
     const bit = ((bits32 >>> bitIdx) & 1) as 0 | 1;
     return bit === 1 ? entry.pair.bit1 : entry.pair.bit0;
   });
@@ -133,8 +143,9 @@ function watermarkSpans(spans: WatermarkInlineSpan[], bits32: number): Watermark
   if (spans.length === 1) {
     return [{ ...spans[0], t: watermarkTextString(spans[0].t, bits32) }];
   }
-  // Nối toàn đoạn để ngữ cảnh trước/sau chính xác ngay cả khi tách span đậm/nghiêng
-  const combined = spans.map((s) => s.t).join('');
+  // Chuẩn hoá NFC từng span trước khi nối để vị trí ký tự & độ dài khớp tuyệt đối (vá H-3)
+  const nfcSpans = spans.map((s) => ({ ...s, t: s.t.normalize('NFC') }));
+  const combined = nfcSpans.map((s) => s.t).join('');
   SLOT_REGEX.lastIndex = 0;
   const replacements: Array<{ start: number; end: number; next: string }> = [];
   let match: RegExpExecArray | null;
@@ -153,11 +164,11 @@ function watermarkSpans(spans: WatermarkInlineSpan[], bits32: number): Watermark
     const next = bit === 1 ? entry.pair.bit1 : entry.pair.bit0;
     if (next !== token) replacements.push({ start, end, next });
   }
-  if (replacements.length === 0) return spans;
+  if (replacements.length === 0) return nfcSpans;
 
   let cursor = 0;
   let repIdx = 0;
-  return spans.map((span) => {
+  return nfcSpans.map((span) => {
     const spanStart = cursor;
     const spanEnd = cursor + span.t.length;
     cursor = spanEnd;
@@ -209,22 +220,27 @@ export interface ExtractedObservation {
 }
 
 export function extractForensicObservations(rawText: string): ExtractedObservation[] {
-  const normalized = rawText.normalize('NFC');
+  // Tách theo từng đoạn (\r?\n+) để ngữ cảnh đầu/cuối đoạn khớp hệt lúc nhúng theo từng block (vá H-3)
+  const paragraphs = rawText.normalize('NFC').split(/\r?\n+/);
   const observations: ExtractedObservation[] = [];
-  SLOT_REGEX.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = SLOT_REGEX.exec(normalized)) !== null) {
-    const token = match[0];
-    const start = match.index;
-    const end = start + token.length;
-    const entry = PAIR_BY_TOKEN.get(token);
-    if (!entry) continue;
-    if (entry.pair.id.startsWith('uy')) {
-      const prevChar = start > 0 ? normalized[start - 1] : '';
-      if (!/[tThHlLnNgGkKcCsS]/.test(prevChar)) continue;
+
+  for (const para of paragraphs) {
+    if (para.length < 3) continue;
+    SLOT_REGEX.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = SLOT_REGEX.exec(para)) !== null) {
+      const token = match[0];
+      const start = match.index;
+      const end = start + token.length;
+      const entry = PAIR_BY_TOKEN.get(token);
+      if (!entry) continue;
+      if (entry.pair.id.startsWith('uy')) {
+        const prevChar = start > 0 ? para[start - 1] : '';
+        if (!/[tThHlLnNgGkKcCsS]/.test(prevChar)) continue;
+      }
+      const bitIdx = resolveSlotBitIndex(para, start, end, entry.pair.id);
+      observations.push({ bitIdx, bit: entry.bit, isTone: entry.pair.isTone });
     }
-    const bitIdx = resolveSlotBitIndex(normalized, start, end, entry.pair.id);
-    observations.push({ bitIdx, bit: entry.bit, isTone: entry.pair.isTone });
   }
   return observations;
 }
@@ -241,9 +257,10 @@ export async function matchForensicCandidates(
     return { totalSlots, toneSlots, results: [] };
   }
 
+  const hmacKey = await importWatermarkHmacKey(secret);
   const results: ForensicMatchResult[] = [];
   for (const cand of candidates) {
-    const bits32 = await deriveUserWatermarkBits(secret, cand.discordUserId);
+    const bits32 = await deriveUserWatermarkBitsWithKey(hmacKey, cand.discordUserId);
     let matchedSlots = 0;
     let toneMatchedSlots = 0;
     for (const obs of observations) {

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   AuthRole,
   Book,
-  LibraryFormatFilter,
   LibrarySortMode,
   LibraryStatusFilter,
   LibraryTab,
@@ -74,8 +73,6 @@ export interface LibraryViewState {
   availableAuthors: string[];
   statusFilter: LibraryStatusFilter;
   setStatusFilter: (value: LibraryStatusFilter) => void;
-  formatFilter: LibraryFormatFilter;
-  setFormatFilter: (value: LibraryFormatFilter) => void;
   sortMode: LibrarySortMode;
   setSortMode: (value: LibrarySortMode) => void;
   activeShelfKey: string | null;
@@ -116,7 +113,6 @@ export function useLibraryViewState(
   const [excludedTags, setExcludedTags] = useState<string[]>([]);
   const [tagMatchMode, setTagMatchMode] = useState<TagMatchMode>('all');
   const [statusFilter, setStatusFilter] = useState<LibraryStatusFilter>('all');
-  const [formatFilter, setFormatFilter] = useState<LibraryFormatFilter>('all');
   const [sortMode, setSortMode] = useState<LibrarySortMode>('title_asc');
   const [activeShelfKey, setActiveShelfKey] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -282,7 +278,6 @@ export function useLibraryViewState(
     setSelectedIds(new Set());
     setSearchQuery('');
     setStatusFilter('all');
-    setFormatFilter('all');
     setActiveShelfKey(null);
     setIncludedTags([]);
     setExcludedTags([]);
@@ -301,7 +296,6 @@ export function useLibraryViewState(
     setSearchQuery('');
     setAuthorFilter('');
     setStatusFilter('all');
-    setFormatFilter('all');
     setActiveShelfKey(null);
     setExcludedTags([]);
     setIncludedTags([clean]);
@@ -311,9 +305,6 @@ export function useLibraryViewState(
   const libraryShelves = useMemo(() => {
     const matched = allShelves.filter((shelf) => {
       if (!matchesShelfStatus(shelf, progress, statusFilter)) return false;
-      if (formatFilter !== 'all' && !shelf.books.some((b) => b.file_type === formatFilter)) {
-        return false;
-      }
       if (
         !matchesShelfTagFilters(
           shelf.key,
@@ -341,7 +332,6 @@ export function useLibraryViewState(
     allShelves,
     excludedTagKeys,
     favoriteShelfKeys,
-    formatFilter,
     includedTagKeys,
     normalizedAuthor,
     normalizedQuery,
@@ -356,7 +346,6 @@ export function useLibraryViewState(
     return books.filter((book) => {
       const shelfKey = (book.shelf || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi');
       if (activeShelfKey && shelfKey !== activeShelfKey) return false;
-      if (formatFilter !== 'all' && book.file_type !== formatFilter) return false;
       if (!matchesBookStatus(book, progress, statusFilter)) return false;
       if (
         !matchesShelfTagFilters(
@@ -379,7 +368,6 @@ export function useLibraryViewState(
     activeShelfKey,
     books,
     excludedTagKeys,
-    formatFilter,
     includedTagKeys,
     normalizedAuthor,
     normalizedQuery,
@@ -428,7 +416,6 @@ export function useLibraryViewState(
     setIncludedTags([]);
     setExcludedTags([]);
     setStatusFilter('all');
-    setFormatFilter('all');
     setActiveShelfKey(null);
   }, []);
 
@@ -443,8 +430,7 @@ export function useLibraryViewState(
       includedTagKeys.length > 0 ||
       excludedTagKeys.length > 0 ||
       activeShelfKey ||
-      statusFilter !== 'all' ||
-      formatFilter !== 'all',
+      statusFilter !== 'all',
   );
 
   return {
@@ -472,8 +458,6 @@ export function useLibraryViewState(
     availableAuthors,
     statusFilter,
     setStatusFilter,
-    formatFilter,
-    setFormatFilter,
     sortMode,
     setSortMode,
     activeShelfKey,

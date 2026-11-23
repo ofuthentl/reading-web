@@ -4,7 +4,24 @@
 
 @layer base {
   :root {
-    /* Warm Parchment — Chế độ Sáng */
+    /* Mode 1: Ban ngày — Giấy trắng sáng sắc nét */
+    --color-canvas: 252 251 248; /* #fcfbf8 */
+    --color-surface: 255 255 255; /* #ffffff */
+    --color-subtle: 243 241 236; /* #f3f1ec */
+    --color-line: 230 226 218; /* #e6e2da */
+    --color-line-strong: 205 198 186; /* #cdc6ba */
+    --color-ink: 34 29 24; /* #221d18 */
+    --color-ink-muted: 96 87 77; /* #60574d */
+    --color-ink-faint: 140 130 118; /* #8c8276 */
+    --color-accent: 132 86 46; /* #84562e */
+    --color-accent-hover: 108 68 34; /* #6c4422 */
+    --color-accent-fg: 255 255 255; /* #ffffff */
+    --color-crimson: 178 34 34; /* #B22222 — Đỏ đô đặc trưng Ofu's Library */
+    color-scheme: light;
+  }
+
+  /* Mode 2: Giữa trưa — Warm Parchment (giấy kem ấm cũ) */
+  [data-theme='noon'] {
     --color-canvas: 246 241 231; /* #f6f1e7 */
     --color-surface: 253 250 244; /* #fdfaf4 */
     --color-subtle: 239 232 218; /* #efe8da */
@@ -16,11 +33,11 @@
     --color-accent: 140 94 53; /* #8c5e35 */
     --color-accent-hover: 115 75 40; /* #734b28 */
     --color-accent-fg: 253 250 244; /* #fdfaf4 */
-    --color-crimson: 178 34 34; /* #B22222 — Đỏ đô đặc trưng Ofu's Library */
+    --color-crimson: 178 34 34; /* #B22222 */
     color-scheme: light;
   }
 
-  /* Mode 2: Chiều tối (Đêm mực dịu + gradient sương nhẹ, chữ & nút trắng) */
+  /* Mode 3: Chiều tối (Đêm mực dịu + gradient sương nhẹ, chữ & nút trắng) */
   [data-theme='dim'],
   .dark {
     --color-canvas: 13 17 23; /* #0d1117 */
@@ -61,7 +78,7 @@
   }
 
   body {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-family: 'Be Vietnam Pro', system-ui, -apple-system, 'Segoe UI', sans-serif;
     background-color: rgb(var(--color-canvas));
     color: rgb(var(--color-ink));
     transition: background-color 220ms ease, color 220ms ease;
@@ -146,15 +163,15 @@
 
 @layer utilities {
   .font-reader-serif {
-    font-family: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, Cambria, serif;
+    font-family: 'Literata', Georgia, 'Times New Roman', serif;
   }
 
   .font-reader-sans {
-    font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Be Vietnam Pro', system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
 
   .font-reader-mono {
-    font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, ui-monospace, monospace;
+    font-family: 'JetBrains Mono', 'Cascadia Code', ui-monospace, monospace;
   }
 
   .reading-content {

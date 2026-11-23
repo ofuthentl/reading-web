@@ -353,7 +353,7 @@ export function AdvancedSearchPanel({
                       : state === 'exclude'
                         ? 'border-rose-600/50 bg-rose-600/10 font-medium text-rose-800 line-through decoration-rose-500/70 dark:border-rose-400/50 dark:text-rose-200'
                         : isDimmed
-                          ? 'border-line/70 bg-canvas/35 text-ink-muted opacity-55 hover:border-line-strong hover:opacity-100'
+                          ? 'border-line/80 bg-canvas/45 text-ink-muted opacity-75 hover:border-line-strong hover:opacity-100'
                           : 'border-line bg-canvas/80 text-ink hover:border-line-strong hover:bg-subtle'
                   }`}
                 >

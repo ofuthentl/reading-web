@@ -21,7 +21,7 @@ function staticGateRoutesPlugin(): Plugin {
       const indexHtml = resolve(rootDir, outDir, 'index.html');
       if (!existsSync(indexHtml)) return;
 
-      for (const subRoute of ['entrance', 'locked']) {
+      for (const subRoute of ['entrance', 'locked', 'usage']) {
         const subDir = resolve(rootDir, outDir, subRoute);
         mkdirSync(subDir, { recursive: true });
         copyFileSync(indexHtml, resolve(subDir, 'index.html'));
@@ -41,6 +41,9 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
     dedupe: ['react', 'react-dom'],
+  },
+  build: {
+    assetsInlineLimit: (filePath) => (filePath.endsWith('.woff2') ? false : undefined),
   },
   optimizeDeps: {
     exclude: ['lucide-react'],

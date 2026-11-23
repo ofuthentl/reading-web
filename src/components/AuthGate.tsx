@@ -25,7 +25,12 @@ import {
   isMissingProductionApi,
   loginWithPasscode,
 } from '@/lib/api';
-import { DEFAULT_OWNER_SESSION, inspectStoredSession } from '@/lib/authSession';
+import {
+  DEFAULT_OWNER_SESSION,
+  apiFetch,
+  inspectStoredSession,
+  setAuthToken,
+} from '@/lib/authSession';
 import {
   type GateRoute,
   buildGateHref,
@@ -36,7 +41,7 @@ import {
   syncGateDocumentTitle,
 } from '@/lib/gateRoutes';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import type { AppTheme } from '@/hooks/useTheme';
+import { type UiTheme, isDarkTheme } from '@/hooks/useTheme';
 
 const LazyGateBackdropArt = lazy(() =>
   import('@/components/GateBackdropArt').then((mod) => ({ default: mod.GateBackdropArt })),
@@ -45,7 +50,7 @@ const LazyGateBackdropArt = lazy(() =>
 interface AuthGateProps {
   onAuthenticated: (session: AuthSessionInfo) => void;
   authReason?: string | null;
-  theme?: AppTheme;
+  theme?: UiTheme;
   onCycleTheme?: (origin?: { x: number; y: number }) => void;
 }
 
@@ -82,12 +87,52 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
     try {
       const health = await checkHealth();
 
-      if (!health.authRequired && currentRoute === 'root') {
+      if (!health.authRequired && (currentRoute === 'root' || currentRoute === 'usage')) {
         onAuthenticated(DEFAULT_OWNER_SESSION);
         return;
       }
 
       const stored = inspectStoredSession();
+
+      // Stealth /usage (D-035): xác thực token trực tiếp với máy chủ trước khi mở chunk AdminUsageView
+      if (currentRoute === 'usage') {
+        if (stored.status === 'active' && !authReason) {
+          if (stored.session.role === 'owner') {
+            try {
+              const sessionRes = await apiFetch('/api/auth/session');
+              const sessionBody = (await sessionRes.json().catch(() => ({}))) as {
+                ok?: boolean;
+                role?: string;
+                expiresAt?: number | null;
+              };
+              if (sessionRes.ok && sessionBody.ok && sessionBody.role === 'owner') {
+                onAuthenticated({
+                  role: 'owner',
+                  expiresAt:
+                    typeof sessionBody.expiresAt === 'number'
+                      ? sessionBody.expiresAt
+                      : stored.session.expiresAt,
+                });
+                return;
+              }
+            } catch {
+              // Token không hợp lệ/bị thu hồi/giả mạo: dọn sạch và đẩy âm thầm về /locked
+            }
+            setAuthToken(null);
+            replaceGateRoute('locked');
+            setRoute('locked');
+            setStatus('ready');
+            return;
+          }
+          replaceGateRoute('root');
+          onAuthenticated(stored.session);
+          return;
+        }
+        replaceGateRoute('locked');
+        setRoute('locked');
+        setStatus('ready');
+        return;
+      }
 
       if (currentRoute === 'root') {
         if (stored.status === 'active' && !authReason) {
@@ -189,7 +234,7 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
   }
 
   const isEntrance = route === 'entrance';
-  const isDark = Boolean(theme && theme !== 'light');
+  const isDark = Boolean(theme && isDarkTheme(theme));
 
   return (
     <div className="theme-canvas relative flex min-h-screen flex-col justify-between overflow-hidden text-ink transition-colors duration-200">

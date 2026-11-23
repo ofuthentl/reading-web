@@ -13,12 +13,12 @@ import { getBookSortTitle, getDisplayAuthor, pickCoverColor } from '@/lib/bookMe
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 import { computeBookProgressPercent } from '@/hooks/useLibraryViewState';
 
-function getChapterCaption(book: Book, progress?: ReadingProgress): string {
+function getChapterCaption(progress?: ReadingProgress): string {
   if (!progress) return '';
   if (progress.completed) return 'Đã đọc xong';
   if (progress.chapterTitle?.trim()) return progress.chapterTitle.trim();
   const num = (progress.chapterIndex ?? 0) + 1;
-  return book.file_type === 'pdf' ? `Trang ${num}` : `Chương ${num}`;
+  return `Chương ${num}`;
 }
 
 interface BookInspectCardProps {
@@ -61,7 +61,7 @@ export function BookInspectCard({
   const displayAuthor = getDisplayAuthor(book.author, book.title);
   const fallbackColor = book.cover_color || pickCoverColor(book.id);
   const percent = computeBookProgressPercent(book, progress);
-  const chapterCaption = getChapterCaption(book, progress);
+  const chapterCaption = getChapterCaption(progress);
   const isCompleted = Boolean(progress?.completed);
 
   return (

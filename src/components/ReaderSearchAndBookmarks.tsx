@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Bookmark, BookmarkPlus, Loader2, Search, Trash2, X } from 'lucide-react';
 import type { Book, BookBookmark, Chapter, GuestBookSearchMatch } from '@/types';
+import { isAuthError } from '@/lib/api';
 import {
   addBookBookmark,
   fetchBookBookmarks,
@@ -27,7 +28,7 @@ interface LocalSearchHit {
 }
 
 function searchParsedChaptersLocally(chapters: Chapter[], rawQuery: string): LocalSearchHit[] {
-  const q = rawQuery.trim();
+  const q = rawQuery.trim().normalize('NFC');
   if (q.length < 2) return [];
   const needleLower = q.toLocaleLowerCase('vi');
   const queryHasDiacritics = stripDiacritics(needleLower) !== needleLower;
@@ -36,7 +37,7 @@ function searchParsedChaptersLocally(chapters: Chapter[], rawQuery: string): Loc
   const results: LocalSearchHit[] = [];
   for (let idx = 0; idx < chapters.length; idx += 1) {
     const ch = chapters[idx];
-    const cleanText = (ch.content || '').replace(/\s+/g, ' ').trim();
+    const cleanText = (ch.content || '').normalize('NFC').replace(/\s+/g, ' ').trim();
     if (!cleanText) continue;
 
     const hayLower = cleanText.toLocaleLowerCase('vi');
@@ -88,6 +89,7 @@ export interface ReaderSearchPanelProps {
   parsedChapters?: Chapter[];
   palette: ReaderThemePalette;
   onSelectChapter: (chapterIndex: number) => void;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
 
 export function ReaderSearchPanel({
@@ -95,6 +97,7 @@ export function ReaderSearchPanel({
   parsedChapters,
   palette,
   onSelectChapter,
+  onApiError,
 }: ReaderSearchPanelProps) {
   const [query, setQuery] = useState('');
   const [guestMatches, setGuestMatches] = useState<GuestBookSearchMatch[]>([]);
@@ -127,9 +130,12 @@ export function ReaderSearchPanel({
           if (!cancelled) setGuestMatches(list);
         })
         .catch((err: unknown) => {
-          if (!cancelled) {
-            setSearchError(err instanceof Error ? err.message : 'Không thể tìm kiếm.');
+          if (cancelled) return;
+          if (isAuthError(err)) {
+            onApiError?.(err, 'Phiên truy cập đã hết hiệu lực.');
+            return;
           }
+          setSearchError(err instanceof Error ? err.message : 'Không thể tìm kiếm.');
         })
         .finally(() => {
           if (!cancelled) setSearching(false);
@@ -140,7 +146,7 @@ export function ReaderSearchPanel({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [book.id, isLocalMode, trimmed]);
+  }, [book.id, isLocalMode, onApiError, trimmed]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -252,9 +258,9 @@ export interface ReaderBookmarksPanelProps {
   currentChapterId: string;
   currentChapterTitle: string;
   currentScrollRatio: number;
-  isPdf: boolean;
   palette: ReaderThemePalette;
   onJumpToBookmark: (chapterIndex: number, scrollRatio: number) => void;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
 
 export function ReaderBookmarksPanel({
@@ -263,9 +269,9 @@ export function ReaderBookmarksPanel({
   currentChapterId,
   currentChapterTitle,
   currentScrollRatio,
-  isPdf,
   palette,
   onJumpToBookmark,
+  onApiError,
 }: ReaderBookmarksPanelProps) {
   const [bookmarks, setBookmarks] = useState<BookBookmark[]>([]);
   const [loading, setLoading] = useState(true);
@@ -282,9 +288,12 @@ export function ReaderBookmarksPanel({
         if (!cancelled) setBookmarks(list);
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
-          setErrorMsg(err instanceof Error ? err.message : 'Không thể tải dấu trang.');
+        if (cancelled) return;
+        if (isAuthError(err)) {
+          onApiError?.(err, 'Phiên truy cập đã hết hiệu lực.');
+          return;
         }
+        setErrorMsg(err instanceof Error ? err.message : 'Không thể tải dấu trang.');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -292,11 +301,9 @@ export function ReaderBookmarksPanel({
     return () => {
       cancelled = true;
     };
-  }, [book.id]);
+  }, [book.id, onApiError]);
 
-  const positionLabel = isPdf
-    ? `Trang ${activeIndex + 1}`
-    : `${currentChapterTitle || `Phần ${activeIndex + 1}`} · ${Math.round(currentScrollRatio * 100)}%`;
+  const positionLabel = `${currentChapterTitle || `Phần ${activeIndex + 1}`} · ${Math.round(currentScrollRatio * 100)}%`;
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -315,6 +322,10 @@ export function ReaderBookmarksPanel({
       setBookmarks((prev) => [created, ...prev]);
       setNote('');
     } catch (err) {
+      if (isAuthError(err)) {
+        onApiError?.(err, 'Phiên truy cập đã hết hiệu lực.');
+        return;
+      }
       setErrorMsg(err instanceof Error ? err.message : 'Không thể lưu dấu trang.');
     } finally {
       setSaving(false);
@@ -328,6 +339,10 @@ export function ReaderBookmarksPanel({
       await removeBookBookmark(book.id, id);
     } catch (err) {
       setBookmarks(prev);
+      if (isAuthError(err)) {
+        onApiError?.(err, 'Phiên truy cập đã hết hiệu lực.');
+        return;
+      }
       setErrorMsg(err instanceof Error ? err.message : 'Không thể xoá dấu trang.');
     }
   };

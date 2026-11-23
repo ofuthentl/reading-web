@@ -67,9 +67,15 @@ export function getInitialGuestStageBox(): { width: number; height: number } {
 }
 
 const FONT_STACK_MAP: Record<ReaderFont, string> = {
-  serif: '"Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, Cambria, serif',
-  sans: '"Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-  mono: '"Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace',
+  serif: '"Literata", Georgia, "Times New Roman", serif',
+  sans: '"Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", sans-serif',
+  mono: '"JetBrains Mono", "Cascadia Code", ui-monospace, monospace',
+};
+
+const CANVAS_PRIMARY_FAMILY: Record<ReaderFont, string> = {
+  serif: '"Literata"',
+  sans: '"Be Vietnam Pro"',
+  mono: '"JetBrains Mono"',
 };
 
 export function buildCanvasFontSpec(
@@ -85,6 +91,28 @@ export function buildCanvasFontSpec(
 
 let sharedMeasureCtx: CanvasRenderingContext2D | null = null;
 const widthCache = new Map<string, number>();
+
+export function clearCanvasWidthCache(): void {
+  widthCache.clear();
+}
+
+/**
+ * Chủ động kích hoạt nạp webfont cục bộ trước khi vẽ Canvas 2D (vì `ctx.fillText`
+ * không phải lúc nào cũng kích hoạt tải `@font-face` subset tiếng Việt tự động).
+ */
+export async function ensureReaderCanvasFontsLoaded(font: ReaderFont): Promise<void> {
+  if (typeof document === 'undefined' || !('fonts' in document)) return;
+  const primary = CANVAS_PRIMARY_FAMILY[font];
+  const sample = 'Việt Nam ệữởắồỷ ABC 0123';
+  const requests = [
+    document.fonts.load(`400 18px ${primary}`, sample),
+    document.fonts.load(`italic 400 18px ${primary}`, sample),
+    document.fonts.load(`700 18px ${primary}`, sample),
+    // Tiêu đề chương/mục luôn vẽ bằng Literata
+    document.fonts.load('700 22px "Literata"', sample),
+  ];
+  await Promise.allSettled(requests);
+}
 
 function getMeasureContext(): CanvasRenderingContext2D | null {
   if (sharedMeasureCtx) return sharedMeasureCtx;
@@ -307,7 +335,8 @@ export function computeChapterCanvasLayout(options: {
       const hSize = Math.round(baseSize * scale);
       const hLineHeight = Math.round(hSize * 1.42);
       y += Math.round(baseSize * 0.55);
-      const lines = wrapInlineSpans(block.spans, settings.font, hSize, contentWidth, 0, true);
+      // Vá M-04: đo chiều rộng tiêu đề bằng đúng font 'serif' (Literata) giống lúc vẽ ở guestCanvasPaint
+      const lines = wrapInlineSpans(block.spans, 'serif', hSize, contentWidth, 0, true);
       for (const fragments of lines) {
         items.push({
           kind: 'text-line',

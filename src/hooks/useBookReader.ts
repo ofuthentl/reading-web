@@ -7,7 +7,7 @@ import type {
   ReaderSettings,
   ReadingProgress,
 } from '@/types';
-import type { AppTheme } from '@/hooks/useTheme';
+import type { UiTheme } from '@/hooks/useTheme';
 import { fetchBookBlobCached, isAuthError, isCloudMode, saveReadingProgress } from '@/lib/api';
 import { isChunkLoadError, recoverFromChunkError } from '@/lib/chunkReload';
 import {
@@ -22,7 +22,7 @@ export interface GuestReaderSessionState {
 }
 
 interface UseBookReaderOptions {
-  appTheme: AppTheme;
+  appTheme: UiTheme;
   sessionRole: AuthRole;
   onProgressUpdated: (bookId: string, progress: ReadingProgress) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
@@ -34,10 +34,11 @@ export function useBookReader({
   onProgressUpdated,
   onApiError,
 }: UseBookReaderOptions) {
-  const [settings, setSettings] = useState<ReaderSettings>(() => ({
-    ...loadReaderSettings(),
-    theme: appThemeToReaderTheme(appTheme),
-  }));
+  // Vá lỗi B1: ưu tiên giữ nguyên màu nền đọc người dùng đã chọn trong localStorage;
+  // chỉ dùng appTheme làm mặc định cho lần đầu chưa từng lưu cài đặt đọc.
+  const [settings, setSettings] = useState<ReaderSettings>(() =>
+    loadReaderSettings(appThemeToReaderTheme(appTheme)),
+  );
   const [activeBook, setActiveBook] = useState<Book | null>(null);
   const [openingBook, setOpeningBook] = useState<Book | null>(null);
   const [parsedBook, setParsedBook] = useState<ParsedBook | null>(null);
@@ -46,8 +47,13 @@ export function useBookReader({
 
   const requestIdRef = useRef(0);
   const parsedBookRef = useRef<ParsedBook | null>(null);
+  const openAbortRef = useRef<AbortController | null>(null);
+  const prevAppThemeRef = useRef<UiTheme>(appTheme);
 
+  // Chỉ đồng bộ nền trình đọc khi người dùng THỰC SỰ bấm đổi theme App, không ghi đè lúc mount/F5
   useEffect(() => {
+    if (prevAppThemeRef.current === appTheme) return;
+    prevAppThemeRef.current = appTheme;
     const syncedTheme = appThemeToReaderTheme(appTheme);
     setSettings((prev) => {
       if (prev.theme === syncedTheme) return prev;
@@ -67,6 +73,8 @@ export function useBookReader({
   useEffect(() => {
     return () => {
       requestIdRef.current += 1;
+      openAbortRef.current?.abort();
+      openAbortRef.current = null;
       disposeCurrent();
     };
   }, [disposeCurrent]);
@@ -79,8 +87,18 @@ export function useBookReader({
     });
   }, []);
 
+  /** Chỉ huỷ lượt tải sách mới mà không đóng cuốn đang mở phía dưới (vá M-10) */
+  const cancelOpeningBook = useCallback(() => {
+    requestIdRef.current += 1;
+    openAbortRef.current?.abort();
+    openAbortRef.current = null;
+    setOpeningBook(null);
+  }, []);
+
   const closeBook = useCallback(() => {
     requestIdRef.current += 1;
+    openAbortRef.current?.abort();
+    openAbortRef.current = null;
     disposeCurrent();
     setOpeningBook(null);
     setActiveBook(null);
@@ -99,23 +117,11 @@ export function useBookReader({
         return;
       }
 
-      if (isCloudMode && sessionRole === 'guest' && book.file_type === 'pdf') {
-        onApiError(
-          new Error('Định dạng PDF chỉ dành cho Quản trị viên thư viện.'),
-          'Định dạng PDF chỉ dành cho Quản trị viên thư viện.',
-        );
-        return;
-      }
-
       const requestId = requestIdRef.current + 1;
       requestIdRef.current = requestId;
-      const syncedTheme = appThemeToReaderTheme(appTheme);
-      setSettings((prev) => {
-        if (prev.theme === syncedTheme) return prev;
-        const next = { ...prev, theme: syncedTheme };
-        saveReaderSettings(next);
-        return next;
-      });
+      openAbortRef.current?.abort();
+      const controller = new AbortController();
+      openAbortRef.current = controller;
       setOpeningBook(book);
 
       try {
@@ -137,7 +143,7 @@ export function useBookReader({
           return;
         }
 
-        const { blob, fromCache } = await fetchBookBlobCached(book);
+        const { blob, fromCache } = await fetchBookBlobCached(book, { signal: controller.signal });
         if (requestId !== requestIdRef.current) return;
 
         const { parseBookBlob } = await import('@/lib/parsers');
@@ -157,8 +163,8 @@ export function useBookReader({
         setLoadedFromCache(fromCache);
         setOpeningBook(null);
       } catch (err) {
+        if (controller.signal.aborted || requestId !== requestIdRef.current) return;
         if (recoverFromChunkError(err)) return;
-        if (requestId !== requestIdRef.current) return;
         setOpeningBook(null);
         if (isChunkLoadError(err)) {
           onApiError(
@@ -168,9 +174,13 @@ export function useBookReader({
           return;
         }
         onApiError(err, `Không thể mở "${book.title}".`);
+      } finally {
+        if (openAbortRef.current === controller) {
+          openAbortRef.current = null;
+        }
       }
     },
-    [appTheme, disposeCurrent, onApiError, sessionRole],
+    [disposeCurrent, onApiError, sessionRole],
   );
 
   const handleSaveProgress = useCallback(
@@ -198,6 +208,7 @@ export function useBookReader({
     loadedFromCache,
     updateSettings,
     openBook,
+    cancelOpeningBook,
     closeBook,
     handleSaveProgress,
   };

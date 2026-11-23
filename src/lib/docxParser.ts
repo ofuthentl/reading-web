@@ -44,6 +44,7 @@ interface DocxRenderContext {
   placeholderToImage: Map<string, { blobUrl: string; zipPath: string }>;
   createdUrls: string[];
   placeholderSeq: number;
+  skipMediaBlobs: boolean;
 }
 
 async function resolveImagePlaceholder(ctx: DocxRenderContext, relId: string): Promise<string | null> {
@@ -52,18 +53,31 @@ async function resolveImagePlaceholder(ctx: DocxRenderContext, relId: string): P
   const zipPath = resolveDocxPath('word', rel.target);
   if (!RENDERABLE_IMAGE_EXT_RE.test(zipPath)) return null;
 
+  let resolvedZipPath = zipPath;
   let blobUrl = ctx.imageUrlByZipPath.get(zipPath);
   if (!blobUrl) {
-    const entry = ctx.zip.file(zipPath);
+    let entry = ctx.zip.file(zipPath);
+    if (!entry) {
+      const targetLower = zipPath.toLowerCase();
+      const ciKey = Object.keys(ctx.zip.files).find((k) => k.toLowerCase() === targetLower);
+      if (ciKey) {
+        entry = ctx.zip.file(ciKey);
+        resolvedZipPath = ciKey;
+      }
+    }
     if (!entry) return null;
-    const rawBlob = await entry.async('blob');
-    blobUrl = URL.createObjectURL(new Blob([rawBlob], { type: guessImageMimeType(zipPath) }));
-    ctx.createdUrls.push(blobUrl);
+    if (ctx.skipMediaBlobs) {
+      blobUrl = 'data:,';
+    } else {
+      const rawBlob = await entry.async('blob');
+      blobUrl = URL.createObjectURL(new Blob([rawBlob], { type: guessImageMimeType(resolvedZipPath) }));
+      ctx.createdUrls.push(blobUrl);
+    }
     ctx.imageUrlByZipPath.set(zipPath, blobUrl);
   }
 
   const token = `__docx-img__/${ctx.placeholderSeq++}`;
-  ctx.placeholderToImage.set(token, { blobUrl, zipPath });
+  ctx.placeholderToImage.set(token, { blobUrl, zipPath: resolvedZipPath });
   return token;
 }
 
@@ -79,7 +93,7 @@ async function renderRunElement(
   const walkRunChild = async (child: Element): Promise<void> => {
     switch (child.localName) {
       case 't': {
-        const value = child.textContent || '';
+        const value = (child.textContent || '').normalize('NFC');
         html += escapeHtml(value);
         text += value;
         break;
@@ -170,7 +184,9 @@ async function renderParagraphContent(
         const rel = relId ? ctx.rels.get(relId) : undefined;
         const safeHref =
           rel?.external && /^(?:https?:|mailto:)/i.test(rel.target) ? escapeHtml(rel.target) : null;
-        html += safeHref ? `<a href="${safeHref}">${linkHtml}</a>` : linkHtml;
+        html += safeHref
+          ? `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${linkHtml}</a>`
+          : linkHtml;
         text += linkText;
         break;
       }
@@ -431,7 +447,11 @@ export async function extractDocxCover(zip: JSZip): Promise<Blob | null> {
   return null;
 }
 
-export async function parseDocxZip(zip: JSZip, book: Book): Promise<ParsedBook> {
+export async function parseDocxZip(
+  zip: JSZip,
+  book: Book,
+  options?: { skipMediaBlobs?: boolean },
+): Promise<ParsedBook> {
   const createdUrls: string[] = [];
   const dispose = () => {
     for (const url of createdUrls) URL.revokeObjectURL(url);
@@ -461,6 +481,7 @@ export async function parseDocxZip(zip: JSZip, book: Book): Promise<ParsedBook> 
       placeholderToImage: new Map(),
       createdUrls,
       placeholderSeq: 0,
+      skipMediaBlobs: Boolean(options?.skipMediaBlobs),
     };
 
     const blocks: DocxBlock[] = [];

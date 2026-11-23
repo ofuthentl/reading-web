@@ -16,6 +16,7 @@ export interface LoadedGlbTemplate {
 }
 
 let sharedLoader: GLTFLoader | null = null;
+let cacheGeneration = 0;
 const templateCache = new Map<string, Promise<LoadedGlbTemplate>>();
 const resolvedTemplates = new Map<string, LoadedGlbTemplate>();
 
@@ -90,6 +91,10 @@ export function disposeObject3D(root: THREE.Object3D, disposeResources = false):
   });
 }
 
+export function hasCachedLocalGlb(url: string): boolean {
+  return resolvedTemplates.has(url);
+}
+
 /**
  * Loads and caches a local `.glb` from `public/models/` using Three.js `GLTFLoader`
  * + local `MeshoptDecoder` (zero external CDN requests, zero remote Draco decoder).
@@ -98,10 +103,16 @@ export function loadLocalGlb(url: string): Promise<LoadedGlbTemplate> {
   const existing = templateCache.get(url);
   if (existing) return existing;
 
+  const generation = cacheGeneration;
   const pending = getConfiguredLoader()
     .then((loader) => loader.loadAsync(url))
     .then((gltf: GLTF) => {
       const scene = gltf.scene;
+      // Chống rò VRAM nếu rời 3D (clearLocalGlbCache) trong khi file GLB vẫn đang giải mã
+      if (generation !== cacheGeneration) {
+        disposeObject3D(scene, true);
+        throw new Error('GLB cache cleared while loading');
+      }
       scene.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
           obj.castShadow = false;
@@ -119,7 +130,9 @@ export function loadLocalGlb(url: string): Promise<LoadedGlbTemplate> {
       return template;
     })
     .catch((err) => {
-      templateCache.delete(url);
+      if (templateCache.get(url) === pending) {
+        templateCache.delete(url);
+      }
       throw err;
     });
 
@@ -139,6 +152,7 @@ export function cloneGlbTemplate(template: LoadedGlbTemplate): THREE.Object3D {
  * Disposes all cached GLB templates & textures (call only when tearing down 3D completely).
  */
 export function clearLocalGlbCache(): void {
+  cacheGeneration += 1;
   for (const template of resolvedTemplates.values()) {
     disposeObject3D(template.scene, true);
   }

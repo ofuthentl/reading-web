@@ -57,14 +57,7 @@ export function computeLibraryReadingTotals(
       completedBooks += 1;
     }
 
-    if (book.file_type === 'pdf') {
-      if (isDone) {
-        readPages += Math.max(1, p.totalChapters ?? p.chapterIndex + 1);
-      } else {
-        const partial = p.chapterIndex + (p.scrollRatio >= 0.45 ? 1 : 0);
-        readPages += Math.max(1, partial);
-      }
-    } else if (isDone) {
+    if (isDone) {
       const totalCh = Math.max(1, p.totalChapters ?? p.chapterIndex + 1);
       readPages += totalCh * EPUB_PAGES_PER_CHAPTER;
     } else {
@@ -140,7 +133,7 @@ export function computeDetailedLibraryInsights(
   const rpg = computeReaderRpgStats(books, progress);
   const totalBooks = books.length;
   let startedCount = 0;
-  const formatCounts: Record<BookFileType, number> = { epub: 0, pdf: 0, docx: 0 };
+  const formatCounts: Record<BookFileType, number> = { epub: 0, docx: 0 };
 
   for (const b of books) {
     formatCounts[b.file_type] = (formatCounts[b.file_type] ?? 0) + 1;

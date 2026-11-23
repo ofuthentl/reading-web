@@ -111,6 +111,9 @@ export function ShelfAccessMemberList({
             type="text"
             value={memberQuery}
             onChange={(e) => onMemberQueryChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.preventDefault();
+            }}
             placeholder="Tìm theo tên Discord hoặc ID..."
             className="w-full rounded-xl border border-line bg-canvas py-1.5 pl-9 pr-3 text-xs text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-accent"
           />
@@ -206,6 +209,13 @@ export function ShelfAccessMemberList({
             inputMode="numeric"
             value={manualId}
             onChange={(e) => onManualIdChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (manualId.trim()) onAddManualId();
+              }
+            }}
             placeholder="Discord User ID (dãy số)"
             className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-ink placeholder:text-ink-faint outline-none focus:border-accent"
           />
@@ -213,6 +223,13 @@ export function ShelfAccessMemberList({
             type="text"
             value={manualLabel}
             onChange={(e) => onManualLabelChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (manualId.trim()) onAddManualId();
+              }
+            }}
             placeholder="Tên gợi nhớ (tuỳ chọn)"
             className="min-w-0 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-ink placeholder:text-ink-faint outline-none focus:border-accent sm:w-40"
           />

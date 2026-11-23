@@ -5,7 +5,6 @@ import type { ReaderDrawerTab } from '@/components/ReaderTocDrawer';
 
 interface UseReaderControllerOptions {
   initialCompleted: boolean;
-  isPdf: boolean;
   settings: ReaderSettings;
   blockCopyShortcuts?: boolean;
   onSaveProgress: (progress: ReadingProgress) => void;
@@ -20,7 +19,6 @@ interface UseReaderControllerOptions {
  */
 export function useReaderController({
   initialCompleted,
-  isPdf,
   settings,
   blockCopyShortcuts = false,
   onSaveProgress,
@@ -37,6 +35,10 @@ export function useReaderController({
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingProgressRef = useRef<ReadingProgress | null>(null);
   const completedRef = useRef(initialCompleted);
+
+  useEffect(() => {
+    completedRef.current = initialCompleted;
+  }, [initialCompleted]);
 
   const flushProgress = useCallback(() => {
     if (saveTimerRef.current) {
@@ -121,7 +123,7 @@ export function useReaderController({
           else openDrawerTab('bookmarks');
           return;
         }
-        if (key === 'f' && !isPdf) {
+        if (key === 'f') {
           event.preventDefault();
           setSettingsOpen(false);
           setImmersiveHidden((prev) => !prev);
@@ -129,7 +131,8 @@ export function useReaderController({
         }
       }
 
-      if (!settings.sideTapNavigation) return;
+      if (!settings.sideTapNavigation || tocOpen || settingsOpen) return;
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
       if (event.key === 'ArrowLeft') onPrev();
       else if (event.key === 'ArrowRight') onNext();
     };
@@ -140,7 +143,6 @@ export function useReaderController({
     blockCopyShortcuts,
     drawerTab,
     immersiveHidden,
-    isPdf,
     lightboxTarget,
     onNext,
     onPrev,

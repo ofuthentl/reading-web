@@ -214,8 +214,10 @@ export async function setShelfCoverBook(
   if (!trimmed || trimmed.length > MAX_SHELF_NAME_LENGTH) {
     throw new Error(`Tên kệ sách không hợp lệ (tối đa ${MAX_SHELF_NAME_LENGTH} ký tự).`);
   }
-  writeLocalShelfPrefs(patchShelfCover(readLocalShelfPrefs(), trimmed, bookId));
-  if (!isCloudMode) return;
+  if (!isCloudMode) {
+    writeLocalShelfPrefs(patchShelfCover(readLocalShelfPrefs(), trimmed, bookId));
+    return;
+  }
 
   const res = await apiFetch('/api/shelves/cover', {
     method: 'PUT',
@@ -226,6 +228,7 @@ export async function setShelfCoverBook(
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(data.error || 'Không thể lưu ảnh bìa kệ.');
   }
+  writeLocalShelfPrefs(patchShelfCover(readLocalShelfPrefs(), trimmed, bookId));
 }
 
 export async function setShelfFavorite(
@@ -237,8 +240,10 @@ export async function setShelfFavorite(
   if (!trimmed || trimmed.length > MAX_SHELF_NAME_LENGTH) {
     throw new Error(`Tên kệ sách không hợp lệ (tối đa ${MAX_SHELF_NAME_LENGTH} ký tự).`);
   }
-  writeLocalShelfPrefs(patchShelfFavorite(readLocalShelfPrefs(), trimmed, favorite));
-  if (!isCloudMode) return;
+  if (!isCloudMode) {
+    writeLocalShelfPrefs(patchShelfFavorite(readLocalShelfPrefs(), trimmed, favorite));
+    return;
+  }
 
   const res = await apiFetch('/api/shelves/favorite', {
     method: 'PUT',
@@ -249,4 +254,5 @@ export async function setShelfFavorite(
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(data.error || 'Không thể cập nhật trạng thái yêu thích của kệ.');
   }
+  writeLocalShelfPrefs(patchShelfFavorite(readLocalShelfPrefs(), trimmed, favorite));
 }

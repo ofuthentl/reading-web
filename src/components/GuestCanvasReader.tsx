@@ -7,6 +7,7 @@ import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
 import { ReaderTocDrawer } from '@/components/ReaderTocDrawer';
 import { ReaderTopBar } from '@/components/ReaderTopBar';
 import { useGuestChapterStream } from '@/hooks/useGuestChapterStream';
+import { useReaderCanvasFontVersion } from '@/hooks/useReaderCanvasFontVersion';
 import { useReaderController } from '@/hooks/useReaderController';
 import {
   computeChapterCanvasLayout,
@@ -66,6 +67,7 @@ export function GuestCanvasReader({
   const [chapterScrollRatio, setChapterScrollRatio] = useState(initialStartRatio);
   const [paginatedStartRatio, setPaginatedStartRatio] = useState(initialStartRatio);
   const [stageBox, setStageBox] = useState(getInitialGuestStageBox);
+  const fontVersion = useReaderCanvasFontVersion(settings.font);
   const [pageHidden, setPageHidden] = useState(() =>
     typeof document !== 'undefined' ? document.visibilityState === 'hidden' : false,
   );
@@ -89,7 +91,6 @@ export function GuestCanvasReader({
 
   const ctrl = useReaderController({
     initialCompleted: Boolean(initialProgress?.completed),
-    isPdf: false,
     settings,
     blockCopyShortcuts: true,
     onSaveProgress,
@@ -143,6 +144,7 @@ export function GuestCanvasReader({
   }, []);
 
   const layout = useMemo(() => {
+    void fontVersion;
     if (!chapterData || isPaginated) return null;
     return computeChapterCanvasLayout({
       chapterTitle: chapterData.title,
@@ -153,7 +155,7 @@ export function GuestCanvasReader({
       containerWidth: stageBox.width,
       imageSizes,
     });
-  }, [chapterData, chapterIndex, imageSizes, isPaginated, settings, stageBox.width, tocChapters.length]);
+  }, [chapterData, chapterIndex, fontVersion, imageSizes, isPaginated, settings, stageBox.width, tocChapters.length]);
 
   const effectiveWatermark = chapterData?.watermarkLabel || watermarkLabel || 'Guest';
 
@@ -383,10 +385,10 @@ export function GuestCanvasReader({
           currentChapterTitle={currentTocItem?.title || ''}
           currentScrollRatio={chapterScrollRatio}
           initialTab={drawerTab}
-          isPdf={false}
           palette={palette}
           onSelectChapter={(idx) => goToChapter(idx, 0)}
           onJumpToBookmark={goToChapter}
+          onApiError={onApiError}
           onClose={() => setTocOpen(false)}
         />
       )}
@@ -427,7 +429,9 @@ export function GuestCanvasReader({
           pageHidden={pageHidden}
           onToggleImmersive={() => setImmersiveHidden((prev) => !prev)}
           onCloseSettings={() => {
-            if (settingsOpen) setSettingsOpen(false);
+            if (!settingsOpen) return false;
+            setSettingsOpen(false);
+            return true;
           }}
           onRatioChange={handlePaginatedRatioChange}
           onPrevChapterEnd={() => {

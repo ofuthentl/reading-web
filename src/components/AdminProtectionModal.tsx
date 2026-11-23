@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import type { Book, StorageStats } from '@/types';
 import { AdminDiscordGuestsPanel } from '@/components/AdminDiscordGuestsPanel';
-import { fetchBookBlobCached, formatBytes, isCloudMode } from '@/lib/api';
+import { fetchBookBlobCached, formatBytes, isAuthError, isCloudMode } from '@/lib/api';
 import {
   type DiscordGuestRecord, type ForensicSuspectItem,
   fetchAdminDiscordGuests, runAdminForensicWatermarkCheck, setAdminDiscordGuestBan,
@@ -38,6 +38,14 @@ export function AdminProtectionModal({
   } | null>(null);
   const stopSyncRef = useRef(false);
   const syncAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      stopSyncRef.current = true;
+      syncAbortRef.current?.abort();
+      syncAbortRef.current = null;
+    };
+  }, []);
 
   // State truy vết rò rỉ văn bản 32-bit
   const [sampleText, setSampleText] = useState('');
@@ -131,15 +139,25 @@ export function AdminProtectionModal({
           stepLabel: 'Đang nén & tải gói bảo mật...',
         });
         const res = await buildAndUploadGuestPack(blob, target);
+        if (stopSyncRef.current) break;
         onBookPackSynced(target.id, res.storage);
         successCount += 1;
       } catch (err) {
         if (stopSyncRef.current) break;
+        if (isAuthError(err)) {
+          stopSyncRef.current = true;
+          syncAbortRef.current = null;
+          setSyncing(false);
+          setSyncProgress(null);
+          onApiError(err, 'Phiên quản trị đã hết hạn.');
+          return;
+        }
         failCount += 1;
         console.warn(`Lỗi tạo gói khách cho "${target.title}":`, err);
       }
     }
     syncAbortRef.current = null;
+    if (stopSyncRef.current && successCount === 0 && failCount === 0) return;
 
     setSyncing(false);
     setSyncProgress(null);

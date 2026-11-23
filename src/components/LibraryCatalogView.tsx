@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { BookMarked } from 'lucide-react';
 import type {
   AuthRole,
@@ -9,6 +9,7 @@ import type {
   ShelfAccessSummary,
   ShelfGroup,
 } from '@/types';
+import { isCloudMode } from '@/lib/api';
 import { summarizeShelf, type ShelfSummary } from '@/lib/shelfSummary';
 import {
   type LibraryAdvancedFilterProps,
@@ -118,6 +119,13 @@ export function LibraryCatalogView({
   const [batchNoteOpen, setBatchNoteOpen] = useState(false);
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
 
+  useEffect(() => {
+    if (!openedLibraryShelf) {
+      setBatchNoteOpen(false);
+      setTagsModalOpen(false);
+    }
+  }, [openedLibraryShelf]);
+
   const allShelvesCount = allShelves.length;
   const allShelfNames = useMemo(
     () => new Map(allShelves.map((s) => [s.key, s.name])),
@@ -134,9 +142,10 @@ export function LibraryCatalogView({
           favoriteShelfKeys,
           shelfAccess?.[shelf.key] ?? null,
           shelfTags,
+          sessionRole,
         ),
       ),
-    [libraryShelves, progress, shelfCovers, favoriteShelfKeys, shelfAccess, shelfTags],
+    [libraryShelves, progress, shelfCovers, favoriteShelfKeys, shelfAccess, shelfTags, sessionRole],
   );
 
   const openedShelfSummary = useMemo(
@@ -149,9 +158,10 @@ export function LibraryCatalogView({
             favoriteShelfKeys,
             shelfAccess?.[openedLibraryShelf.key] ?? null,
             shelfTags,
+            sessionRole,
           )
         : null,
-    [openedLibraryShelf, progress, shelfCovers, favoriteShelfKeys, shelfAccess, shelfTags],
+    [openedLibraryShelf, progress, shelfCovers, favoriteShelfKeys, shelfAccess, shelfTags, sessionRole],
   );
 
   const pickingSummary: ShelfSummary | null = useMemo(() => {
@@ -238,7 +248,7 @@ export function LibraryCatalogView({
             unitLabel="kệ"
             searchPlaceholder="Tìm bộ truyện, tác giả, thể loại hoặc tên tập..."
             unprotectedBookCount={unprotectedBookCount}
-            onProtectionClick={sessionRole === 'owner' ? onProtectionClick : undefined}
+            onProtectionClick={sessionRole === 'owner' && isCloudMode ? onProtectionClick : undefined}
             onSearchChange={onSearchChange}
             onStatusChange={onStatusChange}
             onSortChange={onSortChange}
@@ -252,7 +262,7 @@ export function LibraryCatalogView({
                 Không tìm thấy bộ truyện nào
               </h3>
               <p className="mt-1 text-sm text-ink-muted">
-                Thử đổi từ khoá hoặc xoá các bộ lọc trạng thái / định dạng hiện tại.
+                Thử đổi từ khoá hoặc xoá các bộ lọc tác giả / thể loại / trạng thái hiện tại.
               </p>
               <button
                 type="button"

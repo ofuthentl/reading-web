@@ -3,13 +3,14 @@ import { BookOpen, Clock, Upload } from 'lucide-react';
 import type {
   AuthRole, Book, ReadingProgress, ShelfAccessSummary, StorageStats, ViewMode,
 } from '@/types';
+import { isCloudMode } from '@/lib/api';
 import { BookCard } from '@/components/BookCard';
 import { EditorialBookStrip } from '@/components/EditorialBookStrip';
 import { type LibraryAdvancedFilterProps, LibraryFilterBar } from '@/components/LibraryFilterBar';
 import { LibraryHeader } from '@/components/LibraryHeader';
 import { LibraryHomeShelvesSection } from '@/components/LibraryHomeShelvesSection';
 import type { LibraryViewState } from '@/hooks/useLibraryViewState';
-import type { AppTheme } from '@/hooks/useTheme';
+import { type UiTheme, isDarkTheme } from '@/hooks/useTheme';
 import type { ToastType } from '@/hooks/useToast';
 
 const LazyBulkSelectionBar = lazy(() =>
@@ -33,7 +34,7 @@ interface Library2DViewProps {
   favoriteShelfKeys?: ReadonlySet<string>;
   storage: StorageStats | null;
   loading: boolean;
-  theme: AppTheme;
+  theme: UiTheme;
   viewState: LibraryViewState;
   sessionRole?: AuthRole;
   sessionExpiresAt?: number | null;
@@ -47,6 +48,7 @@ interface Library2DViewProps {
   onInspectBook?: (book: Book) => void;
   onDismissContinue?: (book: Book) => void;
   onOpenStats?: () => void;
+  onOpenUsage?: () => void;
   onUploadClick?: () => void;
   onProtectionClick?: () => void;
   unprotectedBookCount?: number;
@@ -103,6 +105,7 @@ export function Library2DView({
   onInspectBook,
   onDismissContinue,
   onOpenStats,
+  onOpenUsage,
   onUploadClick,
   onProtectionClick,
   unprotectedBookCount = 0,
@@ -118,7 +121,7 @@ export function Library2DView({
   onApiError,
   onNotify,
 }: Library2DViewProps) {
-  const isDark = theme !== 'light';
+  const isDark = isDarkTheme(theme);
   const {
     activeTab,
     setActiveTab,
@@ -233,6 +236,7 @@ export function Library2DView({
         onChangeViewMode={onChangeViewMode}
         onCycleTheme={onCycleTheme}
         onOpenStats={onOpenStats}
+        onOpenUsage={onOpenUsage}
         onUploadClick={onUploadClick}
         onProtectionClick={onProtectionClick}
         unprotectedBookCount={unprotectedBookCount}
@@ -258,7 +262,7 @@ export function Library2DView({
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-ink-muted">
               {onUploadClick
-                ? 'Tải lên những cuốn EPUB, PDF hoặc DOCX yêu thích để bắt đầu xây dựng thư viện đồng bộ của riêng bạn.'
+                ? 'Tải lên những cuốn EPUB hoặc DOCX yêu thích để bắt đầu xây dựng thư viện đồng bộ của riêng bạn.'
                 : 'Thư viện hiện chưa có cuốn sách nào được đưa lên kệ.'}
             </p>
             {onUploadClick && (
@@ -332,7 +336,9 @@ export function Library2DView({
               selectionMode={selectionMode}
               selectedCount={selectedIds.size}
               unprotectedBookCount={unprotectedBookCount}
-              onProtectionClick={sessionRole === 'owner' ? onProtectionClick : undefined}
+              onProtectionClick={
+                sessionRole === 'owner' && isCloudMode ? onProtectionClick : undefined
+              }
               onToggleSelectionMode={sessionRole === 'owner' ? toggleSelectionMode : undefined}
               isFiltering={isFiltering}
               filteredCount={filteredBooks.length}

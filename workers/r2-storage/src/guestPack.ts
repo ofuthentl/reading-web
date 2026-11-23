@@ -11,16 +11,12 @@ import {
   deriveUserWatermarkBits,
   matchForensicCandidates,
 } from './forensicWatermark';
+import { consumeGuestRateToken } from './rateLimitDb';
 import { assertGuestBookAccess } from './shelfAccessDb';
 
 export const GUEST_PACK_MAGIC = 'OFGP';
 export const MAX_GUEST_PACK_ENVELOPE_BYTES = 25 * 1024 * 1024; // 25 MiB
 export const MAX_MEDIA_SLICE_BYTES = 25 * 1024 * 1024; // 25 MiB
-
-// Token Bucket chống tool cào tự động (KHÔNG đặt trần tổng chương/ngày cho bạn bè đọc thật)
-const BUCKET_CAPACITY = 10; // Mở liên tiếp 10 chương đầu tức thì (0ms chờ) để dò mục lục
-const BUCKET_REFILL_PER_MS = 1 / 6000; // Hồi 1 chương mới mỗi 6 giây (10 chương mới/phút)
-const AUTO_CLOSE_SESSION_STRIKES = 10;
 
 export interface GuestManifestChapter {
   id: string;
@@ -178,6 +174,12 @@ export async function uploadBookGuestPack(
     throw new HttpError('Gói bảo mật chế độ khách chỉ áp dụng cho sách EPUB và DOCX.', 400);
   }
 
+  // Kiểm tra Content-Length trước khi nạp toàn bộ gói vào RAM Worker (vá M-7)
+  const declaredLen = Number(request.headers.get('Content-Length') || 0);
+  if (Number.isFinite(declaredLen) && declaredLen > MAX_GUEST_PACK_ENVELOPE_BYTES) {
+    throw new HttpError('Kích thước gói bảo mật khách vượt tối đa 25 MB.', 413);
+  }
+
   const rawBuffer = await request.arrayBuffer();
   if (rawBuffer.byteLength < 12 || rawBuffer.byteLength > MAX_GUEST_PACK_ENVELOPE_BYTES) {
     throw new HttpError('Kích thước gói bảo mật khách không hợp lệ (tối đa 25 MB).', 400);
@@ -207,42 +209,58 @@ export async function uploadBookGuestPack(
   }
 
   const existingPack = await env.DB.prepare(
-    'SELECT pack_size FROM book_guest_packs WHERE book_id = ?',
+    'SELECT pack_key, pack_size FROM book_guest_packs WHERE book_id = ?',
   )
     .bind(bookId)
-    .first<{ pack_size: number }>();
+    .first<{ pack_key: string; pack_size: number }>();
   const oldPackSize = existingPack?.pack_size ?? 0;
 
   const storage = await getStorageStats(env);
   assertQuota(storage.usedBytes - oldPackSize, packBytes.byteLength, storage.limitBytes);
 
-  const packKey = `guest-packs/${bookId}.pack`;
+  // Dùng pack_key có phiên bản thời gian để không làm hỏng khách đang đọc gói cũ (vá M-7)
+  const now = Date.now();
+  const packKey = `guest-packs/${bookId}-${now}.pack`;
   const putRes = await env.BOOKS_BUCKET.put(packKey, packBytes, {
     httpMetadata: { contentType: 'application/octet-stream' },
   });
   if (!putRes) throw new HttpError('Không thể lưu gói bảo mật vào R2.', 500);
 
+  const freshStorage = await getStorageStats(env);
+  if (freshStorage.usedBytes - oldPackSize + putRes.size > freshStorage.limitBytes) {
+    await env.BOOKS_BUCKET.delete(packKey).catch(() => undefined);
+    assertQuota(freshStorage.usedBytes - oldPackSize, putRes.size, freshStorage.limitBytes);
+  }
+
   const normalizedManifestStr = JSON.stringify(validatedManifest);
-  const now = Date.now();
-  await env.DB.prepare(
-    `INSERT INTO book_guest_packs (book_id, pack_key, pack_size, chapter_count, manifest_json, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(book_id) DO UPDATE SET
-       pack_key = excluded.pack_key,
-       pack_size = excluded.pack_size,
-       chapter_count = excluded.chapter_count,
-       manifest_json = excluded.manifest_json,
-       updated_at = excluded.updated_at`,
-  )
-    .bind(
-      bookId,
-      packKey,
-      putRes.size,
-      validatedManifest.chapters.length,
-      normalizedManifestStr,
-      now,
+  try {
+    await env.DB.prepare(
+      `INSERT INTO book_guest_packs (book_id, pack_key, pack_size, chapter_count, manifest_json, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(book_id) DO UPDATE SET
+         pack_key = excluded.pack_key,
+         pack_size = excluded.pack_size,
+         chapter_count = excluded.chapter_count,
+         manifest_json = excluded.manifest_json,
+         updated_at = excluded.updated_at`,
     )
-    .run();
+      .bind(
+        bookId,
+        packKey,
+        putRes.size,
+        validatedManifest.chapters.length,
+        normalizedManifestStr,
+        now,
+      )
+      .run();
+  } catch (dbErr) {
+    await env.BOOKS_BUCKET.delete(packKey).catch(() => undefined);
+    throw dbErr;
+  }
+
+  if (existingPack?.pack_key && existingPack.pack_key !== packKey) {
+    await env.BOOKS_BUCKET.delete(existingPack.pack_key).catch(() => undefined);
+  }
 
   const updatedStorage = await getStorageStats(env);
   return {
@@ -252,71 +270,6 @@ export async function uploadBookGuestPack(
     packSize: putRes.size,
     storage: updatedStorage,
   };
-}
-
-async function consumeGuestChapterToken(db: D1Database, discordUserId: string): Promise<void> {
-  const now = Date.now();
-  const row = await db
-    .prepare(
-      'SELECT rl_tokens, rl_updated_at, rl_strikes FROM discord_access WHERE discord_user_id = ?',
-    )
-    .bind(discordUserId)
-    .first<{ rl_tokens: number | null; rl_updated_at: number | null; rl_strikes: number | null }>();
-
-  const prevTokens =
-    typeof row?.rl_tokens === 'number' && Number.isFinite(row.rl_tokens)
-      ? row.rl_tokens
-      : BUCKET_CAPACITY;
-  const prevAt =
-    typeof row?.rl_updated_at === 'number' && row.rl_updated_at > 0 ? row.rl_updated_at : now;
-  const prevStrikes = typeof row?.rl_strikes === 'number' ? row.rl_strikes : 0;
-
-  const elapsedMs = Math.max(0, now - prevAt);
-  const refilled = Math.min(BUCKET_CAPACITY, prevTokens + elapsedMs * BUCKET_REFILL_PER_MS);
-
-  if (refilled < 1) {
-    const nextStrikes = prevStrikes + 1;
-    if (nextStrikes >= AUTO_CLOSE_SESSION_STRIKES) {
-      await db
-        .prepare(
-          `UPDATE discord_access
-           SET active_session_id = NULL,
-               session_expires_at = NULL,
-               rl_tokens = ?,
-               rl_updated_at = ?,
-               rl_strikes = ?,
-               updated_at = ?
-           WHERE discord_user_id = ?`,
-        )
-        .bind(refilled, now, nextStrikes, now, discordUserId)
-        .run();
-      throw new HttpError(
-        'Phiên đọc đã tự động đóng do phát hiện truy vấn hàng loạt tốc độ cao bất thường.',
-        401,
-      );
-    }
-
-    await db
-      .prepare(
-        'UPDATE discord_access SET rl_tokens = ?, rl_updated_at = ?, rl_strikes = ? WHERE discord_user_id = ?',
-      )
-      .bind(refilled, now, nextStrikes, discordUserId)
-      .run();
-
-    const waitSec = Math.max(3, Math.ceil((1 - refilled) / BUCKET_REFILL_PER_MS / 1000));
-    throw new HttpError(
-      `Bạn đang chuyển chương liên tục quá nhanh. Vui lòng đợi khoảng ${waitSec} giây rồi thử lại.`,
-      429,
-      { 'Retry-After': String(waitSec) },
-    );
-  }
-
-  await db
-    .prepare(
-      'UPDATE discord_access SET rl_tokens = ?, rl_updated_at = ?, rl_strikes = 0 WHERE discord_user_id = ?',
-    )
-    .bind(refilled - 1, now, discordUserId)
-    .run();
 }
 
 async function loadManifestRecord(
@@ -371,7 +324,12 @@ export async function getGuestEncryptedChapter(
   if (!chapterMeta) throw new HttpError('Không tìm thấy chương yêu cầu.', 404);
 
   if (auth.role === 'guest') {
-    await consumeGuestChapterToken(env.DB, auth.userId);
+    await consumeGuestRateToken(env.DB, auth.userId, {
+      cost: 1,
+      trackStrikes: true,
+      tooFastMessage: (waitSec) =>
+        `Bạn đang chuyển chương liên tục quá nhanh. Vui lòng đợi khoảng ${waitSec} giây rồi thử lại.`,
+    });
   }
 
   const obj = await env.BOOKS_BUCKET.get(packKey, {

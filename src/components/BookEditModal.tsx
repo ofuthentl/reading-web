@@ -283,7 +283,7 @@ export function BookEditModal({
                   </p>
                 )}
                 <p className="text-center text-[11px] text-ink-faint">
-                  Tự nén JPEG 480×720 (~40 KB)
+                  Tự nén JPEG giữ tỉ lệ gốc (~40 KB)
                 </p>
               </div>
 

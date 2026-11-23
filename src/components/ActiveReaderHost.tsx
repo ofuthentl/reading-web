@@ -32,6 +32,7 @@ export interface ActiveReaderHostProps {
   onSaveProgress: (progress: ReadingProgress) => void;
   onOpenBook: (book: Book) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
+  onCancelOpening: () => void;
   onClose: () => void;
 }
 
@@ -49,6 +50,7 @@ export function ActiveReaderHost({
   onSaveProgress,
   onOpenBook,
   onApiError,
+  onCancelOpening,
   onClose,
 }: ActiveReaderHostProps) {
   const nextBook = useMemo(
@@ -72,6 +74,7 @@ export function ActiveReaderHost({
               onUpdateSettings={onUpdateSettings}
               onSaveProgress={onSaveProgress}
               onOpenNextBook={onOpenBook}
+              onApiError={onApiError}
               onClose={onClose}
             />
           </Suspense>
@@ -113,7 +116,7 @@ export function ActiveReaderHost({
             <p className="mt-1 line-clamp-2 text-xs text-ink-muted">{openingBook.title}</p>
             <button
               type="button"
-              onClick={onClose}
+              onClick={onCancelOpening}
               className="mt-4 rounded-xl border border-line bg-canvas px-4 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink"
             >
               Huỷ

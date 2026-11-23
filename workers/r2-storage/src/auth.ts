@@ -112,9 +112,8 @@ export async function sha256Hex(input: string): Promise<string> {
 }
 
 export async function computeUserAgentHash(userAgent: string): Promise<string> {
-  const normalized = userAgent.trim();
-  if (!normalized) return '';
-  const digest = await sha256Hex(`ua-v1:${normalized}`);
+  // Luôn băm kể cả khi User-Agent trống để không bao giờ bỏ qua bước ràng buộc thiết bị (vá M-2)
+  const digest = await sha256Hex(`ua-v1:${userAgent.trim()}`);
   return digest.slice(0, 24);
 }
 
@@ -178,43 +177,33 @@ export async function ensureDiscordAccessTable(db: D1Database): Promise<void> {
     ),
   ]);
 
-  // Tự động bổ sung cột mới cho bảng discord_access cũ tạo từ migration 0003
-  const info = await db
-    .prepare('PRAGMA table_info(discord_access)')
-    .all<{ name: string }>()
-    .catch(() => ({ results: [] as Array<{ name: string }> }));
+  // Tự động bổ sung cột mới cho bảng discord_access cũ tạo từ migration 0003 (chạy từng ALTER riêng tránh huỷ cả batch)
+  const info = await db.prepare('PRAGMA table_info(discord_access)').all<{ name: string }>();
   const cols = new Set((info.results || []).map((c) => c.name));
-  const alters: D1PreparedStatement[] = [];
-  if (cols.size > 0) {
-    if (!cols.has('ua_hash')) {
-      alters.push(db.prepare('ALTER TABLE discord_access ADD COLUMN ua_hash TEXT'));
-    }
-    if (!cols.has('rl_tokens')) {
-      alters.push(
-        db.prepare('ALTER TABLE discord_access ADD COLUMN rl_tokens REAL NOT NULL DEFAULT 10'),
-      );
-    }
-    if (!cols.has('rl_updated_at')) {
-      alters.push(
-        db.prepare('ALTER TABLE discord_access ADD COLUMN rl_updated_at INTEGER NOT NULL DEFAULT 0'),
-      );
-    }
-    if (!cols.has('rl_strikes')) {
-      alters.push(
-        db.prepare('ALTER TABLE discord_access ADD COLUMN rl_strikes INTEGER NOT NULL DEFAULT 0'),
-      );
-    }
-    if (!cols.has('is_banned')) {
-      alters.push(
-        db.prepare('ALTER TABLE discord_access ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0'),
-      );
-    }
-    if (!cols.has('ban_reason')) {
-      alters.push(db.prepare('ALTER TABLE discord_access ADD COLUMN ban_reason TEXT'));
-    }
+  const alterSqls: string[] = [];
+  if (!cols.has('ua_hash')) alterSqls.push('ALTER TABLE discord_access ADD COLUMN ua_hash TEXT');
+  if (!cols.has('rl_tokens')) {
+    alterSqls.push('ALTER TABLE discord_access ADD COLUMN rl_tokens REAL NOT NULL DEFAULT 10');
   }
-  if (alters.length > 0) {
-    await db.batch(alters).catch(() => undefined);
+  if (!cols.has('rl_updated_at')) {
+    alterSqls.push('ALTER TABLE discord_access ADD COLUMN rl_updated_at INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.has('rl_strikes')) {
+    alterSqls.push('ALTER TABLE discord_access ADD COLUMN rl_strikes INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.has('is_banned')) {
+    alterSqls.push('ALTER TABLE discord_access ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.has('ban_reason')) {
+    alterSqls.push('ALTER TABLE discord_access ADD COLUMN ban_reason TEXT');
+  }
+  for (const sql of alterSqls) {
+    try {
+      await db.prepare(sql).run();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.toLowerCase().includes('duplicate column')) throw err;
+    }
   }
   upgradedDbs.add(db);
 }
@@ -330,7 +319,7 @@ export async function authenticatePasscodeOrKey(
     .bind(
       sessionId,
       sessionExpiresAt,
-      uaHash || null,
+      uaHash,
       now,
       now,
       row.discord_user_id,
@@ -377,10 +366,8 @@ export async function verifyAuth(
     throw new HttpError('Máy chủ chưa cấu hình ACCESS_PASSCODE.', 503);
   }
 
-  const url = new URL(request.url);
-  const headerToken = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '').trim();
-  const queryToken = url.searchParams.get('token')?.trim();
-  const token = headerToken || queryToken;
+  // Chỉ nhận Bearer token qua Authorization header — bỏ fallback ?token= trên URL (vá M-3)
+  const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '').trim();
   if (!token) throw new HttpError('Vui lòng nhập chìa khoá để truy cập thư viện.', 401);
 
   const parts = token.split('.');
@@ -435,22 +422,30 @@ export async function verifyAuth(
     }
 
     await ensureDiscordAccessTable(db);
-    const row = await db
-      .prepare(
-        'SELECT discord_username, active_session_id, session_expires_at, ua_hash, is_banned FROM discord_access WHERE discord_user_id = ?',
-      )
-      .bind(discordUserId)
-      .first<
-        Pick<
-          DiscordAccessRow,
-          | 'discord_username'
-          | 'active_session_id'
-          | 'session_expires_at'
-          | 'ua_hash'
-          | 'is_banned'
-        >
-      >()
-      .catch(() => null);
+    let row: Pick<
+      DiscordAccessRow,
+      'discord_username' | 'active_session_id' | 'session_expires_at' | 'ua_hash' | 'is_banned'
+    > | null;
+    try {
+      row = await db
+        .prepare(
+          'SELECT discord_username, active_session_id, session_expires_at, ua_hash, is_banned FROM discord_access WHERE discord_user_id = ?',
+        )
+        .bind(discordUserId)
+        .first<
+          Pick<
+            DiscordAccessRow,
+            | 'discord_username'
+            | 'active_session_id'
+            | 'session_expires_at'
+            | 'ua_hash'
+            | 'is_banned'
+          >
+        >();
+    } catch {
+      // Lỗi D1 tạm thời trả 503 để tránh đá nhầm khách khỏi phiên bằng 401 (vá L-1)
+      throw new HttpError('Dịch vụ xác thực đang tạm gián đoạn. Vui lòng thử lại sau giây lát.', 503);
+    }
 
     if (row?.is_banned === 1) {
       throw new HttpError('Tài khoản Discord của bạn đã bị ngưng quyền truy cập thư viện.', 403);

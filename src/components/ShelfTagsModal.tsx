@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Loader2, Plus, Save, Search, Tag, X } from 'lucide-react';
 import type { ShelfGroup } from '@/types';
@@ -36,14 +36,18 @@ export function ShelfTagsModal({
   const [filterQuery, setFilterQuery] = useState('');
   const [customInput, setCustomInput] = useState('');
   const [saving, setSaving] = useState(false);
+  const currentTagsRef = useRef(currentTags);
+  currentTagsRef.current = currentTags;
+  const shelfKey = shelf?.key ?? null;
 
+  // Chỉ reset form khi mở bộ khác (theo shelfKey), tránh bị legacyCoverSync nền xoá dở thao tác (vá M-07)
   useEffect(() => {
-    if (!shelf) return;
-    setSelectedTags(currentTags.map(canonicalizeTagLabel).filter(Boolean));
+    if (!shelfKey) return;
+    setSelectedTags(currentTagsRef.current.map(canonicalizeTagLabel).filter(Boolean));
     setFilterQuery('');
     setCustomInput('');
     setSaving(false);
-  }, [shelf, currentTags]);
+  }, [shelfKey]);
 
   useEffect(() => {
     if (!shelf) return;

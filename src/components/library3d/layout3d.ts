@@ -1,11 +1,7 @@
-import type { ShelfGroup } from '@/types';
 import {
-  buildCabinetBookSlots,
-  computeTierPlankYs,
   DEFAULT_FEATURED_COVER_SLOTS,
   LIBRARY_3D_CONSTANTS,
   MAX_FEATURED_COVER_SLOTS,
-  packShelfGroupIntoRows,
   type BookFacing,
   type BookSlot3D,
   type CoverPlaneTransform,
@@ -88,119 +84,6 @@ export interface FeaturedCoverSelectionOptions {
   maxSlots?: number;
   /** Shelf window radius used when visibleShelfKeys is omitted (defaults to 2) */
   radius?: number;
-}
-
-/**
- * Pure deterministic layout engine turning grouped shelves into world-space 3D bookcase
- * cabinets along the legacy horizontal hall wall (kept compatible with PR 4A components
- * while Aincrad floor biomes roll out across Sub-phase 4A-T1..T4).
- */
-export function buildLibraryLayout3D(shelfGroups: readonly ShelfGroup[]): LibraryLayout3D {
-  const tierYs = computeTierPlankYs();
-  const {
-    SHELF_GAP_X,
-    SHELF_DEPTH,
-    SHELF_BACK_Z,
-    SHELF_TOTAL_HEIGHT,
-    CROWN_HEIGHT,
-    HALL_SIDE_MARGIN,
-  } = LIBRARY_3D_CONSTANTS;
-
-  const frontZ = SHELF_BACK_Z + SHELF_DEPTH;
-  const centerZ = SHELF_BACK_Z + SHELF_DEPTH * 0.5;
-  const packedByShelf = shelfGroups.map((group) => packShelfGroupIntoRows(group));
-
-  if (packedByShelf.length === 0) {
-    return {
-      shelves: [],
-      books: [],
-      bookById: new Map(),
-      shelfByKey: new Map(),
-      minX: 0,
-      maxX: 0,
-      centerX: 0,
-      hallSpanX: HALL_SIDE_MARGIN * 2,
-    };
-  }
-
-  const totalRowWidth =
-    packedByShelf.reduce((sum, item) => sum + item.width, 0) +
-    Math.max(0, packedByShelf.length - 1) * SHELF_GAP_X;
-
-  let cursorX = -totalRowWidth * 0.5;
-  const shelves: ShelfLayout3D[] = [];
-  const allBooks: BookSlot3D[] = [];
-  const bookById = new Map<string, BookSlot3D>();
-  const shelfByKey = new Map<string, ShelfLayout3D>();
-
-  for (let shelfIndex = 0; shelfIndex < packedByShelf.length; shelfIndex += 1) {
-    const { group, rows, bayCount, width } = packedByShelf[shelfIndex];
-    const minX = cursorX;
-    const maxX = cursorX + width;
-    const centerX = (minX + maxX) * 0.5;
-    cursorX = maxX + SHELF_GAP_X;
-
-    const shelfBooks = buildCabinetBookSlots({
-      rows,
-      bayCount,
-      shelfKey: group.key,
-      shelfIndex,
-      floorIndex: 0,
-      startInstanceIndex: allBooks.length,
-      centerX,
-      baseY: 0,
-      centerZ,
-      facingYaw: 0,
-    });
-
-    const shelfBookIndices: number[] = [];
-    for (let i = 0; i < shelfBooks.length; i += 1) {
-      const slot = shelfBooks[i];
-      allBooks.push(slot);
-      shelfBookIndices.push(slot.instanceIndex);
-      bookById.set(slot.bookId, slot);
-    }
-
-    const shelfLayout: ShelfLayout3D = {
-      key: group.key,
-      name: group.name,
-      shelfIndex,
-      floorIndex: 0,
-      bookCount: group.books.length,
-      bayCount,
-      centerX,
-      centerZ,
-      facingYaw: 0,
-      minX,
-      maxX,
-      width,
-      height: SHELF_TOTAL_HEIGHT,
-      depth: SHELF_DEPTH,
-      backZ: SHELF_BACK_Z,
-      frontZ,
-      tierYs,
-      nameplateCenter: [centerX, SHELF_TOTAL_HEIGHT - CROWN_HEIGHT + 0.17, frontZ + 0.032],
-      bookIndices: shelfBookIndices,
-      books: shelfBooks,
-    };
-
-    shelves.push(shelfLayout);
-    shelfByKey.set(group.key, shelfLayout);
-  }
-
-  const minX = shelves[0].minX;
-  const maxX = shelves[shelves.length - 1].maxX;
-
-  return {
-    shelves,
-    books: allBooks,
-    bookById,
-    shelfByKey,
-    minX,
-    maxX,
-    centerX: (minX + maxX) * 0.5,
-    hallSpanX: maxX - minX + HALL_SIDE_MARGIN * 2,
-  };
 }
 
 export function getNearestShelfIndex(

@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -10,6 +11,7 @@ import {
 import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Book, GuestChapterPayload, ReaderSettings } from '@/types';
 import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
+import { useReaderCanvasFontVersion } from '@/hooks/useReaderCanvasFontVersion';
 import { getBookSortTitle } from '@/lib/bookMetadata';
 import { computeChapterCanvasLayout } from '@/lib/guestCanvasLayout';
 import {
@@ -37,7 +39,7 @@ interface GuestCanvasPaginatedViewProps {
   immersiveHidden: boolean;
   pageHidden: boolean;
   onToggleImmersive: () => void;
-  onCloseSettings: () => void;
+  onCloseSettings: () => boolean;
   onRatioChange: (ratio: number, isEndOfChapter: boolean) => void;
   onPrevChapterEnd: () => void;
   onNextChapterStart: () => void;
@@ -87,6 +89,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       };
     });
     const [spreadIndex, setSpreadIndex] = useState(0);
+    const fontVersion = useReaderCanvasFontVersion(settings.font);
 
     useLayoutEffect(() => {
       anchorRatioRef.current = Math.min(1, Math.max(0, initialRatio));
@@ -118,6 +121,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     }, [settings.width, stageSize.height, stageSize.width]);
 
     const columnPages = useMemo(() => {
+      void fontVersion;
       const layout = computeChapterCanvasLayout({
         chapterTitle: chapterData.title,
         chapterIndex,
@@ -131,6 +135,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     }, [
       chapterData,
       chapterIndex,
+      fontVersion,
       geometry.columnWidth,
       geometry.pageHeight,
       imageSizes,
@@ -140,6 +145,18 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
 
     const totalSpreads = Math.max(1, Math.ceil(columnPages.length / geometry.columns));
     const safeSpreadIndex = Math.max(0, Math.min(spreadIndex, totalSpreads - 1));
+    const singleSpreadEndReportedRef = useRef<string | null>(null);
+
+    useEffect(() => {
+      if (chapterIndex === totalChapters - 1 && totalSpreads === 1) {
+        if (singleSpreadEndReportedRef.current !== chapterData.id) {
+          singleSpreadEndReportedRef.current = chapterData.id;
+          onRatioChange(1, true);
+        }
+      } else {
+        singleSpreadEndReportedRef.current = null;
+      }
+    }, [chapterData.id, chapterIndex, onRatioChange, totalChapters, totalSpreads]);
 
     useLayoutEffect(() => {
       const target = Math.min(
@@ -234,7 +251,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
             immersiveHidden ? 'pt-5 sm:pt-6' : 'pt-[4.25rem] sm:pt-[4.5rem]'
           }`}
           onClick={(event) => {
-            onCloseSettings();
+            if (onCloseSettings()) return;
             const target = event.target as HTMLElement | null;
             if (target?.closest('button, a, input, select, textarea')) return;
 

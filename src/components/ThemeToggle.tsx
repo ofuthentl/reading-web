@@ -1,15 +1,16 @@
 import type { MouseEvent } from 'react';
-import { Moon, MoonStar, Sun } from 'lucide-react';
-import { type AppTheme, THEME_LABELS, getNextTheme } from '@/hooks/useTheme';
+import { Moon, MoonStar, Sun, Sunrise } from 'lucide-react';
+import { THEME_LABELS, type UiTheme, getNextTheme } from '@/hooks/useTheme';
 
 interface ThemeToggleProps {
-  theme: AppTheme;
+  theme: UiTheme;
   onCycle: (origin?: { x: number; y: number }) => void;
   showLabel?: boolean;
 }
 
-const ICON_BY_THEME: Record<AppTheme, typeof Sun> = {
-  light: Sun,
+const ICON_BY_THEME: Record<UiTheme, typeof Sun> = {
+  light: Sunrise,
+  noon: Sun,
   dim: Moon,
   midnight: MoonStar,
 };

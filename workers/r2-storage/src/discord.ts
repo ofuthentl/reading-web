@@ -5,6 +5,7 @@ import {
   sha256Hex,
 } from './auth';
 import type { Env } from './booksDb';
+import { scheduleUsageEvent } from './usageDb';
 
 const DISCORD_INTERACTION_PING = 1;
 const DISCORD_INTERACTION_APPLICATION_COMMAND = 2;
@@ -80,6 +81,8 @@ export function isValidDiscordPublicKeyFormat(publicKeyHex: string | undefined):
   return clean.length === 64 && /^[0-9a-fA-F]{64}$/.test(clean);
 }
 
+const DISCORD_SIGNATURE_MAX_AGE_SEC = 300; // Chống replay webhook cũ quá 5 phút (H-4)
+
 export async function verifyDiscordSignature(
   rawBody: string,
   signatureHex: string | null,
@@ -87,7 +90,15 @@ export async function verifyDiscordSignature(
   publicKeyHex: string | undefined,
 ): Promise<boolean> {
   const cleanPubKey = cleanSecret(publicKeyHex);
-  if (!cleanPubKey || !signatureHex || timestamp === null) return false;
+  if (!cleanPubKey || !signatureHex || timestamp === null || !/^\d{9,12}$/.test(timestamp)) {
+    return false;
+  }
+
+  const tsSec = Number(timestamp);
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(tsSec) || Math.abs(nowSec - tsSec) > DISCORD_SIGNATURE_MAX_AGE_SEC) {
+    return false;
+  }
 
   const pubKeyBytes = hexToBytes(cleanPubKey);
   const sigBytes = hexToBytes(signatureHex.trim());
@@ -166,6 +177,7 @@ async function issueKeyForDiscordMember(
   env: Env,
   discordUserId: string,
   discordUsername: string,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   await ensureDiscordAccessTable(env.DB);
   const now = Date.now();
@@ -221,6 +233,8 @@ async function issueKeyForDiscordMember(
     .bind(discordUserId, discordUsername.slice(0, 80), keyHash, now, expiresAt, now)
     .run();
 
+  scheduleUsageEvent(ctx, env.DB, { metric: 'discord_keys_issued' });
+
   return ephemeralMessage(
     [
       `🔑 **\`${rawKey}\`**`,
@@ -231,7 +245,11 @@ async function issueKeyForDiscordMember(
   );
 }
 
-export async function handleDiscordInteraction(request: Request, env: Env): Promise<Response> {
+export async function handleDiscordInteraction(
+  request: Request,
+  env: Env,
+  ctx?: ExecutionContext,
+): Promise<Response> {
   const rawBody = await request.text();
   const signature = request.headers.get('X-Signature-Ed25519');
   const timestamp = request.headers.get('X-Signature-Timestamp');
@@ -316,7 +334,7 @@ export async function handleDiscordInteraction(request: Request, env: Env): Prom
     }
 
     if (commandName === 'key') {
-      return issueKeyForDiscordMember(env, userId, displayName);
+      return issueKeyForDiscordMember(env, userId, displayName, ctx);
     }
 
     return ephemeralMessage('⚠️ Lệnh không được hỗ trợ.');
@@ -327,7 +345,7 @@ export async function handleDiscordInteraction(request: Request, env: Env): Prom
     interaction.type === DISCORD_INTERACTION_MESSAGE_COMPONENT &&
     interaction.data?.custom_id === DISCORD_BUTTON_RING_BELL_ID
   ) {
-    return issueKeyForDiscordMember(env, userId, displayName);
+    return issueKeyForDiscordMember(env, userId, displayName, ctx);
   }
 
   return ephemeralMessage('⚠️ Tương tác không được hỗ trợ.');

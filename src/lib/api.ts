@@ -103,7 +103,12 @@ export async function fetchLibraryState(): Promise<{
   }
   const fallbackSession = getActiveAuthSession();
   const resolvedSession: AuthSessionInfo = {
-    role: data.session?.role === 'guest' ? 'guest' : fallbackSession.role,
+    role:
+      data.session?.role === 'owner'
+        ? 'owner'
+        : data.session?.role === 'guest'
+          ? 'guest'
+          : fallbackSession.role,
     expiresAt:
       typeof data.session?.expiresAt === 'number'
         ? data.session.expiresAt
@@ -149,7 +154,7 @@ export async function uploadBook(
   assertApiConfigured();
   const parsed = parseFileMetadata(file.name);
   if (!parsed.extension) {
-    throw new Error(`${file.name}: chỉ hỗ trợ EPUB, PDF hoặc DOCX.`);
+    throw new Error(`${file.name}: chỉ hỗ trợ EPUB hoặc DOCX.`);
   }
   if (file.size > 350 * 1024 * 1024) {
     throw new Error(`${file.name}: vượt quá giới hạn 350 MB mỗi tệp.`);
@@ -205,7 +210,7 @@ export async function uploadBook(
       file_size: file.size,
       cover_size: coverBlob?.size || 0,
       created_at: new Date().toISOString(),
-      guest_ready: fileType !== 'pdf',
+      guest_ready: true,
     };
     await putLocalBook(newBook);
     const updatedBooks = await getLocalBooks();

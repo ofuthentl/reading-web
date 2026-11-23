@@ -59,6 +59,7 @@ export function BookInfoModal({
   const percent = computeBookProgressPercent(book, progress);
   const isCompleted = Boolean(progress?.completed);
   const isMemberLocked = sessionRole === 'guest' && Boolean(book.guest_locked);
+  const isGuestUnready = sessionRole === 'guest' && !isMemberLocked && book.guest_ready === false;
   const guestLockLabel = getGuestLockLabel(book, sessionRole);
   const shelfName = (book.shelf || 'Kho chưa phân loại').trim();
   const shelfKey = shelfName.toLocaleLowerCase('vi');
@@ -238,7 +239,7 @@ export function BookInfoModal({
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-canvas/60 px-5 py-3.5">
           <div className="flex flex-wrap items-center gap-2">
-            {!isMemberLocked && !isCompleted && (
+            {!isMemberLocked && !isGuestUnready && !isCompleted && (
               <button
                 type="button"
                 onClick={() => onMarkCompleted(book)}
@@ -249,7 +250,7 @@ export function BookInfoModal({
               </button>
             )}
 
-            {!isMemberLocked && progress && (
+            {progress && (
               <button
                 type="button"
                 onClick={() => onResetProgress(book)}
@@ -288,6 +289,11 @@ export function BookInfoModal({
                 <Lock className="h-3.5 w-3.5" />
                 Chỉ dành cho thành viên được cấp quyền
               </button>
+            ) : isGuestUnready ? (
+              <span className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs font-medium text-amber-800 dark:text-amber-300">
+                <Lock className="h-3.5 w-3.5" />
+                Chưa bật gói bảo mật khách
+              </span>
             ) : (
               <button
                 type="button"

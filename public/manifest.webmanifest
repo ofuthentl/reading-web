@@ -1,7 +1,7 @@
 {
   "name": "Ofu's Library",
   "short_name": "Ofu's Library",
-  "description": "Thư viện cá nhân & trình đọc sách EPUB, PDF, DOCX",
+  "description": "Thư viện cá nhân & trình đọc sách EPUB, DOCX",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#f6f1e7",

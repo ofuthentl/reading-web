@@ -36,7 +36,7 @@ export function ReaderSettingsPopover({
     <div
       role="dialog"
       aria-label="Tùy chỉnh giao diện đọc"
-      className={`fade-in absolute right-3 top-[3.5rem] z-40 w-[21.5rem] max-w-[calc(100vw-1.5rem)] rounded-2xl border p-4 shadow-2xl ${palette.panelBg} ${palette.border}`}
+      className={`fade-in scrollbar-thin absolute right-3 top-[3.5rem] z-40 max-h-[calc(100dvh-4.5rem)] w-[21.5rem] max-w-[calc(100vw-1.5rem)] overflow-y-auto overscroll-y-contain rounded-2xl border p-4 shadow-2xl ${palette.panelBg} ${palette.border}`}
     >
       <div className="mb-3 flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wider opacity-70">

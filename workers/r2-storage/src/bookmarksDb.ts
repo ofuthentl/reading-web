@@ -20,10 +20,10 @@ interface BookmarkRow {
   created_at: number;
 }
 
-let schemaEnsured = false;
+const ensuredBookmarksDbs = new WeakSet<D1Database>();
 
 export async function ensureBookmarksTable(db: D1Database): Promise<void> {
-  if (schemaEnsured) return;
+  if (ensuredBookmarksDbs.has(db)) return;
   await db.batch([
     db.prepare(
       `CREATE TABLE IF NOT EXISTS book_bookmarks (
@@ -43,8 +43,12 @@ export async function ensureBookmarksTable(db: D1Database): Promise<void> {
       `CREATE INDEX IF NOT EXISTS idx_bookmarks_user_book
        ON book_bookmarks(user_scope, book_id, created_at DESC)`,
     ),
+    db.prepare(
+      `CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id
+       ON book_bookmarks(book_id)`,
+    ),
   ]);
-  schemaEnsured = true;
+  ensuredBookmarksDbs.add(db);
 }
 
 function resolveUserScope(auth: AuthContext): string {

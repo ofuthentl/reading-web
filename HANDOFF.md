@@ -1,25 +1,22 @@
 # HANDOFF
-Cập nhật: 2026-11-23 11:47 | Nhánh: feat/shelf-tags-and-author-filter | Build: 🟢 frontend (`84.70 kB` gzip, `0 B` three) · 🟢 ESLint 0/0 · 🟢 Worker tsc
-Nhiệm vụ hiện tại: **Thể loại (Tag) bộ truyện, Tìm kiếm Nâng cao 3 trạng thái & Bấm tên Tác giả lọc cùng tác giả (`D-032`)**.
+Cập nhật: 2026-11-23 15:31 | Nhánh: feat/admin-usage-dashboard | Build: 🟢 typecheck · 🟢 ESLint 0/0 · 🟢 build (`85.89 kB` gzip) · 🟢 Worker tsc
+Nhiệm vụ hiện tại: **Hoàn tất trọn bộ cả 2 gói thay đổi trên `feat/admin-usage-dashboard`** (gồm toàn bộ bản vá audit + bỏ PDF `D-033` + font tiếng Việt cục bộ & 4 chế độ nền `D-034` + trang thống kê Admin `/usage` chống rò rỉ `D-035`).
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md
 
 ## Đang làm dở
-- Đã hoàn tất trọn vẹn cả 3 Phase trên nhánh `feat/shelf-tags-and-author-filter` (tách từ `origin/main` sau PR #18):
-  1. **Backend D1 & Worker (`migrations/0007_shelf_tags.sql`, `shelfTagsDb.ts`, `booksDb.ts`, `index.ts`):**
-     - Mở rộng `shelf_prefs.tags_json TEXT` (tự nâng cấp an toàn qua `ensureShelfTagsSchema`), thêm `PUT /api/shelves/tags` (`Chỉ Owner`), trả `shelfTags` trong `GET /api/books` cho cả Admin & Khách, tự gộp tag khi đổi tên kệ và giữ nguyên tag khi xoá tập lẻ/đổi bìa/bỏ yêu thích.
-  2. **Bấm tên Tác giả & Gắn/Hiển thị Thể loại (`ShelfDetailHero.tsx`, `ShelfTagsModal.tsx`, `BookInfoModal.tsx`, `shelfSummary.ts`):**
-     - Tên tác giả trong chi tiết bộ & thông tin sách bấm được để chuyển ra Tab Thư viện lọc các bộ cùng tác giả; hiển thị chip thể loại bấm lọc nhanh ngay dưới tác giả; Admin gắn/sửa trong 40 thể loại chuẩn + tag tự tạo.
-  3. **Tìm kiếm Nâng cao nạp lười (`AdvancedSearchPanel.tsx`, `LibraryFilterBar.tsx`, `libraryFiltering.ts`, `shelfTagPresets.ts`):**
-     - Panel gập/mở bỏ mục *Loại truyện*: ô **Tác giả** gợi ý `<datalist>`, Trạng thái đọc, Sắp xếp, lưới **40 thể loại 3 trạng thái** (`☐ Bỏ qua` → `☑ Phải có` → `☒ Loại trừ`, AND/OR, hiện số bộ `(N)`, 2 cột mobile chống cắt chữ) + dải chip lọc đang bật.
-  4. Đã kiểm định `typecheck`, `lint` (`0/0`), `build` (`84.70 kB` gzip), Worker `tsc` và chạy thử 9/9 bước trên trình duyệt PC (`1280×800`) + mobile (`390×844`, `0` lỗi console).
+- Toàn bộ 4/4 Phase của `/usage` (và 5/5 Phase của bản vá audit trước đó) đã hoàn tất, kiểm định tĩnh + bảo mật Worker + trình duyệt PC/Mobile ĐẠT 100%, sẵn sàng gộp 1 PR duy nhất lên `main` để publish cả 2 cùng lúc.
 
-## Bước tiếp theo
-1. Deploy Cloudflare Worker (`cd workers/r2-storage && npm run deploy` — cột `tags_json` tự nâng cấp an toàn ở request đầu, có thể chạy thêm `npx wrangler d1 execute library-db --remote --file=./migrations/0007_shelf_tags.sql`).
-2. Mở Pull Request `feat/shelf-tags-and-author-filter` vào `main` và bấm Merge khi CI xanh để đưa lên `ofu.lol`.
+## Bước tiếp theo (Triển khai Production — chờ người dùng thực hiện)
+1. **Chạy 3 migration D1 lên production** *(theo thứ tự)*:
+   - `cd workers/r2-storage`
+   - `npx wrangler d1 execute library-db --remote --file=./migrations/0008_drop_pdf.sql`
+   - `npx wrangler d1 execute library-db --remote --file=./migrations/0009_perf_indexes.sql`
+   - `npx wrangler d1 execute library-db --remote --file=./migrations/0010_usage_stats.sql`
+2. **Deploy Cloudflare Worker:** `cd workers/r2-storage && npm run deploy`
+3. **Push nhánh & mở 1 Pull Request duy nhất vào `main`:** `git push -u origin feat/admin-usage-dashboard` rồi merge PR khi CI xanh để auto-deploy `ofu.lol`.
 
 ## Lỗi / chặn
-- Không có lỗi/chặn nào.
+- Không có lỗi/chặn nào. Các điểm phát hiện trong kiểm định thực tế đã được vá dứt điểm: tách tiền tố `discord:` tránh đếm trùng DAU ở `index.ts`, xác thực `/api/auth/session` trước khi tải chunk `AdminUsageView` ở `AuthGate.tsx`, sửa màu cột SVG `--color-crimson` + bỏ khung xám nền ở `AdminUsageCharts.tsx`, đồng bộ màu icon `text-accent` ở `LibraryHeader.tsx` & `AdminUsageView.tsx`.
 
 ## Xong gần nhất
-- **PR #18 (`fix/smooth-strip-and-mobile-motion`):** Phẳng hoá dải ngang & chống dính hover cảm ứng mobile đã merge vào `main`.
-- **PR #17 (`fix/mobile-reader-horizontal-overflow`):** Sửa tràn ngang nút `Đọc tiếp` tên dài trên mobile đã merge vào `main`.
+- **Trang `/usage` (`D-035`):** Migration `0010_usage_stats.sql`, `usageRecorder.ts`, `usageDb.ts`, `GET /api/admin/usage` (`requireOwner`, `no-store`/`noindex`, 0 trường nhạy cảm), Stealth `/usage` (`dist/usage/index.html`, `gateRoutes.ts`, `AuthGate.tsx`, `App.tsx`), giao diện nạp lười `AdminUsageView` (`7.99 kB` gzip) + biểu đồ SVG 0 CDN + bảng hoạt động khách Discord; đồng bộ `DECISIONS.md` & `ARCHITECTURE.md`.

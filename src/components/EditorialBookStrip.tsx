@@ -68,6 +68,7 @@ function EditorialRankedCard({
       aria-pressed={selectionMode ? selected : undefined}
       onClick={handleActivate}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           handleActivate();
