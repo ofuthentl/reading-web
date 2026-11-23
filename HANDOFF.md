@@ -1,11 +1,11 @@
 # HANDOFF
-Cập nhật: 2026-11-23 15:57 | Nhánh: feat/reading-time-streak-and-reader-ux | Build: 🟢 chưa sửa code (tách sạch từ `origin/main` sau PR #20)
-Nhiệm vụ hiện tại: Triển khai **Lộ trình Nâng cấp v2 (18 hạng mục chia 4 Wave)** theo kế hoạch đã duyệt tại `docs/plans/roadmap-v2-upgrades.md` & `D-036`.
+Cập nhật: 2026-11-23 16:11 | Nhánh: feat/reading-time-streak-and-reader-ux | Build: 🟢 Worker `tsc` & `eslint` xanh (xong Phase 1.1)
+Nhiệm vụ hiện tại: Triển khai **Wave 1** của Lộ trình Nâng cấp v2 (`docs/plans/roadmap-v2-upgrades.md` & `D-036`).
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md
 
 ## Đang làm dở
-- Kế hoạch tổng thể 4 Wave (`docs/plans/roadmap-v2-upgrades.md`) và các quyết định kiến trúc (`D-036`: PA-1 thời gian đọc + QĐ-A/B/C/D) đã được người dùng duyệt xong.
-- Đã tách sẵn nhánh Wave 1 (`feat/reading-time-streak-and-reader-ux`) từ `origin/main` và lưu kế hoạch, sẵn sàng bắt đầu code ngay từ **Wave 1 · Phase 1.1**.
+- **Phase 1.1 (Backend Worker & Migration `0011`) đã xong:** `0011_reading_time_and_prefs.sql`, `progressDb.ts` + `usageRecorder.ts` (kẹp trần `0..300s` & chống gian lận theo đồng hồ thực), `usageDb.ts` (`usageQueries.ts`), `readingActivityDb.ts` (`GET /api/reading-stats/activity`), `readerPrefsDb.ts` (`GET/PUT /api/reader-settings`), tách `shelfMutationsDb.ts`.
+- Đang triển khai **Phase 1.2** (`useActiveReadingTimer.ts`, nâng cấp `/usage` + vá trục Y `0, 1, 1` & Lịch nhiệt Streak 90 ngày trong `ReadingStatsModal.tsx`).
 
 ## Bước tiếp theo
 1. **Wave 1 (`feat/reading-time-streak-and-reader-ux`):**

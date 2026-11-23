@@ -1,9 +1,15 @@
 import { ensureDiscordAccessTable } from './auth';
 import { type Env, getLimitBytes } from './booksDb';
 import { ensureBookmarksTable } from './bookmarksDb';
-import { ensureGuestProgressTable } from './progressDb';
+import { ensureGuestProgressTable, ensureProgressReadingTimeColumns } from './progressDb';
 import { ensureShelfAccessTables } from './shelfAccessDb';
 import { ensureShelfTagsSchema } from './shelfTagsDb';
+import {
+  type DailyReaderAggRow,
+  type DailyStatRow,
+  queryGuestActivityRows,
+  queryTopBooksAndShelves,
+} from './usageQueries';
 import {
   DAY_MS,
   buildDayKeys,
@@ -15,66 +21,7 @@ import {
 
 export { ensureUsageTables, recordUsageEvent, scheduleUsageEvent, toVietnamDayKey };
 
-const READER_RETENTION_DAYS = 90;
-
-interface DailyStatRow {
-  day_key: string;
-  owner_logins: number;
-  guest_logins: number;
-  discord_keys_issued: number;
-  login_failures: number;
-  guest_chapter_reads: number;
-  owner_progress_updates: number;
-  guest_searches: number;
-  rate_limit_hits: number;
-}
-
-interface DailyReaderAggRow {
-  day_key: string;
-  unique_readers: number;
-  guest_readers: number;
-}
-
-interface TopBookRow {
-  id: string;
-  title: string;
-  author: string;
-  shelf: string;
-  file_type: 'epub' | 'docx';
-  has_guest_pack: number;
-  readers_total: number;
-  guest_readers: number;
-  readers_window: number;
-  completed_total: number;
-  avg_percent: number;
-  last_read_at: number;
-}
-
-interface TopShelfRow {
-  shelf: string;
-  book_count: number;
-  active_readers: number;
-  completed_reads: number;
-  last_read_at: number | null;
-}
-
-interface GuestActivityRow {
-  discord_user_id: string;
-  discord_username: string;
-  session_expires_at: number | null;
-  rl_strikes: number | null;
-  is_banned: number;
-  ban_reason: string | null;
-  updated_at: number;
-  started_books: number;
-  completed_books: number;
-  bookmark_count: number;
-  last_read_at: number | null;
-  last_book_title: string | null;
-  last_book_shelf: string | null;
-  last_chapter_title: string | null;
-  last_chapter_index: number | null;
-}
+const READER_RETENTION_DAYS = 92;
 
 function resolveWindowDays(raw: string | null): 7 | 14 | 30 {
   if (raw === '7') return 7;
@@ -96,12 +43,13 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
     ensureUsageTables(env.DB),
     ensureDiscordAccessTable(env.DB).catch(() => undefined),
     ensureGuestProgressTable(env).catch(() => undefined),
+    ensureProgressReadingTimeColumns(env).catch(() => undefined),
     ensureBookmarksTable(env.DB).catch(() => undefined),
     ensureShelfAccessTables(env.DB).catch(() => undefined),
     ensureShelfTagsSchema(env.DB).catch(() => undefined),
   ]);
 
-  // Dọn nhẹ dữ liệu reader cũ quá 90 ngày chỉ khi Admin mở /usage (0 ảnh hưởng tốc độ độc giả)
+  // Dọn nhẹ dữ liệu reader cũ quá 92 ngày chỉ khi Admin mở /usage (giữ trọn lịch nhiệt 90 ngày)
   await env.DB.prepare('DELETE FROM usage_daily_readers WHERE day_key < ?')
     .bind(pruneCutoffDayKey)
     .run()
@@ -116,10 +64,10 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
     loginLockSummary,
     engagementSummary,
     uniqueReadersRow,
+    readingWindowRow,
     dailyStatsRes,
     dailyReadersRes,
-    topBooksRes,
-    topShelvesRes,
+    [topBooksRes, topShelvesRes],
     guestActivityRes,
   ] = await Promise.all([
     env.DB.prepare(
@@ -199,20 +147,26 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
       `SELECT
          (SELECT COUNT(*) FROM reading_progress WHERE completed = 1) AS owner_completed,
          (SELECT COUNT(*) FROM reading_progress) AS owner_started,
+         (SELECT COALESCE(SUM(reading_seconds), 0) FROM reading_progress) AS owner_reading_total,
          (SELECT COUNT(*) FROM guest_reading_progress WHERE completed = 1) AS guest_completed,
-         (SELECT COUNT(*) FROM guest_reading_progress) AS guest_started`,
+         (SELECT COUNT(*) FROM guest_reading_progress) AS guest_started,
+         (SELECT COALESCE(SUM(reading_seconds), 0) FROM guest_reading_progress) AS guest_reading_total`,
     )
       .first<{
         owner_completed: number;
         owner_started: number;
+        owner_reading_total: number;
         guest_completed: number;
         guest_started: number;
+        guest_reading_total: number;
       }>()
       .catch(() => ({
         owner_completed: 0,
         owner_started: 0,
+        owner_reading_total: 0,
         guest_completed: 0,
         guest_started: 0,
+        guest_reading_total: 0,
       })),
     env.DB.prepare(
       `SELECT
@@ -237,8 +191,31 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
         guest_readers_30d: 0,
       })),
     env.DB.prepare(
+      `SELECT
+         COALESCE(SUM(CASE WHEN day_key >= ? THEN owner_reading_seconds + guest_reading_seconds ELSE 0 END), 0) AS reading_7d,
+         COALESCE(SUM(owner_reading_seconds + guest_reading_seconds), 0) AS reading_30d,
+         COALESCE(SUM(owner_reading_seconds), 0) AS owner_reading_30d,
+         COALESCE(SUM(guest_reading_seconds), 0) AS guest_reading_30d
+       FROM usage_daily_stats
+       WHERE day_key >= ?`,
+    )
+      .bind(day7Key, day30Key)
+      .first<{
+        reading_7d: number;
+        reading_30d: number;
+        owner_reading_30d: number;
+        guest_reading_30d: number;
+      }>()
+      .catch(() => ({
+        reading_7d: 0,
+        reading_30d: 0,
+        owner_reading_30d: 0,
+        guest_reading_30d: 0,
+      })),
+    env.DB.prepare(
       `SELECT day_key, owner_logins, guest_logins, discord_keys_issued, login_failures,
-              guest_chapter_reads, owner_progress_updates, guest_searches, rate_limit_hits
+              guest_chapter_reads, owner_progress_updates, guest_searches, rate_limit_hits,
+              owner_reading_seconds, guest_reading_seconds
        FROM usage_daily_stats
        WHERE day_key >= ?
        ORDER BY day_key ASC`,
@@ -257,105 +234,8 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
       .bind(firstDayKey)
       .all<DailyReaderAggRow>()
       .catch(() => ({ results: [] as DailyReaderAggRow[] })),
-    env.DB.prepare(
-      `SELECT
-         b.id,
-         b.title,
-         b.author,
-         b.shelf,
-         b.file_type,
-         CASE WHEN gp.book_id IS NOT NULL THEN 1 ELSE 0 END AS has_guest_pack,
-         COUNT(p.book_id) AS readers_total,
-         SUM(CASE WHEN p.is_guest = 1 THEN 1 ELSE 0 END) AS guest_readers,
-         SUM(CASE WHEN p.updated_at >= ? THEN 1 ELSE 0 END) AS readers_window,
-         SUM(CASE WHEN p.completed = 1 THEN 1 ELSE 0 END) AS completed_total,
-         ROUND(AVG(
-           CASE
-             WHEN p.completed = 1 THEN 100
-             WHEN COALESCE(p.total_chapters, 0) > 0 THEN MIN(100, MAX(0, ((p.chapter_index + p.scroll_ratio) * 100.0) / p.total_chapters))
-             ELSE MIN(100, MAX(0, p.scroll_ratio * 100.0))
-           END
-         )) AS avg_percent,
-         MAX(p.updated_at) AS last_read_at
-       FROM (
-         SELECT book_id, chapter_index, total_chapters, scroll_ratio, completed, updated_at, 0 AS is_guest
-         FROM reading_progress
-         UNION ALL
-         SELECT book_id, chapter_index, total_chapters, scroll_ratio, completed, updated_at, 1 AS is_guest
-         FROM guest_reading_progress
-       ) p
-       INNER JOIN books b ON b.id = p.book_id
-       LEFT JOIN book_guest_packs gp ON gp.book_id = b.id
-       GROUP BY b.id
-       ORDER BY readers_window DESC, readers_total DESC, completed_total DESC, last_read_at DESC
-       LIMIT 12`,
-    )
-      .bind(windowCutoffMs)
-      .all<TopBookRow>()
-      .catch(() => ({ results: [] as TopBookRow[] })),
-    env.DB.prepare(
-      `SELECT
-         b.shelf,
-         COUNT(DISTINCT b.id) AS book_count,
-         COUNT(DISTINCT p.reader_key) AS active_readers,
-         SUM(CASE WHEN p.completed = 1 THEN 1 ELSE 0 END) AS completed_reads,
-         MAX(p.updated_at) AS last_read_at
-       FROM books b
-       LEFT JOIN (
-         SELECT book_id, 'owner' AS reader_key, completed, updated_at FROM reading_progress
-         UNION ALL
-         SELECT book_id, 'guest:' || discord_user_id AS reader_key, completed, updated_at FROM guest_reading_progress
-       ) p ON p.book_id = b.id
-       GROUP BY LOWER(TRIM(b.shelf))
-       HAVING active_readers > 0
-       ORDER BY active_readers DESC, completed_reads DESC, last_read_at DESC
-       LIMIT 10`,
-    )
-      .all<TopShelfRow>()
-      .catch(() => ({ results: [] as TopShelfRow[] })),
-    env.DB.prepare(
-      `SELECT
-         d.discord_user_id,
-         d.discord_username,
-         d.session_expires_at,
-         d.rl_strikes,
-         d.is_banned,
-         d.ban_reason,
-         d.updated_at,
-         COALESCE(gp.started_books, 0) AS started_books,
-         COALESCE(gp.completed_books, 0) AS completed_books,
-         COALESCE(bm.bookmark_count, 0) AS bookmark_count,
-         gp.last_read_at,
-         lb.title AS last_book_title,
-         lb.shelf AS last_book_shelf,
-         lgp.chapter_title AS last_chapter_title,
-         lgp.chapter_index AS last_chapter_index
-       FROM discord_access d
-       LEFT JOIN (
-         SELECT
-           discord_user_id,
-           COUNT(*) AS started_books,
-           SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) AS completed_books,
-           MAX(updated_at) AS last_read_at
-         FROM guest_reading_progress
-         GROUP BY discord_user_id
-       ) gp ON gp.discord_user_id = d.discord_user_id
-       LEFT JOIN guest_reading_progress lgp
-         ON lgp.discord_user_id = d.discord_user_id
-        AND lgp.updated_at = gp.last_read_at
-       LEFT JOIN books lb ON lb.id = lgp.book_id
-       LEFT JOIN (
-         SELECT substr(user_scope, 7) AS discord_user_id, COUNT(*) AS bookmark_count
-         FROM book_bookmarks
-         WHERE user_scope LIKE 'guest:%'
-         GROUP BY user_scope
-       ) bm ON bm.discord_user_id = d.discord_user_id
-       GROUP BY d.discord_user_id
-       ORDER BY COALESCE(gp.last_read_at, d.updated_at) DESC
-       LIMIT 60`,
-    )
-      .all<GuestActivityRow>()
-      .catch(() => ({ results: [] as GuestActivityRow[] })),
+    queryTopBooksAndShelves(env.DB, windowCutoffMs),
+    queryGuestActivityRows(env.DB, day7Key, day30Key),
   ]);
 
   const statsByDay = new Map<string, DailyStatRow>();
@@ -372,10 +252,14 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
   let windowGuestSearches = 0;
   let windowLoginFailures = 0;
   let windowRateLimitHits = 0;
+  let windowOwnerReadingSeconds = 0;
+  let windowGuestReadingSeconds = 0;
 
   const dailySeries = dayKeys.map((dayKey) => {
     const s = statsByDay.get(dayKey);
     const r = readersByDay.get(dayKey);
+    const ownerReadingSeconds = Math.max(0, Number(s?.owner_reading_seconds ?? 0));
+    const guestReadingSeconds = Math.max(0, Number(s?.guest_reading_seconds ?? 0));
     const item = {
       dayKey,
       uniqueReaders: Number(r?.unique_readers ?? 0),
@@ -388,6 +272,9 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
       ownerProgressUpdates: Number(s?.owner_progress_updates ?? 0),
       guestSearches: Number(s?.guest_searches ?? 0),
       rateLimitHits: Number(s?.rate_limit_hits ?? 0),
+      ownerReadingSeconds,
+      guestReadingSeconds,
+      totalReadingSeconds: ownerReadingSeconds + guestReadingSeconds,
     };
     windowGuestChapterReads += item.guestChapterReads;
     windowOwnerProgressUpdates += item.ownerProgressUpdates;
@@ -397,6 +284,8 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
     windowGuestSearches += item.guestSearches;
     windowLoginFailures += item.loginFailures;
     windowRateLimitHits += item.rateLimitHits;
+    windowOwnerReadingSeconds += ownerReadingSeconds;
+    windowGuestReadingSeconds += guestReadingSeconds;
     return item;
   });
 
@@ -426,6 +315,18 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
       uniqueReaders30d: Number(uniqueReadersRow?.readers_30d ?? 0),
       guestReaders7d: Number(uniqueReadersRow?.guest_readers_7d ?? 0),
       guestReaders30d: Number(uniqueReadersRow?.guest_readers_30d ?? 0),
+      readingSeconds7d: Number(readingWindowRow?.reading_7d ?? 0),
+      readingSeconds30d: Number(readingWindowRow?.reading_30d ?? 0),
+      ownerReadingSeconds30d: Number(readingWindowRow?.owner_reading_30d ?? 0),
+      guestReadingSeconds30d: Number(readingWindowRow?.guest_reading_30d ?? 0),
+      ownerReadingSecondsTotal: Math.max(
+        Number(engagementSummary?.owner_reading_total ?? 0),
+        Number(readingWindowRow?.owner_reading_30d ?? 0),
+      ),
+      guestReadingSecondsTotal: Math.max(
+        Number(engagementSummary?.guest_reading_total ?? 0),
+        Number(readingWindowRow?.guest_reading_30d ?? 0),
+      ),
       ownerCompletedBooks: Number(engagementSummary?.owner_completed ?? 0),
       ownerStartedBooks: Number(engagementSummary?.owner_started ?? 0),
       guestCompletedBooks: Number(engagementSummary?.guest_completed ?? 0),
@@ -442,6 +343,9 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
         guestSearches: windowGuestSearches,
         loginFailures: windowLoginFailures,
         rateLimitHits: windowRateLimitHits,
+        ownerReadingSeconds: windowOwnerReadingSeconds,
+        guestReadingSeconds: windowGuestReadingSeconds,
+        totalReadingSeconds: windowOwnerReadingSeconds + windowGuestReadingSeconds,
       },
     },
     storage: {
@@ -473,6 +377,7 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
       readersInWindow: Number(row.readers_window ?? 0),
       completedTotal: Number(row.completed_total ?? 0),
       avgPercent: Math.max(0, Math.min(100, Number(row.avg_percent ?? 0))),
+      readingSecondsTotal: Math.max(0, Number(row.reading_seconds_total ?? 0)),
       lastReadAt: Number(row.last_read_at ?? 0),
     })),
     topShelves: (topShelvesRes.results || []).map((row) => ({
@@ -480,6 +385,7 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
       bookCount: Number(row.book_count ?? 0),
       activeReaders: Number(row.active_readers ?? 0),
       completedReads: Number(row.completed_reads ?? 0),
+      readingSecondsTotal: Math.max(0, Number(row.reading_seconds_total ?? 0)),
       lastReadAt: row.last_read_at ? Number(row.last_read_at) : null,
     })),
     guestActivity: (guestActivityRes.results || []).map((row) => ({
@@ -496,6 +402,12 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
       startedBooks: Number(row.started_books ?? 0),
       completedBooks: Number(row.completed_books ?? 0),
       bookmarkCount: Number(row.bookmark_count ?? 0),
+      readingSecondsTotal: Math.max(
+        Number(row.reading_seconds_total ?? 0),
+        Number(row.reading_seconds_90d ?? 0),
+      ),
+      readingSeconds7d: Math.max(0, Number(row.reading_seconds_7d ?? 0)),
+      readingSeconds30d: Math.max(0, Number(row.reading_seconds_30d ?? 0)),
       lastReadAt: row.last_read_at ? Number(row.last_read_at) : null,
       lastBookTitle: row.last_book_title ?? null,
       lastBookShelf: row.last_book_shelf ?? null,

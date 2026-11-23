@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS reading_progress (
   scroll_ratio REAL NOT NULL DEFAULT 0,
   scroll_top REAL NOT NULL DEFAULT 0,
   completed INTEGER NOT NULL DEFAULT 0,
+  reading_seconds INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL
 );
 
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS guest_reading_progress (
   scroll_ratio REAL NOT NULL DEFAULT 0,
   scroll_top REAL NOT NULL DEFAULT 0,
   completed INTEGER NOT NULL DEFAULT 0,
+  reading_seconds INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (discord_user_id, book_id)
 );
@@ -117,6 +119,8 @@ CREATE TABLE IF NOT EXISTS usage_daily_stats (
   owner_progress_updates INTEGER NOT NULL DEFAULT 0,
   guest_searches INTEGER NOT NULL DEFAULT 0,
   rate_limit_hits INTEGER NOT NULL DEFAULT 0,
+  owner_reading_seconds INTEGER NOT NULL DEFAULT 0,
+  guest_reading_seconds INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL
 );
 
@@ -125,7 +129,15 @@ CREATE TABLE IF NOT EXISTS usage_daily_readers (
   reader_scope TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('owner', 'guest')),
   last_seen_at INTEGER NOT NULL,
+  reading_seconds INTEGER NOT NULL DEFAULT 0,
+  last_reading_sync_at INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (day_key, reader_scope)
+);
+
+CREATE TABLE IF NOT EXISTS user_reader_prefs (
+  user_scope TEXT PRIMARY KEY,
+  settings_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_books_shelf ON books(shelf);
@@ -139,3 +151,4 @@ CREATE INDEX IF NOT EXISTS idx_bookmarks_user_book ON book_bookmarks(user_scope,
 CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON book_bookmarks(book_id);
 CREATE INDEX IF NOT EXISTS idx_shelf_grants_user ON shelf_guest_grants(discord_user_id);
 CREATE INDEX IF NOT EXISTS idx_usage_daily_readers_day ON usage_daily_readers(day_key);
+CREATE INDEX IF NOT EXISTS idx_usage_daily_readers_scope_day ON usage_daily_readers(reader_scope, day_key);
