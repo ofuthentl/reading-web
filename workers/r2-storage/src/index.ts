@@ -45,6 +45,20 @@ import {
 } from './rateLimitDb';
 import { streamR2FileResponse } from './r2Files';
 import { upsertShelfTags } from './shelfTagsDb';
+import { scheduleUsageEvent } from './usageDb';
+
+function extractSubjectFromToken(token: string): string | null {
+  try {
+    const payload = token.split('.')[0];
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    const parsed = JSON.parse(atob(padded)) as { sub?: unknown };
+    return typeof parsed.sub === 'string' && parsed.sub ? parsed.sub : null;
+  } catch {
+    return null;
+  }
+}
 
 function resolveAllowedOrigin(request: Request, env: Env): string | null {
   const origin = request.headers.get('Origin');
@@ -90,7 +104,12 @@ function jsonResponse(
   return new Response(JSON.stringify(body), { status, headers });
 }
 
-async function handleApi(request: Request, env: Env, origin: string | null): Promise<Response> {
+async function handleApi(
+  request: Request,
+  env: Env,
+  origin: string | null,
+  ctx?: ExecutionContext,
+): Promise<Response> {
   const url = new URL(request.url);
   const { pathname } = url;
 
@@ -119,23 +138,38 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
 
   // Discord HTTP Interactions webhook (verified via Ed25519 signature)
   if (normalizedPath === '/api/discord/interactions' && request.method === 'POST') {
-    return handleDiscordInteraction(request, env);
+    return handleDiscordInteraction(request, env, ctx);
   }
 
   // Passcode (owner 30d) or Discord 12-char key (guest 24h) login + chống brute-force theo IP (M-8)
   if (normalizedPath === '/api/auth/login' && request.method === 'POST') {
     const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
-    await assertLoginNotRateLimited(env.DB, clientIp);
+    try {
+      await assertLoginNotRateLimited(env.DB, clientIp);
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 429) {
+        scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
+      }
+      throw err;
+    }
     const body = (await request.json().catch(() => null)) as { passcode?: unknown } | null;
     const passcode = typeof body?.passcode === 'string' ? body.passcode : '';
     const userAgent = request.headers.get('User-Agent') || '';
     try {
       const session = await authenticatePasscodeOrKey(passcode, env, env.DB, userAgent);
       await clearLoginFailures(env.DB, clientIp);
+      const sub = extractSubjectFromToken(session.token);
+      scheduleUsageEvent(ctx, env.DB, {
+        metric: session.role === 'owner' ? 'owner_logins' : 'guest_logins',
+        readerScope:
+          session.role === 'owner' ? 'owner' : sub ? `guest:${sub}` : undefined,
+        readerRole: session.role,
+      });
       return jsonResponse(session, 200, origin);
     } catch (err) {
       if (err instanceof HttpError && err.status === 401) {
         await recordLoginFailure(env.DB, clientIp).catch(() => undefined);
+        scheduleUsageEvent(ctx, env.DB, { metric: 'login_failures' });
       }
       throw err;
     }
@@ -187,13 +221,25 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
 
   const guestChapterMatch = normalizedPath.match(/^\/api\/guest\/books\/([^/]+)\/chapters\/(\d+)$/);
   if (guestChapterMatch && request.method === 'GET') {
-    const chapter = await getGuestEncryptedChapter(
-      env,
-      auth,
-      guestChapterMatch[1],
-      Number(guestChapterMatch[2]),
-    );
-    return jsonResponse(chapter, 200, origin);
+    try {
+      const chapter = await getGuestEncryptedChapter(
+        env,
+        auth,
+        guestChapterMatch[1],
+        Number(guestChapterMatch[2]),
+      );
+      scheduleUsageEvent(ctx, env.DB, {
+        metric: 'guest_chapter_reads',
+        readerScope: auth.role === 'owner' ? 'owner' : `guest:${auth.userId}`,
+        readerRole: auth.role,
+      });
+      return jsonResponse(chapter, 200, origin);
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 429) {
+        scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
+      }
+      throw err;
+    }
   }
 
   const guestMediaMatch = normalizedPath.match(/^\/api\/guest\/books\/([^/]+)\/media\/(\d+)$/);
@@ -209,13 +255,25 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
 
   const guestSearchMatch = normalizedPath.match(/^\/api\/guest\/books\/([^/]+)\/search$/);
   if (guestSearchMatch && request.method === 'GET') {
-    const result = await searchGuestBookChapters(
-      env,
-      auth,
-      guestSearchMatch[1],
-      url.searchParams.get('q'),
-    );
-    return jsonResponse(result, 200, origin);
+    try {
+      const result = await searchGuestBookChapters(
+        env,
+        auth,
+        guestSearchMatch[1],
+        url.searchParams.get('q'),
+      );
+      scheduleUsageEvent(ctx, env.DB, {
+        metric: 'guest_searches',
+        readerScope: auth.role === 'owner' ? 'owner' : `guest:${auth.userId}`,
+        readerRole: auth.role,
+      });
+      return jsonResponse(result, 200, origin);
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 429) {
+        scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
+      }
+      throw err;
+    }
   }
 
   // Bookmarks CRUD isolated by role/userId (D-029 PA-2A)
@@ -235,10 +293,11 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     return jsonResponse(res, 200, origin);
   }
 
-  // Admin Discord Guest Management, Forensic Leak Check & Shelf Access Control (Owner only, D-028/D-030)
+  // Admin Discord Guest Management, Forensic Leak Check, Shelf Access & Usage Stats (Owner only, D-028/D-030/D-035)
   const adminRes = await tryHandleAdminRoutes(
     request,
     normalizedPath,
+    url,
     env,
     auth,
     origin,
@@ -347,6 +406,11 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
       typeof upsertReadingProgress
     >[3];
     const result = await upsertReadingProgress(env, auth, progressMatch[1], body);
+    scheduleUsageEvent(ctx, env.DB, {
+      ...(auth.role === 'owner' ? { metric: 'owner_progress_updates' as const } : {}),
+      readerScope: auth.role === 'owner' ? 'owner' : `guest:${auth.userId}`,
+      readerRole: auth.role,
+    });
     return jsonResponse(result, 200, origin);
   }
 
@@ -364,10 +428,10 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     const origin = resolveAllowedOrigin(request, env);
     try {
-      return await handleApi(request, env, origin);
+      return await handleApi(request, env, origin, ctx);
     } catch (error) {
       if (error instanceof HttpError) {
         return jsonResponse({ error: error.message }, error.status, origin, error.extraHeaders);

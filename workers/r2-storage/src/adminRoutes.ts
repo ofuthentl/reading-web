@@ -9,10 +9,12 @@ import {
   getAdminShelfAccessOverview,
   putAdminShelfAccessConfig,
 } from './shelfAccessDb';
+import { getAdminUsageReport } from './usageDb';
 
 export async function tryHandleAdminRoutes(
   request: Request,
   normalizedPath: string,
+  url: URL,
   env: Env,
   auth: AuthContext,
   origin: string | null,
@@ -26,6 +28,14 @@ export async function tryHandleAdminRoutes(
   if (!normalizedPath.startsWith('/api/admin/')) return null;
 
   requireOwner(auth);
+
+  if (normalizedPath === '/api/admin/usage' && request.method === 'GET') {
+    const report = await getAdminUsageReport(env, url.searchParams.get('days'));
+    return jsonResponse(report, 200, origin, {
+      'Cache-Control': 'no-store, private',
+      'X-Robots-Tag': 'noindex, nofollow',
+    });
+  }
 
   if (normalizedPath === '/api/admin/discord-guests' && request.method === 'GET') {
     const list = await listDiscordGuests(env.DB);
