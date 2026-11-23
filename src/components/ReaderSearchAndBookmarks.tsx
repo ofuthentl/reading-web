@@ -171,7 +171,7 @@ export function ReaderSearchPanel({
         </div>
       </div>
 
-      <div className="scrollbar-thin flex-1 overflow-y-auto p-2.5">
+      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))]">
         {trimmed.length < 2 ? (
           <p className={`px-3 py-8 text-center text-xs ${palette.textSecondary}`}>
             Nhập tên nhân vật, địa danh hoặc cụm từ bất kỳ để tìm nhanh chương xuất hiện.
@@ -358,7 +358,7 @@ export function ReaderBookmarksPanel({
         {errorMsg && <p className="text-[11px] text-amber-500">{errorMsg}</p>}
       </form>
 
-      <div className="scrollbar-thin flex-1 overflow-y-auto p-2.5">
+      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))]">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-8 text-xs opacity-75">
             <Loader2 className="h-4 w-4 animate-spin" />

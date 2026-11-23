@@ -155,14 +155,14 @@ export function PdfReader({
 
   if (renderError) {
     return (
-      <div className="flex h-[calc(100vh-3.25rem)] items-center justify-center bg-canvas p-8 text-center text-ink-muted">
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-canvas p-8 text-center text-ink-muted">
         <p className="text-sm">{renderError}</p>
       </div>
     );
   }
 
   return (
-    <div className="theme-canvas flex h-[calc(100vh-3.25rem)] flex-col text-ink transition-colors duration-200">
+    <div className="theme-canvas flex min-h-0 flex-1 flex-col text-ink transition-colors duration-200">
       {/* PDF Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-surface/95 px-3 py-2 backdrop-blur-sm sm:px-4">
         <div className="flex min-w-0 items-center gap-2">
@@ -261,7 +261,7 @@ export function PdfReader({
       {/* PDF Stage */}
       <div className="flex min-h-0 flex-1">
         {showThumbs && (
-          <aside className="scrollbar-thin w-28 shrink-0 overflow-y-auto border-r border-line bg-surface p-2.5 sm:w-36">
+          <aside className="scrollbar-thin w-28 shrink-0 overflow-y-auto overscroll-y-contain border-r border-line bg-surface p-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))] sm:w-36">
             {Array.from({ length: Math.min(pageCount, 40) }, (_, idx) => idx + 1).map((num) => (
               <button
                 key={num}
@@ -298,7 +298,7 @@ export function PdfReader({
 
         <div
           ref={stageRef}
-          className="scrollbar-thin relative flex-1 overflow-auto p-4 text-center sm:p-8"
+          className="scrollbar-thin relative flex-1 overflow-auto overscroll-contain p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-center sm:p-8 sm:pb-[calc(2rem+env(safe-area-inset-bottom))]"
           onClick={(event) => {
             if (event.target !== event.currentTarget && event.target !== canvasRef.current) return;
             const rect = event.currentTarget.getBoundingClientRect();

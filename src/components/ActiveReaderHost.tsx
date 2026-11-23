@@ -59,7 +59,7 @@ export function ActiveReaderHost({
   return (
     <>
       {activeBook && parsedBook && (
-        <div className="fixed inset-0 z-40">
+        <div className="fixed inset-0 z-40 flex max-h-dvh flex-col overflow-hidden">
           <Suspense fallback={null}>
             <LazyReaderView
               key={activeBook.id}
@@ -79,7 +79,7 @@ export function ActiveReaderHost({
       )}
 
       {activeBook && guestSession && (
-        <div className="fixed inset-0 z-40">
+        <div className="fixed inset-0 z-40 flex max-h-dvh flex-col overflow-hidden">
           <Suspense fallback={null}>
             <LazyGuestCanvasReader
               key={activeBook.id}

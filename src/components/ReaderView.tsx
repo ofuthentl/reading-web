@@ -337,7 +337,7 @@ export function ReaderView({
 
   return (
     <div
-      className={`relative flex h-screen flex-col overflow-hidden transition-colors duration-200 ${
+      className={`relative flex h-full min-h-0 flex-1 flex-col overflow-hidden transition-colors duration-200 ${
         isPdf ? 'bg-canvas text-ink' : `${palette.pageBg} ${palette.textPrimary}`
       }`}
     >
@@ -400,7 +400,7 @@ export function ReaderView({
         >
           <Suspense
             fallback={
-              <div className="theme-canvas flex h-[calc(100vh-3.25rem)] flex-col items-center justify-center gap-3 p-8 text-ink-muted">
+              <div className="theme-canvas flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-ink-muted">
                 <Loader2 className="h-6 w-6 animate-spin text-accent" />
                 <p className="text-sm">Đang tải trình đọc PDF...</p>
               </div>
@@ -471,7 +471,7 @@ export function ReaderView({
             else if (settings.sideTapNavigation && ratio > 0.84) goNextChapter();
             else if (immersiveHidden && ratio >= 0.22 && ratio <= 0.78) setImmersiveHidden(false);
           }}
-          className="scrollbar-thin flex-1 overflow-y-auto px-4 pb-8 pt-[4.75rem] sm:px-8 sm:pb-12 sm:pt-20"
+          className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-[4.75rem] sm:px-8 sm:pb-[calc(3rem+env(safe-area-inset-bottom))] sm:pt-20"
         >
           {currentChapter && (
             <article
