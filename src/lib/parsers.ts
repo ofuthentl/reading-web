@@ -151,6 +151,8 @@ function getFilenameChapterTitle(path: string): string | null {
 export interface ParseBookOptions {
   /** Bỏ qua giải nén nhị phân ảnh sang Blob URL khi chỉ cần đọc chữ & đường dẫn `data-zip-path` */
   skipMediaBlobs?: boolean;
+  /** Truyền sẵn ArrayBuffer nếu caller đã đọc để tránh nhân đôi RAM (vá M-12) */
+  arrayBuffer?: ArrayBuffer;
 }
 
 async function parseEpubBlob(
@@ -166,7 +168,7 @@ async function parseEpubBlob(
 
   try {
     const JSZip = await loadJSZip();
-    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    const zip = await JSZip.loadAsync(options?.arrayBuffer ?? (await blob.arrayBuffer()));
     const containerXml = await zip.file('META-INF/container.xml')?.async('string');
     if (!containerXml) throw new Error('EPUB không có tệp container.');
 
@@ -358,10 +360,14 @@ async function parseEpubBlob(
   }
 }
 
-async function parseDocxBlob(blob: Blob, book: Book): Promise<ParsedBook> {
+async function parseDocxBlob(
+  blob: Blob,
+  book: Book,
+  options?: ParseBookOptions,
+): Promise<ParsedBook> {
   const JSZip = await loadJSZip();
-  const zip = await JSZip.loadAsync(await blob.arrayBuffer());
-  return parseDocxZip(zip, book);
+  const zip = await JSZip.loadAsync(options?.arrayBuffer ?? (await blob.arrayBuffer()));
+  return parseDocxZip(zip, book, options);
 }
 
 export async function parseBookBlob(
@@ -373,7 +379,7 @@ export async function parseBookBlob(
     case 'epub':
       return parseEpubBlob(blob, book, options);
     case 'docx':
-      return parseDocxBlob(blob, book);
+      return parseDocxBlob(blob, book, options);
     default:
       throw new Error('Định dạng sách chưa được hỗ trợ.');
   }

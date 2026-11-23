@@ -231,7 +231,7 @@ export function startMikuCursorAnimation(): Promise<void> {
       let lastAppliedValue = '';
 
       const clearInlineCursor = () => {
-        if (currentEl) {
+        if (currentEl && currentEl.isConnected && currentEl.style.cursor === lastAppliedValue) {
           currentEl.style.removeProperty('cursor');
         }
         lastAppliedValue = '';
@@ -239,6 +239,11 @@ export function startMikuCursorAnimation(): Promise<void> {
 
       const applyCurrentFrame = () => {
         if (!currentEl || scrolling) return;
+        if (!currentEl.isConnected) {
+          currentEl = document.body || document.documentElement;
+          currentGroupIdx = DEFAULT_GROUP_IDX;
+          lastAppliedValue = '';
+        }
         if ('disabled' in currentEl && Boolean((currentEl as HTMLButtonElement).disabled)) {
           currentGroupIdx = 0;
         }
@@ -309,12 +314,29 @@ export function startMikuCursorAnimation(): Promise<void> {
       reducedMotionMq.addEventListener('change', syncPlayback);
       syncPlayback();
 
+      const onPageHide = (event: PageTransitionEvent) => {
+        if (event.persisted) {
+          stopTicker();
+          clearInlineCursor();
+          return;
+        }
+        dispose();
+      };
+
+      const onPageShow = (event: PageTransitionEvent) => {
+        if (event.persisted) {
+          syncPlayback();
+        }
+      };
+
       const dispose = () => {
         stopTicker();
         if (scrollResumeTimer !== null) window.clearTimeout(scrollResumeTimer);
         clearInlineCursor();
         window.removeEventListener('pointerover', onPointerOver);
         window.removeEventListener('scroll', onWindowScroll);
+        window.removeEventListener('pagehide', onPageHide);
+        window.removeEventListener('pageshow', onPageShow);
         document.removeEventListener('visibilitychange', syncPlayback);
         pointerMq.removeEventListener('change', syncPlayback);
         reducedMotionMq.removeEventListener('change', syncPlayback);
@@ -324,7 +346,8 @@ export function startMikuCursorAnimation(): Promise<void> {
       };
 
       activeControllerDispose = dispose;
-      window.addEventListener('pagehide', dispose, { once: true });
+      window.addEventListener('pagehide', onPageHide);
+      window.addEventListener('pageshow', onPageShow);
     } catch {
       // Giữ nguyên bộ con trỏ tĩnh Miku trong index.css nếu tải sheet lỗi
     } finally {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Copy, Download, Heart } from 'lucide-react';
 import { handleCoverTiltLeave, handleCoverTiltMove } from '@/hooks/useCardReveal';
 import type { ToastType } from '@/hooks/useToast';
@@ -16,13 +16,26 @@ export interface SupportViewProps {
 
 export function SupportView({ onNotify }: SupportViewProps) {
   const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleCopyAccount = async () => {
     try {
       await navigator.clipboard.writeText(SUPPORT_INFO.accountNumber);
       setCopied(true);
       onNotify?.(`Đã sao chép STK ${SUPPORT_INFO.accountNumber}`, 'success');
-      window.setTimeout(() => setCopied(false), 2200);
+      if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = window.setTimeout(() => {
+        copiedTimerRef.current = null;
+        setCopied(false);
+      }, 2200);
     } catch {
       onNotify?.('Không thể tự động sao chép, vui lòng chép thủ công số tài khoản.', 'info');
     }

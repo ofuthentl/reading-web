@@ -44,6 +44,7 @@ interface DocxRenderContext {
   placeholderToImage: Map<string, { blobUrl: string; zipPath: string }>;
   createdUrls: string[];
   placeholderSeq: number;
+  skipMediaBlobs: boolean;
 }
 
 async function resolveImagePlaceholder(ctx: DocxRenderContext, relId: string): Promise<string | null> {
@@ -52,23 +53,31 @@ async function resolveImagePlaceholder(ctx: DocxRenderContext, relId: string): P
   const zipPath = resolveDocxPath('word', rel.target);
   if (!RENDERABLE_IMAGE_EXT_RE.test(zipPath)) return null;
 
+  let resolvedZipPath = zipPath;
   let blobUrl = ctx.imageUrlByZipPath.get(zipPath);
   if (!blobUrl) {
     let entry = ctx.zip.file(zipPath);
     if (!entry) {
       const targetLower = zipPath.toLowerCase();
       const ciKey = Object.keys(ctx.zip.files).find((k) => k.toLowerCase() === targetLower);
-      if (ciKey) entry = ctx.zip.file(ciKey);
+      if (ciKey) {
+        entry = ctx.zip.file(ciKey);
+        resolvedZipPath = ciKey;
+      }
     }
     if (!entry) return null;
-    const rawBlob = await entry.async('blob');
-    blobUrl = URL.createObjectURL(new Blob([rawBlob], { type: guessImageMimeType(zipPath) }));
-    ctx.createdUrls.push(blobUrl);
+    if (ctx.skipMediaBlobs) {
+      blobUrl = 'data:,';
+    } else {
+      const rawBlob = await entry.async('blob');
+      blobUrl = URL.createObjectURL(new Blob([rawBlob], { type: guessImageMimeType(resolvedZipPath) }));
+      ctx.createdUrls.push(blobUrl);
+    }
     ctx.imageUrlByZipPath.set(zipPath, blobUrl);
   }
 
   const token = `__docx-img__/${ctx.placeholderSeq++}`;
-  ctx.placeholderToImage.set(token, { blobUrl, zipPath });
+  ctx.placeholderToImage.set(token, { blobUrl, zipPath: resolvedZipPath });
   return token;
 }
 
@@ -438,7 +447,11 @@ export async function extractDocxCover(zip: JSZip): Promise<Blob | null> {
   return null;
 }
 
-export async function parseDocxZip(zip: JSZip, book: Book): Promise<ParsedBook> {
+export async function parseDocxZip(
+  zip: JSZip,
+  book: Book,
+  options?: { skipMediaBlobs?: boolean },
+): Promise<ParsedBook> {
   const createdUrls: string[] = [];
   const dispose = () => {
     for (const url of createdUrls) URL.revokeObjectURL(url);
@@ -468,6 +481,7 @@ export async function parseDocxZip(zip: JSZip, book: Book): Promise<ParsedBook> 
       placeholderToImage: new Map(),
       createdUrls,
       placeholderSeq: 0,
+      skipMediaBlobs: Boolean(options?.skipMediaBlobs),
     };
 
     const blocks: DocxBlock[] = [];

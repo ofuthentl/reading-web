@@ -129,8 +129,10 @@ export async function setShelfTags(shelfName: string, tags: readonly string[]): 
     throw new Error(`Tên kệ sách không hợp lệ (tối đa ${MAX_SHELF_NAME_LENGTH} ký tự).`);
   }
   const normalized = normalizeClientShelfTags(tags);
-  writeLocalShelfPrefs(patchShelfTags(readLocalShelfPrefs(), trimmed, normalized));
-  if (!isCloudMode) return normalized;
+  if (!isCloudMode) {
+    writeLocalShelfPrefs(patchShelfTags(readLocalShelfPrefs(), trimmed, normalized));
+    return normalized;
+  }
 
   const res = await apiFetch('/api/shelves/tags', {
     method: 'PUT',
@@ -141,5 +143,7 @@ export async function setShelfTags(shelfName: string, tags: readonly string[]): 
   if (!res.ok) {
     throw new Error(data.error || 'Không thể lưu thể loại cho bộ truyện.');
   }
-  return Array.isArray(data.tags) ? data.tags : normalized;
+  const savedTags = Array.isArray(data.tags) ? data.tags : normalized;
+  writeLocalShelfPrefs(patchShelfTags(readLocalShelfPrefs(), trimmed, savedTags));
+  return savedTags;
 }

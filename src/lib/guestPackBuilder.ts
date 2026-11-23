@@ -361,8 +361,9 @@ export async function buildGuestPackEnvelope(blob: Blob, book: Book): Promise<Ui
 
   const arrayBuffer = await blob.arrayBuffer();
   const zipMap = parseZipEntryOffsets(arrayBuffer);
-  const parsed = await parseBookBlob(new Blob([arrayBuffer], { type: blob.type }), book, {
+  const parsed = await parseBookBlob(blob, book, {
     skipMediaBlobs: true,
+    arrayBuffer,
   });
 
   try {

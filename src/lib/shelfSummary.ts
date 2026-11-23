@@ -1,4 +1,4 @@
-import type { Book, ReadingProgress, ShelfAccessSummary, ShelfGroup } from '@/types';
+import type { AuthRole, Book, ReadingProgress, ShelfAccessSummary, ShelfGroup } from '@/types';
 import {
   TITLE_ENDS_WITH_BARE_VOL_RE,
   computeBookProgressPercent,
@@ -10,7 +10,47 @@ import { extractSeriesName, isKnownAuthor } from '@/lib/shelfPlacement';
 
 export { computeBookProgressPercent };
 
-const UNKNOWN_AUTHOR = 'Không rõ tác giả';
+export const UNKNOWN_AUTHOR_LABEL = 'Không rõ tác giả';
+const UNKNOWN_AUTHOR = UNKNOWN_AUTHOR_LABEL;
+
+function isUniqueSubtitleInShelf(
+  book: Book,
+  shelf: ShelfGroup | null,
+  rawAuthorCounts: ReadonlyMap<string, number>,
+): boolean {
+  const cleanAuth = book.author.trim();
+  if (!cleanAuth || cleanAuth === UNKNOWN_AUTHOR_LABEL) return false;
+  if (getDisplayAuthor(book.author, book.title) === UNKNOWN_AUTHOR_LABEL) return true;
+  if (!shelf || shelf.books.length < 2 || shelf.key === 'kho chưa phân loại') return false;
+  const matchesSeriesPrefix = book.title.trim().toLocaleLowerCase('vi').startsWith(shelf.key);
+  const endsWithBareVol = TITLE_ENDS_WITH_BARE_VOL_RE.test(book.title.trim());
+  if (!matchesSeriesPrefix && !endsWithBareVol) return false;
+  const distinctCount = rawAuthorCounts.size;
+  return distinctCount >= 2 && (rawAuthorCounts.get(cleanAuth.toLocaleLowerCase('vi')) ?? 0) === 1;
+}
+
+export function getEffectiveAuthorInShelf(
+  book: Book,
+  shelf: ShelfGroup | null,
+  rawAuthorCounts: ReadonlyMap<string, number>,
+): string {
+  return isUniqueSubtitleInShelf(book, shelf, rawAuthorCounts)
+    ? UNKNOWN_AUTHOR_LABEL
+    : getDisplayAuthor(book.author, book.title);
+}
+
+export function getHealedTitleInShelf(
+  book: Book,
+  shelf: ShelfGroup | null,
+  rawAuthorCounts: ReadonlyMap<string, number>,
+): string {
+  const sorted = getBookSortTitle(book);
+  if (sorted !== book.title.trim()) return sorted;
+  if (isUniqueSubtitleInShelf(book, shelf, rawAuthorCounts)) {
+    return `${book.title.trim()} - ${book.author.trim()}`;
+  }
+  return book.title;
+}
 
 const TECHNICAL_SHORT_TOKENS = new Set([
   '2d',
@@ -283,17 +323,27 @@ function pickResumeAction(
   books: Book[],
   progress: Record<string, ReadingProgress>,
   coverBook: Book | null,
+  sessionRole?: AuthRole,
 ): { resumeBook: Book | null; resumeActionLabel: string } {
   if (books.length === 0) {
     return { resumeBook: null, resumeActionLabel: 'Đọc sách' };
   }
 
+  // Vá M-02: với khách Discord, ưu tiên tập đã mở khoá và sẵn sàng gói bảo mật
+  const guestEligible =
+    sessionRole === 'guest'
+      ? books.filter((b) => !b.guest_locked && b.guest_ready !== false)
+      : books;
+  const pool = guestEligible.length > 0 ? guestEligible : books;
+  const preferredStart =
+    coverBook && pool.some((b) => b.id === coverBook.id) ? coverBook : pool[0];
+
   // 1. Ưu tiên cuốn đang đọc dở mới nhất
   let latestInProgress: { book: Book; updatedAt: number } | null = null;
   let latestCompleted: { book: Book; index: number; updatedAt: number } | null = null;
 
-  for (let i = 0; i < books.length; i += 1) {
-    const book = books[i];
+  for (let i = 0; i < pool.length; i += 1) {
+    const book = pool[i];
     const itemProgress = progress[book.id];
     if (!itemProgress) continue;
     if (!itemProgress.completed) {
@@ -311,24 +361,24 @@ function pickResumeAction(
 
   // 2. Nếu đã đọc xong 1 tập, gợi ý tập chưa đọc kế tiếp
   if (latestCompleted) {
-    for (let i = latestCompleted.index + 1; i < books.length; i += 1) {
-      if (!progress[books[i].id]?.completed) {
-        return { resumeBook: books[i], resumeActionLabel: 'Đọc tập tiếp' };
+    for (let i = latestCompleted.index + 1; i < pool.length; i += 1) {
+      if (!progress[pool[i].id]?.completed) {
+        return { resumeBook: pool[i], resumeActionLabel: 'Đọc tập tiếp' };
       }
     }
-    const firstUnread = books.find((book) => !progress[book.id]?.completed);
+    const firstUnread = pool.find((book) => !progress[book.id]?.completed);
     if (firstUnread) {
       return { resumeBook: firstUnread, resumeActionLabel: 'Đọc tập tiếp' };
     }
     return {
-      resumeBook: coverBook ?? books[0],
-      resumeActionLabel: books.length > 1 ? 'Đọc lại từ tập 1' : 'Đọc lại',
+      resumeBook: preferredStart,
+      resumeActionLabel: pool.length > 1 ? 'Đọc lại từ tập 1' : 'Đọc lại',
     };
   }
 
   return {
-    resumeBook: coverBook ?? books[0],
-    resumeActionLabel: books.length > 1 ? 'Đọc từ tập 1' : 'Đọc sách',
+    resumeBook: preferredStart,
+    resumeActionLabel: pool.length > 1 ? 'Đọc từ tập 1' : 'Đọc sách',
   };
 }
 
@@ -342,6 +392,7 @@ export function summarizeShelf(
   favoriteShelfKeys?: ReadonlySet<string>,
   accessSummary?: ShelfAccessSummary | null,
   shelfTags?: Readonly<Record<string, string[]>>,
+  sessionRole?: AuthRole,
 ): ShelfSummary {
   const rawPreferredId = shelfCovers?.[shelf.key] ?? null;
   const validCustomBook = rawPreferredId
@@ -388,6 +439,7 @@ export function summarizeShelf(
     shelf.books,
     progress,
     autoStartBook,
+    sessionRole,
   );
 
   const isGuestLocked = bookCount > 0 && shelf.books.every((book) => Boolean(book.guest_locked));

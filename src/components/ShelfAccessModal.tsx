@@ -48,9 +48,11 @@ export function ShelfAccessModal({
   const [memberQuery, setMemberQuery] = useState('');
   const [manualId, setManualId] = useState('');
   const [manualLabel, setManualLabel] = useState('');
+  const shelfKey = shelf?.key ?? null;
 
+  // Chỉ tải/reset khi mở sang bộ khác (theo shelfKey) để đồng bộ bìa nền không xoá danh sách đang tick (vá M-07)
   useEffect(() => {
-    if (!shelf) return;
+    if (!shelfKey) return;
     let cancelled = false;
     setMemberQuery('');
     setManualId('');
@@ -70,7 +72,7 @@ export function ShelfAccessModal({
         if (cancelled) return;
         setGuests(guestList);
         setAllRules(rules);
-        const currentRule = rules.find((r) => r.shelfKey === shelf.key);
+        const currentRule = rules.find((r) => r.shelfKey === shelfKey);
         if (currentRule) {
           setMode('restricted');
           const next = new Map<string, SelectedMemberMeta>();
@@ -96,7 +98,7 @@ export function ShelfAccessModal({
     return () => {
       cancelled = true;
     };
-  }, [onApiError, shelf]);
+  }, [onApiError, shelfKey]);
 
   useEffect(() => {
     if (!shelf) return;

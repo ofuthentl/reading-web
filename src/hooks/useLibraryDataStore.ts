@@ -53,6 +53,7 @@ export function useLibraryDataStore({
   const [storage, setStorage] = useState<StorageStats | null>(null);
   const [selectionResetKey, setSelectionResetKey] = useState(0);
   const coreReadersPreloadedRef = useRef(false);
+  const loadRequestIdRef = useRef(0);
 
   const { guestFavoriteKeys, toggleGuestFavorite, syncRenamedGuestFavorite } =
     useGuestLocalFavorites();
@@ -71,19 +72,42 @@ export function useLibraryDataStore({
     [books],
   );
 
+  const mergeBookPreservingFlags = (prev: Book, updated: Book): Book => ({
+    ...updated,
+    ...(typeof updated.guest_ready === 'boolean'
+      ? {}
+      : typeof prev.guest_ready === 'boolean'
+        ? { guest_ready: prev.guest_ready }
+        : {}),
+    ...(typeof updated.guest_locked === 'boolean'
+      ? {}
+      : typeof prev.guest_locked === 'boolean'
+        ? { guest_locked: prev.guest_locked }
+        : {}),
+  });
+
   const handleBooksBatchUpdated = useCallback(
     (updatedBooks: Book[], nextStorage?: StorageStats) => {
       const byId = new Map(updatedBooks.map((item) => [item.id, item]));
-      setBooks((prev) => sortBooksByTitle(prev.map((item) => byId.get(item.id) ?? item)));
+      setBooks((prev) =>
+        sortBooksByTitle(
+          prev.map((item) => {
+            const incoming = byId.get(item.id);
+            return incoming ? mergeBookPreservingFlags(item, incoming) : item;
+          }),
+        ),
+      );
       if (nextStorage) setStorage(nextStorage);
     },
     [],
   );
 
   const loadLibrary = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
     setLoading(true);
     try {
       const state = await fetchLibraryState();
+      if (requestId !== loadRequestIdRef.current) return;
       setBooks(state.books);
       setProgress(state.progress);
       setWeeklyPopularIds(state.weeklyPopularIds);
@@ -118,16 +142,20 @@ export function useLibraryDataStore({
         }
       }
     } catch (err) {
+      if (requestId !== loadRequestIdRef.current) return;
       onApiError(err, 'Không thể tải dữ liệu thư viện.');
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) setLoading(false);
     }
   }, [addToast, handleBooksBatchUpdated, onApiError, onNonOwnerLoaded, setSession]);
 
   const clearStoreOnLogout = useCallback(() => {
+    loadRequestIdRef.current += 1;
+    setLoading(false);
     setBooks([]);
     setProgress({});
     setWeeklyPopularIds([]);
+    setShelfPrefs({ covers: {}, favorites: [] });
     setStorage(null);
   }, []);
 
@@ -142,7 +170,11 @@ export function useLibraryDataStore({
 
   const handleBookUpdated = useCallback((updatedBook: Book, nextStorage?: StorageStats) => {
     setBooks((prev) =>
-      sortBooksByTitle(prev.map((item) => (item.id === updatedBook.id ? updatedBook : item))),
+      sortBooksByTitle(
+        prev.map((item) =>
+          item.id === updatedBook.id ? mergeBookPreservingFlags(item, updatedBook) : item,
+        ),
+      ),
     );
     if (nextStorage) setStorage(nextStorage);
   }, []);
@@ -228,6 +260,12 @@ export function useLibraryDataStore({
       setProgress((prev) => ({ ...prev, [book.id]: nextProgress }));
       addToast(`Đã đánh dấu hoàn thành "${book.title}".`, 'success');
       void saveReadingProgress(book.id, nextProgress).catch((err) => {
+        setProgress((prev) => {
+          const restored = { ...prev };
+          if (existing) restored[book.id] = existing;
+          else delete restored[book.id];
+          return restored;
+        });
         onApiError(err, 'Không thể lưu trạng thái hoàn thành.');
       });
     },
@@ -236,6 +274,7 @@ export function useLibraryDataStore({
 
   const handleResetBookProgress = useCallback(
     (book: Book) => {
+      const previous = progress[book.id];
       setProgress((prev) => {
         const next = { ...prev };
         delete next[book.id];
@@ -243,10 +282,13 @@ export function useLibraryDataStore({
       });
       addToast(`Đã đặt lại tiến độ đọc "${book.title}".`, 'info');
       void clearReadingProgress(book.id).catch((err) => {
+        if (previous) {
+          setProgress((prev) => ({ ...prev, [book.id]: previous }));
+        }
         onApiError(err, 'Không thể xoá tiến độ đọc.');
       });
     },
-    [addToast, onApiError],
+    [addToast, onApiError, progress],
   );
 
   const handleBooksShelfMoved = useCallback((bookIds: string[], targetShelf: string) => {

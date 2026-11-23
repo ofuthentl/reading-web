@@ -3,6 +3,7 @@ import { BookOpen, Clock, Upload } from 'lucide-react';
 import type {
   AuthRole, Book, ReadingProgress, ShelfAccessSummary, StorageStats, ViewMode,
 } from '@/types';
+import { isCloudMode } from '@/lib/api';
 import { BookCard } from '@/components/BookCard';
 import { EditorialBookStrip } from '@/components/EditorialBookStrip';
 import { type LibraryAdvancedFilterProps, LibraryFilterBar } from '@/components/LibraryFilterBar';
@@ -332,7 +333,9 @@ export function Library2DView({
               selectionMode={selectionMode}
               selectedCount={selectedIds.size}
               unprotectedBookCount={unprotectedBookCount}
-              onProtectionClick={sessionRole === 'owner' ? onProtectionClick : undefined}
+              onProtectionClick={
+                sessionRole === 'owner' && isCloudMode ? onProtectionClick : undefined
+              }
               onToggleSelectionMode={sessionRole === 'owner' ? toggleSelectionMode : undefined}
               isFiltering={isFiltering}
               filteredCount={filteredBooks.length}

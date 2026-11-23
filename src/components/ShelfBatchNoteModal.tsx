@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileText, Loader2, Save, Sparkles, UserPen, X } from 'lucide-react';
 import type { Book, ShelfGroup } from '@/types';
@@ -6,12 +6,13 @@ import {
   type ShelfBatchMode,
   ShelfBatchNoteFields,
 } from '@/components/ShelfBatchNoteFields';
-import { updateBookMetadata } from '@/lib/api';
+import { isAuthError, updateBookMetadata } from '@/lib/api';
+import { getBookSortTitle } from '@/lib/bookMetadata';
 import {
-  TITLE_ENDS_WITH_BARE_VOL_RE,
-  getBookSortTitle,
-  getDisplayAuthor,
-} from '@/lib/bookMetadata';
+  UNKNOWN_AUTHOR_LABEL,
+  getEffectiveAuthorInShelf,
+  getHealedTitleInShelf,
+} from '@/lib/shelfSummary';
 import {
   extractBookAutoAuthor,
   extractBookAutoDescription,
@@ -22,47 +23,6 @@ type BatchJob = {
   book: Book;
   patch: Partial<Pick<Book, 'title' | 'author' | 'description'>>;
 };
-
-const UNKNOWN_AUTHOR_LABEL = 'Không rõ tác giả';
-
-function isUniqueSubtitleInShelf(
-  book: Book,
-  shelf: ShelfGroup | null,
-  rawAuthorCounts: ReadonlyMap<string, number>,
-): boolean {
-  const cleanAuth = book.author.trim();
-  if (!cleanAuth || cleanAuth === UNKNOWN_AUTHOR_LABEL) return false;
-  if (getDisplayAuthor(book.author, book.title) === UNKNOWN_AUTHOR_LABEL) return true;
-  if (!shelf || shelf.books.length < 2 || shelf.key === 'kho chưa phân loại') return false;
-  const matchesSeriesPrefix = book.title.trim().toLocaleLowerCase('vi').startsWith(shelf.key);
-  const endsWithBareVol = TITLE_ENDS_WITH_BARE_VOL_RE.test(book.title.trim());
-  if (!matchesSeriesPrefix && !endsWithBareVol) return false;
-  const distinctCount = rawAuthorCounts.size;
-  return distinctCount >= 2 && (rawAuthorCounts.get(cleanAuth.toLocaleLowerCase('vi')) ?? 0) === 1;
-}
-
-function getEffectiveAuthorInShelf(
-  book: Book,
-  shelf: ShelfGroup | null,
-  rawAuthorCounts: ReadonlyMap<string, number>,
-): string {
-  return isUniqueSubtitleInShelf(book, shelf, rawAuthorCounts)
-    ? UNKNOWN_AUTHOR_LABEL
-    : getDisplayAuthor(book.author, book.title);
-}
-
-function getHealedTitleInShelf(
-  book: Book,
-  shelf: ShelfGroup | null,
-  rawAuthorCounts: ReadonlyMap<string, number>,
-): string {
-  const sorted = getBookSortTitle(book);
-  if (sorted !== book.title.trim()) return sorted;
-  if (isUniqueSubtitleInShelf(book, shelf, rawAuthorCounts)) {
-    return `${book.title.trim()} - ${book.author.trim()}`;
-  }
-  return book.title;
-}
 
 export interface ShelfBatchNoteModalProps {
   shelf: ShelfGroup | null;
@@ -90,6 +50,17 @@ export function ShelfBatchNoteModal({
   const [saveDoneCount, setSaveDoneCount] = useState(0);
   const [saveTotalCount, setSaveTotalCount] = useState(0);
   const [extracting, setExtracting] = useState(false);
+  const mountedRef = useRef(true);
+  const shelfRef = useRef(shelf);
+  shelfRef.current = shelf;
+  const rawAuthorCountsRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const missingBooks = useMemo(
     () => (shelf ? shelf.books.filter((b) => !b.description?.trim()) : []),
@@ -126,28 +97,34 @@ export function ShelfBatchNoteModal({
     return Array.from(set);
   }, [shelf, rawAuthorCounts]);
 
+  rawAuthorCountsRef.current = rawAuthorCounts;
+  const shelfKey = shelf?.key ?? null;
+
+  // Chỉ reset form khi đổi sang bộ khác (theo shelfKey), chống mất dữ liệu đang gõ (vá M-07)
   useEffect(() => {
-    if (!shelf) return;
-    const firstExisting = shelf.books.find((b) => b.description?.trim())?.description?.trim() ?? '';
-    const allHaveDesc = shelf.books.every((b) => Boolean(b.description?.trim()));
+    const activeShelf = shelfRef.current;
+    if (!shelfKey || !activeShelf) return;
+    const firstExisting =
+      activeShelf.books.find((b) => b.description?.trim())?.description?.trim() ?? '';
+    const allHaveDesc = activeShelf.books.every((b) => Boolean(b.description?.trim()));
     setSharedText(firstExisting);
     setOverwriteExisting(allHaveDesc);
     setShowAllVolumes(allHaveDesc);
 
     const initialDrafts: Record<string, string> = {};
-    for (const b of shelf.books) initialDrafts[b.id] = b.description?.trim() ?? '';
+    for (const b of activeShelf.books) initialDrafts[b.id] = b.description?.trim() ?? '';
     setDraftById(initialDrafts);
 
     const firstKnownAuthor =
-      shelf.books
-        .map((b) => getEffectiveAuthorInShelf(b, shelf, rawAuthorCounts))
+      activeShelf.books
+        .map((b) => getEffectiveAuthorInShelf(b, activeShelf, rawAuthorCountsRef.current))
         .find((a) => a !== UNKNOWN_AUTHOR_LABEL) ?? '';
     setAuthorInput(firstKnownAuthor);
     setOnlyMissingAuthor(false);
     setMode('shared');
     setSaving(false);
     setExtracting(false);
-  }, [shelf, rawAuthorCounts]);
+  }, [shelfKey]);
 
   useEffect(() => {
     if (!shelf) return;
@@ -249,20 +226,26 @@ export function ShelfBatchNoteModal({
 
     const updatedBooks: Book[] = [];
     let firstError: unknown = null;
+    let authExpired = false;
     const CONCURRENCY = 4;
 
     for (let i = 0; i < jobs.length; i += CONCURRENCY) {
+      if (!mountedRef.current || authExpired) break;
       const slice = jobs.slice(i, i + CONCURRENCY);
       const results = await Promise.allSettled(
         slice.map((job) => updateBookMetadata(job.book.id, job.patch)),
       );
       for (const res of results) {
         if (res.status === 'fulfilled') updatedBooks.push(res.value);
-        else if (!firstError) firstError = res.reason;
+        else {
+          if (!firstError) firstError = res.reason;
+          if (isAuthError(res.reason)) authExpired = true;
+        }
       }
-      setSaveDoneCount(Math.min(jobs.length, i + slice.length));
+      if (mountedRef.current) setSaveDoneCount(Math.min(jobs.length, i + slice.length));
     }
 
+    if (!mountedRef.current) return;
     setSaving(false);
     if (updatedBooks.length > 0) onBooksUpdated(updatedBooks);
 

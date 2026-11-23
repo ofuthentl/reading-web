@@ -22,6 +22,7 @@ let isPageScrolling = false;
 let scrollIdleTimer: number | null = null;
 let pendingTiltRaf: number | null = null;
 let pendingTiltJob: (() => void) | null = null;
+let pendingTiltEl: HTMLElement | null = null;
 
 function ensureScrollGuard(): void {
   if (scrollGuardBound || typeof window === 'undefined') return;
@@ -155,8 +156,9 @@ export function handleCoverTiltMove(
     resetTimers.delete(el);
   }
 
+  pendingTiltEl = el;
   pendingTiltJob = () => {
-    if (isPageScrolling) return;
+    if (isPageScrolling || !el.isConnected) return;
     const now = performance.now();
     let cached = rectCache.get(el);
     if (!cached || now - cached.ts > 240) {
@@ -189,6 +191,7 @@ export function handleCoverTiltMove(
       pendingTiltRaf = null;
       const job = pendingTiltJob;
       pendingTiltJob = null;
+      pendingTiltEl = null;
       job?.();
     });
   }
@@ -196,6 +199,15 @@ export function handleCoverTiltMove(
 
 export function handleCoverTiltLeave(event: ReactPointerEvent<HTMLElement>): void {
   const el = event.currentTarget;
+  // Huỷ RAF nghiêng đang chờ của đúng thẻ vừa rời chuột để tránh kẹt góc nghiêng (vá L-01)
+  if (pendingTiltEl === el) {
+    if (pendingTiltRaf !== null) {
+      window.cancelAnimationFrame(pendingTiltRaf);
+      pendingTiltRaf = null;
+    }
+    pendingTiltJob = null;
+    pendingTiltEl = null;
+  }
   rectCache.delete(el);
   if (!el.hasAttribute('data-tilting')) return;
 
