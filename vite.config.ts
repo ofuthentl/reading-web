@@ -21,7 +21,7 @@ function staticGateRoutesPlugin(): Plugin {
       const indexHtml = resolve(rootDir, outDir, 'index.html');
       if (!existsSync(indexHtml)) return;
 
-      for (const subRoute of ['entrance', 'locked']) {
+      for (const subRoute of ['entrance', 'locked', 'usage']) {
         const subDir = resolve(rootDir, outDir, subRoute);
         mkdirSync(subDir, { recursive: true });
         copyFileSync(indexHtml, resolve(subDir, 'index.html'));

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  Activity,
   BarChart3,
   CheckSquare,
   Clock,
@@ -37,6 +38,7 @@ interface LibraryHeaderProps {
   onChangeViewMode?: (mode: ViewMode) => void;
   onCycleTheme: (origin?: { x: number; y: number }) => void;
   onOpenStats?: () => void;
+  onOpenUsage?: () => void;
   onUploadClick?: () => void;
   onProtectionClick?: () => void;
   unprotectedBookCount?: number;
@@ -69,6 +71,7 @@ export function LibraryHeader({
   onChangeViewMode,
   onCycleTheme,
   onOpenStats,
+  onOpenUsage,
   onUploadClick,
   onProtectionClick,
   unprotectedBookCount = 0,
@@ -237,6 +240,18 @@ export function LibraryHeader({
                   {unprotectedBookCount}
                 </span>
               )}
+            </button>
+          )}
+
+          {isOwner && onOpenUsage && (
+            <button
+              type="button"
+              onClick={onOpenUsage}
+              aria-label="Thống kê hệ thống (/usage)"
+              title="Thống kê hệ thống (/usage)"
+              className="inline-flex items-center rounded-xl border border-line bg-canvas p-2 text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink"
+            >
+              <Activity className="h-4 w-4 text-crimson-accent" />
             </button>
           )}
 

@@ -6,7 +6,14 @@ import {
   DEFAULT_OWNER_SESSION,
   getActiveAuthSession,
 } from '@/lib/authSession';
-import { replaceGateRoute, syncGateDocumentTitle } from '@/lib/gateRoutes';
+import {
+  type GateRoute,
+  getCurrentGateRoute,
+  navigateGateRoute,
+  replaceGateRoute,
+  subscribeGateRoute,
+  syncGateDocumentTitle,
+} from '@/lib/gateRoutes';
 import { ActiveReaderHost } from '@/components/ActiveReaderHost';
 import type { LibraryModalState } from '@/components/AdminModalsHost';
 import { Library2DView } from '@/components/Library2DView';
@@ -33,6 +40,12 @@ const LazyLibrary2DDialogsHost = lazy(() =>
   })),
 );
 
+const LazyAdminUsageView = lazy(() =>
+  import('@/components/AdminUsageView').then((mod) => ({
+    default: mod.AdminUsageView,
+  })),
+);
+
 export default function App() {
   const { theme, cycleTheme, cycle3DTheme } = useTheme();
   const { toasts, addToast, dismissToast } = useToast();
@@ -46,11 +59,14 @@ export default function App() {
   } = useCanUse3D();
 
   const [authenticated, setAuthenticated] = useState(false);
+  const [gateRoute, setGateRoute] = useState<GateRoute>(getCurrentGateRoute);
   const [session, setSession] = useState<AuthSessionInfo>(getActiveAuthSession);
   const [authReason, setAuthReason] = useState<string | null>(null);
   const [modal, setModal] = useState<LibraryModalState>({ kind: 'none' });
   const [inspectedBookId, setInspectedBookId] = useState<string | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
+
+  useEffect(() => subscribeGateRoute(() => setGateRoute(getCurrentGateRoute())), []);
 
   const closeModal = useCallback(() => setModal({ kind: 'none' }), []);
   const authResetCleanupRef = useRef<() => void>(() => undefined);
@@ -126,13 +142,28 @@ export default function App() {
 
   useEffect(() => {
     if (authenticated) {
-      replaceGateRoute('root');
-      syncGateDocumentTitle('root', true);
+      const current = getCurrentGateRoute();
+      if (session.role === 'owner' && current === 'usage') {
+        syncGateDocumentTitle('usage', true);
+      } else {
+        replaceGateRoute('root');
+        syncGateDocumentTitle('root', true);
+      }
       void loadLibrary();
     } else {
       closeBook();
     }
-  }, [authenticated, closeBook, loadLibrary]);
+  }, [authenticated, closeBook, loadLibrary, session.role]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    if (gateRoute === 'usage' && session.role !== 'owner') {
+      replaceGateRoute('root');
+      syncGateDocumentTitle('root', true);
+      return;
+    }
+    syncGateDocumentTitle(gateRoute, true);
+  }, [authenticated, gateRoute, session.role]);
 
   useEffect(() => {
     if (!authenticated || session.expiresAt === null) return;
@@ -230,6 +261,24 @@ export default function App() {
   }
 
   const isOwner = session.role === 'owner';
+
+  if (isOwner && gateRoute === 'usage') {
+    return (
+      <>
+        <Suspense fallback={<div className="theme-canvas min-h-screen" />}>
+          <LazyAdminUsageView
+            theme={theme}
+            onCycleTheme={cycleTheme}
+            onBackToLibrary={() => navigateGateRoute('root')}
+            onLogout={handleLogout}
+            onApiError={handleApiError}
+          />
+        </Suspense>
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      </>
+    );
+  }
+
   const effectiveCanUse3D = isOwner && canUse3D;
   const render3D = isOwner && effectiveMode === '3d';
   const isReaderOpen = Boolean(reader.activeBook && (reader.parsedBook || reader.guestSession));
@@ -294,6 +343,7 @@ export default function App() {
             onChangeViewMode={isOwner ? setViewMode : undefined}
             onCycleTheme={cycleTheme}
             onOpenStats={() => setStatsOpen(true)}
+            onOpenUsage={isOwner ? () => navigateGateRoute('usage') : undefined}
             onRefresh={() => void loadLibrary()}
             onLogout={handleLogout}
             onOpenBook={(book: Book) => void reader.openBook(book)}

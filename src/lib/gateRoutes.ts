@@ -1,4 +1,4 @@
-export type GateRoute = 'root' | 'entrance' | 'locked';
+export type GateRoute = 'root' | 'entrance' | 'locked' | 'usage';
 
 const GATE_ROUTE_EVENT = 'ofu:gate-route-change';
 
@@ -19,6 +19,7 @@ export function parsePathnameToGateRoute(pathname: string): GateRoute {
   const cleaned = relative.replace(/^\/+|\/+$/g, '').toLowerCase();
   if (cleaned === 'entrance') return 'entrance';
   if (cleaned === 'locked') return 'locked';
+  if (cleaned === 'usage') return 'usage';
   return 'root';
 }
 
@@ -36,9 +37,10 @@ export function buildGateHref(route: GateRoute): string {
 export function syncGateDocumentTitle(route: GateRoute, authenticated: boolean): void {
   if (typeof document === 'undefined') return;
   if (authenticated) {
-    document.title = "Ofu's Library";
+    document.title = route === 'usage' ? "Ofu's Library · Usage" : "Ofu's Library";
     return;
   }
+  // Giấu hoàn toàn tiêu đề trang /usage khi chưa đăng nhập Admin (D-035)
   document.title =
     route === 'entrance' ? "Ofu's Library Entrance" : "Ofu's Library Closed";
 }

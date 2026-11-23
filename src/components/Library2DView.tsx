@@ -48,6 +48,7 @@ interface Library2DViewProps {
   onInspectBook?: (book: Book) => void;
   onDismissContinue?: (book: Book) => void;
   onOpenStats?: () => void;
+  onOpenUsage?: () => void;
   onUploadClick?: () => void;
   onProtectionClick?: () => void;
   unprotectedBookCount?: number;
@@ -104,6 +105,7 @@ export function Library2DView({
   onInspectBook,
   onDismissContinue,
   onOpenStats,
+  onOpenUsage,
   onUploadClick,
   onProtectionClick,
   unprotectedBookCount = 0,
@@ -234,6 +236,7 @@ export function Library2DView({
         onChangeViewMode={onChangeViewMode}
         onCycleTheme={onCycleTheme}
         onOpenStats={onOpenStats}
+        onOpenUsage={onOpenUsage}
         onUploadClick={onUploadClick}
         onProtectionClick={onProtectionClick}
         unprotectedBookCount={unprotectedBookCount}

@@ -82,12 +82,29 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
     try {
       const health = await checkHealth();
 
-      if (!health.authRequired && currentRoute === 'root') {
+      if (!health.authRequired && (currentRoute === 'root' || currentRoute === 'usage')) {
         onAuthenticated(DEFAULT_OWNER_SESSION);
         return;
       }
 
       const stored = inspectStoredSession();
+
+      // Stealth /usage (D-035): chỉ giữ /usage nếu phiên owner còn hiệu lực; guest về '/', người lạ đẩy ngay về '/locked'
+      if (currentRoute === 'usage') {
+        if (stored.status === 'active' && !authReason) {
+          if (stored.session.role === 'owner') {
+            onAuthenticated(stored.session);
+            return;
+          }
+          replaceGateRoute('root');
+          onAuthenticated(stored.session);
+          return;
+        }
+        replaceGateRoute('locked');
+        setRoute('locked');
+        setStatus('ready');
+        return;
+      }
 
       if (currentRoute === 'root') {
         if (stored.status === 'active' && !authReason) {
