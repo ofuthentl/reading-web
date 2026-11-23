@@ -71,6 +71,10 @@ export interface ShelfSummary {
   customCoverBookId: string | null;
   isFavorite: boolean;
   authorLabel: string;
+  /** Danh sách tác giả hợp lệ trên kệ (dùng để bấm lọc các bộ cùng tác giả) */
+  authors: string[];
+  /** Danh sách thể loại (tag) đã gắn cho bộ truyện */
+  tags: string[];
   bookCount: number;
   completedCount: number;
   startedCount: number;
@@ -222,7 +226,10 @@ function isDisplayableAuthor(author: string, title?: string): boolean {
   return isKnownAuthor(resolved) && !isVolumeOrSubtitleSegment(resolved);
 }
 
-function buildAuthorLabel(shelf: ShelfGroup, coverBook: Book | null): string {
+function buildAuthorInfo(
+  shelf: ShelfGroup,
+  coverBook: Book | null,
+): { authorLabel: string; authors: string[] } {
   const { books } = shelf;
   const isSeriesShelf =
     books.length >= 2 &&
@@ -249,28 +256,27 @@ function buildAuthorLabel(shelf: ShelfGroup, coverBook: Book | null): string {
   // đó là các tiêu đề phụ ngắn của từng tập chứ không phải đồng tác giả.
   if (books.length >= 2 && counts.size >= 2) {
     const repeated = Array.from(counts.entries()).filter(([, v]) => v.count >= 2 || !v.allBareVol);
-    if (repeated.length === 0) return UNKNOWN_AUTHOR;
+    if (repeated.length === 0) return { authorLabel: UNKNOWN_AUTHOR, authors: [] };
     counts.clear();
     for (const [k, v] of repeated) counts.set(k, v);
   }
 
-  if (counts.size === 0) return UNKNOWN_AUTHOR;
+  if (counts.size === 0) return { authorLabel: UNKNOWN_AUTHOR, authors: [] };
 
   const coverResolved = coverBook ? getDisplayAuthor(coverBook.author, coverBook.title) : null;
-  const coverAuthor = coverResolved && counts.has(normalizeKey(coverResolved)) ? coverResolved : null;
-  let primary = coverAuthor;
-  if (!primary) {
-    let bestCount = -1;
-    for (const entry of counts.values()) {
-      if (entry.count > bestCount) {
-        bestCount = entry.count;
-        primary = entry.label;
-      }
+  const coverKey = coverResolved ? normalizeKey(coverResolved) : null;
+  const ordered = Array.from(counts.entries()).sort(([keyA, a], [keyB, b]) => {
+    if (coverKey) {
+      if (keyA === coverKey && keyB !== coverKey) return -1;
+      if (keyB === coverKey && keyA !== coverKey) return 1;
     }
-  }
+    return b.count - a.count;
+  });
 
-  const label = primary || UNKNOWN_AUTHOR;
-  return counts.size > 1 ? `${label} +${counts.size - 1}` : label;
+  const authors = ordered.map(([, entry]) => entry.label);
+  const primary = authors[0] || UNKNOWN_AUTHOR;
+  const authorLabel = authors.length > 1 ? `${primary} +${authors.length - 1}` : primary;
+  return { authorLabel, authors };
 }
 
 function pickResumeAction(
@@ -335,6 +341,7 @@ export function summarizeShelf(
   shelfCovers?: Readonly<Record<string, string>>,
   favoriteShelfKeys?: ReadonlySet<string>,
   accessSummary?: ShelfAccessSummary | null,
+  shelfTags?: Readonly<Record<string, string[]>>,
 ): ShelfSummary {
   const rawPreferredId = shelfCovers?.[shelf.key] ?? null;
   const validCustomBook = rawPreferredId
@@ -384,13 +391,17 @@ export function summarizeShelf(
   );
 
   const isGuestLocked = bookCount > 0 && shelf.books.every((book) => Boolean(book.guest_locked));
+  const { authorLabel, authors } = buildAuthorInfo(shelf, coverBook);
+  const tags = shelfTags?.[shelf.key] ?? [];
 
   return {
     shelf,
     coverBook,
     customCoverBookId,
     isFavorite,
-    authorLabel: buildAuthorLabel(shelf, coverBook),
+    authorLabel,
+    authors,
+    tags,
     bookCount,
     completedCount,
     startedCount,

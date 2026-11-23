@@ -92,6 +92,7 @@ export async function fetchLibraryState(): Promise<{
     weeklyPopular?: string[];
     shelfCovers?: Record<string, string>;
     favoriteShelves?: string[];
+    shelfTags?: Record<string, string[]>;
     shelfAccess?: Record<string, ShelfAccessSummary>;
     storage?: StorageStats;
     session?: { role?: AuthRole; expiresAt?: number | null; watermarkLabel?: string | null };
@@ -115,6 +116,7 @@ export async function fetchLibraryState(): Promise<{
   const nextPrefs: ShelfPrefsState = {
     covers: data.shelfCovers ?? localPrefs.covers,
     favorites: data.favoriteShelves ?? localPrefs.favorites,
+    tags: data.shelfTags ?? localPrefs.tags ?? {},
     ...(data.shelfAccess ? { access: data.shelfAccess } : {}),
   };
   if (resolvedSession.role === 'owner') {

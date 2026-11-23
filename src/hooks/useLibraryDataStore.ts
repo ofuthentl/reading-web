@@ -13,6 +13,7 @@ import {
   patchShelfAccessSummary,
   patchShelfCover,
   patchShelfFavorite,
+  patchShelfTags,
   pruneDeletedBooksFromPrefs,
   readLocalShelfPrefs,
   renameShelfPrefs,
@@ -180,6 +181,10 @@ export function useLibraryDataStore({
     [],
   );
 
+  const handleShelfTagsChanged = useCallback((shelfName: string, tags: string[]) => {
+    setShelfPrefs((prev) => patchShelfTags(prev, shelfName, tags));
+  }, []);
+
   const handleToggleFavoriteShelf = useCallback(
     (shelfName: string, nextFavorite: boolean) => {
       if (session.role !== 'owner') {
@@ -282,6 +287,7 @@ export function useLibraryDataStore({
     applyShelfRenamed,
     handleShelfCoverChanged,
     handleShelfAccessChanged,
+    handleShelfTagsChanged,
     handleToggleFavoriteShelf,
     handleMarkBookCompleted,
     handleResetBookProgress,

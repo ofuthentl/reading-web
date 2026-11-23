@@ -12,6 +12,7 @@ export interface Library2DDialogsHostProps {
   onCloseStats: () => void;
   onOpenBook: (book: Book) => void;
   onJumpToShelf: (shelfKey: string) => void;
+  onSelectAuthor?: (authorName: string) => void;
   onMarkCompleted: (book: Book) => void;
   onResetProgress: (book: Book) => void;
   onEditBook?: (book: Book) => void;
@@ -27,6 +28,7 @@ export function Library2DDialogsHost({
   onCloseStats,
   onOpenBook,
   onJumpToShelf,
+  onSelectAuthor,
   onMarkCompleted,
   onResetProgress,
   onEditBook,
@@ -40,6 +42,7 @@ export function Library2DDialogsHost({
         onClose={onCloseInspect}
         onOpenBook={onOpenBook}
         onJumpToShelf={onJumpToShelf}
+        onSelectAuthor={onSelectAuthor}
         onMarkCompleted={onMarkCompleted}
         onResetProgress={onResetProgress}
         onEditBook={onEditBook}

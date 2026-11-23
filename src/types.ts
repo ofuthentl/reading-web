@@ -79,6 +79,8 @@ export type LibraryTab = 'home' | 'library' | 'support';
 export type LibraryStatusFilter = 'all' | 'reading' | 'unread' | 'completed';
 export type LibraryFormatFilter = 'all' | BookFileType;
 export type LibrarySortMode = 'title_asc' | 'recent_upload' | 'recent_read' | 'volume_desc';
+export type TagMatchMode = 'all' | 'any';
+export type TagFilterState = 'none' | 'include' | 'exclude';
 
 export type AuthRole = 'owner' | 'guest';
 

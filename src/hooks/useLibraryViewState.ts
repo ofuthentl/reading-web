@@ -8,12 +8,26 @@ import type {
   LibraryTab,
   ReadingProgress,
   ShelfGroup,
+  TagMatchMode,
 } from '@/types';
 import { groupBooksIntoShelves } from '@/lib/api';
 import { computeBookProgressPercent } from '@/lib/bookMetadata';
+import {
+  collectAvailableAuthors,
+  matchesBookAuthor,
+  matchesBookStatus,
+  matchesShelfStatus,
+  matchesShelfTagFilters,
+  normalizeSearchText,
+  normalizeTagFilterKey,
+  prioritizeGuestReadable,
+  selectContinueReadingBooks,
+  sortShelvesByMode,
+} from '@/lib/libraryFiltering';
+import { isKnownAuthor } from '@/lib/shelfPlacement';
 import { sortShelvesFavoriteFirst } from '@/lib/shelfPrefs';
 
-export { computeBookProgressPercent };
+export { computeBookProgressPercent, normalizeSearchText, selectContinueReadingBooks };
 
 export const LIBRARY_TAB_STORAGE_KEY = 'ofu-library-active-tab';
 
@@ -35,106 +49,6 @@ function writeStoredLibraryTab(tab: LibraryTab) {
   }
 }
 
-export function normalizeSearchText(input: string): string {
-  return input
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/gi, 'd')
-    .toLocaleLowerCase('vi')
-    .trim();
-}
-
-export function selectContinueReadingBooks(
-  books: readonly Book[],
-  progress: Readonly<Record<string, ReadingProgress>>,
-  limit = 8,
-): Book[] {
-  return books
-    .filter((book) => {
-      const itemProgress = progress[book.id];
-      return Boolean(itemProgress) && !itemProgress.completed;
-    })
-    .sort((a, b) => (progress[b.id]?.updatedAt ?? 0) - (progress[a.id]?.updatedAt ?? 0))
-    .slice(0, limit);
-}
-
-function matchesBookStatus(
-  book: Book,
-  progress: Readonly<Record<string, ReadingProgress>>,
-  filter: LibraryStatusFilter,
-): boolean {
-  if (filter === 'all') return true;
-  const item = progress[book.id];
-  if (filter === 'unread') return !item;
-  if (filter === 'completed') return Boolean(item?.completed);
-  return Boolean(item && !item.completed);
-}
-
-function matchesShelfStatus(
-  shelf: ShelfGroup,
-  progress: Readonly<Record<string, ReadingProgress>>,
-  filter: LibraryStatusFilter,
-): boolean {
-  if (filter === 'all') return true;
-  const total = shelf.books.length;
-  if (total === 0) return false;
-  let started = 0;
-  let completed = 0;
-  for (const b of shelf.books) {
-    const p = progress[b.id];
-    if (p) {
-      started += 1;
-      if (p.completed) completed += 1;
-    }
-  }
-  if (filter === 'unread') return started === 0;
-  if (filter === 'completed') return completed === total;
-  return started > 0 && completed < total;
-}
-
-function sortShelvesByMode(
-  shelves: ShelfGroup[],
-  sortMode: LibrarySortMode,
-  progress: Readonly<Record<string, ReadingProgress>>,
-  favoriteShelfKeys?: ReadonlySet<string>,
-): ShelfGroup[] {
-  if (sortMode === 'title_asc') {
-    return sortShelvesFavoriteFirst(shelves, favoriteShelfKeys);
-  }
-
-  const getMetric = (shelf: ShelfGroup): number => {
-    if (sortMode === 'volume_desc') return shelf.books.length;
-    if (sortMode === 'recent_upload') {
-      let maxTs = 0;
-      for (const b of shelf.books) {
-        const ts = Date.parse(b.created_at);
-        if (Number.isFinite(ts) && ts > maxTs) maxTs = ts;
-      }
-      return maxTs;
-    }
-    let maxRead = 0;
-    for (const b of shelf.books) {
-      const ts = progress[b.id]?.updatedAt ?? 0;
-      if (ts > maxRead) maxRead = ts;
-    }
-    return maxRead;
-  };
-
-  const sortedByMetric = [...shelves].sort((a, b) => getMetric(b) - getMetric(a));
-  return sortShelvesFavoriteFirst(sortedByMetric, favoriteShelfKeys);
-}
-
-function prioritizeGuestReadable(books: Book[], sessionRole?: AuthRole): Book[] {
-  if (sessionRole !== 'guest') return books;
-  const ready: Book[] = [];
-  const locked: Book[] = [];
-  for (const b of books) {
-    if (b.file_type !== 'pdf' && b.guest_ready !== false) ready.push(b);
-    else locked.push(b);
-  }
-  return [...ready, ...locked];
-}
-
 export interface LibraryViewState {
   activeTab: LibraryTab;
   setActiveTab: (tab: LibraryTab) => void;
@@ -145,6 +59,19 @@ export interface LibraryViewState {
   syncRenamedShelf: (oldName: string, newName: string) => void;
   searchQuery: string;
   setSearchQuery: (value: string) => void;
+  authorFilter: string;
+  setAuthorFilter: (value: string) => void;
+  includedTags: string[];
+  excludedTags: string[];
+  tagMatchMode: TagMatchMode;
+  setTagMatchMode: (mode: TagMatchMode) => void;
+  cycleTagFilter: (tag: string) => void;
+  removeIncludedTag: (tag: string) => void;
+  removeExcludedTag: (tag: string) => void;
+  clearTagFilters: () => void;
+  filterByAuthor: (authorName: string) => void;
+  filterByTag: (tagName: string) => void;
+  availableAuthors: string[];
   statusFilter: LibraryStatusFilter;
   setStatusFilter: (value: LibraryStatusFilter) => void;
   formatFilter: LibraryFormatFilter;
@@ -179,10 +106,15 @@ export function useLibraryViewState(
   favoriteShelfKeys?: ReadonlySet<string>,
   weeklyPopularIds?: readonly string[],
   sessionRole?: AuthRole,
+  shelfTags?: Readonly<Record<string, string[]>>,
 ): LibraryViewState {
   const [activeTab, setActiveTabState] = useState<LibraryTab>(readStoredLibraryTab);
   const [openedLibraryShelfKey, setOpenedLibraryShelfKey] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [authorFilter, setAuthorFilter] = useState('');
+  const [includedTags, setIncludedTags] = useState<string[]>([]);
+  const [excludedTags, setExcludedTags] = useState<string[]>([]);
+  const [tagMatchMode, setTagMatchMode] = useState<TagMatchMode>('all');
   const [statusFilter, setStatusFilter] = useState<LibraryStatusFilter>('all');
   const [formatFilter, setFormatFilter] = useState<LibraryFormatFilter>('all');
   const [sortMode, setSortMode] = useState<LibrarySortMode>('title_asc');
@@ -303,6 +235,78 @@ export function useLibraryViewState(
   }, [books, recentlyAddedBooks, sessionRole, weeklyPopularIds]);
 
   const normalizedQuery = useMemo(() => normalizeSearchText(searchQuery), [searchQuery]);
+  const normalizedAuthor = useMemo(() => normalizeSearchText(authorFilter), [authorFilter]);
+  const includedTagKeys = useMemo(() => includedTags.map(normalizeTagFilterKey), [includedTags]);
+  const excludedTagKeys = useMemo(() => excludedTags.map(normalizeTagFilterKey), [excludedTags]);
+
+  const availableAuthors = useMemo(() => collectAvailableAuthors(books), [books]);
+
+  const cycleTagFilter = useCallback((rawTag: string) => {
+    const clean = rawTag.trim().replace(/\s+/g, ' ');
+    if (!clean) return;
+    const key = normalizeTagFilterKey(clean);
+    if (includedTags.some((t) => normalizeTagFilterKey(t) === key)) {
+      setIncludedTags((prev) => prev.filter((t) => normalizeTagFilterKey(t) !== key));
+      setExcludedTags((prev) =>
+        prev.some((t) => normalizeTagFilterKey(t) === key) ? prev : [...prev, clean],
+      );
+    } else if (excludedTags.some((t) => normalizeTagFilterKey(t) === key)) {
+      setExcludedTags((prev) => prev.filter((t) => normalizeTagFilterKey(t) !== key));
+    } else {
+      setIncludedTags((prev) => [...prev, clean]);
+    }
+  }, [excludedTags, includedTags]);
+
+  const removeIncludedTag = useCallback((rawTag: string) => {
+    const key = normalizeTagFilterKey(rawTag);
+    setIncludedTags((prev) => prev.filter((t) => normalizeTagFilterKey(t) !== key));
+  }, []);
+
+  const removeExcludedTag = useCallback((rawTag: string) => {
+    const key = normalizeTagFilterKey(rawTag);
+    setExcludedTags((prev) => prev.filter((t) => normalizeTagFilterKey(t) !== key));
+  }, []);
+
+  const clearTagFilters = useCallback(() => {
+    setIncludedTags([]);
+    setExcludedTags([]);
+  }, []);
+
+  const filterByAuthor = useCallback((rawAuthor: string) => {
+    const clean = rawAuthor.trim();
+    if (!clean || !isKnownAuthor(clean)) return;
+    setActiveTabState('library');
+    writeStoredLibraryTab('library');
+    setOpenedLibraryShelfKey(null);
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+    setSearchQuery('');
+    setStatusFilter('all');
+    setFormatFilter('all');
+    setActiveShelfKey(null);
+    setIncludedTags([]);
+    setExcludedTags([]);
+    setAuthorFilter(clean);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const filterByTag = useCallback((rawTag: string) => {
+    const clean = rawTag.trim().replace(/\s+/g, ' ');
+    if (!clean) return;
+    setActiveTabState('library');
+    writeStoredLibraryTab('library');
+    setOpenedLibraryShelfKey(null);
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+    setSearchQuery('');
+    setAuthorFilter('');
+    setStatusFilter('all');
+    setFormatFilter('all');
+    setActiveShelfKey(null);
+    setExcludedTags([]);
+    setIncludedTags([clean]);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
   const libraryShelves = useMemo(() => {
     const matched = allShelves.filter((shelf) => {
@@ -310,28 +314,80 @@ export function useLibraryViewState(
       if (formatFilter !== 'all' && !shelf.books.some((b) => b.file_type === formatFilter)) {
         return false;
       }
+      if (
+        !matchesShelfTagFilters(
+          shelf.key,
+          shelfTags,
+          includedTagKeys,
+          excludedTagKeys,
+          tagMatchMode,
+        )
+      ) {
+        return false;
+      }
+      if (normalizedAuthor && !shelf.books.some((b) => matchesBookAuthor(b, normalizedAuthor))) {
+        return false;
+      }
       if (!normalizedQuery) return true;
       if (normalizeSearchText(shelf.name).includes(normalizedQuery)) return true;
+      const tagsText = (shelfTags?.[shelf.key] || []).join(' ');
+      if (tagsText && normalizeSearchText(tagsText).includes(normalizedQuery)) return true;
       return shelf.books.some((book) =>
         normalizeSearchText(`${book.title} ${book.author}`).includes(normalizedQuery),
       );
     });
     return sortShelvesByMode(matched, sortMode, progress, favoriteShelfKeys);
-  }, [allShelves, favoriteShelfKeys, formatFilter, normalizedQuery, progress, sortMode, statusFilter]);
+  }, [
+    allShelves,
+    excludedTagKeys,
+    favoriteShelfKeys,
+    formatFilter,
+    includedTagKeys,
+    normalizedAuthor,
+    normalizedQuery,
+    progress,
+    shelfTags,
+    sortMode,
+    statusFilter,
+    tagMatchMode,
+  ]);
 
   const filteredBooks = useMemo(() => {
     return books.filter((book) => {
-      if (activeShelfKey) {
-        const shelfKey = (book.shelf || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi');
-        if (shelfKey !== activeShelfKey) return false;
-      }
+      const shelfKey = (book.shelf || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi');
+      if (activeShelfKey && shelfKey !== activeShelfKey) return false;
       if (formatFilter !== 'all' && book.file_type !== formatFilter) return false;
       if (!matchesBookStatus(book, progress, statusFilter)) return false;
+      if (
+        !matchesShelfTagFilters(
+          shelfKey,
+          shelfTags,
+          includedTagKeys,
+          excludedTagKeys,
+          tagMatchMode,
+        )
+      ) {
+        return false;
+      }
+      if (!matchesBookAuthor(book, normalizedAuthor)) return false;
       if (!normalizedQuery) return true;
-      const haystack = normalizeSearchText(`${book.title} ${book.author} ${book.shelf}`);
+      const tagsText = (shelfTags?.[shelfKey] || []).join(' ');
+      const haystack = normalizeSearchText(`${book.title} ${book.author} ${book.shelf} ${tagsText}`);
       return haystack.includes(normalizedQuery);
     });
-  }, [activeShelfKey, books, formatFilter, normalizedQuery, progress, statusFilter]);
+  }, [
+    activeShelfKey,
+    books,
+    excludedTagKeys,
+    formatFilter,
+    includedTagKeys,
+    normalizedAuthor,
+    normalizedQuery,
+    progress,
+    shelfTags,
+    statusFilter,
+    tagMatchMode,
+  ]);
 
   const visibleShelves = useMemo(
     () => sortShelvesFavoriteFirst(groupBooksIntoShelves(filteredBooks), favoriteShelfKeys),
@@ -368,6 +424,9 @@ export function useLibraryViewState(
 
   const clearFilters = useCallback(() => {
     setSearchQuery('');
+    setAuthorFilter('');
+    setIncludedTags([]);
+    setExcludedTags([]);
     setStatusFilter('all');
     setFormatFilter('all');
     setActiveShelfKey(null);
@@ -379,7 +438,13 @@ export function useLibraryViewState(
   );
 
   const isFiltering = Boolean(
-    normalizedQuery || activeShelfKey || statusFilter !== 'all' || formatFilter !== 'all',
+    normalizedQuery ||
+      normalizedAuthor ||
+      includedTagKeys.length > 0 ||
+      excludedTagKeys.length > 0 ||
+      activeShelfKey ||
+      statusFilter !== 'all' ||
+      formatFilter !== 'all',
   );
 
   return {
@@ -392,6 +457,19 @@ export function useLibraryViewState(
     syncRenamedShelf,
     searchQuery,
     setSearchQuery,
+    authorFilter,
+    setAuthorFilter,
+    includedTags,
+    excludedTags,
+    tagMatchMode,
+    setTagMatchMode,
+    cycleTagFilter,
+    removeIncludedTag,
+    removeExcludedTag,
+    clearTagFilters,
+    filterByAuthor,
+    filterByTag,
+    availableAuthors,
     statusFilter,
     setStatusFilter,
     formatFilter,
