@@ -1,4 +1,26 @@
-import type { GuestBlock, GuestInlineSpan, ReaderFont, ReaderSettings, ReaderWidth } from '@/types';
+import type {
+  GuestBlock,
+  GuestInlineSpan,
+  HighlightColor,
+  ReaderFont,
+  ReaderSettings,
+  ReaderWidth,
+} from '@/types';
+import {
+  buildCanvasFontSpec,
+  clearCanvasWidthCache,
+  ensureReaderCanvasFontsLoaded,
+  justifyLineFragments,
+  measureCanvasTextWidth,
+  splitWordToFit,
+} from '@/lib/guestCanvasMetrics';
+
+export {
+  buildCanvasFontSpec,
+  clearCanvasWidthCache,
+  ensureReaderCanvasFontsLoaded,
+  measureCanvasTextWidth,
+};
 
 export interface CanvasSpanFragment {
   text: string;
@@ -28,6 +50,8 @@ export type CanvasLayoutItem =
       quoteBarBottom?: boolean;
       listMarker?: string;
       markerX?: number;
+      blockIndex?: number;
+      highlightColor?: HighlightColor;
       flashHighlight?: boolean;
       fragments: CanvasSpanFragment[];
     }
@@ -65,148 +89,6 @@ export function getInitialGuestStageBox(): { width: number; height: number } {
     width: Math.max(240, window.innerWidth - padX),
     height: Math.max(280, window.innerHeight - 64),
   };
-}
-
-const FONT_STACK_MAP: Record<ReaderFont, string> = {
-  serif: '"Literata", Georgia, "Times New Roman", serif',
-  sans: '"Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", sans-serif',
-  mono: '"JetBrains Mono", "Cascadia Code", ui-monospace, monospace',
-};
-
-const CANVAS_PRIMARY_FAMILY: Record<ReaderFont, string> = {
-  serif: '"Literata"',
-  sans: '"Be Vietnam Pro"',
-  mono: '"JetBrains Mono"',
-};
-
-export function buildCanvasFontSpec(
-  font: ReaderFont,
-  sizePx: number,
-  bold: boolean,
-  italic: boolean,
-): string {
-  const style = italic ? 'italic ' : '';
-  const weight = bold ? '700 ' : '400 ';
-  return `${style}${weight}${Math.round(sizePx * 10) / 10}px ${FONT_STACK_MAP[font]}`;
-}
-
-let sharedMeasureCtx: CanvasRenderingContext2D | null = null;
-const widthCache = new Map<string, number>();
-
-export function clearCanvasWidthCache(): void {
-  widthCache.clear();
-}
-
-/**
- * Chủ động kích hoạt nạp webfont cục bộ trước khi vẽ Canvas 2D (vì `ctx.fillText`
- * không phải lúc nào cũng kích hoạt tải `@font-face` subset tiếng Việt tự động).
- */
-export async function ensureReaderCanvasFontsLoaded(font: ReaderFont): Promise<void> {
-  if (typeof document === 'undefined' || !('fonts' in document)) return;
-  const primary = CANVAS_PRIMARY_FAMILY[font];
-  const sample = 'Việt Nam ệữởắồỷ ABC 0123';
-  const requests = [
-    document.fonts.load(`400 18px ${primary}`, sample),
-    document.fonts.load(`italic 400 18px ${primary}`, sample),
-    document.fonts.load(`700 18px ${primary}`, sample),
-    // Tiêu đề chương/mục luôn vẽ bằng Literata
-    document.fonts.load('700 22px "Literata"', sample),
-  ];
-  await Promise.allSettled(requests);
-}
-
-function getMeasureContext(): CanvasRenderingContext2D | null {
-  if (sharedMeasureCtx) return sharedMeasureCtx;
-  if (typeof document === 'undefined') return null;
-  const c = document.createElement('canvas');
-  c.width = 16;
-  c.height = 16;
-  sharedMeasureCtx = c.getContext('2d');
-  return sharedMeasureCtx;
-}
-
-function measureTokenWidth(token: string, fontSpec: string): number {
-  if (!token) return 0;
-  const cacheKey = `${fontSpec}\0${token}`;
-  const hit = widthCache.get(cacheKey);
-  if (hit !== undefined) return hit;
-
-  const ctx = getMeasureContext();
-  let width: number;
-  if (ctx) {
-    ctx.font = fontSpec;
-    width = ctx.measureText(token).width;
-  } else {
-    width = token.length * 9.5;
-  }
-  if (widthCache.size > 24_000) widthCache.clear();
-  widthCache.set(cacheKey, width);
-  return width;
-}
-
-function splitWordToFit(word: string, maxWidth: number, fontSpec: string): string[] {
-  const parts: string[] = [];
-  let current = '';
-  for (const ch of word) {
-    const next = current + ch;
-    if (current && measureTokenWidth(next, fontSpec) > maxWidth) {
-      parts.push(current);
-      current = ch;
-    } else {
-      current = next;
-    }
-  }
-  if (current) parts.push(current);
-  return parts.length > 0 ? parts : [word];
-}
-
-function justifyLineFragments(
-  fragments: CanvasSpanFragment[],
-  font: ReaderFont,
-  fontSize: number,
-  lineStartX: number,
-  targetEndX: number,
-  forceBold: boolean,
-): CanvasSpanFragment[] {
-  const tokens: Array<{ text: string; isSpace: boolean; width: number; bold: boolean; italic: boolean }> = [];
-  for (const frag of fragments) {
-    const bold = forceBold || frag.bold;
-    const spec = buildCanvasFontSpec(font, fontSize, bold, frag.italic);
-    const parts = frag.text.match(/\S+|\s+/g) || [];
-    for (const part of parts) {
-      const isSpace = /^\s+$/.test(part);
-      tokens.push({
-        text: isSpace ? ' ' : part,
-        isSpace,
-        width: measureTokenWidth(isSpace ? ' ' : part, spec),
-        bold: frag.bold,
-        italic: frag.italic,
-      });
-    }
-  }
-  while (tokens.length > 0 && tokens[tokens.length - 1].isSpace) {
-    tokens.pop();
-  }
-  const spaceCount = tokens.reduce((acc, tk) => acc + (tk.isSpace ? 1 : 0), 0);
-  if (spaceCount <= 0) return fragments;
-
-  const naturalWidth = tokens.reduce((acc, tk) => acc + tk.width, 0);
-  const availWidth = targetEndX - lineStartX;
-  const slack = availWidth - naturalWidth;
-  if (slack <= 0.5 || slack > availWidth * 0.28) return fragments;
-
-  const extraPerSpace = slack / spaceCount;
-  const justified: CanvasSpanFragment[] = [];
-  let x = lineStartX;
-  for (const tk of tokens) {
-    if (tk.isSpace) {
-      x += tk.width + extraPerSpace;
-    } else {
-      justified.push({ text: tk.text, x, bold: tk.bold, italic: tk.italic });
-      x += tk.width;
-    }
-  }
-  return justified;
 }
 
 function wrapInlineSpans(
@@ -251,7 +133,7 @@ function wrapInlineSpans(
       const isSpace = /^\s+$/.test(token);
       if (isSpace) {
         if (currentLine.length === 0) continue;
-        const spaceWidth = measureTokenWidth(' ', fontSpec);
+        const spaceWidth = measureCanvasTextWidth(' ', fontSpec);
         if (cursorX + spaceWidth <= limitX) {
           pushFragment(' ', cursorX, bold, italic);
           cursorX += spaceWidth;
@@ -261,16 +143,14 @@ function wrapInlineSpans(
         continue;
       }
 
-      const tokenWidth = measureTokenWidth(token, fontSpec);
+      const tokenWidth = measureCanvasTextWidth(token, fontSpec);
       if (cursorX + tokenWidth <= limitX) {
         pushFragment(token, cursorX, bold, italic);
         cursorX += tokenWidth;
         continue;
       }
 
-      if (currentLine.length > 0) {
-        commitLine();
-      }
+      if (currentLine.length > 0) commitLine();
 
       if (tokenWidth <= limitX - startX) {
         pushFragment(token, cursorX, bold, italic);
@@ -279,7 +159,7 @@ function wrapInlineSpans(
         const chunks = splitWordToFit(token, limitX - startX, fontSpec);
         for (let idx = 0; idx < chunks.length; idx += 1) {
           const piece = chunks[idx];
-          const w = measureTokenWidth(piece, fontSpec);
+          const w = measureCanvasTextWidth(piece, fontSpec);
           pushFragment(piece, cursorX, bold, italic);
           cursorX += w;
           if (idx < chunks.length - 1) commitLine();
@@ -311,15 +191,11 @@ export function computeChapterCanvasLayout(options: {
   settings: ReaderSettings;
   containerWidth: number;
   imageSizes: ReadonlyMap<number, { width: number; height: number }>;
+  blockHighlightColors?: ReadonlyMap<number, HighlightColor>;
 }): ChapterCanvasLayout {
   const {
-    chapterTitle,
-    chapterIndex,
-    totalChapters,
-    blocks,
-    settings,
-    containerWidth,
-    imageSizes,
+    chapterTitle, chapterIndex, totalChapters, blocks, settings,
+    containerWidth, imageSizes, blockHighlightColors,
   } = options;
 
   const maxTargetWidth = CANVAS_WIDTH_PX[settings.width];
@@ -339,7 +215,6 @@ export function computeChapterCanvasLayout(options: {
   const items: CanvasLayoutItem[] = [];
   let y = 12;
 
-  // 1. Khối tiêu đề chương mở đầu trên Canvas
   const titleFontSize = Math.min(30, Math.max(22, Math.round(baseSize * 1.36)));
   const titleLineHeight = Math.round(titleFontSize * 1.32);
   const titleLines = wrapPlainTitle(
@@ -359,8 +234,9 @@ export function computeChapterCanvasLayout(options: {
   });
   y += headerHeight + Math.round(baseSize * 1.35);
 
-  // 2. Dàn từng khối nội dung chương
-  for (const block of blocks) {
+  for (let blockIdx = 0; blockIdx < blocks.length; blockIdx += 1) {
+    const block = blocks[blockIdx];
+    const hlColor = blockHighlightColors?.get(blockIdx);
     if (block.kind === 'hr') {
       const hrHeight = Math.round(baseSize * 2.1);
       items.push({ kind: 'hr', y, height: hrHeight });
@@ -401,7 +277,6 @@ export function computeChapterCanvasLayout(options: {
       const hSize = Math.round(baseSize * scale);
       const hLineHeight = Math.round(hSize * 1.42);
       y += Math.round(baseSize * 0.55);
-      // Vá M-04: đo chiều rộng tiêu đề bằng đúng font 'serif' (Literata) giống lúc vẽ ở guestCanvasPaint
       const lines = wrapInlineSpans(block.spans, 'serif', hSize, contentWidth, 0, true);
       for (const fragments of lines) {
         items.push({
@@ -411,6 +286,8 @@ export function computeChapterCanvasLayout(options: {
           fontSize: hSize,
           isHeading: true,
           isQuote: false,
+          blockIndex: blockIdx,
+          ...(hlColor ? { highlightColor: hlColor } : {}),
           fragments,
         });
         y += hLineHeight;
@@ -440,6 +317,8 @@ export function computeChapterCanvasLayout(options: {
           isQuote: true,
           quoteBarTop: i === 0,
           quoteBarBottom: i === lines.length - 1,
+          blockIndex: blockIdx,
+          ...(hlColor ? { highlightColor: hlColor } : {}),
           fragments: lines[i],
         });
         y += baseLineHeight;
@@ -468,6 +347,8 @@ export function computeChapterCanvasLayout(options: {
             isHeading: false,
             isQuote: false,
             ...(lineIdx === 0 ? { listMarker: marker, markerX: 6 } : {}),
+            blockIndex: blockIdx,
+            ...(hlColor ? { highlightColor: hlColor } : {}),
             fragments: lines[lineIdx],
           });
           y += baseLineHeight;
@@ -478,7 +359,6 @@ export function computeChapterCanvasLayout(options: {
       continue;
     }
 
-    // Đoạn văn xuôi thông thường ('p')
     const lines = wrapInlineSpans(block.spans, settings.font, baseSize, contentWidth, 0, false, {
       firstLineIndent,
       justify: doJustify,
@@ -491,6 +371,8 @@ export function computeChapterCanvasLayout(options: {
         fontSize: baseSize,
         isHeading: false,
         isQuote: false,
+        blockIndex: blockIdx,
+        ...(hlColor ? { highlightColor: hlColor } : {}),
         fragments,
       });
       y += baseLineHeight;

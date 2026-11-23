@@ -1,6 +1,5 @@
 import {
-  lazy,
-  Suspense,
+  type MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -20,10 +19,16 @@ import {
   ReaderFooterStatusBar,
   ReaderNightDimOverlay,
 } from '@/components/ReaderFooterStatusBar';
+import { ReaderOverlaysHost } from '@/components/ReaderOverlaysHost';
 import { type PaginatedStageHandle, ReaderPaginatedView } from '@/components/ReaderPaginatedView';
-import { ReaderTocDrawer } from '@/components/ReaderTocDrawer';
 import { ReaderTopBar } from '@/components/ReaderTopBar';
+import { useReaderBookFeatures } from '@/hooks/useReaderBookFeatures';
 import { useReaderChapterProgress } from '@/hooks/useReaderChapterProgress';
+import {
+  applyChapterDomHighlights,
+  captureOwnerSelectionDraft,
+} from '@/lib/domHighlights';
+import { resolveOwnerFootnoteClick } from '@/lib/epubFootnotes';
 import {
   READER_FONT_CLASS,
   READER_THEME_STYLES,
@@ -39,14 +44,9 @@ import {
   flashDomSearchElement,
 } from '@/lib/readerSearchJump';
 
-const LazyReaderImageLightbox = lazy(() =>
-  import('@/components/ReaderImageLightbox').then((mod) => ({
-    default: mod.ReaderImageLightbox,
-  })),
-);
-
 type ReaderViewProps = {
   book: Book;
+  allBooks?: Book[];
   parsedBook: ParsedBook;
   loadedFromCache: boolean;
   initialProgress?: ReadingProgress;
@@ -61,6 +61,7 @@ type ReaderViewProps = {
 
 export function ReaderView({
   book,
+  allBooks = [],
   parsedBook,
   loadedFromCache,
   initialProgress,
@@ -82,23 +83,11 @@ export function ReaderView({
   const appliedSearchNonceRef = useRef(0);
 
   const {
-    ctrl,
-    chapterIndex,
-    chapterScrollRatio,
-    setChapterScrollRatio,
-    paginatedStartRatio,
-    setPaginatedStartRatio,
-    searchTarget,
-    restoreTargetRatioRef,
-    suppressSaveRef,
-    overallPercent,
-    computeRemainingEstimate,
-    goToChapter,
-    goPrevChapter,
-    goNextChapter,
-    handlePaginatedRatioChange,
-    handleJumpToSearchResult,
-    completeBook,
+    ctrl, chapterIndex, chapterScrollRatio, setChapterScrollRatio,
+    paginatedStartRatio, setPaginatedStartRatio, searchTarget,
+    restoreTargetRatioRef, suppressSaveRef, overallPercent, computeRemainingEstimate,
+    goToChapter, goPrevChapter, goNextChapter,
+    handlePaginatedRatioChange, handleJumpToSearchResult, completeBook,
   } = useReaderChapterProgress({
     chapters,
     initialProgress,
@@ -112,24 +101,24 @@ export function ReaderView({
   });
 
   const {
-    tocOpen,
-    setTocOpen,
-    drawerTab,
-    settingsOpen,
-    setSettingsOpen,
-    immersiveHidden,
-    setImmersiveHidden,
-    lightboxTarget,
-    setLightboxTarget,
-    lastScrollTopRef,
-    completedRef,
-    flushProgress,
-    queueProgressSave,
-    openDrawerTab,
-    updateImmersiveOnScroll,
+    tocOpen, setTocOpen, drawerTab, settingsOpen, setSettingsOpen,
+    immersiveHidden, setImmersiveHidden, lightboxTarget, setLightboxTarget,
+    lastScrollTopRef, completedRef, flushProgress, queueProgressSave,
+    openDrawerTab, updateImmersiveOnScroll,
   } = ctrl;
 
   const currentChapter = chapters[chapterIndex];
+
+  const features = useReaderBookFeatures({
+    bookId: book.id,
+    chapterIndex,
+    currentChapterId: currentChapter?.id || '',
+    currentChapterTitle: currentChapter?.title || '',
+    initialChapterIndex: initialProgress?.chapterIndex ?? 0,
+    initialCompleted: Boolean(initialProgress?.completed),
+    totalChapters: chapters.length,
+    onApiError,
+  });
 
   useEffect(() => {
     return () => {
@@ -137,6 +126,11 @@ export function ReaderView({
       flashCleanupRef.current = null;
     };
   }, []);
+
+  useLayoutEffect(() => {
+    if (isPaginated) return;
+    applyChapterDomHighlights(scrollContainerRef.current, features.chapterHighlights);
+  }, [currentChapter?.content_html, currentChapter?.id, features.chapterHighlights, isPaginated]);
 
   const handleUpdateSettings = useCallback(
     (patch: Partial<ReaderSettings>) => {
@@ -179,15 +173,8 @@ export function ReaderView({
       reachedEndOfBook,
     );
   }, [
-    chapterIndex,
-    chapters.length,
-    completedRef,
-    currentChapter,
-    isPaginated,
-    queueProgressSave,
-    setChapterScrollRatio,
-    suppressSaveRef,
-    updateImmersiveOnScroll,
+    chapterIndex, chapters.length, completedRef, currentChapter, isPaginated,
+    queueProgressSave, setChapterScrollRatio, suppressSaveRef, updateImmersiveOnScroll,
   ]);
 
   useLayoutEffect(() => {
@@ -223,11 +210,7 @@ export function ReaderView({
     const timer = window.setTimeout(() => {
       const el = scrollContainerRef.current;
       if (!el) return;
-      const matched = findDomBlockForSearchQuery(
-        el,
-        searchTarget.query,
-        searchTarget.occurrenceIndex,
-      );
+      const matched = findDomBlockForSearchQuery(el, searchTarget.query, searchTarget.occurrenceIndex);
       appliedSearchNonceRef.current = searchTarget.nonce;
       if (!matched) return;
       const cRect = el.getBoundingClientRect();
@@ -241,11 +224,62 @@ export function ReaderView({
     return () => window.clearTimeout(timer);
   }, [chapterIndex, currentChapter?.id, handleScroll, isPaginated, searchTarget]);
 
-  const chapterWords = useMemo(
-    () => countWordsInPlainText(currentChapter?.content),
-    [currentChapter?.content],
+  const handleContentSelectionEnd = useCallback(
+    (container: HTMLElement | null) => {
+      window.setTimeout(() => {
+        const draft = captureOwnerSelectionDraft(container, chapterScrollRatio);
+        if (draft) {
+          features.setEditingHighlight(null);
+          features.setSelectionDraft(draft);
+        }
+      }, 20);
+    },
+    [chapterScrollRatio, features],
   );
-  const remainingEstimate = computeRemainingEstimate(chapterWords);
+
+  const handleContentInteractionClick = useCallback(
+    (event: ReactMouseEvent, container: HTMLElement | null): boolean => {
+      const fn = resolveOwnerFootnoteClick(event, container, chapters, chapterIndex);
+      if (fn) {
+        features.setActiveFootnote(fn);
+        return true;
+      }
+
+      const target = event.target as HTMLElement | null;
+      const mark = target?.closest('mark[data-hl-id]') as HTMLElement | null;
+      if (mark?.dataset.hlId) {
+        const hl = features.chapterHighlights.find((item) => item.id === mark.dataset.hlId);
+        if (hl) {
+          event.preventDefault();
+          event.stopPropagation();
+          const rect = mark.getBoundingClientRect();
+          features.setSelectionDraft(null);
+          features.setEditingHighlight({
+            highlight: hl,
+            anchorX: Math.round(rect.left + rect.width / 2),
+            anchorY: Math.round(rect.top),
+          });
+          return true;
+        }
+      }
+      return false;
+    },
+    [chapterIndex, chapters, features],
+  );
+
+  const chapterWordCounts = useMemo(
+    () => chapters.map((ch) => countWordsInPlainText(ch.content)),
+    [chapters],
+  );
+  const chapterWords = chapterWordCounts[chapterIndex] ?? 0;
+  const laterBookWords = useMemo(() => {
+    let sum = 0;
+    for (let i = chapterIndex + 1; i < chapterWordCounts.length; i += 1) {
+      sum += chapterWordCounts[i];
+    }
+    return sum;
+  }, [chapterIndex, chapterWordCounts]);
+  const remainingEstimate = computeRemainingEstimate(chapterWords, laterBookWords);
 
   const cacheBadge = (
     <span
@@ -269,10 +303,7 @@ export function ReaderView({
     <div
       className={`relative flex h-full min-h-0 flex-1 flex-col overflow-hidden transition-colors duration-200 ${palette.pageBg} ${palette.textPrimary}`}
     >
-      <ReaderNightDimOverlay
-        nightDimPercent={settings.nightDimPercent}
-        settingsOpen={settingsOpen}
-      />
+      <ReaderNightDimOverlay nightDimPercent={settings.nightDimPercent} settingsOpen={settingsOpen} />
 
       <ReaderTopBar
         bookTitle={book.title}
@@ -283,41 +314,13 @@ export function ReaderView({
         settings={settings}
         palette={palette}
         statusBadge={cacheBadge}
-        onBack={() => {
-          flushProgress({ forceTimeFlush: true, keepalive: true });
-          onClose();
-        }}
+        onBack={() => { flushProgress({ forceTimeFlush: true, keepalive: true }); onClose(); }}
         onOpenDrawerTab={openDrawerTab}
-        onHideToolbar={() => {
-          setSettingsOpen(false);
-          setImmersiveHidden(true);
-        }}
-        onToggleSettings={() => {
-          setTocOpen(false);
-          setSettingsOpen((v) => !v);
-        }}
+        onHideToolbar={() => { setSettingsOpen(false); setImmersiveHidden(true); }}
+        onToggleSettings={() => { setTocOpen(false); setSettingsOpen((v) => !v); }}
         onCloseSettings={() => setSettingsOpen(false)}
         onUpdateSettings={handleUpdateSettings}
       />
-
-      {tocOpen && (
-        <ReaderTocDrawer
-          book={book}
-          chapters={chapters}
-          parsedChapters={chapters}
-          activeIndex={chapterIndex}
-          currentChapterId={currentChapter?.id || ''}
-          currentChapterTitle={currentChapter?.title || ''}
-          currentScrollRatio={chapterScrollRatio}
-          initialTab={drawerTab}
-          palette={palette}
-          onSelectChapter={(idx) => goToChapter(idx, 0)}
-          onJumpToBookmark={goToChapter}
-          onJumpToSearchResult={handleJumpToSearchResult}
-          onApiError={onApiError}
-          onClose={() => setTocOpen(false)}
-        />
-      )}
 
       {isPaginated && currentChapter ? (
         <>
@@ -334,6 +337,9 @@ export function ReaderView({
             immersiveHidden={immersiveHidden}
             remainingEstimate={remainingEstimate}
             searchTarget={searchTarget}
+            chapterHighlights={features.chapterHighlights}
+            onContentInteractionClick={handleContentInteractionClick}
+            onSelectionEnd={handleContentSelectionEnd}
             onToggleImmersive={() => setImmersiveHidden((prev) => !prev)}
             onCloseSettings={() => {
               if (!settingsOpen) return false;
@@ -341,20 +347,13 @@ export function ReaderView({
               return true;
             }}
             onRatioChange={handlePaginatedRatioChange}
-            onPrevChapterEnd={() => {
-              if (chapterIndex > 0) goToChapter(chapterIndex - 1, 1);
-            }}
-            onNextChapterStart={() => {
-              if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1, 0);
-            }}
+            onPrevChapterEnd={() => { if (chapterIndex > 0) goToChapter(chapterIndex - 1, 1); }}
+            onNextChapterStart={() => { if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1, 0); }}
             onCompleteBook={completeBook}
             onOpenImage={(src, alt) => setLightboxTarget({ kind: 'dom', src, alt })}
           />
           <div className="h-1 w-full shrink-0 bg-black/10">
-            <div
-              className={`h-full transition-all duration-150 ${palette.progressBar}`}
-              style={{ width: `${overallPercent}%` }}
-            />
+            <div className={`h-full transition-all duration-150 ${palette.progressBar}`} style={{ width: `${overallPercent}%` }} />
           </div>
         </>
       ) : (
@@ -362,22 +361,18 @@ export function ReaderView({
           <main
             ref={scrollContainerRef}
             onScroll={handleScroll}
+            onMouseUp={() => handleContentSelectionEnd(scrollContainerRef.current)}
+            onTouchEnd={() => handleContentSelectionEnd(scrollContainerRef.current)}
             onClick={(event) => {
-              if (settingsOpen) {
-                setSettingsOpen(false);
-                return;
-              }
+              if (settingsOpen) { setSettingsOpen(false); return; }
+              if (handleContentInteractionClick(event, scrollContainerRef.current)) return;
               if (handleReaderContentLinkClick(event, scrollContainerRef.current)) return;
               if (window.getSelection()?.toString()) return;
 
               const target = event.target as HTMLElement | null;
               const clickedImg = target?.closest('.reading-content img') as HTMLImageElement | null;
               if (clickedImg?.src) {
-                setLightboxTarget({
-                  kind: 'dom',
-                  src: clickedImg.src,
-                  alt: clickedImg.alt || book.title,
-                });
+                setLightboxTarget({ kind: 'dom', src: clickedImg.src, alt: clickedImg.alt || book.title });
                 return;
               }
 
@@ -412,9 +407,7 @@ export function ReaderView({
                   {currentChapter.content_html ? (
                     <div dangerouslySetInnerHTML={{ __html: currentChapter.content_html }} />
                   ) : (
-                    currentChapter.content
-                      .split('\n\n')
-                      .map((para, i) => <p key={i}>{para}</p>)
+                    currentChapter.content.split('\n\n').map((para, i) => <p key={i}>{para}</p>)
                   )}
                 </div>
 
@@ -443,14 +436,32 @@ export function ReaderView({
         </>
       )}
 
-      {lightboxTarget && (
-        <Suspense fallback={null}>
-          <LazyReaderImageLightbox
-            target={lightboxTarget}
-            onClose={() => setLightboxTarget(null)}
-          />
-        </Suspense>
-      )}
+      <ReaderOverlaysHost
+        role="owner"
+        book={book}
+        allBooks={allBooks}
+        chapters={chapters}
+        parsedChapters={chapters}
+        chapterIndex={chapterIndex}
+        currentChapterId={currentChapter?.id || ''}
+        currentChapterTitle={currentChapter?.title || ''}
+        chapterScrollRatio={chapterScrollRatio}
+        tocOpen={tocOpen}
+        drawerTab={drawerTab}
+        palette={palette}
+        features={features}
+        lightboxTarget={lightboxTarget}
+        onCloseToc={() => setTocOpen(false)}
+        onSelectChapter={(idx) => goToChapter(idx, 0)}
+        onJumpToRatio={goToChapter}
+        onJumpToSearchResult={handleJumpToSearchResult}
+        onSetLightboxTarget={setLightboxTarget}
+        onOpenOtherBook={(targetBook) => {
+          flushProgress({ forceTimeFlush: true, keepalive: true });
+          onOpenNextBook?.(targetBook);
+        }}
+        onApiError={onApiError}
+      />
     </div>
   );
 }

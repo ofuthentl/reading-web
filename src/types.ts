@@ -116,6 +116,7 @@ export type GuestTocItem = {
   id: string;
   title: string;
   chapterNumber: number;
+  compressedBytes?: number;
 };
 
 export type GuestChapterPayload = {
@@ -124,6 +125,45 @@ export type GuestChapterPayload = {
   chapterNumber: number;
   watermarkLabel: string;
   blocks: GuestBlock[];
+  footnotes?: Record<string, string>;
+};
+
+export type GuestBookIllustrationItem = {
+  mediaIndex: number;
+  chapterIndex: number;
+  chapterNumber: number;
+  chapterTitle: string;
+  alt: string | null;
+};
+
+export type HighlightColor = 'amber' | 'emerald' | 'sky' | 'rose';
+
+export type HighlightLocator = {
+  blockIndex?: number;
+  startOffset?: number;
+  endOffset?: number;
+  scrollRatio?: number;
+};
+
+export type BookHighlight = {
+  id: string;
+  bookId: string;
+  chapterId: string;
+  chapterIndex: number;
+  chapterTitle?: string;
+  quoteText: string;
+  note: string | null;
+  color: HighlightColor;
+  locator: HighlightLocator | null;
+  createdAt: number;
+};
+
+export type LibraryHighlightItem = BookHighlight & {
+  bookTitle: string;
+  bookAuthor: string;
+  shelf: string;
+  coverKey: string | null;
+  coverColor: string;
 };
 
 export type BookBookmark = {

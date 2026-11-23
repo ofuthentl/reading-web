@@ -67,6 +67,7 @@ export function ActiveReaderHost({
             <LazyReaderView
               key={activeBook.id}
               book={activeBook}
+              allBooks={books}
               parsedBook={parsedBook}
               loadedFromCache={loadedFromCache}
               initialProgress={progress[activeBook.id]}
@@ -88,6 +89,7 @@ export function ActiveReaderHost({
             <LazyGuestCanvasReader
               key={activeBook.id}
               book={activeBook}
+              allBooks={books}
               tocChapters={guestSession.chapters}
               watermarkLabel={
                 session.watermarkLabel || guestSession.watermarkLabel || 'Guest'

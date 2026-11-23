@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import {
   Award,
   BarChart3,
+  BookMarked,
   BookOpen,
   CheckCircle2,
   Clock,
@@ -18,6 +19,10 @@ import {
   fetchReaderActivityStats,
   formatReadingDuration,
 } from '@/lib/readingStreak';
+
+const LazyQuoteVaultModal = lazy(() =>
+  import('@/components/QuoteVaultModal').then((mod) => ({ default: mod.QuoteVaultModal })),
+);
 
 export interface ReadingStatsModalProps {
   open: boolean;
@@ -50,6 +55,7 @@ export function ReadingStatsModal({
 }: ReadingStatsModalProps) {
   const [activity, setActivity] = useState<ReaderActivityReport | null>(null);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [quoteVaultOpen, setQuoteVaultOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -122,14 +128,25 @@ export function ReadingStatsModal({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Đóng bảng thống kê"
-            className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setQuoteVaultOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-subtle/70 px-3 py-1.5 text-xs font-semibold text-accent transition hover:border-line-strong hover:bg-subtle"
+            >
+              <BookMarked className="h-3.5 w-3.5" />
+              <span>Kho trích dẫn</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Đóng bảng thống kê"
+              className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         <div className="scrollbar-thin flex-1 space-y-5 overflow-y-auto px-5 py-5">
@@ -279,6 +296,22 @@ export function ReadingStatsModal({
           </div>
         </div>
       </div>
+
+      {quoteVaultOpen && (
+        <Suspense fallback={null}>
+          <LazyQuoteVaultModal
+            open={quoteVaultOpen}
+            books={books}
+            sessionRole={sessionRole}
+            onClose={() => setQuoteVaultOpen(false)}
+            onOpenHighlightBook={(targetBook) => {
+              setQuoteVaultOpen(false);
+              onClose();
+              onOpenBook(targetBook);
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

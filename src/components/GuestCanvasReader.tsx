@@ -1,6 +1,4 @@
 import {
-  lazy,
-  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -18,35 +16,37 @@ import type {
   SaveProgressOptions,
 } from '@/types';
 import { GuestCanvasPaginatedView } from '@/components/GuestCanvasPaginatedView';
-import { ReaderChapterEndNav } from '@/components/ReaderChapterEndNav';
+import { GuestCanvasScrollStage } from '@/components/GuestCanvasScrollStage';
 import {
   ReaderFooterStatusBar,
   ReaderNightDimOverlay,
 } from '@/components/ReaderFooterStatusBar';
+import { ReaderOverlaysHost } from '@/components/ReaderOverlaysHost';
 import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
-import { ReaderTocDrawer } from '@/components/ReaderTocDrawer';
 import { ReaderTopBar } from '@/components/ReaderTopBar';
 import { useGuestChapterStream } from '@/hooks/useGuestChapterStream';
+import { useReaderBookFeatures } from '@/hooks/useReaderBookFeatures';
 import { useReaderCanvasFontVersion } from '@/hooks/useReaderCanvasFontVersion';
 import { useReaderChapterProgress } from '@/hooks/useReaderChapterProgress';
+import { buildGuestChapterFootnoteMap } from '@/lib/epubFootnotes';
 import {
   computeChapterCanvasLayout,
-  findCanvasLayoutImageAtPoint,
   getInitialGuestStageBox,
 } from '@/lib/guestCanvasLayout';
 import { paintGuestViewportCanvas } from '@/lib/guestCanvasPaint';
+import { collectVisibleGuestParagraphOptions } from '@/lib/highlightsApi';
 import { READER_THEME_STYLES } from '@/lib/readerConfig';
-import { countWordsInGuestBlocks } from '@/lib/readingEstimate';
+import {
+  countWordsInGuestBlocks,
+  estimateGuestLaterBookWords,
+} from '@/lib/readingEstimate';
 import { findCanvasItemIndexForQuery } from '@/lib/readerSearchJump';
-
-const LazyReaderImageLightbox = lazy(() =>
-  import('@/components/ReaderImageLightbox').then((mod) => ({ default: mod.ReaderImageLightbox })),
-);
 
 const VIEWPORT_OVERSCAN_PX = 280;
 
 export interface GuestCanvasReaderProps {
   book: Book;
+  allBooks?: Book[];
   tocChapters: GuestTocItem[];
   watermarkLabel: string;
   initialProgress?: ReadingProgress;
@@ -61,6 +61,7 @@ export interface GuestCanvasReaderProps {
 
 export function GuestCanvasReader({
   book,
+  allBooks = [],
   tocChapters,
   watermarkLabel,
   initialProgress,
@@ -83,7 +84,6 @@ export function GuestCanvasReader({
   );
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const stageWrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const paginatedRef = useRef<PaginatedStageHandle>(null);
   const appliedSearchNonceRef = useRef(0);
@@ -101,23 +101,11 @@ export function GuestCanvasReader({
   } = useGuestChapterStream({ bookId: book.id, chapterIndex: activeStreamIdx, onApiError });
 
   const {
-    ctrl,
-    chapterIndex,
-    chapterScrollRatio,
-    setChapterScrollRatio,
-    paginatedStartRatio,
-    setPaginatedStartRatio,
-    searchTarget,
-    restoreTargetRatioRef,
-    suppressSaveRef,
-    overallPercent,
-    computeRemainingEstimate,
-    goToChapter,
-    goPrevChapter,
-    goNextChapter,
-    handlePaginatedRatioChange,
-    handleJumpToSearchResult,
-    completeBook,
+    ctrl, chapterIndex, chapterScrollRatio, setChapterScrollRatio,
+    paginatedStartRatio, setPaginatedStartRatio, searchTarget,
+    restoreTargetRatioRef, suppressSaveRef, overallPercent, computeRemainingEstimate,
+    goToChapter, goPrevChapter, goNextChapter,
+    handlePaginatedRatioChange, handleJumpToSearchResult, completeBook,
   } = useReaderChapterProgress({
     chapters: tocChapters,
     initialProgress,
@@ -145,12 +133,32 @@ export function GuestCanvasReader({
   } = ctrl;
 
   const currentTocItem = tocChapters[chapterIndex];
+  const features = useReaderBookFeatures({
+    bookId: book.id,
+    chapterIndex,
+    currentChapterId: currentTocItem?.id || '',
+    currentChapterTitle: currentTocItem?.title || '',
+    initialChapterIndex: initialProgress?.chapterIndex ?? 0,
+    initialCompleted: Boolean(initialProgress?.completed),
+    totalChapters: tocChapters.length,
+    onApiError,
+  });
+
   const tocDrawerChapters = useMemo<Chapter[]>(
     () =>
       tocChapters.map((item) => ({
         id: item.id, book_id: book.id, title: item.title, content: '', chapter_number: item.chapterNumber,
       })),
     [book.id, tocChapters],
+  );
+
+  const footnoteMap = useMemo(
+    () => buildGuestChapterFootnoteMap(chapterData?.blocks, chapterData?.footnotes),
+    [chapterData?.blocks, chapterData?.footnotes],
+  );
+  const footnoteKeys = useMemo(
+    () => (footnoteMap.size > 0 ? new Set(footnoteMap.keys()) : undefined),
+    [footnoteMap],
   );
 
   const showScrollStage = !loadingChapter && !chapterError && !isPaginated;
@@ -164,9 +172,7 @@ export function GuestCanvasReader({
       const nextWidth = Math.max(240, el.clientWidth - padX);
       const nextHeight = Math.max(280, el.clientHeight);
       setStageBox((prev) =>
-        prev.width === nextWidth && prev.height === nextHeight
-          ? prev
-          : { width: nextWidth, height: nextHeight },
+        prev.width === nextWidth && prev.height === nextHeight ? prev : { width: nextWidth, height: nextHeight },
       );
     };
     measure();
@@ -192,8 +198,12 @@ export function GuestCanvasReader({
       settings,
       containerWidth: stageBox.width,
       imageSizes,
+      blockHighlightColors: features.blockHighlightColors,
     });
-  }, [chapterData, chapterIndex, fontVersion, imageSizes, isPaginated, settings, stageBox.width, tocChapters.length]);
+  }, [
+    chapterData, chapterIndex, features.blockHighlightColors, fontVersion,
+    imageSizes, isPaginated, settings, stageBox.width, tocChapters.length,
+  ]);
 
   const effectiveWatermark = chapterData?.watermarkLabel || watermarkLabel || 'Guest';
 
@@ -218,8 +228,12 @@ export function GuestCanvasReader({
       watermarkLabel: effectiveWatermark,
       bitmaps: bitmapsRef.current,
       highlightSourceY,
+      footnoteKeys,
     });
-  }, [bitmapsRef, effectiveWatermark, highlightSourceY, layout, settings.font, settings.theme, stageBox.height, stageBox.width]);
+  }, [
+    bitmapsRef, effectiveWatermark, footnoteKeys, highlightSourceY,
+    layout, settings.font, settings.theme, stageBox.height, stageBox.width,
+  ]);
 
   paintSliceRef.current = paintVisibleSlice;
 
@@ -234,13 +248,8 @@ export function GuestCanvasReader({
         else restoreTargetRatioRef.current = chapterScrollRatio;
       } else if (
         !isPaginated &&
-        (patch.width ||
-          patch.fontSizePx ||
-          patch.lineHeight ||
-          patch.font ||
-          patch.textAlign ||
-          patch.paragraphIndent !== undefined ||
-          patch.paragraphSpacing)
+        (patch.width || patch.fontSizePx || patch.lineHeight || patch.font ||
+          patch.textAlign || patch.paragraphIndent !== undefined || patch.paragraphSpacing)
       ) {
         restoreTargetRatioRef.current = chapterScrollRatio;
       }
@@ -296,11 +305,7 @@ export function GuestCanvasReader({
     if (isPaginated || !layout || !searchTarget || searchTarget.chapterIndex !== chapterIndex) return;
     if (appliedSearchNonceRef.current === searchTarget.nonce) return;
 
-    const idx = findCanvasItemIndexForQuery(
-      layout.items,
-      searchTarget.query,
-      searchTarget.occurrenceIndex,
-    );
+    const idx = findCanvasItemIndexForQuery(layout.items, searchTarget.query, searchTarget.occurrenceIndex);
     appliedSearchNonceRef.current = searchTarget.nonce;
     if (idx < 0) return;
 
@@ -316,11 +321,36 @@ export function GuestCanvasReader({
     return () => window.clearTimeout(timer);
   }, [chapterIndex, handleScroll, isPaginated, layout, searchTarget]);
 
-  const chapterWords = useMemo(
-    () => countWordsInGuestBlocks(chapterData?.blocks),
-    [chapterData?.blocks],
+  const chapterWords = useMemo(() => countWordsInGuestBlocks(chapterData?.blocks), [chapterData?.blocks]);
+  const laterBookWords = useMemo(
+    () => estimateGuestLaterBookWords(tocChapters, chapterIndex, chapterWords),
+    [chapterIndex, chapterWords, tocChapters],
   );
-  const remainingEstimate = computeRemainingEstimate(chapterWords);
+  const remainingEstimate = computeRemainingEstimate(chapterWords, laterBookWords);
+
+  const visibleGuestParagraphs = useMemo(() => {
+    if (!features.guestPickerOpen || !chapterData?.blocks) return [];
+    if (isPaginated) {
+      const slice = paginatedRef.current?.getVisibleCanvasSlice?.();
+      return collectVisibleGuestParagraphOptions({
+        blocks: chapterData.blocks,
+        visibleItems: slice?.items ?? [],
+        minY: slice?.minY ?? 0,
+        maxY: slice?.maxY ?? 999_999,
+        chapterHighlights: features.chapterHighlights,
+      });
+    }
+    const el = scrollContainerRef.current;
+    const minY = Math.max(0, (el?.scrollTop ?? 0) - 40);
+    const maxY = minY + Math.max(360, el?.clientHeight ?? 680);
+    return collectVisibleGuestParagraphOptions({
+      blocks: chapterData.blocks,
+      visibleItems: layout?.items ?? [],
+      minY,
+      maxY,
+      chapterHighlights: features.chapterHighlights,
+    });
+  }, [chapterData?.blocks, features.chapterHighlights, features.guestPickerOpen, isPaginated, layout]);
 
   const watermarkBadge = (
     <span
@@ -340,10 +370,7 @@ export function GuestCanvasReader({
       onCut={(e) => e.preventDefault()}
       onDragStart={(e) => e.preventDefault()}
     >
-      <ReaderNightDimOverlay
-        nightDimPercent={settings.nightDimPercent}
-        settingsOpen={settingsOpen}
-      />
+      <ReaderNightDimOverlay nightDimPercent={settings.nightDimPercent} settingsOpen={settingsOpen} />
 
       <ReaderTopBar
         bookTitle={book.title}
@@ -356,29 +383,12 @@ export function GuestCanvasReader({
         statusBadge={watermarkBadge}
         onBack={() => { flushProgress({ forceTimeFlush: true, keepalive: true }); onClose(); }}
         onOpenDrawerTab={openDrawerTab}
+        onQuickGuestHighlight={() => features.setGuestPickerOpen(true)}
         onHideToolbar={() => { setSettingsOpen(false); setImmersiveHidden(true); }}
         onToggleSettings={() => { setTocOpen(false); setSettingsOpen((v) => !v); }}
         onCloseSettings={() => setSettingsOpen(false)}
         onUpdateSettings={handleUpdateSettings}
       />
-
-      {tocOpen && (
-        <ReaderTocDrawer
-          book={book}
-          chapters={tocDrawerChapters}
-          activeIndex={chapterIndex}
-          currentChapterId={currentTocItem?.id || ''}
-          currentChapterTitle={currentTocItem?.title || ''}
-          currentScrollRatio={chapterScrollRatio}
-          initialTab={drawerTab}
-          palette={palette}
-          onSelectChapter={(idx) => goToChapter(idx, 0)}
-          onJumpToBookmark={goToChapter}
-          onJumpToSearchResult={handleJumpToSearchResult}
-          onApiError={onApiError}
-          onClose={() => setTocOpen(false)}
-        />
-      )}
 
       {loadingChapter ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
@@ -410,6 +420,8 @@ export function GuestCanvasReader({
             watermarkLabel={effectiveWatermark}
             imageSizes={imageSizes}
             bitmapsRef={bitmapsRef}
+            blockHighlightColors={features.blockHighlightColors}
+            footnoteMap={footnoteMap}
             nextBook={nextBook}
             settings={settings}
             palette={palette}
@@ -424,93 +436,47 @@ export function GuestCanvasReader({
               return true;
             }}
             onRatioChange={handlePaginatedRatioChange}
-            onPrevChapterEnd={() => {
-              if (chapterIndex > 0) goToChapter(chapterIndex - 1, 1);
-            }}
-            onNextChapterStart={() => {
-              if (chapterIndex < tocChapters.length - 1) goToChapter(chapterIndex + 1, 0);
-            }}
+            onPrevChapterEnd={() => { if (chapterIndex > 0) goToChapter(chapterIndex - 1, 1); }}
+            onNextChapterStart={() => { if (chapterIndex < tocChapters.length - 1) goToChapter(chapterIndex + 1, 0); }}
             onCompleteBook={completeBook}
             onOpenGuestImage={(bitmap, alt) =>
               setLightboxTarget({ kind: 'guest-bitmap', bitmap, watermarkLabel: effectiveWatermark, alt })
             }
+            onOpenFootnote={(fn) => features.setActiveFootnote(fn)}
           />
           <div className="h-1 w-full shrink-0 bg-black/10">
-            <div
-              className={`h-full transition-all duration-150 ${palette.progressBar}`}
-              style={{ width: `${overallPercent}%` }}
-            />
+            <div className={`h-full transition-all duration-150 ${palette.progressBar}`} style={{ width: `${overallPercent}%` }} />
           </div>
         </>
       ) : (
         <>
-          <main
-            ref={scrollContainerRef}
+          <GuestCanvasScrollStage
+            bookTitle={book.title}
+            chapterIndex={chapterIndex}
+            totalChapters={tocChapters.length}
+            stageWidth={stageBox.width}
+            layout={layout}
+            footnoteMap={footnoteMap}
+            bitmapsRef={bitmapsRef}
+            nextBook={nextBook}
+            settings={settings}
+            palette={palette}
+            settingsOpen={settingsOpen}
+            immersiveHidden={immersiveHidden}
+            pageHidden={pageHidden}
+            scrollContainerRef={scrollContainerRef}
+            canvasRef={canvasRef}
             onScroll={handleScroll}
-            onClick={(event) => {
-              if (settingsOpen) {
-                setSettingsOpen(false);
-                return;
-              }
-              const target = event.target as HTMLElement | null;
-              if (target?.closest('button, a, input, select, textarea')) return;
-
-              if (layout && stageWrapRef.current) {
-                const stageRect = stageWrapRef.current.getBoundingClientRect();
-                const hitImg = findCanvasLayoutImageAtPoint(
-                  layout,
-                  stageBox.width,
-                  event.clientX - stageRect.left,
-                  event.clientY - stageRect.top,
-                );
-                const bitmap = hitImg ? bitmapsRef.current.get(hitImg.mediaIndex) : undefined;
-                if (hitImg && bitmap) {
-                  setLightboxTarget({
-                    kind: 'guest-bitmap',
-                    bitmap,
-                    watermarkLabel: effectiveWatermark,
-                    alt: hitImg.alt || book.title,
-                  });
-                  return;
-                }
-              }
-
-              const rect = event.currentTarget.getBoundingClientRect();
-              const ratio = (event.clientX - rect.left) / rect.width;
-              if (settings.sideTapNavigation && ratio < 0.16) goPrevChapter();
-              else if (settings.sideTapNavigation && ratio > 0.84) goNextChapter();
-              else if (immersiveHidden && ratio >= 0.22 && ratio <= 0.78) setImmersiveHidden(false);
-            }}
-            className={`scrollbar-thin min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-3.5 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-16 transition-all sm:px-7 sm:pb-[calc(2.5rem+env(safe-area-inset-bottom))] sm:pt-[4.5rem] ${
-              pageHidden ? 'blur-lg' : ''
-            }`}
-          >
-            {layout && (
-              <div className="mx-auto max-w-full" style={{ width: `${stageBox.width}px` }}>
-                <div
-                  ref={stageWrapRef}
-                  className="relative w-full overflow-hidden rounded-lg"
-                  style={{ height: `${layout.totalHeight}px` }}
-                >
-                  <canvas
-                    ref={canvasRef}
-                    aria-label="Trang đọc sách"
-                    className="pointer-events-none absolute left-0 top-0 block"
-                  />
-                </div>
-                <ReaderChapterEndNav
-                  chapterIndex={chapterIndex}
-                  totalChapters={tocChapters.length}
-                  palette={palette}
-                  nextBook={nextBook}
-                  onPrev={goPrevChapter}
-                  onNext={goNextChapter}
-                  onCompleteAndClose={() => completeBook()}
-                  onCompleteAndOpenNext={(nb) => completeBook(nb)}
-                />
-              </div>
-            )}
-          </main>
+            onCloseSettings={() => setSettingsOpen(false)}
+            onRevealToolbar={() => setImmersiveHidden(false)}
+            onPrevChapter={goPrevChapter}
+            onNextChapter={goNextChapter}
+            onCompleteBook={completeBook}
+            onOpenFootnote={(fn) => features.setActiveFootnote(fn)}
+            onOpenGuestImage={(bitmap, alt) =>
+              setLightboxTarget({ kind: 'guest-bitmap', bitmap, watermarkLabel: effectiveWatermark, alt })
+            }
+          />
 
           <ReaderFooterStatusBar
             chapterIndex={chapterIndex}
@@ -523,14 +489,33 @@ export function GuestCanvasReader({
         </>
       )}
 
-      {lightboxTarget && (
-        <Suspense fallback={null}>
-          <LazyReaderImageLightbox
-            target={lightboxTarget}
-            onClose={() => setLightboxTarget(null)}
-          />
-        </Suspense>
-      )}
+      <ReaderOverlaysHost
+        role="guest"
+        book={book}
+        allBooks={allBooks}
+        chapters={tocDrawerChapters}
+        chapterIndex={chapterIndex}
+        currentChapterId={currentTocItem?.id || ''}
+        currentChapterTitle={currentTocItem?.title || ''}
+        chapterScrollRatio={chapterScrollRatio}
+        watermarkLabel={effectiveWatermark}
+        tocOpen={tocOpen}
+        drawerTab={drawerTab}
+        palette={palette}
+        features={features}
+        visibleGuestParagraphs={visibleGuestParagraphs}
+        lightboxTarget={lightboxTarget}
+        onCloseToc={() => setTocOpen(false)}
+        onSelectChapter={(idx) => goToChapter(idx, 0)}
+        onJumpToRatio={goToChapter}
+        onJumpToSearchResult={handleJumpToSearchResult}
+        onSetLightboxTarget={setLightboxTarget}
+        onOpenOtherBook={(targetBook) => {
+          flushProgress({ forceTimeFlush: true, keepalive: true });
+          onOpenNextBook?.(targetBook);
+        }}
+        onApiError={onApiError}
+      />
     </div>
   );
 }

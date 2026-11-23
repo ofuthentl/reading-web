@@ -154,7 +154,7 @@ export function ReaderImageLightbox({ target, onClose }: ReaderImageLightboxProp
         }
         onClose();
       }}
-      className="fixed inset-0 z-50 flex select-none flex-col bg-black/88 backdrop-blur-md"
+      className="fixed inset-0 z-[65] flex select-none flex-col bg-black/88 backdrop-blur-md"
     >
       {/* Thanh điều khiển nổi */}
       <div

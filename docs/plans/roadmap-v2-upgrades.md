@@ -70,12 +70,15 @@
 
 ---
 
-### Wave 2 — Chú thích dịch giả, Tab Minh họa & Highlight trích dẫn
+### Wave 2 — Chú thích dịch giả, Tab Minh họa, Highlight trích dẫn & Giờ đọc còn lại cả cuốn
 - **Nhánh:** `feat/reader-footnotes-gallery-highlights` *(tách từ `main` sau Wave 1)*
-- **Hạng mục:** **Mục 1, 2, 5** (3 hạng mục)
+- **Hạng mục:** **Mục 1, 2, 5 + Mục 4 mở rộng (ước tính thời gian đọc còn lại của cả cuốn sách)**
 - **Migration D1:** `workers/r2-storage/migrations/0012_book_highlights.sql`
-  - Tạo bảng `book_highlights (id TEXT PRIMARY KEY, user_scope TEXT NOT NULL, book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE, chapter_id TEXT NOT NULL, chapter_index INTEGER NOT NULL, chapter_title TEXT, quote_text TEXT NOT NULL, note TEXT, color TEXT NOT NULL, locator_json TEXT, created_at INTEGER NOT NULL)` + index `(user_scope, book_id, created_at DESC)`.
+  - Tạo bảng `book_highlights (id TEXT PRIMARY KEY, user_scope TEXT NOT NULL, book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE, chapter_id TEXT NOT NULL, chapter_index INTEGER NOT NULL, chapter_title TEXT, quote_text TEXT NOT NULL, note TEXT, color TEXT NOT NULL, locator_json TEXT, created_at INTEGER NOT NULL)` + index `(user_scope, book_id, created_at DESC)` & `(user_scope, created_at DESC)`.
 - **Các Phase nhỏ trong Wave 2:**
+  - **Mục 4 mở rộng (Thời gian đọc còn lại của cả cuốn sách):**
+    - Mở rộng `getGuestBookToc` trả kèm `compressedBytes` của từng chương từ `manifest_json` có sẵn (**0 lượt đọc R2, 0 cần re-pack**).
+    - Nâng cấp `readingEstimate.ts` & `ReaderFooterStatusBar.tsx`: hiển thị đồng thời thời gian còn lại hết chương và thời gian còn lại hết cả cuốn (`~Xg Yp cuốn`) cho cả `Owner` lẫn `Guest`.
   - **Phase 2.1 (Mục 1 — Popup Chú thích dịch giả):**
     - Tạo `src/lib/epubFootnotes.ts` + `src/components/ReaderFootnotePopover.tsx`.
     - `Owner`: chặn click thẻ `<a href="#...">` là chú thích nội bộ (cùng chương hoặc chương cuối), trích đoạn chú thích sạch (đã qua `DOMPurify`) hiện ngay popup gọn trên trang.

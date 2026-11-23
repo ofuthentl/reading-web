@@ -316,6 +316,48 @@
     animation: readerSearchFlashPulse 2.2s ease-out forwards;
   }
 
+  /* Highlight bôi màu trích dẫn (D-036 Mục 5) */
+  .reading-content mark.reader-hl {
+    color: inherit;
+    border-radius: 0.25rem;
+    padding: 0.05em 0.12em;
+    cursor: pointer;
+    transition: filter 150ms ease;
+  }
+
+  .reading-content mark.reader-hl:hover {
+    filter: brightness(0.95);
+  }
+
+  .reading-content mark.reader-hl-amber {
+    background-color: rgba(245, 158, 11, 0.28);
+    border-bottom: 1.5px solid rgba(217, 119, 6, 0.65);
+  }
+
+  .reading-content mark.reader-hl-emerald {
+    background-color: rgba(16, 185, 129, 0.24);
+    border-bottom: 1.5px solid rgba(5, 150, 105, 0.65);
+  }
+
+  .reading-content mark.reader-hl-sky {
+    background-color: rgba(14, 165, 233, 0.24);
+    border-bottom: 1.5px solid rgba(2, 132, 199, 0.65);
+  }
+
+  .reading-content mark.reader-hl-rose {
+    background-color: rgba(244, 63, 94, 0.23);
+    border-bottom: 1.5px solid rgba(225, 29, 72, 0.65);
+  }
+
+  .reading-content sup a[href],
+  .reading-content a[epub\:type~='noteref'],
+  .reading-content a[role='doc-noteref'] {
+    color: rgb(var(--color-crimson));
+    font-weight: 600;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+  }
+
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: rgba(120, 120, 120, 0.3) transparent;

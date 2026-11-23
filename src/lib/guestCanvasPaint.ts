@@ -1,9 +1,20 @@
-import type { ReaderFont, ReaderTheme } from '@/types';
+import type { HighlightColor, ReaderFont, ReaderTheme } from '@/types';
+import {
+  INLINE_FOOTNOTE_TOKEN_RE,
+  normalizeFootnoteKey,
+} from '@/lib/epubFootnotes';
 import {
   type CanvasLayoutItem,
   type ChapterCanvasLayout,
   buildCanvasFontSpec,
 } from '@/lib/guestCanvasLayout';
+
+const CANVAS_HIGHLIGHT_STYLES: Record<HighlightColor, { fill: string; bar: string }> = {
+  amber: { fill: 'rgba(245, 158, 11, 0.16)', bar: 'rgba(217, 119, 6, 0.85)' },
+  emerald: { fill: 'rgba(16, 185, 129, 0.15)', bar: 'rgba(5, 150, 105, 0.85)' },
+  sky: { fill: 'rgba(14, 165, 233, 0.15)', bar: 'rgba(2, 132, 199, 0.85)' },
+  rose: { fill: 'rgba(244, 63, 94, 0.15)', bar: 'rgba(225, 29, 72, 0.85)' },
+};
 
 export interface CanvasThemeColors {
   baseRgb: [number, number, number];
@@ -227,6 +238,7 @@ export function drawCanvasLayoutItems(options: {
   watermarkLabel: string;
   bitmaps: ReadonlyMap<number, ImageBitmap>;
   highlightSourceY?: number | null;
+  footnoteKeys?: ReadonlySet<string>;
 }) {
   const {
     ctx,
@@ -241,6 +253,7 @@ export function drawCanvasLayoutItems(options: {
     watermarkLabel,
     bitmaps,
     highlightSourceY = null,
+    footnoteKeys,
   } = options;
 
   const sliceBottom = sliceTop + sliceHeight;
@@ -348,6 +361,13 @@ export function drawCanvasLayoutItems(options: {
     }
 
     ctx.save();
+    if (item.highlightColor) {
+      const hlStyle = CANVAS_HIGHLIGHT_STYLES[item.highlightColor];
+      ctx.fillStyle = hlStyle.fill;
+      ctx.fillRect(offsetX - 6, localY - 1, contentWidth + 12, item.height + 1);
+      ctx.fillStyle = hlStyle.bar;
+      ctx.fillRect(offsetX - 6, localY - 1, 3, item.height + 1);
+    }
     const isFlashed =
       item.flashHighlight === true ||
       (highlightSourceY !== null && Math.abs(item.y - highlightSourceY) <= item.height * 1.15);
@@ -375,7 +395,8 @@ export function drawCanvasLayoutItems(options: {
       ctx.fillText(item.listMarker, offsetX + item.markerX, baselineY);
     }
 
-    ctx.fillStyle = item.isQuote ? palette.inkQuote : palette.inkPrimary;
+    const normalFill = item.isQuote ? palette.inkQuote : palette.inkPrimary;
+    ctx.fillStyle = normalFill;
     for (const frag of item.fragments) {
       ctx.font = buildCanvasFontSpec(
         item.isHeading ? 'serif' : font,
@@ -384,6 +405,26 @@ export function drawCanvasLayoutItems(options: {
         frag.italic,
       );
       ctx.fillText(frag.text, offsetX + frag.x, baselineY);
+
+      if (footnoteKeys && footnoteKeys.size > 0 && (frag.text.includes('[') || frag.text.includes('('))) {
+        INLINE_FOOTNOTE_TOKEN_RE.lastIndex = 0;
+        let match: RegExpExecArray | null;
+        while ((match = INLINE_FOOTNOTE_TOKEN_RE.exec(frag.text)) !== null) {
+          const key = normalizeFootnoteKey(match[0]);
+          if (!footnoteKeys.has(key)) continue;
+          const prefixW = match.index > 0 ? ctx.measureText(frag.text.slice(0, match.index)).width : 0;
+          const tokenW = ctx.measureText(match[0]).width;
+          ctx.save();
+          ctx.strokeStyle = '#c2410c';
+          ctx.lineWidth = 1.4;
+          ctx.setLineDash([2, 2]);
+          ctx.beginPath();
+          ctx.moveTo(offsetX + frag.x + prefixW, baselineY + 3);
+          ctx.lineTo(offsetX + frag.x + prefixW + tokenW, baselineY + 3);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
     }
     ctx.restore();
   }
@@ -400,6 +441,7 @@ export function paintGuestViewportCanvas(options: {
   watermarkLabel: string;
   bitmaps: ReadonlyMap<number, ImageBitmap>;
   highlightSourceY?: number | null;
+  footnoteKeys?: ReadonlySet<string>;
 }) {
   const {
     canvas,
@@ -412,6 +454,7 @@ export function paintGuestViewportCanvas(options: {
     watermarkLabel,
     bitmaps,
     highlightSourceY = null,
+    footnoteKeys,
   } = options;
 
   const surface = prepareProtectedCanvasSurface({
@@ -438,5 +481,34 @@ export function paintGuestViewportCanvas(options: {
     watermarkLabel,
     bitmaps,
     highlightSourceY,
+    footnoteKeys,
   });
+}
+
+export function paintProtectedThumbnailCanvas(options: {
+  canvas: HTMLCanvasElement;
+  bitmap: ImageBitmap;
+  watermarkLabel: string;
+}): void {
+  const { canvas, bitmap, watermarkLabel } = options;
+  const ctx = hardenProtectedCanvas(canvas);
+  if (!ctx) return;
+
+  const cssW = Math.max(80, canvas.clientWidth || 180);
+  const cssH = Math.max(100, canvas.clientHeight || 240);
+  const dpr = Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2);
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const scale = Math.max(cssW / Math.max(1, bitmap.width), cssH / Math.max(1, bitmap.height));
+  const drawW = bitmap.width * scale;
+  const drawH = bitmap.height * scale;
+  const dx = (cssW - drawW) / 2;
+  const dy = (cssH - drawH) / 2;
+
+  ctx.clearRect(0, 0, cssW, cssH);
+  ctx.drawImage(bitmap, dx, dy, drawW, drawH);
+  drawWatermarkGrid(ctx, watermarkLabel, cssW, 0, cssH, 'rgba(255, 255, 255, 0.16)', 10);
+  drawWatermarkGrid(ctx, watermarkLabel, cssW, 2, cssH, 'rgba(0, 0, 0, 0.14)', 10);
 }

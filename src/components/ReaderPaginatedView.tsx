@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   forwardRef,
   useCallback,
   useEffect,
@@ -10,8 +11,10 @@ import {
   useState,
 } from 'react';
 import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
-import type { Book, Chapter, ReaderSettings } from '@/types';
+import type { Book, BookHighlight, Chapter, ReaderSettings } from '@/types';
 import { getBookSortTitle } from '@/lib/bookMetadata';
+import { applyChapterDomHighlights } from '@/lib/domHighlights';
+import type { CanvasLayoutItem } from '@/lib/guestCanvasLayout';
 import {
   READER_FONT_CLASS,
   type ReaderThemePalette,
@@ -29,6 +32,7 @@ export interface PaginatedStageHandle {
   stepPrev: () => void;
   stepNext: () => void;
   jumpToRatio: (ratio: number) => void;
+  getVisibleCanvasSlice?: () => { items: CanvasLayoutItem[]; minY: number; maxY: number } | null;
 }
 
 interface ReaderPaginatedViewProps {
@@ -43,6 +47,9 @@ interface ReaderPaginatedViewProps {
   immersiveHidden: boolean;
   remainingEstimate?: string;
   searchTarget?: ReaderSearchJumpTarget | null;
+  chapterHighlights?: readonly BookHighlight[];
+  onContentInteractionClick?: (event: ReactMouseEvent, container: HTMLElement | null) => boolean;
+  onSelectionEnd?: (container: HTMLElement | null) => void;
   onToggleImmersive: () => void;
   onCloseSettings: () => boolean;
   onRatioChange: (ratio: number, isEndOfChapter: boolean) => void;
@@ -66,6 +73,9 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       immersiveHidden,
       remainingEstimate,
       searchTarget = null,
+      chapterHighlights = [],
+      onContentInteractionClick,
+      onSelectionEnd,
       onToggleImmersive,
       onCloseSettings,
       onRatioChange,
@@ -142,6 +152,10 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       );
       setPageIndex(targetPage);
     }, [geometry.colWidth, geometry.columns, geometry.gap]);
+
+    useLayoutEffect(() => {
+      applyChapterDomHighlights(trackRef.current, chapterHighlights);
+    }, [chapter.id, chapter.content_html, chapterHighlights]);
 
     // Chuyển ảnh sang eager và đo ngay lập tức trước khi paint để 0 lệch trang khi đổi độ rộng/cỡ chữ
     useLayoutEffect(() => {
@@ -318,8 +332,10 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
           className={`relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4 pb-2 transition-all duration-200 sm:px-8 ${
             immersiveHidden ? 'pt-5 sm:pt-6' : 'pt-[4.25rem] sm:pt-[4.5rem]'
           }`}
+          onMouseUp={() => onSelectionEnd?.(trackRef.current)}
           onClick={(event) => {
             if (onCloseSettings()) return;
+            if (onContentInteractionClick?.(event, trackRef.current)) return;
             if (handleReaderContentLinkClick(event, trackRef.current)) return;
             const selection = window.getSelection()?.toString();
             if (selection) return;
@@ -351,6 +367,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
             if (touch) touchStartRef.current = { x: touch.clientX, y: touch.clientY };
           }}
           onTouchEnd={(event) => {
+            onSelectionEnd?.(trackRef.current);
             const start = touchStartRef.current;
             touchStartRef.current = null;
             const end = event.changedTouches[0];

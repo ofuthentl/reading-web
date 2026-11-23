@@ -9,12 +9,14 @@ import {
   useState,
 } from 'react';
 import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
-import type { Book, GuestChapterPayload, ReaderSettings } from '@/types';
+import type { Book, GuestChapterPayload, HighlightColor, ReaderSettings } from '@/types';
 import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
 import { useReaderCanvasFontVersion } from '@/hooks/useReaderCanvasFontVersion';
 import { getBookSortTitle } from '@/lib/bookMetadata';
+import type { ResolvedFootnoteItem } from '@/lib/epubFootnotes';
 import { computeChapterCanvasLayout } from '@/lib/guestCanvasLayout';
 import {
+  type CanvasFootnoteHitRect,
   type CanvasImageHitRect,
   paginateCanvasLayoutItems,
   paintGuestPaginatedCanvas,
@@ -37,6 +39,8 @@ interface GuestCanvasPaginatedViewProps {
   watermarkLabel: string;
   imageSizes: ReadonlyMap<number, { width: number; height: number }>;
   bitmapsRef: React.MutableRefObject<Map<number, ImageBitmap>>;
+  blockHighlightColors?: ReadonlyMap<number, HighlightColor>;
+  footnoteMap?: ReadonlyMap<string, string>;
   nextBook?: Book | null;
   settings: ReaderSettings;
   palette: ReaderThemePalette;
@@ -51,6 +55,7 @@ interface GuestCanvasPaginatedViewProps {
   onNextChapterStart: () => void;
   onCompleteBook: (nextBook?: Book) => void;
   onOpenGuestImage: (bitmap: ImageBitmap, alt: string) => void;
+  onOpenFootnote?: (footnote: ResolvedFootnoteItem) => void;
 }
 
 export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCanvasPaginatedViewProps>(
@@ -64,6 +69,8 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       watermarkLabel,
       imageSizes,
       bitmapsRef,
+      blockHighlightColors,
+      footnoteMap,
       nextBook,
       settings,
       palette,
@@ -78,12 +85,14 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       onNextChapterStart,
       onCompleteBook,
       onOpenGuestImage,
+      onOpenFootnote,
     },
     ref,
   ) {
     const outerRef = useRef<HTMLDivElement | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const hitRectsRef = useRef<CanvasImageHitRect[]>([]);
+    const footnoteRectsRef = useRef<CanvasFootnoteHitRect[]>([]);
     const touchStartRef = useRef<{ x: number; y: number } | null>(null);
     const wheelCooldownRef = useRef(0);
     const anchorRatioRef = useRef(Math.min(1, Math.max(0, initialRatio)));
@@ -100,6 +109,11 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     const [flashSourceY, setFlashSourceY] = useState<number | null>(null);
     const appliedSearchNonceRef = useRef(0);
     const fontVersion = useReaderCanvasFontVersion(settings.font);
+
+    const footnoteKeys = useMemo(
+      () => (footnoteMap && footnoteMap.size > 0 ? new Set(footnoteMap.keys()) : undefined),
+      [footnoteMap],
+    );
 
     useLayoutEffect(() => {
       anchorRatioRef.current = Math.min(1, Math.max(0, initialRatio));
@@ -140,12 +154,14 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
         settings: { ...settings, width: 'wide' },
         containerWidth: geometry.columnWidth,
         imageSizes,
+        blockHighlightColors,
       });
       return {
         layoutItems: layout.items,
         columnPages: paginateCanvasLayoutItems(layout.items, geometry.pageHeight - 18),
       };
     }, [
+      blockHighlightColors,
       chapterData,
       chapterIndex,
       fontVersion,
@@ -199,11 +215,14 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
         watermarkLabel,
         bitmaps: bitmapsRef.current,
         highlightSourceY: flashSourceY,
+        footnoteKeys,
+        footnoteHitRectsOut: footnoteRectsRef.current,
       });
     }, [
       bitmapsRef,
       columnPages,
       flashSourceY,
+      footnoteKeys,
       geometry.columnGap,
       geometry.columnWidth,
       geometry.columns,
@@ -249,10 +268,23 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       [commitSpread, totalSpreads],
     );
 
+    const getVisibleCanvasSlice = useCallback(() => {
+      const leftIdx = safeSpreadIndex * geometry.columns;
+      const leftPage = columnPages[leftIdx] ?? null;
+      const rightPage = geometry.columns === 2 ? columnPages[leftIdx + 1] ?? null : null;
+      const combined = [...(leftPage?.items ?? []), ...(rightPage?.items ?? [])];
+      if (combined.length === 0) return null;
+      return {
+        items: combined,
+        minY: leftPage?.startY ?? 0,
+        maxY: rightPage?.endY ?? leftPage?.endY ?? 999_999,
+      };
+    }, [columnPages, geometry.columns, safeSpreadIndex]);
+
     useImperativeHandle(
       ref,
-      () => ({ stepPrev, stepNext, jumpToRatio }),
-      [jumpToRatio, stepNext, stepPrev],
+      () => ({ stepPrev, stepNext, jumpToRatio, getVisibleCanvasSlice }),
+      [getVisibleCanvasSlice, jumpToRatio, stepNext, stepPrev],
     );
 
     useEffect(() => {
@@ -277,13 +309,8 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       const timer = window.setTimeout(() => setFlashSourceY(null), 2250);
       return () => window.clearTimeout(timer);
     }, [
-      chapterData.id,
-      chapterIndex,
-      columnPages,
-      commitSpread,
-      geometry.columns,
-      layoutItems,
-      searchTarget,
+      chapterData.id, chapterIndex, columnPages, commitSpread,
+      geometry.columns, layoutItems, searchTarget,
     ]);
 
     const isLastChapter = chapterIndex >= totalChapters - 1;
@@ -305,6 +332,24 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
               const cRect = canvasRef.current.getBoundingClientRect();
               const cx = event.clientX - cRect.left;
               const cy = event.clientY - cRect.top;
+
+              if (footnoteMap && onOpenFootnote) {
+                for (const fnHit of footnoteRectsRef.current) {
+                  if (cx >= fnHit.x && cx <= fnHit.x + fnHit.width && cy >= fnHit.y && cy <= fnHit.y + fnHit.height) {
+                    const content = footnoteMap.get(fnHit.key);
+                    if (content) {
+                      onOpenFootnote({
+                        markerLabel: fnHit.markerLabel,
+                        content,
+                        anchorX: event.clientX,
+                        anchorY: event.clientY,
+                      });
+                      return;
+                    }
+                  }
+                }
+              }
+
               for (const hit of hitRectsRef.current) {
                 if (cx >= hit.x && cx <= hit.x + hit.width && cy >= hit.y && cy <= hit.y + hit.height) {
                   const bmp = bitmapsRef.current.get(hit.mediaIndex);

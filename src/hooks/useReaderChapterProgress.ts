@@ -7,7 +7,7 @@ import type {
 } from '@/types';
 import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
 import { useReaderController } from '@/hooks/useReaderController';
-import { formatRemainingChapterEstimate } from '@/lib/readingEstimate';
+import { formatCombinedReadingEstimate } from '@/lib/readingEstimate';
 import type { ReaderSearchJumpTarget } from '@/lib/readerSearchJump';
 
 export interface ReaderChapterItemMeta {
@@ -261,8 +261,14 @@ export function useReaderChapterProgress({
   }, [chapterIndex, chapterScrollRatio, chapters.length]);
 
   const computeRemainingEstimate = useCallback(
-    (wordCount: number) => formatRemainingChapterEstimate(wordCount, chapterScrollRatio),
-    [chapterScrollRatio],
+    (chapterWords: number, laterBookWords = 0) =>
+      formatCombinedReadingEstimate({
+        chapterWords,
+        laterBookWords,
+        isLastChapter: chapterIndex >= chapters.length - 1,
+        scrollRatio: chapterScrollRatio,
+      }),
+    [chapterIndex, chapterScrollRatio, chapters.length],
   );
 
   return {
