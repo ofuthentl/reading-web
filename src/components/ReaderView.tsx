@@ -471,12 +471,12 @@ export function ReaderView({
             else if (settings.sideTapNavigation && ratio > 0.84) goNextChapter();
             else if (immersiveHidden && ratio >= 0.22 && ratio <= 0.78) setImmersiveHidden(false);
           }}
-          className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-[4.75rem] sm:px-8 sm:pb-[calc(3rem+env(safe-area-inset-bottom))] sm:pt-20"
+          className="scrollbar-thin min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-4 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-[4.75rem] sm:px-8 sm:pb-[calc(3rem+env(safe-area-inset-bottom))] sm:pt-20"
         >
           {currentChapter && (
             <article
               key={currentChapter.id}
-              className="fade-in mx-auto w-full"
+              className="fade-in mx-auto w-full min-w-0"
               style={{ maxWidth: READER_WIDTH_MAX[settings.width] }}
             >
               <header className={`mb-8 border-b pb-5 text-center ${palette.border}`}>

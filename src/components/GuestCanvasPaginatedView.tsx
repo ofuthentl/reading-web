@@ -326,11 +326,11 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
           </button>
 
           {isLastChapter && isLastSpread ? (
-            <div className="flex flex-wrap items-center justify-center gap-2">
+            <div className="flex min-w-0 max-w-full flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
                 onClick={() => onCompleteBook()}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 font-semibold text-white transition hover:bg-emerald-500"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 font-semibold text-white transition hover:bg-emerald-500"
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 <span>Hoàn thành cuốn này!</span>
@@ -339,9 +339,9 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
                 <button
                   type="button"
                   onClick={() => onCompleteBook(nextBook)}
-                  className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 font-semibold text-accent-foreground transition hover:bg-accent-hover sm:max-w-[16rem]"
+                  className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 font-semibold text-accent-foreground transition hover:bg-accent-hover sm:max-w-[16rem]"
                 >
-                  <span className="truncate">Đọc tiếp: {getBookSortTitle(nextBook)}</span>
+                  <span className="min-w-0 truncate">Đọc tiếp: {getBookSortTitle(nextBook)}</span>
                   <ArrowRight className="h-3.5 w-3.5 shrink-0" />
                 </button>
               )}

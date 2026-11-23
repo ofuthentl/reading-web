@@ -1,24 +1,23 @@
 # HANDOFF
-Cập nhật: 2026-11-23 09:43 | Nhánh: fix/mobile-reader-viewport | Build: 🟢 frontend (`85.81 kB` gzip, `0 B` three) · 🟢 ESLint 0/0
-Nhiệm vụ hiện tại: **Sửa lỗi thanh chuyển chương cuối trang trình đọc bị che trên điện thoại (`100vh` → `max-h-dvh`) & cập nhật lời giới thiệu tab Ủng hộ**.
+Cập nhật: 2026-11-23 10:10 | Nhánh: fix/mobile-reader-horizontal-overflow | Build: 🟢 frontend (`85.80 kB` gzip, `0 B` three) · 🟢 ESLint 0/0
+Nhiệm vụ hiện tại: **Sửa lỗi tràn ngang trên trình đọc điện thoại do nút `Đọc tiếp` tên tập dài thiếu `min-w-0` (`loi_dien_thoai.mp4`)**.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md
 
 ## Đang làm dở
-- Trên nhánh `fix/mobile-reader-viewport` (tách từ `origin/main` sau PR #15):
-  1. **Chuẩn hoá viewport động cho toàn bộ trình đọc (PA-1, `docs/plans/fix-mobile-reader-viewport.md`):**
-     - `ActiveReaderHost.tsx`: bọc trình đọc bằng `fixed inset-0 z-40 flex max-h-dvh flex-col overflow-hidden`.
-     - `ReaderView.tsx` & `GuestCanvasReader.tsx`: thay `h-screen` bằng `h-full min-h-0 flex-1`, thêm `min-h-0 overscroll-y-contain` và đệm đáy `env(safe-area-inset-bottom)` cho `<main>`; bỏ `h-[calc(100vh-3.25rem)]` ở PDF Suspense fallback.
-     - `ReaderChapterEndNav.tsx`, `ReaderPaginatedView.tsx`, `GuestCanvasPaginatedView.tsx`, `PdfReader.tsx`, `PdfReaderFallback.tsx`, `ReaderTocDrawer.tsx`, `ReaderSearchAndBookmarks.tsx`: đồng bộ `min-h-0 flex-1`, `max-h-dvh`, `max-w-full` mobile và đệm đáy `env(safe-area-inset-bottom)`.
-  2. **Cập nhật nội dung mô tả tab Ủng hộ (`src/components/SupportView.tsx`):** bổ sung cụm *"trên nền tảng web"*, *", điều đó sẽ giúp mình rất nhiều."* và đổi *"động viên"* → *"động lực"*.
-  3. Đã kiểm định `typecheck`, `lint` (`0/0`), `build` (`85.81 kB` gzip) và kiểm thử trực tiếp trên viewport `390×652`.
+- Trên nhánh `fix/mobile-reader-horizontal-overflow` (tách từ `origin/main` sau PR #16):
+  1. **Sửa lỗi tràn ngang & lệch nút cuối sách (`docs/plans/fix-mobile-reader-horizontal-overflow.md`):**
+     - `ReaderChapterEndNav.tsx`: đổi cụm cuối sách sang `contents sm:flex sm:min-w-0 sm:max-w-full ...` + `min-w-0 truncate` để mobile xếp gọn hàng 1 (`< Trước` + `Hoàn thành cuốn này!`) và hàng 2 (`Đọc tiếp: ... →` cắt ngắn vừa màn hình).
+     - `ReaderView.tsx` & `GuestCanvasReader.tsx`: thêm `overflow-x-hidden` trên `<main>` và `min-w-0` / `max-w-full` cho khung nội dung.
+     - `src/index.css`: thêm `overflow-wrap: break-word` cho `.reading-content` và `max-width: 100%; overflow-x: auto` cho `.reading-content pre`.
+     - `ReaderPaginatedView.tsx` & `GuestCanvasPaginatedView.tsx`: thêm `min-w-0 max-w-full` cho cụm nút `Hoàn thành` + `Đọc tiếp` trong `<footer>`.
+  2. Đã kiểm định `typecheck`, `lint` (`0/0`), `build` (`85.80 kB` gzip) và kiểm thử trực tiếp trên viewport `390×652` với bộ 2 tập tên dài giống hệt video (`0px` tràn ngang ở cả Cuộn dọc lẫn Lật trang).
 
 ## Bước tiếp theo
-1. Push nhánh `fix/mobile-reader-viewport` và mở Pull Request vào `main`, bấm Merge khi CI xanh để cập nhật lên `ofu.lol`.
-2. Mở thử 1 chương dài trên Chrome iOS thực tế; nếu bản Chrome iOS cụ thể nào còn lệch thanh đáy do lỗi WebKit, chỉ cần thêm lớp fallback JS `visualViewport` (PA-2) trong riêng `ActiveReaderHost.tsx`.
+1. Mở Pull Request `fix/mobile-reader-horizontal-overflow` vào `main` và bấm Merge khi CI xanh để đưa lên `ofu.lol`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn nào.
 
 ## Xong gần nhất
+- **PR #16 (`fix/mobile-reader-viewport`):** Sửa lỗi che đáy trình đọc mobile (`100vh` → `max-h-dvh` + `safe-area-inset-bottom`) & cập nhật lời giới thiệu tab Ủng hộ đã merge vào `main`.
 - **PR #15 (`feat/locked-entrance-link`):** Nút dẫn sang `/entrance` trên `/locked` và ô nhập mã đơn duy nhất (`D-027`) đã merge vào `main`.
-- **PR #14 (`fix/mobile-admin-header`):** Gọn header Admin mobile, tối ưu cuộn 144 FPS & logo mèo đọc sách đã merge vào `main`.
