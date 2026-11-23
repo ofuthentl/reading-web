@@ -185,6 +185,28 @@ CREATE TABLE IF NOT EXISTS collection_shelves (
   PRIMARY KEY (collection_id, shelf_key)
 );
 
+CREATE TABLE IF NOT EXISTS library_ratings (
+  target_type TEXT NOT NULL CHECK (target_type IN ('shelf', 'book')),
+  target_key TEXT NOT NULL,
+  user_scope TEXT NOT NULL,
+  author_name TEXT NOT NULL,
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (target_type, target_key, user_scope)
+);
+
+CREATE TABLE IF NOT EXISTS library_comments (
+  id TEXT PRIMARY KEY,
+  target_type TEXT NOT NULL CHECK (target_type IN ('shelf', 'book')),
+  target_key TEXT NOT NULL,
+  user_scope TEXT NOT NULL,
+  author_name TEXT NOT NULL,
+  author_role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_books_shelf ON books(shelf);
 CREATE INDEX IF NOT EXISTS idx_books_created_at ON books(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_progress_updated_at ON reading_progress(updated_at DESC);
@@ -202,3 +224,5 @@ CREATE INDEX IF NOT EXISTS idx_highlights_user_created ON book_highlights(user_s
 CREATE INDEX IF NOT EXISTS idx_plan_to_read_user ON user_plan_to_read(user_scope, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_plan_to_read_books_user ON user_plan_to_read_books(user_scope, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_collection_shelves_shelf ON collection_shelves(shelf_key);
+CREATE INDEX IF NOT EXISTS idx_library_comments_target ON library_comments(target_type, target_key, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_library_comments_user_created ON library_comments(user_scope, created_at DESC);

@@ -1,6 +1,7 @@
 import { searchAniListLightNovels } from './anilistProxy';
 import { type AuthContext, HttpError, requireOwner } from './auth';
 import type { Env } from './booksDb';
+import { announceDiscordReleases } from './discordRelease';
 import {
   listDiscordGuests,
   runAdminForensicCheck,
@@ -90,6 +91,12 @@ export async function tryHandleAdminRoutes(
   if (normalizedPath === '/api/admin/anilist/search' && request.method === 'POST') {
     const body = await request.json().catch(() => null);
     const result = await searchAniListLightNovels(body);
+    return jsonResponse(result, 200, origin);
+  }
+
+  if (normalizedPath === '/api/admin/discord/announce-release' && request.method === 'POST') {
+    const body = await request.json().catch(() => null);
+    const result = await announceDiscordReleases(env, body);
     return jsonResponse(result, 200, origin);
   }
 

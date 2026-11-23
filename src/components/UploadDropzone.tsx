@@ -9,14 +9,19 @@ import {
   updateBookMetadata,
   uploadBook,
 } from '@/lib/api';
-import { bookDuplicateKey, parseFileMetadata } from '@/lib/bookMetadata';
+import { bookDuplicateKey } from '@/lib/bookMetadata';
 import { inferBatchCommonShelf, resolveUploadShelfPlan } from '@/lib/shelfPlacement';
-import { UploadBatchShelfBar } from '@/components/UploadBatchShelfBar';
+import {
+  ACCEPTED_UPLOAD_EXTENSIONS,
+  createUploadQueueItems,
+  triggerDiscordReleaseAnnouncement,
+} from '@/lib/uploadBatchHelpers';
+import {
+  UploadBatchShelfBar,
+  UploadDiscordReleaseToggle,
+} from '@/components/UploadBatchShelfBar';
 import { UploadQueueList, type UploadQueueItem } from '@/components/UploadQueueList';
 import type { ToastType } from '@/hooks/useToast';
-
-const MAX_SINGLE_FILE_BYTES = 350 * 1024 * 1024;
-const ACCEPTED_EXTENSIONS = '.epub,.docx';
 
 interface UploadDropzoneProps {
   open: boolean;
@@ -27,44 +32,6 @@ interface UploadDropzoneProps {
   onBookUpdated: (book: Book, storage?: StorageStats) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
   onNotify: (message: string, type?: ToastType) => void;
-}
-
-function createQueueItems(
-  files: File[],
-  libraryKeys: Set<string>,
-  existingQueue: UploadQueueItem[],
-): UploadQueueItem[] {
-  const queuedKeys = new Set(
-    existingQueue.filter((item) => item.status !== 'invalid').map((item) => item.duplicateKey),
-  );
-
-  return files.map((file) => {
-    const parsed = parseFileMetadata(file.name);
-    const duplicateKey = bookDuplicateKey(parsed.title, parsed.author);
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    const base = {
-      id,
-      file,
-      ...parsed,
-      duplicateKey,
-      duplicateReason: null as 'library' | 'queue' | null,
-    };
-
-    if (!parsed.extension) {
-      return { ...base, status: 'invalid', errorMessage: 'Chỉ hỗ trợ EPUB hoặc DOCX.' };
-    }
-    if (file.size > MAX_SINGLE_FILE_BYTES) {
-      return { ...base, status: 'invalid', errorMessage: 'Tệp vượt quá giới hạn tối đa 350 MB.' };
-    }
-
-    const duplicateReason = libraryKeys.has(duplicateKey)
-      ? 'library'
-      : queuedKeys.has(duplicateKey)
-        ? 'queue'
-        : null;
-    queuedKeys.add(duplicateKey);
-    return { ...base, duplicateReason, status: duplicateReason ? 'skipped' : 'queued' };
-  });
 }
 
 export function UploadDropzone({
@@ -89,6 +56,7 @@ export function UploadDropzone({
   const [batchShelfEnabled, setBatchShelfEnabled] = useState(false);
   const [batchShelfCustomName, setBatchShelfCustomName] = useState<string | null>(null);
   const [lockedUploadShelf, setLockedUploadShelf] = useState<string | null>(null);
+  const [announceDiscord, setAnnounceDiscord] = useState(false);
   const [progressState, setProgressState] = useState<{
     completed: number;
     total: number;
@@ -164,7 +132,7 @@ export function UploadDropzone({
     (incomingFiles: FileList | File[]) => {
       const files = Array.from(incomingFiles);
       if (files.length > 0) {
-        setQueue((prev) => [...prev, ...createQueueItems(files, libraryKeys, prev)]);
+        setQueue((prev) => [...prev, ...createUploadQueueItems(files, libraryKeys, prev)]);
       }
     },
     [libraryKeys],
@@ -201,6 +169,8 @@ export function UploadDropzone({
     let successCount = 0;
     let failCount = 0;
     let authFailed = false;
+    const uploadedBookIds: string[] = [];
+    const shouldAnnounceDiscord = announceDiscord;
     const workingBooks = [...books];
 
     for (let index = 0; index < targets.length; index += 1) {
@@ -231,6 +201,7 @@ export function UploadDropzone({
         });
         if (!mountedRef.current) break;
         successCount += 1;
+        uploadedBookIds.push(result.book.id);
         workingBooks.push(result.book);
         onBookUploaded(result.book, result.storage);
 
@@ -265,14 +236,15 @@ export function UploadDropzone({
     }
 
     if (!mountedRef.current) return;
-    setUploading(false);
-    setStopRequested(false);
-    setLockedUploadShelf(null);
 
     if (authFailed) {
+      setUploading(false);
+      setStopRequested(false);
+      setLockedUploadShelf(null);
       onClose();
       return;
     }
+
     if (stopRequestedRef.current) {
       onNotify(
         successCount > 0
@@ -280,15 +252,22 @@ export function UploadDropzone({
           : 'Đã dừng hàng đợi tải lên.',
         'info',
       );
-      return;
-    }
-    if (successCount > 0 && failCount === 0) {
+    } else if (successCount > 0 && failCount === 0) {
       onNotify(`Đã tải lên thành công ${successCount} cuốn sách.`, 'success');
     } else if (successCount > 0 && failCount > 0) {
       onNotify(`Đã tải lên ${successCount} cuốn, ${failCount} tệp gặp lỗi.`, 'warning');
     } else if (failCount > 0) {
       onNotify(`Không thể tải lên ${failCount} tệp. Vui lòng xem chi tiết lỗi.`, 'error');
     }
+
+    if (shouldAnnounceDiscord && uploadedBookIds.length > 0 && mountedRef.current) {
+      await triggerDiscordReleaseAnnouncement(uploadedBookIds, onNotify, onApiError);
+    }
+
+    if (!mountedRef.current) return;
+    setUploading(false);
+    setStopRequested(false);
+    setLockedUploadShelf(null);
   };
 
   if (!open) return null;
@@ -408,7 +387,7 @@ export function UploadDropzone({
               ref={inputRef}
               type="file"
               multiple
-              accept={ACCEPTED_EXTENSIONS}
+              accept={ACCEPTED_UPLOAD_EXTENSIONS}
               onChange={(event) => {
                 if (event.target.files) {
                   addFilesToQueue(event.target.files);
@@ -446,6 +425,12 @@ export function UploadDropzone({
               </div>
             </div>
           )}
+
+          <UploadDiscordReleaseToggle
+            checked={announceDiscord}
+            disabled={uploading}
+            onChange={setAnnounceDiscord}
+          />
 
           <UploadQueueList
             queue={queue}

@@ -1,10 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Bookmark, BookMarked, FolderInput, Search, Trash2, X } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
 import type { ShelfSummary } from '@/lib/shelfSummary';
 import { BookCard } from '@/components/BookCard';
 import { ShelfDetailHero } from '@/components/ShelfDetailHero';
 import { normalizeSearchText } from '@/hooks/useLibraryViewState';
+import type { ToastType } from '@/hooks/useToast';
+
+const LazyCommunityReviewsSection = lazy(() =>
+  import('@/components/CommunityReviewsSection').then((mod) => ({
+    default: mod.CommunityReviewsSection,
+  })),
+);
 
 interface ShelfDetailViewProps {
   summary: ShelfSummary;
@@ -33,6 +40,8 @@ interface ShelfDetailViewProps {
   onTogglePlanToReadBook?: (book: Book, nextPlanToRead: boolean) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
+  onNotify?: (message: string, type?: ToastType) => void;
 }
 
 export function ShelfDetailView({
@@ -62,6 +71,8 @@ export function ShelfDetailView({
   onTogglePlanToReadBook,
   onMoveSelectedToShelf,
   onDeleteSelected,
+  onApiError,
+  onNotify,
 }: ShelfDetailViewProps) {
   const { shelf, bookCount } = summary;
   const [volumeQuery, setVolumeQuery] = useState('');
@@ -278,6 +289,28 @@ export function ShelfDetailView({
           </div>
         )}
       </section>
+
+      <Suspense
+        fallback={
+          <div className="moonlit-card rounded-2xl border border-line bg-surface p-5 text-center text-xs text-ink-muted">
+            Đang tải mục đánh giá &amp; bình luận...
+          </div>
+        }
+      >
+        <LazyCommunityReviewsSection
+          targetType="shelf"
+          targetKey={shelf.key}
+          targetLabel={shelf.name}
+          variant="library"
+          lockedMessage={
+            summary.isGuestLocked
+              ? '🔒 Bộ truyện này chỉ mở quyền đọc, chấm sao và bình luận cho thành viên Discord được chỉ định.'
+              : null
+          }
+          onApiError={onApiError}
+          onNotify={onNotify}
+        />
+      </Suspense>
     </div>
   );
 }

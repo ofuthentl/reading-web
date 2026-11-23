@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Book, BookHighlight, Chapter, ReaderSettings } from '@/types';
+import { ReaderBookCommunityModalButton } from '@/components/ReaderBookCommunityBlock';
 import { getBookSortTitle } from '@/lib/bookMetadata';
 import { applyChapterDomHighlights } from '@/lib/domHighlights';
 import type { CanvasLayoutItem } from '@/lib/guestCanvasLayout';
@@ -36,6 +37,7 @@ export interface PaginatedStageHandle {
 }
 
 interface ReaderPaginatedViewProps {
+  bookId: string;
   bookTitle: string;
   chapter: Chapter;
   chapterIndex: number;
@@ -57,11 +59,13 @@ interface ReaderPaginatedViewProps {
   onNextChapterStart: () => void;
   onCompleteBook: (nextBook?: Book) => void;
   onOpenImage: (src: string, alt: string) => void;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
 
 export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPaginatedViewProps>(
   function ReaderPaginatedView(
     {
+      bookId,
       bookTitle,
       chapter,
       chapterIndex,
@@ -83,6 +87,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       onNextChapterStart,
       onCompleteBook,
       onOpenImage,
+      onApiError,
     },
     ref,
   ) {
@@ -456,6 +461,12 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 <span>Hoàn thành cuốn này!</span>
               </button>
+              <ReaderBookCommunityModalButton
+                bookId={bookId}
+                bookTitle={bookTitle}
+                palette={palette}
+                onApiError={onApiError}
+              />
               {nextBook && (
                 <button
                   type="button"

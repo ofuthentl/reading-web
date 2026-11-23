@@ -331,3 +331,66 @@ export async function deleteBooks(booksToDelete: Book[]): Promise<StorageStats> 
   );
   return nextStorage;
 }
+
+export interface DiscordReleaseAnnounceResult {
+  ok: boolean;
+  configured: boolean;
+  mode: 'bot_channel' | 'webhook' | null;
+  announcedGroups: number;
+  announcedBooks: number;
+  failedGroups: number;
+  message: string;
+  errors?: string[];
+}
+
+export async function announceDiscordReleasesApi(
+  bookIds: string[],
+): Promise<DiscordReleaseAnnounceResult> {
+  assertApiConfigured();
+  const uniqueIds = Array.from(new Set(bookIds.filter(Boolean)));
+  if (uniqueIds.length === 0) {
+    return {
+      ok: false,
+      configured: true,
+      mode: null,
+      announcedGroups: 0,
+      announcedBooks: 0,
+      failedGroups: 0,
+      message: 'Không có tập sách nào để thông báo.',
+    };
+  }
+
+  if (!isCloudMode) {
+    return {
+      ok: false,
+      configured: false,
+      mode: null,
+      announcedGroups: 0,
+      announcedBooks: 0,
+      failedGroups: 0,
+      message: 'Chế độ Local Dev chưa kết nối Worker Discord nên không gửi thông báo thật.',
+    };
+  }
+
+  const res = await apiFetch('/api/admin/discord/announce-release', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bookIds: uniqueIds }),
+  });
+  const data = (await res.json().catch(() => ({}))) as Partial<DiscordReleaseAnnounceResult> & {
+    error?: string;
+  };
+  if (!res.ok) {
+    throw new Error(data.error || 'Không thể gửi thông báo tập mới lên Discord.');
+  }
+  return {
+    ok: Boolean(data.ok),
+    configured: Boolean(data.configured),
+    mode: data.mode === 'bot_channel' || data.mode === 'webhook' ? data.mode : null,
+    announcedGroups: Number(data.announcedGroups ?? 0),
+    announcedBooks: Number(data.announcedBooks ?? 0),
+    failedGroups: Number(data.failedGroups ?? 0),
+    message: data.message || 'Đã xử lý yêu cầu thông báo Discord.',
+    ...(Array.isArray(data.errors) ? { errors: data.errors } : {}),
+  };
+}

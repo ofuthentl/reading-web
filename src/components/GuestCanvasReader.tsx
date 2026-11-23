@@ -412,6 +412,7 @@ export function GuestCanvasReader({
         <>
           <GuestCanvasPaginatedView
             ref={paginatedRef}
+            bookId={book.id}
             bookTitle={book.title}
             chapterData={chapterData}
             chapterIndex={chapterIndex}
@@ -443,6 +444,7 @@ export function GuestCanvasReader({
               setLightboxTarget({ kind: 'guest-bitmap', bitmap, watermarkLabel: effectiveWatermark, alt })
             }
             onOpenFootnote={(fn) => features.setActiveFootnote(fn)}
+            onApiError={onApiError}
           />
           <div className="h-1 w-full shrink-0 bg-black/10">
             <div className={`h-full transition-all duration-150 ${palette.progressBar}`} style={{ width: `${overallPercent}%` }} />
@@ -451,6 +453,7 @@ export function GuestCanvasReader({
       ) : (
         <>
           <GuestCanvasScrollStage
+            bookId={book.id}
             bookTitle={book.title}
             chapterIndex={chapterIndex}
             totalChapters={tocChapters.length}
@@ -476,6 +479,7 @@ export function GuestCanvasReader({
             onOpenGuestImage={(bitmap, alt) =>
               setLightboxTarget({ kind: 'guest-bitmap', bitmap, watermarkLabel: effectiveWatermark, alt })
             }
+            onApiError={onApiError}
           />
 
           <ReaderFooterStatusBar

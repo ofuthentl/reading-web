@@ -232,3 +232,26 @@ export type ShelfAccessRuleDetail = {
   updatedAt: number;
   allowedUsers: ShelfAccessGrantUser[];
 };
+
+export type CommunityTargetType = 'shelf' | 'book';
+
+export type CommunityComment = {
+  id: string;
+  authorName: string;
+  authorRole: AuthRole;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+  isMine: boolean;
+  canDelete: boolean;
+};
+
+export type CommunitySummary = {
+  targetType: CommunityTargetType;
+  targetKey: string;
+  averageRating: number | null;
+  ratingCount: number;
+  myRating: number | null;
+  comments: CommunityComment[];
+  totalComments: number;
+};

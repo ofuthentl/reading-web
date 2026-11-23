@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Book, GuestChapterPayload, HighlightColor, ReaderSettings } from '@/types';
+import { ReaderBookCommunityModalButton } from '@/components/ReaderBookCommunityBlock';
 import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
 import { useReaderCanvasFontVersion } from '@/hooks/useReaderCanvasFontVersion';
 import { getBookSortTitle } from '@/lib/bookMetadata';
@@ -31,6 +32,7 @@ import {
 } from '@/lib/readerSearchJump';
 
 interface GuestCanvasPaginatedViewProps {
+  bookId: string;
   bookTitle: string;
   chapterData: GuestChapterPayload;
   chapterIndex: number;
@@ -56,11 +58,13 @@ interface GuestCanvasPaginatedViewProps {
   onCompleteBook: (nextBook?: Book) => void;
   onOpenGuestImage: (bitmap: ImageBitmap, alt: string) => void;
   onOpenFootnote?: (footnote: ResolvedFootnoteItem) => void;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
 
 export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCanvasPaginatedViewProps>(
   function GuestCanvasPaginatedView(
     {
+      bookId,
       bookTitle,
       chapterData,
       chapterIndex,
@@ -86,6 +90,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       onCompleteBook,
       onOpenGuestImage,
       onOpenFootnote,
+      onApiError,
     },
     ref,
   ) {
@@ -443,6 +448,12 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 <span>Hoàn thành cuốn này!</span>
               </button>
+              <ReaderBookCommunityModalButton
+                bookId={bookId}
+                bookTitle={bookTitle}
+                palette={palette}
+                onApiError={onApiError}
+              />
               {nextBook && (
                 <button
                   type="button"
