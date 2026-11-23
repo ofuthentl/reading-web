@@ -28,7 +28,9 @@ import {
 import { DEFAULT_OWNER_SESSION, inspectStoredSession } from '@/lib/authSession';
 import {
   type GateRoute,
+  buildGateHref,
   getCurrentGateRoute,
+  navigateGateRoute,
   replaceGateRoute,
   subscribeGateRoute,
   syncGateDocumentTitle,
@@ -49,19 +51,11 @@ interface AuthGateProps {
 
 type GateStatus = 'checking' | 'ready' | 'error';
 
-const KEY_SLOT_COUNT = 12;
-const KEY_GROUPS = [
-  [0, 1, 2, 3],
-  [4, 5, 6, 7],
-  [8, 9, 10, 11],
-] as const;
-
 export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: AuthGateProps) {
   const [route, setRoute] = useState<GateRoute>(getCurrentGateRoute);
   const [status, setStatus] = useState<GateStatus>('checking');
   const [passcode, setPasscode] = useState('');
-  const [showCode, setShowCode] = useState(true);
-  const [inputFocused, setInputFocused] = useState(false);
+  const [showCode, setShowCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(authReason ?? null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -196,8 +190,6 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
 
   const isEntrance = route === 'entrance';
   const isDark = Boolean(theme && theme !== 'light');
-  const isSlotMode = passcode.length <= KEY_SLOT_COUNT;
-  const activeSlotIndex = Math.min(passcode.length, KEY_SLOT_COUNT - 1);
 
   return (
     <div className="theme-canvas relative flex min-h-screen flex-col justify-between overflow-hidden text-ink transition-colors duration-200">
@@ -284,41 +276,19 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
                     : 'Nhập chìa khoá 12 ký tự nhận từ Bot Discord để mở quyền đọc trong 24 giờ.'}
                 </p>
 
-                <form onSubmit={handleSubmit} className="mt-8 max-w-[29rem]">
+                <form onSubmit={handleSubmit} className="mt-8 max-w-[26rem]">
                   <div className="mb-2.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.16em] text-ink-muted">
                     <label htmlFor="entrance-code-input" className="cursor-pointer">
                       Chìa khoá truy cập
                     </label>
-                    <div className="flex items-center gap-2 font-reader-mono tracking-wider">
-                      <span>
-                        {isSlotMode
-                          ? `${passcode.length}/${KEY_SLOT_COUNT}`
-                          : `${passcode.length} ký tự`}
+                    {passcode.length > 0 && (
+                      <span className="font-reader-mono tracking-wider">
+                        {passcode.length} ký tự
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowCode((prev) => !prev);
-                          inputRef.current?.focus();
-                        }}
-                        aria-label={showCode ? 'Ẩn mã truy cập' : 'Hiện mã truy cập'}
-                        title={showCode ? 'Ẩn ký tự' : 'Hiện ký tự'}
-                        className="rounded-md p-1 text-ink-faint transition-colors hover:bg-subtle hover:text-ink"
-                      >
-                        {showCode ? (
-                          <EyeOff className="h-3.5 w-3.5" />
-                        ) : (
-                          <Eye className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                    </div>
+                    )}
                   </div>
 
-                  {/* Dải 3 cụm × 4 ô dễ nhìn (tự gộp mượt thành 1 thanh khi nhập mật mã Admin > 12 ký tự) */}
-                  <div
-                    onClick={() => inputRef.current?.focus()}
-                    className="relative cursor-text"
-                  >
+                  <div className="relative">
                     <input
                       ref={inputRef}
                       id="entrance-code-input"
@@ -329,58 +299,27 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
                         if (errorMessage) setErrorMessage(null);
                       }}
                       onPaste={handlePaste}
-                      onFocus={() => setInputFocused(true)}
-                      onBlur={() => setInputFocused(false)}
+                      placeholder="Nhập chìa khoá truy cập..."
                       autoComplete="off"
-                      autoCapitalize="characters"
+                      autoCapitalize="none"
+                      autoCorrect="off"
                       spellCheck={false}
                       disabled={submitting}
                       aria-label="Chìa khoá truy cập thư viện"
-                      className={
-                        isSlotMode
-                          ? 'absolute inset-0 z-10 h-full w-full cursor-text opacity-0'
-                          : 'relative z-10 h-12 w-full rounded-xl border border-accent bg-surface/85 px-4 font-reader-mono text-sm tracking-widest text-ink shadow-sm backdrop-blur-sm outline-none'
-                      }
+                      className="h-12 w-full rounded-xl border border-line-strong bg-surface/80 pl-4 pr-11 font-reader-mono text-sm tracking-wider text-ink shadow-sm backdrop-blur-sm transition-colors placeholder:font-sans placeholder:tracking-normal placeholder:text-ink-faint focus:border-amber-600/75 focus:bg-surface/95 focus:outline-none disabled:opacity-60 dark:focus:border-amber-300/70"
                     />
-
-                    {isSlotMode && (
-                      <div
-                        aria-hidden="true"
-                        className="flex items-center gap-2 sm:gap-3"
-                      >
-                        {KEY_GROUPS.map((group, groupIdx) => (
-                          <div key={groupIdx} className="flex flex-1 items-center gap-1 sm:gap-1.5">
-                            {group.map((slotIndex) => {
-                              const ch = passcode[slotIndex] ?? '';
-                              const isCaret =
-                                inputFocused && !submitting && slotIndex === activeSlotIndex;
-                              const displayChar = ch
-                                ? showCode
-                                  ? ch.toUpperCase()
-                                  : '•'
-                                : '';
-                              return (
-                                <div
-                                  key={slotIndex}
-                                  className={`relative flex h-11 flex-1 items-center justify-center rounded-lg border font-reader-mono text-sm font-semibold backdrop-blur-sm transition-all sm:h-12 sm:text-base ${
-                                    isCaret
-                                      ? 'border-amber-600/75 bg-amber-500/[0.08] text-ink shadow-sm dark:border-amber-300/70 dark:bg-amber-400/[0.08]'
-                                      : ch
-                                        ? 'border-line-strong bg-surface/90 text-ink'
-                                        : 'border-line bg-surface/55 text-ink-muted hover:border-line-strong'
-                                  }`}
-                                >
-                                  <span>{displayChar}</span>
-                                  {isCaret && !ch && (
-                                    <span className="absolute bottom-2 h-0.5 w-3.5 animate-pulse rounded-full bg-amber-600 dark:bg-amber-300" />
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCode((prev) => !prev);
+                        inputRef.current?.focus();
+                      }}
+                      aria-label={showCode ? 'Ẩn mã truy cập' : 'Hiện mã truy cập'}
+                      title={showCode ? 'Ẩn ký tự' : 'Hiện ký tự'}
+                      className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-subtle hover:text-ink"
+                    >
+                      {showCode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
                   </div>
 
                   {errorMessage && (
@@ -412,7 +351,6 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
                 </form>
               </>
             ) : (
-              /* Trang /locked: không gian tĩnh lặng, không có ô nhập mã và không có nút sang /entrance */
               <>
                 <p className="font-display text-xl font-medium tracking-tight text-ink-muted sm:text-2xl">
                   Ofu&apos;s Library
@@ -426,7 +364,31 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
                     'Cánh cửa thư viện hiện đang khép với khách vãng lai. Chỉ thành viên nhận chìa khoá từ Discord mới có thể bước vào.'}
                 </p>
 
-                <div className="mt-8 flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.18em] text-ink-faint select-none">
+                <div className="mt-8">
+                  <a
+                    href={buildGateHref('entrance')}
+                    onClick={(event) => {
+                      if (
+                        event.button === 0 &&
+                        !event.metaKey &&
+                        !event.ctrlKey &&
+                        !event.shiftKey &&
+                        !event.altKey
+                      ) {
+                        event.preventDefault();
+                        setErrorMessage(null);
+                        navigateGateRoute('entrance');
+                      }
+                    }}
+                    className="group inline-flex items-center gap-2.5 rounded-xl bg-accent px-6 py-3 text-sm font-medium text-accent-foreground shadow-sm transition-all hover:bg-accent-hover dark:shadow-[0_0_24px_-6px_rgba(244,244,245,0.28)]"
+                  >
+                    <KeyRound className="h-4 w-4" />
+                    <span>Đến cổng nhập khoá</span>
+                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                  </a>
+                </div>
+
+                <div className="mt-6 flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.18em] text-ink-faint select-none">
                   <span className="h-1.5 w-1.5 rounded-full bg-ink-faint/60" />
                   <span>Phiên đọc 24 giờ · Chế độ 2D</span>
                 </div>
