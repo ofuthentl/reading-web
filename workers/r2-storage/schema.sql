@@ -100,10 +100,20 @@ CREATE TABLE IF NOT EXISTS shelf_guest_grants (
   PRIMARY KEY (shelf_key, discord_user_id)
 );
 
+CREATE TABLE IF NOT EXISTS login_rate_limits (
+  ip_hash TEXT PRIMARY KEY,
+  fail_count INTEGER NOT NULL DEFAULT 0,
+  window_start INTEGER NOT NULL,
+  locked_until INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS idx_books_shelf ON books(shelf);
 CREATE INDEX IF NOT EXISTS idx_books_created_at ON books(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_progress_updated_at ON reading_progress(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_discord_access_key_hash ON discord_access(key_hash) WHERE key_hash IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_guest_progress_user_updated ON guest_reading_progress(discord_user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_guest_progress_updated_at ON guest_reading_progress(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_guest_progress_book_id ON guest_reading_progress(book_id);
 CREATE INDEX IF NOT EXISTS idx_bookmarks_user_book ON book_bookmarks(user_scope, book_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON book_bookmarks(book_id);
 CREATE INDEX IF NOT EXISTS idx_shelf_grants_user ON shelf_guest_grants(discord_user_id);

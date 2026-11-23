@@ -24,7 +24,7 @@ export interface ShelfAccessRuleDetail {
 const MAX_SHELF_KEY_LEN = 120;
 const MAX_GRANTED_LABEL_LEN = 80;
 const MAX_GRANTS_PER_SHELF = 500;
-const D1_BATCH_CHUNK = 40;
+const MULTI_INSERT_ROWS_PER_STMT = 20; // 20 * 4 = 80 params (dưới ngưỡng 100 bind params của D1)
 const DISCORD_SNOWFLAKE_RE = /^\d{5,32}$/;
 
 const ensuredAccessDbs = new WeakSet<D1Database>();
@@ -129,19 +129,18 @@ export async function assertGuestBookAccess(
   if (!bookRow) return;
 
   const shelfKey = toShelfAccessKey(bookRow.shelf);
-  const ruleRow = await db
-    .prepare('SELECT access_mode FROM shelf_access_rules WHERE shelf_key = ?')
-    .bind(shelfKey)
-    .first<{ access_mode: string }>();
+  const accessRow = await db
+    .prepare(
+      `SELECT r.access_mode, g.discord_user_id AS granted_user
+       FROM shelf_access_rules r
+       LEFT JOIN shelf_guest_grants g
+         ON g.shelf_key = r.shelf_key AND g.discord_user_id = ?
+       WHERE r.shelf_key = ?`,
+    )
+    .bind(auth.userId, shelfKey)
+    .first<{ access_mode: string; granted_user: string | null }>();
 
-  if (ruleRow?.access_mode !== 'restricted') return;
-
-  const grantRow = await db
-    .prepare('SELECT 1 AS ok FROM shelf_guest_grants WHERE shelf_key = ? AND discord_user_id = ?')
-    .bind(shelfKey, auth.userId)
-    .first<{ ok: number }>();
-
-  if (!grantRow) {
+  if (accessRow?.access_mode === 'restricted' && !accessRow.granted_user) {
     throw new HttpError(
       '🔒 Bộ truyện này chỉ mở quyền đọc cho thành viên Discord được chỉ định.',
       403,
@@ -261,7 +260,8 @@ export async function putAdminShelfAccessConfig(db: D1Database, rawBody: unknown
     });
   }
 
-  await db.batch([
+  // Gom toàn bộ UPSERT rule + DELETE grants cũ + INSERT grants mới vào 1 transaction batch duy nhất (vá M-5)
+  const statements: D1PreparedStatement[] = [
     db
       .prepare(
         `INSERT INTO shelf_access_rules (shelf_key, access_mode, updated_at)
@@ -272,21 +272,26 @@ export async function putAdminShelfAccessConfig(db: D1Database, rawBody: unknown
       )
       .bind(shelfKey, now),
     db.prepare('DELETE FROM shelf_guest_grants WHERE shelf_key = ?').bind(shelfKey),
-  ]);
+  ];
 
-  for (let i = 0; i < deduped.length; i += D1_BATCH_CHUNK) {
-    const chunk = deduped.slice(i, i + D1_BATCH_CHUNK);
-    await db.batch(
-      chunk.map((u) =>
-        db
-          .prepare(
-            `INSERT INTO shelf_guest_grants (shelf_key, discord_user_id, granted_label, created_at)
-             VALUES (?, ?, ?, ?)`,
-          )
-          .bind(shelfKey, u.discordUserId, u.label, u.createdAt),
-      ),
+  for (let i = 0; i < deduped.length; i += MULTI_INSERT_ROWS_PER_STMT) {
+    const chunk = deduped.slice(i, i + MULTI_INSERT_ROWS_PER_STMT);
+    const valuesSql = chunk.map(() => '(?, ?, ?, ?)').join(', ');
+    const params: unknown[] = [];
+    for (const u of chunk) {
+      params.push(shelfKey, u.discordUserId, u.label, u.createdAt);
+    }
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO shelf_guest_grants (shelf_key, discord_user_id, granted_label, created_at)
+           VALUES ${valuesSql}`,
+        )
+        .bind(...params),
     );
   }
+
+  await db.batch(statements);
 
   return {
     ok: true,
@@ -299,7 +304,11 @@ export async function putAdminShelfAccessConfig(db: D1Database, rawBody: unknown
   };
 }
 
-export async function mergeShelfAccessOnRename(
+/**
+ * Pha 1 khi đổi tên kệ (vá H-5): sao chép rule `restricted` và danh sách grants sang `newKey`
+ * TRƯỚC khi `UPDATE books SET shelf = newName` để không bao giờ lộ cửa sổ công khai.
+ */
+export async function prepareShelfAccessForRename(
   db: D1Database,
   oldKey: string,
   newKey: string,
@@ -312,16 +321,8 @@ export async function mergeShelfAccessOnRename(
     .bind(oldKey, newKey)
     .all<{ shelf_key: string; access_mode: string }>();
 
-  const rows = existing.results || [];
-  const anyRestricted = rows.some((r) => r.access_mode === 'restricted');
-
-  if (!anyRestricted) {
-    await db.batch([
-      db.prepare('DELETE FROM shelf_guest_grants WHERE shelf_key = ?').bind(oldKey),
-      db.prepare('DELETE FROM shelf_access_rules WHERE shelf_key = ?').bind(oldKey),
-    ]);
-    return;
-  }
+  const anyRestricted = (existing.results || []).some((r) => r.access_mode === 'restricted');
+  if (!anyRestricted) return;
 
   const now = Date.now();
   await db.batch([
@@ -342,6 +343,20 @@ export async function mergeShelfAccessOnRename(
          WHERE shelf_key = ?`,
       )
       .bind(newKey, oldKey),
+  ]);
+}
+
+/**
+ * Pha 2 khi đổi tên kệ (vá H-5): chỉ xoá rule & grants của `oldKey` SAU khi toàn bộ sách đã đổi sang tên mới.
+ */
+export async function cleanupOldShelfAccessAfterRename(
+  db: D1Database,
+  oldKey: string,
+  newKey: string,
+): Promise<void> {
+  if (!oldKey || !newKey || oldKey === newKey) return;
+  await ensureShelfAccessTables(db);
+  await db.batch([
     db.prepare('DELETE FROM shelf_guest_grants WHERE shelf_key = ?').bind(oldKey),
     db.prepare('DELETE FROM shelf_access_rules WHERE shelf_key = ?').bind(oldKey),
   ]);

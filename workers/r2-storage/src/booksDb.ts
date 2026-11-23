@@ -1,8 +1,9 @@
 import { type AuthContext, type AuthEnv, HttpError } from './auth';
 import { type ProgressRow, deleteReadingProgress, upsertReadingProgress } from './progressDb';
 import {
+  cleanupOldShelfAccessAfterRename,
   loadShelfAccessSnapshot,
-  mergeShelfAccessOnRename,
+  prepareShelfAccessForRename,
   toShelfAccessKey,
 } from './shelfAccessDb';
 import {
@@ -55,6 +56,7 @@ export const MAX_SHELF_NAME_LENGTH = 120;
 export const MAX_TEXT_FIELD_LENGTH = 300;
 export const MAX_DESCRIPTION_LENGTH = 5000;
 export const BULK_D1_CHUNK_SIZE = 50;
+const R2_DELETE_CHUNK_SIZE = 500;
 
 export const ACCEPTED_FILE_TYPES = new Set(['epub', 'docx']);
 export const CONTENT_TYPES: Record<string, string> = {
@@ -157,7 +159,8 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
         allowedRestrictedKeys: new Set<string>(),
         ownerShelfAccess: {},
       })),
-      getStorageStats(env),
+      // Chỉ truy vấn thống kê dung lượng R2 cho Owner; Guest không hiển thị thanh dung lượng (L-5)
+      auth.role === 'owner' ? getStorageStats(env) : Promise.resolve(null),
     ]);
 
   const progressMap: Record<
@@ -218,6 +221,13 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
   });
   const weeklyPopular = await computeWeeklyPopularBookIds(env.DB, rawBooks, 10);
 
+  const effectiveStorage = storage ?? {
+    usedBytes: 0,
+    limitBytes: getLimitBytes(env),
+    remainingBytes: 0,
+    bookCount: rawBooks.length,
+  };
+
   return {
     books: sanitizedBooks,
     progress: progressMap,
@@ -226,13 +236,40 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     favoriteShelves,
     shelfTags,
     ...(auth.role === 'owner' ? { shelfAccess: accessSnapshot.ownerShelfAccess } : {}),
-    storage,
+    storage: effectiveStorage,
     session: {
       role: auth.role,
       expiresAt: auth.expiresAt,
       ...(auth.watermarkLabel ? { watermarkLabel: auth.watermarkLabel } : {}),
     },
   };
+}
+
+async function deleteR2KeysInChunks(bucket: R2Bucket, keys: string[]): Promise<void> {
+  const uniqueKeys = Array.from(new Set(keys.filter(Boolean)));
+  for (const chunk of chunkArray(uniqueKeys, R2_DELETE_CHUNK_SIZE)) {
+    await bucket.delete(chunk);
+  }
+}
+
+export async function clearStaleShelfCoverForBook(
+  db: D1Database,
+  bookId: string,
+  newShelfKey: string,
+): Promise<void> {
+  await ensureShelfTagsSchema(db).catch(() => undefined);
+  await db
+    .batch([
+      db
+        .prepare(
+          'UPDATE shelf_prefs SET cover_book_id = NULL WHERE cover_book_id = ? AND shelf_key != ?',
+        )
+        .bind(bookId, newShelfKey),
+      db.prepare(
+        'DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0 AND tags_json IS NULL',
+      ),
+    ])
+    .catch(() => undefined);
 }
 
 export async function deleteSingleBook(env: Env, bookId: string) {
@@ -243,34 +280,37 @@ export async function deleteSingleBook(env: Env, bookId: string) {
     .first<{ file_key: string; cover_key: string | null }>();
   if (!existing) throw new HttpError('Không tìm thấy sách.', 404);
 
-  const keysToDelete = [
-    existing.file_key,
-    existing.cover_key,
-    `guest-packs/${bookId}.pack`,
-  ].filter((k): k is string => Boolean(k));
-  if (keysToDelete.length > 0) {
-    await env.BOOKS_BUCKET.delete(keysToDelete);
-  }
+  const packRow = await env.DB.prepare('SELECT pack_key FROM book_guest_packs WHERE book_id = ?')
+    .bind(bookId)
+    .first<{ pack_key: string }>()
+    .catch(() => null);
+
+  await ensureShelfTagsSchema(env.DB).catch(() => undefined);
+
+  // Xoá bản ghi D1 trước rồi mới dọn đối tượng R2 để tránh sách trỏ vào file đã mất nếu DB lỗi (vá M-4)
   await env.DB.batch([
     env.DB.prepare('DELETE FROM reading_progress WHERE book_id = ?').bind(bookId),
     env.DB.prepare('DELETE FROM books WHERE id = ?').bind(bookId),
   ]);
-  await env.DB.prepare('DELETE FROM book_guest_packs WHERE book_id = ?')
-    .bind(bookId)
-    .run()
-    .catch(() => undefined);
   await env.DB.batch([
     env.DB.prepare('UPDATE shelf_prefs SET cover_book_id = NULL WHERE cover_book_id = ?').bind(bookId),
-    env.DB.prepare('DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0 AND tags_json IS NULL'),
+    env.DB.prepare(
+      'DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0 AND tags_json IS NULL',
+    ),
   ]).catch(() => undefined);
-  await env.DB.prepare('DELETE FROM guest_reading_progress WHERE book_id = ?')
-    .bind(bookId)
-    .run()
-    .catch(() => undefined);
-  await env.DB.prepare('DELETE FROM book_bookmarks WHERE book_id = ?')
-    .bind(bookId)
-    .run()
-    .catch(() => undefined);
+  await Promise.all([
+    env.DB.prepare('DELETE FROM book_guest_packs WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
+    env.DB.prepare('DELETE FROM guest_reading_progress WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
+    env.DB.prepare('DELETE FROM book_bookmarks WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
+  ]);
+
+  const keysToDelete = [
+    existing.file_key,
+    existing.cover_key,
+    packRow?.pack_key,
+    `guest-packs/${bookId}.pack`,
+  ].filter((k): k is string => Boolean(k));
+  await deleteR2KeysInChunks(env.BOOKS_BUCKET, keysToDelete);
 
   const storage = await getStorageStats(env);
   return { deletedId: bookId, storage };
@@ -287,21 +327,26 @@ export async function bulkDeleteBooks(env: Env, rawIds: unknown) {
 
   for (const chunk of idChunks) {
     const placeholders = chunk.map(() => '?').join(', ');
-    const rows = await env.DB.prepare(
-      `SELECT id, file_key, cover_key FROM books WHERE id IN (${placeholders})`,
-    )
-      .bind(...chunk)
-      .all<{ id: string; file_key: string; cover_key: string | null }>();
+    const [rows, packRows] = await Promise.all([
+      env.DB.prepare(`SELECT id, file_key, cover_key FROM books WHERE id IN (${placeholders})`)
+        .bind(...chunk)
+        .all<{ id: string; file_key: string; cover_key: string | null }>(),
+      env.DB.prepare(`SELECT pack_key FROM book_guest_packs WHERE book_id IN (${placeholders})`)
+        .bind(...chunk)
+        .all<{ pack_key: string }>()
+        .catch(() => ({ results: [] as Array<{ pack_key: string }> })),
+    ]);
     for (const row of rows.results || []) {
       if (row.file_key) keysToDelete.push(row.file_key);
       if (row.cover_key) keysToDelete.push(row.cover_key);
       keysToDelete.push(`guest-packs/${row.id}.pack`);
     }
+    for (const p of packRows.results || []) {
+      if (p.pack_key) keysToDelete.push(p.pack_key);
+    }
   }
 
-  if (keysToDelete.length > 0) {
-    await env.BOOKS_BUCKET.delete(keysToDelete);
-  }
+  await ensureShelfTagsSchema(env.DB).catch(() => undefined);
 
   const deleteStatements: D1PreparedStatement[] = [];
   for (const chunk of idChunks) {
@@ -312,27 +357,25 @@ export async function bulkDeleteBooks(env: Env, rawIds: unknown) {
     );
   }
   await env.DB.batch(deleteStatements);
+
   for (const chunk of idChunks) {
     const placeholders = chunk.map(() => '?').join(', ');
     await env.DB.batch([
       env.DB.prepare(
         `UPDATE shelf_prefs SET cover_book_id = NULL WHERE cover_book_id IN (${placeholders})`,
       ).bind(...chunk),
-      env.DB.prepare('DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0 AND tags_json IS NULL'),
+      env.DB.prepare(
+        'DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0 AND tags_json IS NULL',
+      ),
     ]).catch(() => undefined);
-    await env.DB.prepare(`DELETE FROM guest_reading_progress WHERE book_id IN (${placeholders})`)
-      .bind(...chunk)
-      .run()
-      .catch(() => undefined);
-    await env.DB.prepare(`DELETE FROM book_guest_packs WHERE book_id IN (${placeholders})`)
-      .bind(...chunk)
-      .run()
-      .catch(() => undefined);
-    await env.DB.prepare(`DELETE FROM book_bookmarks WHERE book_id IN (${placeholders})`)
-      .bind(...chunk)
-      .run()
-      .catch(() => undefined);
+    await Promise.all([
+      env.DB.prepare(`DELETE FROM guest_reading_progress WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
+      env.DB.prepare(`DELETE FROM book_guest_packs WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
+      env.DB.prepare(`DELETE FROM book_bookmarks WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
+    ]);
   }
+
+  await deleteR2KeysInChunks(env.BOOKS_BUCKET, keysToDelete);
 
   const storage = await getStorageStats(env);
   return { deletedIds: ids, storage };
@@ -349,6 +392,7 @@ export async function bulkUpdateBooksShelf(env: Env, rawIds: unknown, rawShelf: 
     throw new HttpError(`Tên kệ sách không hợp lệ (tối đa ${MAX_SHELF_NAME_LENGTH} ký tự).`, 400);
   }
 
+  const targetShelfKey = toShelfAccessKey(shelf);
   const statements: D1PreparedStatement[] = [];
   for (const chunk of chunkArray(ids, BULK_D1_CHUNK_SIZE)) {
     const placeholders = chunk.map(() => '?').join(', ');
@@ -357,6 +401,20 @@ export async function bulkUpdateBooksShelf(env: Env, rawIds: unknown, rawShelf: 
     );
   }
   await env.DB.batch(statements);
+
+  // Dọn ảnh bìa đại diện cũ nếu các sách vừa chuyển sang kệ khác (L-5)
+  await ensureShelfTagsSchema(env.DB).catch(() => undefined);
+  for (const chunk of chunkArray(ids, BULK_D1_CHUNK_SIZE)) {
+    const placeholders = chunk.map(() => '?').join(', ');
+    await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE shelf_prefs SET cover_book_id = NULL WHERE cover_book_id IN (${placeholders}) AND shelf_key != ?`,
+      ).bind(...chunk, targetShelfKey),
+      env.DB.prepare(
+        'DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0 AND tags_json IS NULL',
+      ),
+    ]).catch(() => undefined);
+  }
 
   return { updatedIds: ids, shelf };
 }
@@ -370,6 +428,12 @@ export async function renameShelfCaseInsensitive(env: Env, rawOldName: unknown, 
 
   const targetKey = oldName.toLocaleLowerCase('vi');
   const newKey = newName.toLocaleLowerCase('vi');
+
+  // Pha 1 (vá H-5): sao chép rule giới hạn & grants sang tên mới TRƯỚC khi đổi tên sách
+  if (targetKey !== newKey) {
+    await prepareShelfAccessForRename(env.DB, targetKey, newKey);
+  }
+
   const rows = await env.DB.prepare('SELECT DISTINCT shelf FROM books').all<{ shelf: string }>();
   const matchedShelves = (rows.results || [])
     .map((r) => r.shelf)
@@ -420,7 +484,8 @@ export async function renameShelfCaseInsensitive(env: Env, rawOldName: unknown, 
       ]);
     })().catch(() => undefined);
 
-    await mergeShelfAccessOnRename(env.DB, targetKey, newKey).catch(() => undefined);
+    // Pha 2 (vá H-5): chỉ xoá rule/grants cũ sau khi toàn bộ sách đã đổi sang tên mới
+    await cleanupOldShelfAccessAfterRename(env.DB, targetKey, newKey);
   }
 
   return { ok: true };

@@ -22,6 +22,20 @@ export async function streamR2FileResponse(
     requireOwner(auth);
   }
 
+  // Với HEAD chỉ đọc metadata R2 (không kéo body) để tiết kiệm băng thông (vá M-6)
+  if (request.method === 'HEAD') {
+    const headObj = await env.BOOKS_BUCKET.head(key);
+    if (!headObj) throw new HttpError('Không tìm thấy tệp trong R2.', 404);
+    const headers = new Headers();
+    headObj.writeHttpMetadata(headers);
+    headers.set('ETag', headObj.httpEtag);
+    headers.set('Accept-Ranges', 'bytes');
+    headers.set('Cache-Control', 'private, max-age=31536000, immutable');
+    headers.set('Content-Length', String(headObj.size));
+    applyCors(headers);
+    return new Response(null, { status: 200, headers });
+  }
+
   const rangeHeader = request.headers.get('Range');
   const object = await env.BOOKS_BUCKET.get(key, {
     range: request.headers,
@@ -34,30 +48,46 @@ export async function streamR2FileResponse(
   headers.set('ETag', object.httpEtag);
   headers.set('Accept-Ranges', 'bytes');
   headers.set('Cache-Control', 'private, max-age=31536000, immutable');
-  applyCors(headers,);
+  applyCors(headers);
 
   if (!('body' in object) || !object.body) {
-    return new Response(null, { status: 304, headers });
+    const hasPreconditionFailure =
+      Boolean(request.headers.get('If-Match')) ||
+      Boolean(request.headers.get('If-Unmodified-Since'));
+    return new Response(null, { status: hasPreconditionFailure ? 412 : 304, headers });
   }
 
-  if (rangeHeader && object.range) {
+  if (rangeHeader) {
     let start: number | null = null;
     let length: number | null = null;
-    if ('suffix' in object.range && typeof object.range.suffix === 'number') {
-      length = Math.min(object.range.suffix, object.size);
-      start = Math.max(0, object.size - length);
-    } else if ('offset' in object.range || 'length' in object.range) {
-      start = object.range.offset ?? 0;
-      length = object.range.length ?? Math.max(0, object.size - start);
+    if (object.range) {
+      if ('suffix' in object.range && typeof object.range.suffix === 'number') {
+        length = Math.min(object.range.suffix, object.size);
+        start = Math.max(0, object.size - length);
+      } else if ('offset' in object.range || 'length' in object.range) {
+        start = object.range.offset ?? 0;
+        length = object.range.length ?? Math.max(0, object.size - start);
+      }
     }
-    if (start !== null && length !== null && length > 0) {
-      const end = start + length - 1;
-      headers.set('Content-Range', `bytes ${start}-${end}/${object.size}`);
-      headers.set('Content-Length', String(length));
-      return new Response(request.method === 'HEAD' ? null : object.body, { status: 206, headers });
+    if (
+      start === null ||
+      length === null ||
+      object.size <= 0 ||
+      start < 0 ||
+      start >= object.size ||
+      length <= 0
+    ) {
+      await object.body.cancel().catch(() => undefined);
+      headers.set('Content-Range', `bytes */${object.size}`);
+      return new Response(null, { status: 416, headers });
     }
+    const clampedLength = Math.min(length, object.size - start);
+    const end = start + clampedLength - 1;
+    headers.set('Content-Range', `bytes ${start}-${end}/${object.size}`);
+    headers.set('Content-Length', String(clampedLength));
+    return new Response(object.body, { status: 206, headers });
   }
 
   headers.set('Content-Length', String(object.size));
-  return new Response(request.method === 'HEAD' ? null : object.body, { status: 200, headers });
+  return new Response(object.body, { status: 200, headers });
 }

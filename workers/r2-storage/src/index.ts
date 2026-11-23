@@ -6,28 +6,22 @@ import {
   verifyAuth,
 } from './auth';
 import { tryHandleAdminRoutes } from './adminRoutes';
+import {
+  handleBookCoverUpload,
+  handleBookFileUpload,
+  handleBookMetadataPatch,
+} from './bookUploadRoutes';
 import { handleDiscordInteraction, isValidDiscordPublicKeyFormat } from './discord';
 import {
-  ACCEPTED_FILE_TYPES,
-  type BookRow,
-  CONTENT_TYPES,
   type Env,
-  MAX_COVER_BYTES,
-  MAX_DESCRIPTION_LENGTH,
-  MAX_SHELF_NAME_LENGTH,
-  MAX_SINGLE_FILE_BYTES,
-  MAX_TEXT_FIELD_LENGTH,
-  assertQuota,
   bulkDeleteBooks,
   bulkUpdateBooksShelf,
   deleteReadingProgress,
   deleteSingleBook,
   getLimitBytes,
   getStorageStats,
-  isValidId,
   listBooksAndProgress,
   renameShelfCaseInsensitive,
-  safeDecodeHeader,
   upsertReadingProgress,
   upsertShelfCover,
   upsertShelfFavorite,
@@ -44,6 +38,11 @@ import {
   uploadBookGuestPack,
 } from './guestPack';
 import { searchGuestBookChapters } from './guestSearch';
+import {
+  assertLoginNotRateLimited,
+  clearLoginFailures,
+  recordLoginFailure,
+} from './rateLimitDb';
 import { streamR2FileResponse } from './r2Files';
 import { upsertShelfTags } from './shelfTagsDb';
 
@@ -64,7 +63,7 @@ function applyCors(headers: Headers, origin: string | null) {
   headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   headers.set(
     'Access-Control-Allow-Headers',
-    'Authorization, Content-Type, Range, X-Book-Title, X-Book-Author, X-Book-Shelf, X-Cover-Color, X-File-Type, X-File-Size',
+    'Authorization, Content-Type, Range, If-None-Match, If-Modified-Since, If-Match, If-Unmodified-Since, X-Book-Title, X-Book-Author, X-Book-Shelf, X-Cover-Color, X-File-Type, X-File-Size',
   );
   headers.set(
     'Access-Control-Expose-Headers',
@@ -123,19 +122,29 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
     return handleDiscordInteraction(request, env);
   }
 
-  // Passcode (owner 30d) or Discord 12-char key (guest 24h) login
-  if (pathname === '/api/auth/login' && request.method === 'POST') {
+  // Passcode (owner 30d) or Discord 12-char key (guest 24h) login + chống brute-force theo IP (M-8)
+  if (normalizedPath === '/api/auth/login' && request.method === 'POST') {
+    const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
+    await assertLoginNotRateLimited(env.DB, clientIp);
     const body = (await request.json().catch(() => null)) as { passcode?: unknown } | null;
     const passcode = typeof body?.passcode === 'string' ? body.passcode : '';
     const userAgent = request.headers.get('User-Agent') || '';
-    const session = await authenticatePasscodeOrKey(passcode, env, env.DB, userAgent);
-    return jsonResponse(session, 200, origin);
+    try {
+      const session = await authenticatePasscodeOrKey(passcode, env, env.DB, userAgent);
+      await clearLoginFailures(env.DB, clientIp);
+      return jsonResponse(session, 200, origin);
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 401) {
+        await recordLoginFailure(env.DB, clientIp).catch(() => undefined);
+      }
+      throw err;
+    }
   }
 
   // All routes below require valid auth token (fail-closed unless ALLOW_INSECURE_DEV_NO_AUTH="true")
   const auth = await verifyAuth(request, env, env.DB);
 
-  if (pathname === '/api/auth/session' && request.method === 'GET') {
+  if (normalizedPath === '/api/auth/session' && request.method === 'GET') {
     return jsonResponse(
       {
         ok: true,
@@ -149,14 +158,14 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   }
 
   // Storage usage (Owner only)
-  if (pathname === '/api/storage' && request.method === 'GET') {
+  if (normalizedPath === '/api/storage' && request.method === 'GET') {
     requireOwner(auth);
     const storage = await getStorageStats(env);
     return jsonResponse(storage, 200, origin);
   }
 
   // List books + isolated user progress + storage
-  if (pathname === '/api/books' && request.method === 'GET') {
+  if (normalizedPath === '/api/books' && request.method === 'GET') {
     const state = await listBooksAndProgress(env, auth);
     return jsonResponse(state, 200, origin);
   }
@@ -238,205 +247,27 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   if (adminRes) return adminRes;
 
   // Stream upload a book file directly into R2 with 9.0 GB hard limit guard (Owner only)
-  const fileUploadMatch = pathname.match(/^\/api\/books\/([^/]+)\/file$/);
+  const fileUploadMatch = normalizedPath.match(/^\/api\/books\/([^/]+)\/file$/);
   if (fileUploadMatch && request.method === 'PUT') {
     requireOwner(auth);
-    const bookId = fileUploadMatch[1];
-    if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
-
-    const fileType = (request.headers.get('X-File-Type') || '').toLowerCase();
-    if (!ACCEPTED_FILE_TYPES.has(fileType)) {
-      throw new HttpError('Chỉ hỗ trợ định dạng EPUB hoặc DOCX.', 400);
-    }
-
-    const existingBook = await env.DB.prepare('SELECT id FROM books WHERE id = ?')
-      .bind(bookId)
-      .first<{ id: string }>();
-    if (existingBook) {
-      throw new HttpError('Sách với ID này đã tồn tại.', 409);
-    }
-
-    const declaredSize = Number(
-      request.headers.get('X-File-Size') || request.headers.get('Content-Length') || 0,
-    );
-    if (!Number.isFinite(declaredSize) || declaredSize <= 0 || declaredSize > MAX_SINGLE_FILE_BYTES) {
-      throw new HttpError('Kích thước tệp phải nằm trong khoảng 1 byte đến 350 MB.', 400);
-    }
-    if (!request.body) throw new HttpError('Thiếu nội dung tệp.', 400);
-
-    const storage = await getStorageStats(env);
-    assertQuota(storage.usedBytes, declaredSize, storage.limitBytes);
-
-    const title = safeDecodeHeader(
-      request.headers.get('X-Book-Title'),
-      'Sách chưa đặt tên',
-    ).slice(0, MAX_TEXT_FIELD_LENGTH);
-    const author = safeDecodeHeader(
-      request.headers.get('X-Book-Author'),
-      'Không rõ tác giả',
-    ).slice(0, MAX_TEXT_FIELD_LENGTH);
-    const shelf = safeDecodeHeader(
-      request.headers.get('X-Book-Shelf'),
-      'Kho chưa phân loại',
-    ).slice(0, MAX_SHELF_NAME_LENGTH);
-    const coverColor = safeDecodeHeader(request.headers.get('X-Cover-Color'), '#4f46e5').slice(0, 32);
-    const fileKey = `books/${bookId}.${fileType}`;
-    const contentType = CONTENT_TYPES[fileType] || 'application/octet-stream';
-
-    const putResult = await env.BOOKS_BUCKET.put(fileKey, request.body, {
-      httpMetadata: { contentType },
-    });
-    if (!putResult) throw new HttpError('Không thể ghi tệp vào R2.', 500);
-
-    const freshStorage = await getStorageStats(env);
-    if (freshStorage.usedBytes + putResult.size > freshStorage.limitBytes) {
-      await env.BOOKS_BUCKET.delete(fileKey);
-      assertQuota(freshStorage.usedBytes, putResult.size, freshStorage.limitBytes);
-    }
-
-    const createdAt = new Date().toISOString();
-    try {
-      await env.DB.prepare(
-        `INSERT INTO books (id, title, author, shelf, cover_color, file_key, file_type, file_size, cover_size, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-      )
-        .bind(bookId, title, author, shelf, coverColor, fileKey, fileType, putResult.size, createdAt)
-        .run();
-    } catch (dbErr) {
-      const committed = await env.DB.prepare('SELECT id FROM books WHERE id = ?')
-        .bind(bookId)
-        .first<{ id: string }>()
-        .catch(() => null);
-      if (!committed) {
-        await env.BOOKS_BUCKET.delete(fileKey);
-      }
-      throw dbErr;
-    }
-
-    const createdBook = await env.DB.prepare('SELECT * FROM books WHERE id = ?')
-      .bind(bookId)
-      .first<BookRow>();
-    const updatedStorage = await getStorageStats(env);
-    return jsonResponse({ book: createdBook, storage: updatedStorage }, 201, origin);
+    const result = await handleBookFileUpload(request, env, fileUploadMatch[1]);
+    return jsonResponse(result, 201, origin);
   }
 
   // Stream upload/replace a compressed cover JPEG (Owner only)
-  const coverUploadMatch = pathname.match(/^\/api\/books\/([^/]+)\/cover$/);
+  const coverUploadMatch = normalizedPath.match(/^\/api\/books\/([^/]+)\/cover$/);
   if (coverUploadMatch && request.method === 'PUT') {
     requireOwner(auth);
-    const bookId = coverUploadMatch[1];
-    if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
-
-    const existing = await env.DB.prepare('SELECT * FROM books WHERE id = ?')
-      .bind(bookId)
-      .first<BookRow>();
-    if (!existing) throw new HttpError('Không tìm thấy sách.', 404);
-
-    const declaredSize = Number(
-      request.headers.get('X-File-Size') || request.headers.get('Content-Length') || 0,
-    );
-    if (!Number.isFinite(declaredSize) || declaredSize <= 0 || declaredSize > MAX_COVER_BYTES) {
-      throw new HttpError('Ảnh bìa phải nhỏ hơn 5 MB.', 400);
-    }
-    if (!request.body) throw new HttpError('Thiếu dữ liệu ảnh bìa.', 400);
-
-    const storage = await getStorageStats(env);
-    assertQuota(storage.usedBytes - existing.cover_size, declaredSize, storage.limitBytes);
-
-    const coverKey = `covers/${bookId}-${Date.now()}-v2.jpg`;
-    const putResult = await env.BOOKS_BUCKET.put(coverKey, request.body, {
-      httpMetadata: { contentType: 'image/jpeg' },
-    });
-    if (!putResult) throw new HttpError('Không thể lưu ảnh bìa vào R2.', 500);
-
-    const freshStorage = await getStorageStats(env);
-    if (
-      putResult.size > MAX_COVER_BYTES ||
-      freshStorage.usedBytes - existing.cover_size + putResult.size > freshStorage.limitBytes
-    ) {
-      await env.BOOKS_BUCKET.delete(coverKey);
-      if (putResult.size > MAX_COVER_BYTES) {
-        throw new HttpError('Ảnh bìa phải nhỏ hơn 5 MB.', 400);
-      }
-      assertQuota(freshStorage.usedBytes - existing.cover_size, putResult.size, freshStorage.limitBytes);
-    }
-
-    try {
-      await env.DB.prepare('UPDATE books SET cover_key = ?, cover_size = ? WHERE id = ?')
-        .bind(coverKey, putResult.size, bookId)
-        .run();
-    } catch (dbErr) {
-      await env.BOOKS_BUCKET.delete(coverKey);
-      throw dbErr;
-    }
-
-    if (existing.cover_key && existing.cover_key !== coverKey) {
-      await env.BOOKS_BUCKET.delete(existing.cover_key).catch(() => undefined);
-    }
-
-    const updatedBook = await env.DB.prepare('SELECT * FROM books WHERE id = ?')
-      .bind(bookId)
-      .first<BookRow>();
-    const updatedStorage = await getStorageStats(env);
-    return jsonResponse({ book: updatedBook, storage: updatedStorage }, 200, origin);
+    const result = await handleBookCoverUpload(request, env, coverUploadMatch[1]);
+    return jsonResponse(result, 200, origin);
   }
 
   // Update book metadata (Owner only)
-  const bookItemMatch = pathname.match(/^\/api\/books\/([^/]+)$/);
+  const bookItemMatch = normalizedPath.match(/^\/api\/books\/([^/]+)$/);
   if (bookItemMatch && request.method === 'PATCH') {
     requireOwner(auth);
-    const bookId = bookItemMatch[1];
-    if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
-
-    const body = (await request.json().catch(() => null)) as Partial<{
-      title: string;
-      author: string;
-      shelf: string;
-      description: string | null;
-      cover_color: string;
-    }> | null;
-    if (!body) throw new HttpError('Dữ liệu cập nhật không hợp lệ.', 400);
-
-    const fields: string[] = [];
-    const values: unknown[] = [];
-    if (typeof body.title === 'string' && body.title.trim()) {
-      fields.push('title = ?');
-      values.push(body.title.trim().slice(0, MAX_TEXT_FIELD_LENGTH));
-    }
-    if (typeof body.author === 'string' && body.author.trim()) {
-      fields.push('author = ?');
-      values.push(body.author.trim().slice(0, MAX_TEXT_FIELD_LENGTH));
-    }
-    if (typeof body.shelf === 'string' && body.shelf.trim()) {
-      fields.push('shelf = ?');
-      values.push(body.shelf.trim().slice(0, MAX_SHELF_NAME_LENGTH));
-    }
-    if (body.description !== undefined) {
-      if (body.description !== null && typeof body.description !== 'string') {
-        throw new HttpError('Mô tả sách không hợp lệ.', 400);
-      }
-      const normalizedDescription =
-        typeof body.description === 'string'
-          ? body.description.trim().slice(0, MAX_DESCRIPTION_LENGTH) || null
-          : null;
-      fields.push('description = ?');
-      values.push(normalizedDescription);
-    }
-    if (typeof body.cover_color === 'string' && body.cover_color.trim()) {
-      fields.push('cover_color = ?');
-      values.push(body.cover_color.trim().slice(0, 32));
-    }
-    if (fields.length === 0) throw new HttpError('Không có trường nào cần cập nhật.', 400);
-
-    values.push(bookId);
-    await env.DB.prepare(`UPDATE books SET ${fields.join(', ')} WHERE id = ?`)
-      .bind(...values)
-      .run();
-    const updatedBook = await env.DB.prepare('SELECT * FROM books WHERE id = ?')
-      .bind(bookId)
-      .first<BookRow>();
-    if (!updatedBook) throw new HttpError('Không tìm thấy sách.', 404);
-    return jsonResponse({ book: updatedBook }, 200, origin);
+    const result = await handleBookMetadataPatch(request, env, bookItemMatch[1]);
+    return jsonResponse(result, 200, origin);
   }
 
   // Delete a single book + cleanly delete R2 file, cover & guest-pack (Owner only)
@@ -447,7 +278,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   }
 
   // Bulk delete books + cleanly delete all R2 objects (Owner only)
-  if (pathname === '/api/books/bulk-delete' && request.method === 'POST') {
+  if (normalizedPath === '/api/books/bulk-delete' && request.method === 'POST') {
     requireOwner(auth);
     const body = (await request.json().catch(() => null)) as { ids?: unknown } | null;
     const result = await bulkDeleteBooks(env, body?.ids);
@@ -455,7 +286,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   }
 
   // Bulk move books to target shelf (Owner only)
-  if (pathname === '/api/books/bulk-shelf' && request.method === 'POST') {
+  if (normalizedPath === '/api/books/bulk-shelf' && request.method === 'POST') {
     requireOwner(auth);
     const body = (await request.json().catch(() => null)) as {
       ids?: unknown;
@@ -466,7 +297,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   }
 
   // Bulk rename shelf (Owner only)
-  if (pathname === '/api/shelves/rename' && request.method === 'POST') {
+  if (normalizedPath === '/api/shelves/rename' && request.method === 'POST') {
     requireOwner(auth);
     const body = (await request.json().catch(() => null)) as {
       oldName?: unknown;
@@ -477,7 +308,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   }
 
   // Upsert or reset representative shelf cover book ID (Owner only, D-025)
-  if (pathname === '/api/shelves/cover' && request.method === 'PUT') {
+  if (normalizedPath === '/api/shelves/cover' && request.method === 'PUT') {
     requireOwner(auth);
     const body = (await request.json().catch(() => null)) as {
       shelfName?: unknown;
@@ -488,7 +319,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   }
 
   // Pin / unpin favorite shelf at top of Home & Library tabs (Owner only, D-025)
-  if (pathname === '/api/shelves/favorite' && request.method === 'PUT') {
+  if (normalizedPath === '/api/shelves/favorite' && request.method === 'PUT') {
     requireOwner(auth);
     const body = (await request.json().catch(() => null)) as {
       shelfName?: unknown;
@@ -499,7 +330,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   }
 
   // Upsert tags for a shelf / series (Owner only, D-032)
-  if (pathname === '/api/shelves/tags' && request.method === 'PUT') {
+  if (normalizedPath === '/api/shelves/tags' && request.method === 'PUT') {
     requireOwner(auth);
     const body = (await request.json().catch(() => null)) as {
       shelfName?: unknown;
@@ -510,7 +341,7 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   }
 
   // Upsert / delete reading progress (isolated per Owner vs Discord Guest, D-026)
-  const progressMatch = pathname.match(/^\/api\/progress\/([^/]+)$/);
+  const progressMatch = normalizedPath.match(/^\/api\/progress\/([^/]+)$/);
   if (progressMatch && request.method === 'PUT') {
     const body = (await request.json().catch(() => null)) as Parameters<
       typeof upsertReadingProgress
@@ -525,8 +356,8 @@ async function handleApi(request: Request, env: Env, origin: string | null): Pro
   }
 
   // Stream R2 file (Owner ONLY, D-028) or cover thumbnail (Owner + Guest)
-  if (pathname.startsWith('/api/files/') && (request.method === 'GET' || request.method === 'HEAD')) {
-    return streamR2FileResponse(request, pathname, env, auth, (h) => applyCors(h, origin));
+  if (normalizedPath.startsWith('/api/files/') && (request.method === 'GET' || request.method === 'HEAD')) {
+    return streamR2FileResponse(request, normalizedPath, env, auth, (h) => applyCors(h, origin));
   }
 
   throw new HttpError('Không tìm thấy endpoint.', 404);

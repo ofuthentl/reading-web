@@ -14,7 +14,10 @@ export interface ProgressRow {
   updated_at: number;
 }
 
+const ensuredProgressDbs = new WeakSet<D1Database>();
+
 export async function ensureGuestProgressTable(env: Env): Promise<void> {
+  if (ensuredProgressDbs.has(env.DB)) return;
   await env.DB.batch([
     env.DB.prepare(
       `CREATE TABLE IF NOT EXISTS guest_reading_progress (
@@ -35,7 +38,16 @@ export async function ensureGuestProgressTable(env: Env): Promise<void> {
       `CREATE INDEX IF NOT EXISTS idx_guest_progress_user_updated
        ON guest_reading_progress(discord_user_id, updated_at DESC)`,
     ),
+    env.DB.prepare(
+      `CREATE INDEX IF NOT EXISTS idx_guest_progress_updated_at
+       ON guest_reading_progress(updated_at DESC)`,
+    ),
+    env.DB.prepare(
+      `CREATE INDEX IF NOT EXISTS idx_guest_progress_book_id
+       ON guest_reading_progress(book_id)`,
+    ),
   ]);
+  ensuredProgressDbs.add(env.DB);
 }
 
 export async function upsertReadingProgress(
@@ -43,18 +55,21 @@ export async function upsertReadingProgress(
   auth: AuthContext,
   bookId: string,
   body: {
-    chapterId?: string;
-    chapterIndex?: number;
-    chapterTitle?: string;
-    totalChapters?: number;
-    scrollRatio?: number;
-    scrollTop?: number;
-    completed?: boolean;
-    updatedAt?: number;
+    chapterId?: unknown;
+    chapterIndex?: unknown;
+    chapterTitle?: unknown;
+    totalChapters?: unknown;
+    scrollRatio?: unknown;
+    scrollTop?: unknown;
+    completed?: unknown;
+    updatedAt?: unknown;
   } | null,
 ) {
   if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
-  if (!body?.chapterId) throw new HttpError('Thiếu thông tin chương đang đọc.', 400);
+  if (typeof body?.chapterId !== 'string' || !body.chapterId.trim()) {
+    throw new HttpError('Thiếu thông tin chương đang đọc.', 400);
+  }
+  const chapterId = body.chapterId.trim().slice(0, 120);
 
   const existingBook = await env.DB.prepare('SELECT id FROM books WHERE id = ?')
     .bind(bookId)
@@ -65,16 +80,30 @@ export async function upsertReadingProgress(
     await assertGuestBookAccess(env.DB, auth, bookId);
   }
 
-  const updatedAt = typeof body.updatedAt === 'number' ? body.updatedAt : Date.now();
+  // Luôn dùng đồng hồ máy chủ để tránh client bơm mốc thời gian tương lai làm sai lệch bảng xếp hạng tuần (vá M-1)
+  const updatedAt = Date.now();
+  const rawChapterIndex = Number(body.chapterIndex ?? 0);
+  const chapterIndex =
+    Number.isFinite(rawChapterIndex) && rawChapterIndex >= 0
+      ? Math.min(100_000, Math.floor(rawChapterIndex))
+      : 0;
+  const rawScrollRatio = Number(body.scrollRatio ?? 0);
+  const scrollRatio = Number.isFinite(rawScrollRatio)
+    ? Math.min(1, Math.max(0, rawScrollRatio))
+    : 0;
+  const rawScrollTop = Number(body.scrollTop ?? 0);
+  const scrollTop = Number.isFinite(rawScrollTop)
+    ? Math.min(10_000_000, Math.max(0, rawScrollTop))
+    : 0;
+  const completed = body.completed === true ? 1 : 0;
   const chapterTitle =
     typeof body.chapterTitle === 'string' && body.chapterTitle.trim()
       ? body.chapterTitle.trim().slice(0, 200)
       : null;
+  const rawTotalChapters = Number(body.totalChapters ?? 0);
   const totalChapters =
-    typeof body.totalChapters === 'number' &&
-    Number.isFinite(body.totalChapters) &&
-    body.totalChapters > 0
-      ? Math.floor(body.totalChapters)
+    Number.isFinite(rawTotalChapters) && rawTotalChapters > 0
+      ? Math.min(100_000, Math.floor(rawTotalChapters))
       : null;
 
   if (auth.role === 'owner') {
@@ -93,13 +122,13 @@ export async function upsertReadingProgress(
     )
       .bind(
         bookId,
-        body.chapterId,
-        Number(body.chapterIndex ?? 0),
+        chapterId,
+        chapterIndex,
         chapterTitle,
         totalChapters,
-        Number(body.scrollRatio ?? 0),
-        Number(body.scrollTop ?? 0),
-        body.completed ? 1 : 0,
+        scrollRatio,
+        scrollTop,
+        completed,
         updatedAt,
       )
       .run();
@@ -121,13 +150,13 @@ export async function upsertReadingProgress(
       .bind(
         auth.userId,
         bookId,
-        body.chapterId,
-        Number(body.chapterIndex ?? 0),
+        chapterId,
+        chapterIndex,
         chapterTitle,
         totalChapters,
-        Number(body.scrollRatio ?? 0),
-        Number(body.scrollTop ?? 0),
-        body.completed ? 1 : 0,
+        scrollRatio,
+        scrollTop,
+        completed,
         updatedAt,
       )
       .run();
@@ -141,13 +170,13 @@ export async function deleteReadingProgress(env: Env, auth: AuthContext, bookId:
   if (auth.role === 'owner') {
     await env.DB.prepare('DELETE FROM reading_progress WHERE book_id = ?').bind(bookId).run();
   } else {
-    await assertGuestBookAccess(env.DB, auth, bookId);
+    // Cho phép khách tự xoá tiến độ cũ của chính mình kể cả khi bộ truyện sau này bị khoá giới hạn (L-5)
+    await ensureGuestProgressTable(env);
     await env.DB.prepare(
       'DELETE FROM guest_reading_progress WHERE discord_user_id = ? AND book_id = ?',
     )
       .bind(auth.userId, bookId)
-      .run()
-      .catch(() => undefined);
+      .run();
   }
   return { ok: true };
 }

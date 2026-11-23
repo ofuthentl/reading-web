@@ -28,10 +28,12 @@ export async function ensureShelfTagsSchema(db: D1Database): Promise<void> {
   const cols = await db.prepare('PRAGMA table_info(shelf_prefs)').all<{ name: string }>();
   const hasTagsCol = (cols.results || []).some((col) => col.name === 'tags_json');
   if (!hasTagsCol) {
-    await db
-      .prepare('ALTER TABLE shelf_prefs ADD COLUMN tags_json TEXT')
-      .run()
-      .catch(() => undefined);
+    try {
+      await db.prepare('ALTER TABLE shelf_prefs ADD COLUMN tags_json TEXT').run();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.toLowerCase().includes('duplicate column')) throw err;
+    }
   }
 
   verifiedTagsSchemaDbs.add(db);

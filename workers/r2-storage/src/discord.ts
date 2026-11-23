@@ -80,6 +80,8 @@ export function isValidDiscordPublicKeyFormat(publicKeyHex: string | undefined):
   return clean.length === 64 && /^[0-9a-fA-F]{64}$/.test(clean);
 }
 
+const DISCORD_SIGNATURE_MAX_AGE_SEC = 300; // Chống replay webhook cũ quá 5 phút (H-4)
+
 export async function verifyDiscordSignature(
   rawBody: string,
   signatureHex: string | null,
@@ -87,7 +89,15 @@ export async function verifyDiscordSignature(
   publicKeyHex: string | undefined,
 ): Promise<boolean> {
   const cleanPubKey = cleanSecret(publicKeyHex);
-  if (!cleanPubKey || !signatureHex || timestamp === null) return false;
+  if (!cleanPubKey || !signatureHex || timestamp === null || !/^\d{9,12}$/.test(timestamp)) {
+    return false;
+  }
+
+  const tsSec = Number(timestamp);
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(tsSec) || Math.abs(nowSec - tsSec) > DISCORD_SIGNATURE_MAX_AGE_SEC) {
+    return false;
+  }
 
   const pubKeyBytes = hexToBytes(cleanPubKey);
   const sigBytes = hexToBytes(signatureHex.trim());
