@@ -1,5 +1,5 @@
 import { type CSSProperties, useEffect, useState } from 'react';
-import { Check, CheckCircle2, Info, Lock, Pencil, X } from 'lucide-react';
+import { Bookmark, Check, CheckCircle2, Info, Lock, Pencil, X } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
 import { formatBytes } from '@/lib/api';
 import {
@@ -39,6 +39,7 @@ function formatRelativeTime(timestamp: number): string {
 interface BookCardProps {
   book: Book;
   progress?: ReadingProgress;
+  isPlanToRead?: boolean;
   selectionMode: boolean;
   selected: boolean;
   sessionRole?: AuthRole;
@@ -49,11 +50,13 @@ interface BookCardProps {
   onEdit?: (book: Book) => void;
   onInspect?: (book: Book) => void;
   onDismissContinue?: (book: Book) => void;
+  onTogglePlanToRead?: (book: Book, nextPlanToRead: boolean) => void;
 }
 
 export function BookCard({
   book,
   progress,
+  isPlanToRead = false,
   selectionMode,
   selected,
   sessionRole,
@@ -64,6 +67,7 @@ export function BookCard({
   onEdit,
   onInspect,
   onDismissContinue,
+  onTogglePlanToRead,
 }: BookCardProps) {
   const { cardRef, isNearViewport, isRevealed } = useCardReveal<HTMLDivElement>();
   const [imgFailed, setImgFailed] = useState(false);
@@ -81,6 +85,7 @@ export function BookCard({
   const chapterLabel = getProgressChapterLabel(progress);
   const isCompleted = Boolean(progress?.completed);
   const isMemberLocked = sessionRole === 'guest' && Boolean(book.guest_locked);
+  const canTogglePtr = Boolean(onTogglePlanToRead && !isMemberLocked);
   const guestLockLabel = getGuestLockLabel(book, sessionRole);
   const isNew = !guestLockLabel && isRecentBookUpload(book.created_at);
   const staggerDelayMs = (staggerIndex % 4) * 28;
@@ -216,9 +221,28 @@ export function BookCard({
         </span>
       )}
 
-      {/* Cụm nút Xem giới thiệu & Chỉnh sửa kín đáo */}
-      {!selectionMode && !compact && (onInspect || onEdit) && (
-        <div className="touch-action-visible absolute left-1.5 top-1.5 flex items-center gap-1 opacity-85 transition-opacity focus-within:opacity-100 group-hover:opacity-100 sm:opacity-0">
+      {/* Cụm nút Xem giới thiệu, Đọc sau & Chỉnh sửa trên bìa */}
+      {!selectionMode && !compact && (onInspect || onEdit || canTogglePtr) && (
+        <div className="absolute left-1.5 top-1.5 flex items-center gap-1">
+          {canTogglePtr && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onTogglePlanToRead!(book, !isPlanToRead);
+              }}
+              aria-label={isPlanToRead ? `Bỏ Đọc sau ${book.title}` : `Lưu Đọc sau ${book.title}`}
+              aria-pressed={isPlanToRead}
+              title={isPlanToRead ? 'Gỡ tập này khỏi Đọc sau' : 'Lưu tập này vào Đọc sau'}
+              className={`rounded-md border p-1.5 transition-all ${
+                isPlanToRead
+                  ? 'border-sky-400/55 bg-[#16120f]/88 text-sky-300 opacity-100 shadow-sm hover:bg-[#16120f]'
+                  : 'touch-action-visible border-[#f3e9d7]/20 bg-[#16120f]/75 text-[#f3e9d7] opacity-85 hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0'
+              }`}
+            >
+              <Bookmark className={`h-3.5 w-3.5 ${isPlanToRead ? 'fill-sky-300' : ''}`} />
+            </button>
+          )}
           {onInspect && (
             <button
               type="button"
@@ -228,7 +252,7 @@ export function BookCard({
               }}
               aria-label={`Xem giới thiệu ${book.title}`}
               title="Xem giới thiệu & tiến độ"
-              className="rounded-md border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] transition-colors hover:bg-[#16120f]"
+              className="touch-action-visible rounded-md border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] opacity-85 transition-opacity hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0"
             >
               <Info className="h-3.5 w-3.5" />
             </button>
@@ -242,7 +266,7 @@ export function BookCard({
               }}
               aria-label={`Chỉnh sửa ${book.title}`}
               title="Chỉnh sửa thông tin"
-              className="rounded-md border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] transition-colors hover:bg-[#16120f]"
+              className="touch-action-visible rounded-md border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] opacity-85 transition-opacity hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0"
             >
               <Pencil className="h-3.5 w-3.5" />
             </button>
@@ -380,11 +404,18 @@ export function BookCard({
           {displayTitle}
         </h3>
         <p className="truncate text-xs text-ink-muted">{displayAuthor}</p>
-        {percent !== null && (
+        {percent !== null ? (
           <div className="flex items-center justify-between gap-1.5 pt-0.5 text-[11px] font-medium text-crimson-accent">
             <span className="truncate">{isCompleted ? 'Đã đọc xong' : chapterLabel}</span>
             <span className="shrink-0">{percent}%</span>
           </div>
+        ) : (
+          isPlanToRead && (
+            <div className="flex items-center gap-1.5 pt-0.5 text-[11px] font-medium text-sky-700 dark:text-sky-400">
+              <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-600 dark:bg-sky-400" />
+              <span className="truncate">Để dành đọc sau</span>
+            </div>
+          )
         )}
       </div>
     </div>

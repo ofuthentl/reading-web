@@ -34,6 +34,7 @@ export interface LibraryAdvancedFilterProps {
 const STATUS_OPTIONS: ReadonlyArray<{ id: LibraryStatusFilter; label: string }> = [
   { id: 'all', label: 'Tất cả' },
   { id: 'reading', label: 'Đang đọc' },
+  { id: 'plan_to_read', label: 'Đọc sau' },
   { id: 'unread', label: 'Chưa đọc' },
   { id: 'completed', label: 'Hoàn thành' },
 ];

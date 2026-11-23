@@ -85,10 +85,37 @@ export type ReaderSettings = {
 
 export type ViewMode = '3d' | '2d';
 export type LibraryTab = 'home' | 'library' | 'support';
-export type LibraryStatusFilter = 'all' | 'reading' | 'unread' | 'completed';
+export type LibraryStatusFilter = 'all' | 'reading' | 'unread' | 'plan_to_read' | 'completed';
 export type LibrarySortMode = 'title_asc' | 'recent_upload' | 'recent_read' | 'volume_desc';
 export type TagMatchMode = 'all' | 'any';
 export type TagFilterState = 'none' | 'include' | 'exclude';
+
+export type CustomCollection = {
+  id: string;
+  name: string;
+  description: string | null;
+  sortOrder: number;
+  shelfKeys: string[];
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AniListNovelCandidate = {
+  anilistId: number;
+  primaryTitle: string;
+  titles: {
+    romaji: string | null;
+    english: string | null;
+    native: string | null;
+  };
+  altTitles: string[];
+  author: string | null;
+  description: string | null;
+  mappedTags: string[];
+  volumes: number | null;
+  year: number | null;
+  status: string | null;
+};
 
 export type AuthRole = 'owner' | 'guest';
 

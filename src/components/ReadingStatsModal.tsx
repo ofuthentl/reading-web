@@ -6,6 +6,7 @@ import {
   BookOpen,
   CheckCircle2,
   Clock,
+  Database,
   FileText,
   Library,
   X,
@@ -31,6 +32,7 @@ export interface ReadingStatsModalProps {
   sessionRole?: AuthRole;
   onClose: () => void;
   onOpenBook: (book: Book) => void;
+  onOpenCacheManager?: () => void;
 }
 
 function formatRecentReadTime(ts: number): string {
@@ -52,6 +54,7 @@ export function ReadingStatsModal({
   sessionRole,
   onClose,
   onOpenBook,
+  onOpenCacheManager,
 }: ReadingStatsModalProps) {
   const [activity, setActivity] = useState<ReaderActivityReport | null>(null);
   const [activityLoading, setActivityLoading] = useState(false);
@@ -128,7 +131,21 @@ export function ReadingStatsModal({
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            {sessionRole === 'owner' && onOpenCacheManager && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenCacheManager();
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-subtle/70 px-3 py-1.5 text-xs font-semibold text-ink transition hover:border-line-strong hover:bg-subtle"
+              >
+                <Database className="h-3.5 w-3.5 text-accent" />
+                <span>Bộ nhớ đệm</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setQuoteVaultOpen(true)}

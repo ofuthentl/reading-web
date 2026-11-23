@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   AuthRole,
   Book,
+  CustomCollection,
   LibrarySortMode,
   LibraryStatusFilter,
   LibraryTab,
@@ -14,17 +15,20 @@ import { computeBookProgressPercent } from '@/lib/bookMetadata';
 import {
   collectAvailableAuthors,
   matchesBookAuthor,
+  matchesBookSearchQuery,
   matchesBookStatus,
+  matchesShelfSearchQuery,
   matchesShelfStatus,
   matchesShelfTagFilters,
   normalizeSearchText,
   normalizeTagFilterKey,
   prioritizeGuestReadable,
   selectContinueReadingBooks,
+  selectWeeklyPopularBooks,
   sortShelvesByMode,
 } from '@/lib/libraryFiltering';
 import { isKnownAuthor } from '@/lib/shelfPlacement';
-import { sortShelvesFavoriteFirst } from '@/lib/shelfPrefs';
+import { sortShelvesFavoriteFirst, toShelfPrefKey } from '@/lib/shelfPrefs';
 
 export { computeBookProgressPercent, normalizeSearchText, selectContinueReadingBooks };
 
@@ -46,6 +50,13 @@ function writeStoredLibraryTab(tab: LibraryTab) {
   } catch {
     // Ignore storage quota or private mode errors
   }
+}
+
+export interface LibraryCatalogStateOptions {
+  shelfAltTitles?: Readonly<Record<string, string[]>>;
+  planToReadShelfKeys?: ReadonlySet<string>;
+  planToReadBookIds?: ReadonlySet<string>;
+  collections?: readonly CustomCollection[];
 }
 
 export interface LibraryViewState {
@@ -77,6 +88,8 @@ export interface LibraryViewState {
   setSortMode: (value: LibrarySortMode) => void;
   activeShelfKey: string | null;
   setActiveShelfKey: (key: string | null) => void;
+  activeCollectionId: string | null;
+  setActiveCollectionId: (id: string | null) => void;
   selectionMode: boolean;
   selectedIds: Set<string>;
   allShelves: ShelfGroup[];
@@ -104,7 +117,13 @@ export function useLibraryViewState(
   weeklyPopularIds?: readonly string[],
   sessionRole?: AuthRole,
   shelfTags?: Readonly<Record<string, string[]>>,
+  catalogOptions?: LibraryCatalogStateOptions,
 ): LibraryViewState {
+  const shelfAltTitles = catalogOptions?.shelfAltTitles;
+  const planToReadShelfKeys = catalogOptions?.planToReadShelfKeys;
+  const planToReadBookIds = catalogOptions?.planToReadBookIds;
+  const collections = catalogOptions?.collections;
+
   const [activeTab, setActiveTabState] = useState<LibraryTab>(readStoredLibraryTab);
   const [openedLibraryShelfKey, setOpenedLibraryShelfKey] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -115,6 +134,7 @@ export function useLibraryViewState(
   const [statusFilter, setStatusFilter] = useState<LibraryStatusFilter>('all');
   const [sortMode, setSortMode] = useState<LibrarySortMode>('title_asc');
   const [activeShelfKey, setActiveShelfKey] = useState<string | null>(null);
+  const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
@@ -138,6 +158,19 @@ export function useLibraryViewState(
       return changed ? next : prev;
     });
   }, [books]);
+
+  useEffect(() => {
+    if (activeCollectionId && collections && !collections.some((c) => c.id === activeCollectionId)) {
+      setActiveCollectionId(null);
+    }
+  }, [activeCollectionId, collections]);
+
+  const activeCollectionShelfSet = useMemo(() => {
+    if (!activeCollectionId || !collections) return null;
+    const found = collections.find((c) => c.id === activeCollectionId);
+    if (!found) return null;
+    return new Set(found.shelfKeys.map(toShelfPrefKey));
+  }, [activeCollectionId, collections]);
 
   const allShelves = useMemo(
     () => sortShelvesFavoriteFirst(groupBooksIntoShelves(books), favoriteShelfKeys),
@@ -189,8 +222,8 @@ export function useLibraryViewState(
   }, []);
 
   const syncRenamedShelf = useCallback((oldName: string, newName: string) => {
-    const oldKey = oldName.trim().toLocaleLowerCase('vi');
-    const newKey = newName.trim().toLocaleLowerCase('vi');
+    const oldKey = toShelfPrefKey(oldName);
+    const newKey = toShelfPrefKey(newName);
     if (!oldKey || !newKey || oldKey === newKey) return;
     setOpenedLibraryShelfKey((prev) => (prev === oldKey ? newKey : prev));
     setActiveShelfKey((prev) => (prev === oldKey ? newKey : prev));
@@ -206,35 +239,15 @@ export function useLibraryViewState(
     return prioritizeGuestReadable(sorted, sessionRole).slice(0, 10);
   }, [books, sessionRole]);
 
-  const weeklyPopularBooks = useMemo(() => {
-    if (!weeklyPopularIds || weeklyPopularIds.length === 0) {
-      return recentlyAddedBooks;
-    }
-    const bookMap = new Map(books.map((b) => [b.id, b]));
-    const picked: Book[] = [];
-    const seen = new Set<string>();
-    for (const id of weeklyPopularIds) {
-      const found = bookMap.get(id);
-      if (found && !seen.has(found.id)) {
-        seen.add(found.id);
-        picked.push(found);
-      }
-    }
-    for (const b of recentlyAddedBooks) {
-      if (picked.length >= 10) break;
-      if (!seen.has(b.id)) {
-        seen.add(b.id);
-        picked.push(b);
-      }
-    }
-    return prioritizeGuestReadable(picked, sessionRole).slice(0, 10);
-  }, [books, recentlyAddedBooks, sessionRole, weeklyPopularIds]);
+  const weeklyPopularBooks = useMemo(
+    () => selectWeeklyPopularBooks(books, recentlyAddedBooks, weeklyPopularIds, sessionRole),
+    [books, recentlyAddedBooks, sessionRole, weeklyPopularIds],
+  );
 
   const normalizedQuery = useMemo(() => normalizeSearchText(searchQuery), [searchQuery]);
   const normalizedAuthor = useMemo(() => normalizeSearchText(authorFilter), [authorFilter]);
   const includedTagKeys = useMemo(() => includedTags.map(normalizeTagFilterKey), [includedTags]);
   const excludedTagKeys = useMemo(() => excludedTags.map(normalizeTagFilterKey), [excludedTags]);
-
   const availableAuthors = useMemo(() => collectAvailableAuthors(books), [books]);
 
   const cycleTagFilter = useCallback((rawTag: string) => {
@@ -279,6 +292,7 @@ export function useLibraryViewState(
     setSearchQuery('');
     setStatusFilter('all');
     setActiveShelfKey(null);
+    setActiveCollectionId(null);
     setIncludedTags([]);
     setExcludedTags([]);
     setAuthorFilter(clean);
@@ -297,6 +311,7 @@ export function useLibraryViewState(
     setAuthorFilter('');
     setStatusFilter('all');
     setActiveShelfKey(null);
+    setActiveCollectionId(null);
     setExcludedTags([]);
     setIncludedTags([clean]);
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -304,7 +319,10 @@ export function useLibraryViewState(
 
   const libraryShelves = useMemo(() => {
     const matched = allShelves.filter((shelf) => {
-      if (!matchesShelfStatus(shelf, progress, statusFilter)) return false;
+      if (activeCollectionShelfSet && !activeCollectionShelfSet.has(shelf.key)) return false;
+      if (!matchesShelfStatus(shelf, progress, statusFilter, planToReadShelfKeys, planToReadBookIds)) {
+        return false;
+      }
       if (
         !matchesShelfTagFilters(
           shelf.key,
@@ -319,23 +337,21 @@ export function useLibraryViewState(
       if (normalizedAuthor && !shelf.books.some((b) => matchesBookAuthor(b, normalizedAuthor))) {
         return false;
       }
-      if (!normalizedQuery) return true;
-      if (normalizeSearchText(shelf.name).includes(normalizedQuery)) return true;
-      const tagsText = (shelfTags?.[shelf.key] || []).join(' ');
-      if (tagsText && normalizeSearchText(tagsText).includes(normalizedQuery)) return true;
-      return shelf.books.some((book) =>
-        normalizeSearchText(`${book.title} ${book.author}`).includes(normalizedQuery),
-      );
+      return matchesShelfSearchQuery(shelf, normalizedQuery, shelfTags, shelfAltTitles);
     });
     return sortShelvesByMode(matched, sortMode, progress, favoriteShelfKeys);
   }, [
+    activeCollectionShelfSet,
     allShelves,
     excludedTagKeys,
     favoriteShelfKeys,
     includedTagKeys,
     normalizedAuthor,
     normalizedQuery,
+    planToReadBookIds,
+    planToReadShelfKeys,
     progress,
+    shelfAltTitles,
     shelfTags,
     sortMode,
     statusFilter,
@@ -344,9 +360,11 @@ export function useLibraryViewState(
 
   const filteredBooks = useMemo(() => {
     return books.filter((book) => {
-      const shelfKey = (book.shelf || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi');
+      const shelfKey = toShelfPrefKey(book.shelf || 'Kho chưa phân loại');
       if (activeShelfKey && shelfKey !== activeShelfKey) return false;
-      if (!matchesBookStatus(book, progress, statusFilter)) return false;
+      if (!matchesBookStatus(book, progress, statusFilter, planToReadShelfKeys, planToReadBookIds)) {
+        return false;
+      }
       if (
         !matchesShelfTagFilters(
           shelfKey,
@@ -359,10 +377,7 @@ export function useLibraryViewState(
         return false;
       }
       if (!matchesBookAuthor(book, normalizedAuthor)) return false;
-      if (!normalizedQuery) return true;
-      const tagsText = (shelfTags?.[shelfKey] || []).join(' ');
-      const haystack = normalizeSearchText(`${book.title} ${book.author} ${book.shelf} ${tagsText}`);
-      return haystack.includes(normalizedQuery);
+      return matchesBookSearchQuery(book, shelfKey, normalizedQuery, shelfTags, shelfAltTitles);
     });
   }, [
     activeShelfKey,
@@ -371,7 +386,10 @@ export function useLibraryViewState(
     includedTagKeys,
     normalizedAuthor,
     normalizedQuery,
+    planToReadBookIds,
+    planToReadShelfKeys,
     progress,
+    shelfAltTitles,
     shelfTags,
     statusFilter,
     tagMatchMode,
@@ -417,6 +435,7 @@ export function useLibraryViewState(
     setExcludedTags([]);
     setStatusFilter('all');
     setActiveShelfKey(null);
+    setActiveCollectionId(null);
   }, []);
 
   const selectedBooks = useMemo(
@@ -430,6 +449,7 @@ export function useLibraryViewState(
       includedTagKeys.length > 0 ||
       excludedTagKeys.length > 0 ||
       activeShelfKey ||
+      activeCollectionId ||
       statusFilter !== 'all',
   );
 
@@ -462,6 +482,8 @@ export function useLibraryViewState(
     setSortMode,
     activeShelfKey,
     setActiveShelfKey,
+    activeCollectionId,
+    setActiveCollectionId,
     selectionMode,
     selectedIds,
     allShelves,

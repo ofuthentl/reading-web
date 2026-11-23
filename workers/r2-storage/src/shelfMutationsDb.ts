@@ -6,12 +6,19 @@ import {
   type ShelfPrefRow,
   isValidId,
 } from './booksDb';
+import { mergeCatalogRelationsOnShelfRename } from './catalogEnhancementsDb';
 import {
   cleanupOldShelfAccessAfterRename,
   prepareShelfAccessForRename,
   toShelfAccessKey,
 } from './shelfAccessDb';
-import { ensureShelfTagsSchema, mergeShelfTagsJson } from './shelfTagsDb';
+import {
+  DELETE_EMPTY_SHELF_PREFS_BY_KEY_SQL,
+  DELETE_EMPTY_SHELF_PREFS_SQL,
+  ensureShelfTagsSchema,
+  mergeShelfAltTitlesJson,
+  mergeShelfTagsJson,
+} from './shelfTagsDb';
 
 function chunkItems<T>(items: T[], chunkSize: number): T[][] {
   const chunks: T[][] = [];
@@ -34,9 +41,7 @@ export async function clearStaleShelfCoverForBook(
           'UPDATE shelf_prefs SET cover_book_id = NULL WHERE cover_book_id = ? AND shelf_key != ?',
         )
         .bind(bookId, newShelfKey),
-      db.prepare(
-        'DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0 AND tags_json IS NULL',
-      ),
+      db.prepare(DELETE_EMPTY_SHELF_PREFS_SQL),
     ])
     .catch(() => undefined);
 }
@@ -74,9 +79,7 @@ export async function bulkUpdateBooksShelf(env: Env, rawIds: unknown, rawShelf: 
       env.DB.prepare(
         `UPDATE shelf_prefs SET cover_book_id = NULL WHERE cover_book_id IN (${placeholders}) AND shelf_key != ?`,
       ).bind(...chunk, targetShelfKey),
-      env.DB.prepare(
-        'DELETE FROM shelf_prefs WHERE cover_book_id IS NULL AND is_favorite = 0 AND tags_json IS NULL',
-      ),
+      env.DB.prepare(DELETE_EMPTY_SHELF_PREFS_SQL),
     ]).catch(() => undefined);
   }
 
@@ -127,10 +130,15 @@ export async function renameShelfCaseInsensitive(
     await (async () => {
       await ensureShelfTagsSchema(env.DB);
       const existingRows = await env.DB.prepare(
-        'SELECT shelf_key, cover_book_id, is_favorite, tags_json FROM shelf_prefs WHERE shelf_key IN (?, ?)',
+        'SELECT shelf_key, cover_book_id, is_favorite, tags_json, alt_titles_json FROM shelf_prefs WHERE shelf_key IN (?, ?)',
       )
         .bind(targetKey, newKey)
-        .all<Pick<ShelfPrefRow, 'shelf_key' | 'cover_book_id' | 'is_favorite' | 'tags_json'>>();
+        .all<
+          Pick<
+            ShelfPrefRow,
+            'shelf_key' | 'cover_book_id' | 'is_favorite' | 'tags_json' | 'alt_titles_json'
+          >
+        >();
       const list = existingRows.results || [];
       const src = list.find((r) => r.shelf_key === targetKey);
       if (!src) return;
@@ -138,19 +146,23 @@ export async function renameShelfCaseInsensitive(
       const mergedCover = dest?.cover_book_id || src.cover_book_id || null;
       const mergedFav = dest?.is_favorite === 1 || src.is_favorite === 1 ? 1 : 0;
       const mergedTags = mergeShelfTagsJson(src.tags_json, dest?.tags_json);
+      const mergedAltTitles = mergeShelfAltTitlesJson(src.alt_titles_json, dest?.alt_titles_json);
       await env.DB.batch([
         env.DB.prepare(
-          `INSERT INTO shelf_prefs (shelf_key, cover_book_id, is_favorite, tags_json, updated_at)
-           VALUES (?, ?, ?, ?, ?)
+          `INSERT INTO shelf_prefs (shelf_key, cover_book_id, is_favorite, tags_json, alt_titles_json, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT(shelf_key) DO UPDATE SET
              cover_book_id = excluded.cover_book_id,
              is_favorite = excluded.is_favorite,
              tags_json = excluded.tags_json,
+             alt_titles_json = excluded.alt_titles_json,
              updated_at = excluded.updated_at`,
-        ).bind(newKey, mergedCover, mergedFav, mergedTags, Date.now()),
+        ).bind(newKey, mergedCover, mergedFav, mergedTags, mergedAltTitles, Date.now()),
         env.DB.prepare('DELETE FROM shelf_prefs WHERE shelf_key = ?').bind(targetKey),
       ]);
     })().catch(() => undefined);
+
+    await mergeCatalogRelationsOnShelfRename(env.DB, targetKey, newKey).catch(() => undefined);
 
     // Pha 2 (vá H-5): chỉ xoá rule/grants cũ sau khi toàn bộ sách đã đổi sang tên mới
     await cleanupOldShelfAccessAfterRename(env.DB, targetKey, newKey);
@@ -180,9 +192,7 @@ export async function upsertShelfCover(env: Env, rawShelfName: unknown, rawBookI
          cover_book_id = excluded.cover_book_id,
          updated_at = excluded.updated_at`,
     ).bind(shelfKey, nextBookId, updatedAt),
-    env.DB.prepare(
-      'DELETE FROM shelf_prefs WHERE shelf_key = ? AND cover_book_id IS NULL AND is_favorite = 0 AND tags_json IS NULL',
-    ).bind(shelfKey),
+    env.DB.prepare(DELETE_EMPTY_SHELF_PREFS_BY_KEY_SQL).bind(shelfKey),
   ]);
 
   return { ok: true, shelfKey, bookId: nextBookId, updatedAt };
@@ -209,9 +219,7 @@ export async function upsertShelfFavorite(env: Env, rawShelfName: unknown, rawFa
          is_favorite = excluded.is_favorite,
          updated_at = excluded.updated_at`,
     ).bind(shelfKey, isFav, updatedAt),
-    env.DB.prepare(
-      'DELETE FROM shelf_prefs WHERE shelf_key = ? AND cover_book_id IS NULL AND is_favorite = 0 AND tags_json IS NULL',
-    ).bind(shelfKey),
+    env.DB.prepare(DELETE_EMPTY_SHELF_PREFS_BY_KEY_SQL).bind(shelfKey),
   ]);
 
   return { ok: true, shelfKey, favorite: rawFavorite, updatedAt };

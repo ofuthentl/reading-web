@@ -2,6 +2,7 @@ import type {
   AuthRole,
   AuthSessionInfo,
   Book,
+  CustomCollection,
   ReadingProgress,
   SaveProgressOptions,
   ShelfAccessSummary,
@@ -94,11 +95,27 @@ function computeLocalWeeklyPopularIds(
   return out;
 }
 
+export const LOCAL_PTR_STORAGE_KEY = 'ofu-library-local-ptr-v1';
+export const LOCAL_PTR_BOOKS_STORAGE_KEY = 'ofu-library-local-ptr-books-v1';
+export const LOCAL_COLLECTIONS_STORAGE_KEY = 'ofu-library-local-collections-v1';
+
+function readLocalArraySafe<T>(storageKey: string): T[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(storageKey) || '[]') as unknown;
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchLibraryState(): Promise<{
   books: Book[];
   progress: Record<string, ReadingProgress>;
   weeklyPopularIds: string[];
   shelfPrefs: ShelfPrefsState;
+  planToReadShelves: string[];
+  planToReadBooks: string[];
+  collections: CustomCollection[];
   storage: StorageStats;
   session: AuthSessionInfo;
 }> {
@@ -113,6 +130,9 @@ export async function fetchLibraryState(): Promise<{
       progress,
       weeklyPopularIds: computeLocalWeeklyPopularIds(sorted, progress),
       shelfPrefs: localPrefs,
+      planToReadShelves: readLocalArraySafe<string>(LOCAL_PTR_STORAGE_KEY),
+      planToReadBooks: readLocalArraySafe<string>(LOCAL_PTR_BOOKS_STORAGE_KEY),
+      collections: readLocalArraySafe<CustomCollection>(LOCAL_COLLECTIONS_STORAGE_KEY),
       storage,
       session: DEFAULT_OWNER_SESSION,
     };
@@ -126,6 +146,10 @@ export async function fetchLibraryState(): Promise<{
     shelfCovers?: Record<string, string>;
     favoriteShelves?: string[];
     shelfTags?: Record<string, string[]>;
+    shelfAltTitles?: Record<string, string[]>;
+    planToReadShelves?: string[];
+    planToReadBooks?: string[];
+    collections?: CustomCollection[];
     shelfAccess?: Record<string, ShelfAccessSummary>;
     storage?: StorageStats;
     session?: { role?: AuthRole; expiresAt?: number | null; watermarkLabel?: string | null };
@@ -155,6 +179,7 @@ export async function fetchLibraryState(): Promise<{
     covers: data.shelfCovers ?? localPrefs.covers,
     favorites: data.favoriteShelves ?? localPrefs.favorites,
     tags: data.shelfTags ?? localPrefs.tags ?? {},
+    altTitles: data.shelfAltTitles ?? localPrefs.altTitles ?? {},
     ...(data.shelfAccess ? { access: data.shelfAccess } : {}),
   };
   if (resolvedSession.role === 'owner') {
@@ -170,6 +195,9 @@ export async function fetchLibraryState(): Promise<{
     progress: progressMap,
     weeklyPopularIds,
     shelfPrefs: nextPrefs,
+    planToReadShelves: Array.isArray(data.planToReadShelves) ? data.planToReadShelves : [],
+    planToReadBooks: Array.isArray(data.planToReadBooks) ? data.planToReadBooks : [],
+    collections: Array.isArray(data.collections) ? data.collections : [],
     storage: data.storage || {
       usedBytes: 0,
       limitBytes: HARD_LIMIT_BYTES,

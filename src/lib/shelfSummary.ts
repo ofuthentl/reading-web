@@ -115,6 +115,10 @@ export interface ShelfSummary {
   authors: string[];
   /** Danh sách thể loại (tag) đã gắn cho bộ truyện */
   tags: string[];
+  /** Danh sách tên gọi khác (Romaji / Anh / Nhật / viết tắt) */
+  altTitles: string[];
+  /** Người dùng hiện tại có đánh dấu Để dành đọc sau hay không */
+  isPlanToRead: boolean;
   bookCount: number;
   completedCount: number;
   startedCount: number;
@@ -393,6 +397,8 @@ export function summarizeShelf(
   accessSummary?: ShelfAccessSummary | null,
   shelfTags?: Readonly<Record<string, string[]>>,
   sessionRole?: AuthRole,
+  shelfAltTitles?: Readonly<Record<string, string[]>>,
+  planToReadShelfKeys?: ReadonlySet<string>,
 ): ShelfSummary {
   const rawPreferredId = shelfCovers?.[shelf.key] ?? null;
   const validCustomBook = rawPreferredId
@@ -445,6 +451,8 @@ export function summarizeShelf(
   const isGuestLocked = bookCount > 0 && shelf.books.every((book) => Boolean(book.guest_locked));
   const { authorLabel, authors } = buildAuthorInfo(shelf, coverBook);
   const tags = shelfTags?.[shelf.key] ?? [];
+  const altTitles = shelfAltTitles?.[shelf.key] ?? [];
+  const isPlanToRead = Boolean(planToReadShelfKeys?.has(shelf.key));
 
   return {
     shelf,
@@ -454,6 +462,8 @@ export function summarizeShelf(
     authorLabel,
     authors,
     tags,
+    altTitles,
+    isPlanToRead,
     bookCount,
     completedCount,
     startedCount,

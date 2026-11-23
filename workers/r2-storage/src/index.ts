@@ -31,6 +31,7 @@ import {
   deleteBookBookmark,
   listBookBookmarks,
 } from './bookmarksDb';
+import { tryHandleCatalogRoutes } from './catalogEnhancementsDb';
 import { uploadBookGuestPack } from './guestPack';
 import { tryHandleGuestRoutes } from './guestRoutes';
 import {
@@ -373,6 +374,17 @@ async function handleApi(
     const result = await upsertShelfTags(env.DB, body?.shelfName, body?.tags);
     return jsonResponse(result, 200, origin);
   }
+
+  // Catalog Enhancements: alt-titles (Owner), plan-to-read (Owner + Guest) & collections CRUD (D-036 Wave 3)
+  const catalogRes = await tryHandleCatalogRoutes(
+    request,
+    normalizedPath,
+    env.DB,
+    auth,
+    origin,
+    jsonResponse,
+  );
+  if (catalogRes) return catalogRes;
 
   // Personal 90-day reading streak & heatmap activity isolated per reader_scope (D-036 Wave 1)
   if (normalizedPath === '/api/reading-stats/activity' && request.method === 'GET') {

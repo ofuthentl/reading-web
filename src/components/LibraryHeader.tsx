@@ -4,6 +4,7 @@ import {
   BarChart3,
   CheckSquare,
   Clock,
+  Database,
   HardDrive,
   Heart,
   Home,
@@ -39,6 +40,7 @@ interface LibraryHeaderProps {
   onCycleTheme: (origin?: { x: number; y: number }) => void;
   onOpenStats?: () => void;
   onOpenUsage?: () => void;
+  onOpenCacheManager?: () => void;
   onUploadClick?: () => void;
   onProtectionClick?: () => void;
   unprotectedBookCount?: number;
@@ -72,6 +74,7 @@ export function LibraryHeader({
   onCycleTheme,
   onOpenStats,
   onOpenUsage,
+  onOpenCacheManager,
   onUploadClick,
   onProtectionClick,
   unprotectedBookCount = 0,
@@ -252,6 +255,18 @@ export function LibraryHeader({
               className="inline-flex items-center rounded-xl border border-line bg-canvas p-2 text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink"
             >
               <Activity className="h-4 w-4 text-accent" />
+            </button>
+          )}
+
+          {isOwner && onOpenCacheManager && (
+            <button
+              type="button"
+              onClick={onOpenCacheManager}
+              aria-label="Quản lý bộ nhớ đệm IndexedDB"
+              title="Quản lý bộ nhớ đệm thiết bị (IndexedDB)"
+              className="hidden items-center rounded-xl border border-line bg-canvas p-2 text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink lg:inline-flex"
+            >
+              <Database className="h-4 w-4 text-accent" />
             </button>
           )}
 

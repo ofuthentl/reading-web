@@ -8,6 +8,20 @@ const STORE_COVER_BLOBS = 'cover_blobs';
 const STORE_LOCAL_BOOKS = 'local_books';
 const STORE_LOCAL_PROGRESS = 'local_progress';
 
+export interface CachedBlobStat {
+  key: string;
+  sizeBytes: number;
+  mimeType: string;
+}
+
+export interface IndexedDbCacheSummary {
+  bookEntries: CachedBlobStat[];
+  coverEntries: CachedBlobStat[];
+  totalBookBytes: number;
+  totalCoverBytes: number;
+  totalBytes: number;
+}
+
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 function openDb(): Promise<IDBDatabase> {
@@ -88,6 +102,33 @@ async function getAllFromStore<T>(storeName: string): Promise<T[]> {
   }
 }
 
+function scanBlobStoreStats(db: IDBDatabase, storeName: string): Promise<CachedBlobStat[]> {
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(storeName, 'readonly');
+      const store = tx.objectStore(storeName);
+      const entries: CachedBlobStat[] = [];
+      const req = store.openCursor();
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) {
+          resolve(entries);
+          return;
+        }
+        const key = typeof cursor.key === 'string' ? cursor.key : String(cursor.key);
+        const val = cursor.value as Blob | null | undefined;
+        const sizeBytes = val && typeof val.size === 'number' ? val.size : 0;
+        const mimeType = val && typeof val.type === 'string' ? val.type : '';
+        entries.push({ key, sizeBytes, mimeType });
+        cursor.continue();
+      };
+      req.onerror = () => resolve(entries);
+    } catch {
+      resolve([]);
+    }
+  });
+}
+
 // --- Book & Cover Blob Cache (used in BOTH Cloud R2 and Local modes for 0ms reopen) ---
 
 export async function getCachedBookBlob(fileKey: string): Promise<Blob | null> {
@@ -112,6 +153,68 @@ export async function setCachedCoverBlob(coverKey: string, blob: Blob): Promise<
 
 export async function deleteCachedCoverBlob(coverKey: string): Promise<void> {
   await deleteFromStore(STORE_COVER_BLOBS, coverKey);
+}
+
+export async function inspectIndexedDbCache(): Promise<IndexedDbCacheSummary> {
+  try {
+    const db = await openDb();
+    const [bookEntries, coverEntries] = await Promise.all([
+      scanBlobStoreStats(db, STORE_BOOK_BLOBS),
+      scanBlobStoreStats(db, STORE_COVER_BLOBS),
+    ]);
+    bookEntries.sort((a, b) => b.sizeBytes - a.sizeBytes);
+    coverEntries.sort((a, b) => b.sizeBytes - a.sizeBytes);
+    const totalBookBytes = bookEntries.reduce((sum, item) => sum + item.sizeBytes, 0);
+    const totalCoverBytes = coverEntries.reduce((sum, item) => sum + item.sizeBytes, 0);
+    return {
+      bookEntries,
+      coverEntries,
+      totalBookBytes,
+      totalCoverBytes,
+      totalBytes: totalBookBytes + totalCoverBytes,
+    };
+  } catch {
+    return {
+      bookEntries: [],
+      coverEntries: [],
+      totalBookBytes: 0,
+      totalCoverBytes: 0,
+      totalBytes: 0,
+    };
+  }
+}
+
+export async function clearCachedBookBlobs(): Promise<void> {
+  try {
+    const db = await openDb();
+    const tx = db.transaction(STORE_BOOK_BLOBS, 'readwrite');
+    await idbRequest(tx.objectStore(STORE_BOOK_BLOBS).clear());
+  } catch {
+    // Ignore
+  }
+}
+
+export async function clearCachedCoverBlobs(): Promise<void> {
+  try {
+    const db = await openDb();
+    const tx = db.transaction(STORE_COVER_BLOBS, 'readwrite');
+    await idbRequest(tx.objectStore(STORE_COVER_BLOBS).clear());
+  } catch {
+    // Ignore
+  }
+}
+
+export async function clearAllMediaCache(): Promise<void> {
+  try {
+    const db = await openDb();
+    const tx = db.transaction([STORE_BOOK_BLOBS, STORE_COVER_BLOBS], 'readwrite');
+    await Promise.all([
+      idbRequest(tx.objectStore(STORE_BOOK_BLOBS).clear()),
+      idbRequest(tx.objectStore(STORE_COVER_BLOBS).clear()),
+    ]);
+  } catch {
+    // Ignore
+  }
 }
 
 // --- Local-First Mode Store (when VITE_API_URL is not configured yet) ---

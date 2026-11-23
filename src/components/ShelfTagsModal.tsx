@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Loader2, Plus, Save, Search, Tag, X } from 'lucide-react';
-import type { ShelfGroup } from '@/types';
+import { Check, Loader2, Plus, Save, Search, Tag, Wand2, X } from 'lucide-react';
+import type { AniListNovelCandidate, ShelfGroup } from '@/types';
+import { AniListSuggestPanel } from '@/components/AniListSuggestPanel';
+import { setShelfAltTitles } from '@/lib/catalogApi';
+import { normalizeClientAltTitles } from '@/lib/shelfPrefs';
 import {
   MAX_SHELF_TAGS,
   MAX_SHELF_TAG_LENGTH,
@@ -16,9 +19,11 @@ import type { ToastType } from '@/hooks/useToast';
 export interface ShelfTagsModalProps {
   shelf: ShelfGroup | null;
   currentTags: readonly string[];
+  currentAltTitles?: readonly string[];
   allShelfTags?: Readonly<Record<string, string[]>>;
   onClose: () => void;
   onTagsSaved: (shelfName: string, tags: string[]) => void;
+  onAltTitlesSaved?: (shelfName: string, altTitles: string[]) => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
   onNotify?: (message: string, type?: ToastType) => void;
 }
@@ -26,13 +31,17 @@ export interface ShelfTagsModalProps {
 export function ShelfTagsModal({
   shelf,
   currentTags,
+  currentAltTitles = [],
   allShelfTags,
   onClose,
   onTagsSaved,
+  onAltTitlesSaved,
   onApiError,
   onNotify,
 }: ShelfTagsModalProps) {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [stagedAltTitles, setStagedAltTitles] = useState<string[] | null>(null);
+  const [anilistOpen, setAnilistOpen] = useState(false);
   const [filterQuery, setFilterQuery] = useState('');
   const [customInput, setCustomInput] = useState('');
   const [saving, setSaving] = useState(false);
@@ -40,10 +49,11 @@ export function ShelfTagsModal({
   currentTagsRef.current = currentTags;
   const shelfKey = shelf?.key ?? null;
 
-  // Chỉ reset form khi mở bộ khác (theo shelfKey), tránh bị legacyCoverSync nền xoá dở thao tác (vá M-07)
   useEffect(() => {
     if (!shelfKey) return;
     setSelectedTags(currentTagsRef.current.map(canonicalizeTagLabel).filter(Boolean));
+    setStagedAltTitles(null);
+    setAnilistOpen(false);
     setFilterQuery('');
     setCustomInput('');
     setSaving(false);
@@ -126,12 +136,40 @@ export function ShelfTagsModal({
     setCustomInput('');
   };
 
+  const handleApplyAniListTags = (
+    candidate: AniListNovelCandidate,
+    options?: { includeAltTitles?: boolean },
+  ) => {
+    setSelectedTags((prev) => {
+      const seen = new Set(prev.map(toTagLookupKey));
+      const merged = [...prev];
+      for (const raw of candidate.mappedTags) {
+        const clean = canonicalizeTagLabel(raw);
+        const key = toTagLookupKey(clean);
+        if (clean && !seen.has(key) && merged.length < MAX_SHELF_TAGS) {
+          seen.add(key);
+          merged.push(clean);
+        }
+      }
+      return merged;
+    });
+    if (options?.includeAltTitles && candidate.altTitles.length > 0) {
+      setStagedAltTitles(normalizeClientAltTitles([...currentAltTitles, ...candidate.altTitles]));
+    }
+    setAnilistOpen(false);
+    onNotify?.(`Đã gắn gợi ý thể loại từ "${candidate.primaryTitle}" — bấm Lưu thể loại để xác nhận.`, 'info');
+  };
+
   const handleSave = async () => {
     if (saving) return;
     setSaving(true);
     try {
       const saved = await setShelfTags(shelf.name, selectedTags);
       onTagsSaved(shelf.name, saved);
+      if (stagedAltTitles && onAltTitlesSaved) {
+        const savedAlt = await setShelfAltTitles(shelf.name, stagedAltTitles);
+        onAltTitlesSaved(shelf.name, savedAlt);
+      }
       onNotify?.(
         saved.length > 0
           ? `Đã lưu ${saved.length} thể loại cho "${shelf.name}".`
@@ -182,22 +220,37 @@ export function ShelfTagsModal({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            aria-label="Đóng cửa sổ thể loại"
-            className="shrink-0 rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink disabled:opacity-40"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => setAnilistOpen((v) => !v)}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
+                anilistOpen
+                  ? 'border-crimson-accent bg-crimson-accent/12 text-crimson-accent'
+                  : 'border-crimson-accent/40 bg-canvas text-crimson-accent hover:bg-crimson-accent/10'
+              }`}
+            >
+              <Wand2 className="h-3.5 w-3.5" />
+              <span>Gợi ý từ AniList</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              aria-label="Đóng cửa sổ thể loại"
+              className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink disabled:opacity-40"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
-        {/* Các thể loại đang chọn */}
         <div className="border-b border-line bg-canvas/50 px-5 py-3">
           {selectedTags.length === 0 ? (
             <p className="text-xs text-ink-faint">
-              Chưa chọn thể loại nào — tích chọn bên dưới hoặc tự nhập thêm thể loại mới.
+              Chưa chọn thể loại nào — tích chọn bên dưới, bấm Gợi ý từ AniList hoặc tự nhập thêm.
             </p>
           ) : (
             <div className="flex flex-wrap items-center gap-1.5">
@@ -225,7 +278,6 @@ export function ShelfTagsModal({
           )}
         </div>
 
-        {/* Thanh tìm nhanh & thêm thể loại tuỳ chỉnh */}
         <div className="grid gap-2.5 border-b border-line px-5 py-3 sm:grid-cols-2">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-faint" />
@@ -277,8 +329,19 @@ export function ShelfTagsModal({
           </div>
         </div>
 
-        {/* Lưới checkbox thể loại (2 cột mobile chống cắt chữ, 3-4 cột màn lớn) */}
-        <div className="scrollbar-thin flex-1 overflow-y-auto px-5 py-4">
+        <div className="scrollbar-thin flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          {anilistOpen && (
+            <AniListSuggestPanel
+              initialQuery={currentAltTitles[0] || shelf.name}
+              mode="tags-only"
+              disabled={saving}
+              defaultIncludeAltTitlesInTagsMode={currentAltTitles.length === 0}
+              onApplyCandidate={handleApplyAniListTags}
+              onClose={() => setAnilistOpen(false)}
+              onNotify={onNotify}
+            />
+          )}
+
           {visibleChoices.length === 0 ? (
             <p className="py-8 text-center text-xs text-ink-muted">
               Không có thể loại sẵn nào khớp &ldquo;{filterQuery}&rdquo;. Bạn có thể nhập ở ô

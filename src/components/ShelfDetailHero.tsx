@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  BookOpen, FileText, FolderEdit, Image, Lock, Plus, Star, Tag, UserRound, Users,
+  Bookmark, BookOpen, FileText, FolderEdit, Image, Languages, Lock, Plus, Star, Tag, UserRound, Users,
 } from 'lucide-react';
 import type { Book } from '@/types';
 import { formatBytes } from '@/lib/api';
@@ -19,6 +19,7 @@ export interface ShelfDetailHeroProps {
   onOpenBatchNotes?: () => void;
   onManageAccess?: () => void;
   onToggleFavorite?: (shelfName: string, nextFavorite: boolean) => void;
+  onTogglePlanToRead?: (shelfName: string, nextPlanToRead: boolean) => void;
 }
 
 export function ShelfDetailHero({
@@ -32,14 +33,17 @@ export function ShelfDetailHero({
   onOpenBatchNotes,
   onManageAccess,
   onToggleFavorite,
+  onTogglePlanToRead,
 }: ShelfDetailHeroProps) {
   const {
     shelf,
     coverBook,
     isFavorite,
+    isPlanToRead,
     authorLabel,
     authors,
     tags,
+    altTitles,
     bookCount,
     completedCount,
     readingStatus,
@@ -53,6 +57,7 @@ export function ShelfDetailHero({
 
   const [imgFailed, setImgFailed] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [altExpanded, setAltExpanded] = useState(false);
 
   const coverKey = coverBook?.cover_key ?? null;
   const coverUrl = useCoverUrl(coverKey, true);
@@ -76,6 +81,7 @@ export function ShelfDetailHero({
 
   useEffect(() => {
     setDescExpanded(false);
+    setAltExpanded(false);
   }, [shelf.key]);
 
   useEffect(() => {
@@ -102,10 +108,18 @@ export function ShelfDetailHero({
                 ? `Đang đọc · ${completedCount}/${bookCount} tập (${progressPercent ?? 0}%)`
                 : `Đang đọc · ${progressPercent ?? 0}%`,
           }
-        : {
-            className: 'border-line bg-canvas text-ink-muted',
-            label: 'Chưa đọc',
-          };
+        : isPlanToRead
+          ? {
+              className:
+                'border-sky-600/35 bg-sky-600/10 text-sky-700 dark:border-sky-400/35 dark:text-sky-300',
+              label: 'Để dành đọc sau',
+            }
+          : {
+              className: 'border-line bg-canvas text-ink-muted',
+              label: 'Chưa đọc',
+            };
+
+  const displayedAltTitles = altExpanded ? altTitles : altTitles.slice(0, 3);
 
   return (
     <section className="moonlit-card flex flex-col gap-5 rounded-2xl border border-line bg-surface p-4 shadow-sm sm:flex-row sm:items-start sm:p-5 dark:border-line-strong/60">
@@ -173,7 +187,23 @@ export function ShelfDetailHero({
             {shelf.name}
           </h2>
 
-          {/* Tên tác giả có thể bấm để xem tất cả các bộ cùng tác giả (D-032) */}
+          {altTitles.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-ink-muted">
+              <Languages className="h-3.5 w-3.5 shrink-0 text-ink-faint" aria-hidden="true" />
+              <span className="font-medium text-ink-faint">Tên khác:</span>
+              <span>{displayedAltTitles.join(' · ')}</span>
+              {altTitles.length > 3 && (
+                <button
+                  type="button"
+                  onClick={() => setAltExpanded((v) => !v)}
+                  className="font-medium text-accent hover:underline"
+                >
+                  {altExpanded ? 'Thu gọn' : `+${altTitles.length - 3} tên khác`}
+                </button>
+              )}
+            </div>
+          )}
+
           {authors.length > 0 && onSelectAuthor ? (
             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-ink-muted">
               <UserRound className="h-3.5 w-3.5 shrink-0 text-ink-faint" aria-hidden="true" />
@@ -195,7 +225,6 @@ export function ShelfDetailHero({
             <p className="text-sm text-ink-muted">{authorLabel}</p>
           )}
 
-          {/* Danh sách thể loại (tag) của bộ truyện — bấm vào từng chip để lọc ngay */}
           {(tags.length > 0 || onEditTags) && (
             <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
               {tags.map((tag) =>
@@ -288,6 +317,28 @@ export function ShelfDetailHero({
               </button>
             ))}
 
+          {!isGuestLocked && onTogglePlanToRead && (
+            <button
+              type="button"
+              onClick={() => onTogglePlanToRead(shelf.name, !isPlanToRead)}
+              aria-pressed={isPlanToRead}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-medium transition-colors ${
+                isPlanToRead
+                  ? 'border-sky-500/45 bg-sky-500/12 text-sky-700 hover:bg-sky-500/20 dark:border-sky-400/40 dark:text-sky-300'
+                  : 'border-line bg-canvas text-ink hover:border-line-strong hover:bg-subtle'
+              }`}
+            >
+              <Bookmark
+                className={`h-4 w-4 ${
+                  isPlanToRead
+                    ? 'fill-sky-500 text-sky-500 dark:fill-sky-400 dark:text-sky-400'
+                    : 'text-ink-muted'
+                }`}
+              />
+              <span>{isPlanToRead ? 'Đã lưu Đọc sau' : 'Đọc sau'}</span>
+            </button>
+          )}
+
           {onToggleFavorite && (
             <button
               type="button"
@@ -354,10 +405,10 @@ export function ShelfDetailHero({
               type="button"
               onClick={onOpenBatchNotes}
               className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-canvas px-3.5 py-2 text-sm font-medium text-ink transition-colors hover:border-line-strong hover:bg-subtle"
-              title="Thêm ghi chú hoặc đồng bộ tên tác giả cho cả bộ"
+              title="Thêm ghi chú, tác giả, tên gọi khác hoặc lấy gợi ý từ AniList"
             >
               <FileText className="h-4 w-4 text-ink-muted" />
-              <span>{missingNoteCount > 0 ? 'Thêm ghi chú' : 'Ghi chú & Tác giả'}</span>
+              <span>{missingNoteCount > 0 ? 'Thêm ghi chú' : 'Thông tin & AniList'}</span>
               {missingNoteCount > 0 && (
                 <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full border border-line bg-subtle px-1.5 text-[11px] font-medium leading-none tabular-nums text-ink">
                   {missingNoteCount}

@@ -7,6 +7,7 @@ export interface Library2DDialogsHostProps {
   statsOpen: boolean;
   books: Book[];
   progress: Record<string, ReadingProgress>;
+  planToReadBookIds?: ReadonlySet<string>;
   sessionRole?: AuthRole;
   onCloseInspect: () => void;
   onCloseStats: () => void;
@@ -15,7 +16,9 @@ export interface Library2DDialogsHostProps {
   onSelectAuthor?: (authorName: string) => void;
   onMarkCompleted: (book: Book) => void;
   onResetProgress: (book: Book) => void;
+  onTogglePlanToReadBook?: (book: Book, nextPlanToRead: boolean) => void;
   onEditBook?: (book: Book) => void;
+  onOpenCacheManager?: () => void;
 }
 
 export function Library2DDialogsHost({
@@ -23,6 +26,7 @@ export function Library2DDialogsHost({
   statsOpen,
   books,
   progress,
+  planToReadBookIds,
   sessionRole,
   onCloseInspect,
   onCloseStats,
@@ -31,13 +35,16 @@ export function Library2DDialogsHost({
   onSelectAuthor,
   onMarkCompleted,
   onResetProgress,
+  onTogglePlanToReadBook,
   onEditBook,
+  onOpenCacheManager,
 }: Library2DDialogsHostProps) {
   return (
     <>
       <BookInfoModal
         book={inspectedBook}
         progress={inspectedBook ? progress[inspectedBook.id] : undefined}
+        isPlanToRead={Boolean(inspectedBook && planToReadBookIds?.has(inspectedBook.id))}
         sessionRole={sessionRole}
         onClose={onCloseInspect}
         onOpenBook={onOpenBook}
@@ -45,6 +52,7 @@ export function Library2DDialogsHost({
         onSelectAuthor={onSelectAuthor}
         onMarkCompleted={onMarkCompleted}
         onResetProgress={onResetProgress}
+        onTogglePlanToRead={onTogglePlanToReadBook}
         onEditBook={onEditBook}
       />
 
@@ -55,6 +63,7 @@ export function Library2DDialogsHost({
         sessionRole={sessionRole}
         onClose={onCloseStats}
         onOpenBook={onOpenBook}
+        onOpenCacheManager={onOpenCacheManager}
       />
     </>
   );

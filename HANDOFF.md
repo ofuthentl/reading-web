@@ -1,23 +1,21 @@
 # HANDOFF
-Cập nhật: 2026-11-23 19:35 | Nhánh: feat/reader-footnotes-gallery-highlights | Build: 🟢 typecheck/lint/Worker tsc/build xanh (`index-*.js = 85.02 kB` gzip <= 86.04 kB)
-Nhiệm vụ hiện tại: Hoàn tất **Wave 2** của Lộ trình Nâng cấp v2 (`docs/plans/roadmap-v2-upgrades.md` & `D-036`), sẵn sàng chạy migration `0012`, deploy Worker và mở PR vào `main`.
+Cập nhật: 2026-11-23 22:30 | Nhánh: feat/catalog-alt-titles-ptr-anilist-collections | Build: 🟢 typecheck/lint/Worker tsc/build xanh (`index-*.js = 84.70 kB` gzip <= 86.04 kB)
+Nhiệm vụ hiện tại: Hoàn tất toàn bộ **Wave 3** (`docs/plans/roadmap-v2-upgrades.md` & `D-036`: Phase 3.1 → 3.2 → 3.3 + *Đọc sau* theo tập lẻ), chạy migration `0013` D1 remote, deploy Worker và sẵn sàng mở PR Wave 3.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md
 
 ## Đang làm dở
-- Không còn việc dở trong **Wave 2** (đã hoàn tất trọn vẹn ước tính thời gian đọc còn lại cả cuốn + Mục 1 Chú thích dịch giả + Mục 2 Tab Minh họa chống spoiler + Mục 5 Highlight bôi màu & Kho trích dẫn).
+- Không còn hạng mục code dở dang trong Wave 3.
 
 ## Bước tiếp theo
-1. Chạy migration `0012_book_highlights.sql` lên D1 production (`--remote`), deploy Cloudflare Worker (`wrangler deploy`), đẩy nhánh `feat/reader-footnotes-gallery-highlights` và mở/merge PR Wave 2 vào `main`.
-2. Sau khi Wave 2 merge `main`: tách nhánh `feat/catalog-alt-titles-ptr-anilist-collections` triển khai **Wave 3** (Mục 9 `alt_titles`, Mục 11 Để dành đọc sau, Mục 12 Gợi ý AniList, Mục 13 Bộ sưu tập tuỳ chỉnh, Mục 18 Quản lý Cache IndexedDB, Mục 19 PWA nâng cao).
-3. Tiếp nối **Wave 4** (`feat/discord-releases-and-comments`: Mục 14 & 15).
+1. Mở và merge PR Wave 3 (`feat/catalog-alt-titles-ptr-anilist-collections` → `main`) sau khi CI xanh.
+2. Triển khai **Wave 4** (`feat/discord-releases-and-comments`): Thông báo tự động tập mới lên kênh Discord (`QĐ-C`) & Bình luận/Cảm nhận cuối tập gắn danh tính Discord (`0014_book_comments.sql`).
 
 ## Lỗi / chặn
 - Không có lỗi/chặn. Lưu ý có 3 tệp chưa theo dõi sẵn từ trước ở thư mục gốc (`Gemini_Generated_Image_u8tpmdu8tpmdu8tp.png`, `IMG_4018.JPG`, `hatsune-miku_b0bf919137_VSTHEMES-ORG/`) — tuyệt đối không dùng `git add .`.
 
 ## Xong gần nhất
-- **Wave 2 (`feat/reader-footnotes-gallery-highlights`, `D-036`):**
-  - **Giờ đọc còn lại cả cuốn (Mục 4 mở rộng):** hiển thị `Còn ~Xp chương · ~Yg Zp cuốn` ở chân cả 2 trình đọc (`Guest` nội suy từ `compressedBytes` trong `manifest_json` D1, `0` đọc R2).
-  - **Phase 2.1 (Mục 1 — Chú thích dịch giả):** `epubFootnotes.ts` + `ReaderFootnotePopover.tsx` hỗ trợ chú thích cùng chương/xuyên chương trên DOM (`Owner`) và gạch chân chấm + bấm `[1]`/`(*)` trực tiếp trên `<canvas>` (`Guest`, chạy ngay với 263 gói cũ).
-  - **Phase 2.2 (Mục 2 — Tab Minh họa chống spoiler):** `GET /api/guest/books/:id/illustrations` quét từ gói `OFGP` sẵn có (`0` re-pack), tab thứ 4 `Minh họa` trong ngăn kéo trình đọc kèm công tắc `Che chưa đọc` mặc định BẬT & thumbnail `<canvas>` thuỷ vân Discord cho `Guest` (`0` `<img>` DOM).
-  - **Phase 2.3 (Mục 5 — Highlight & Kho trích dẫn):** migration `0012_book_highlights.sql`, CRUD `/api/highlights`, tô 4 màu `<mark>` trên DOM (`Owner`), nút `"Lưu đoạn đang đọc"` vẽ vạch màu trên `<canvas>` (`Guest`, `QĐ-B`), và `QuoteVaultModal` gom trích dẫn theo bộ truyện, kiểm thử E2E PC/Mobile xanh 100%.
-- **Wave 1 (PR #21)** đã merge `origin/main` kèm migration `0011` & deploy Worker.
+- **Wave 3 trọn vẹn (`feat/catalog-alt-titles-ptr-anilist-collections`, `D-036`):**
+  - **Phase 3.1 (Worker + Migration `0013_catalog_enhancements.sql`):** thêm `shelf_prefs.alt_titles_json`, `user_plan_to_read` (cấp bộ), `user_plan_to_read_books` (cấp tập lẻ), `custom_collections` & `collection_shelves`; hợp nhất tự động khi đổi tên/gộp kệ; proxy `POST /api/admin/anilist/search` (`requireOwner`, timeout `6s`, 0 CDN).
+  - **Phase 3.2 (Frontend Kho sách — Mục 9, 11, 12, 13 + *Đọc sau* cấp tập):** tìm kiếm khớp `alt_titles` + hiện trên `ShelfDetailHero`; nút *Đọc sau* cho cả Bộ truyện (`ShelfCoverCard`, `ShelfDetailHero`) lẫn từng Tập lẻ (`BookCard`, `EditorialBookStrip`, `ShelfDetailView`, `BookInfoModal`) + lọc `plan_to_read`; gợi ý AniList 1 chạm (`AniListSuggestPanel`); dải lọc & modal quản lý Tuyển tập (`CollectionFilterStrip`, `CollectionManagerModal`, lọc `D-030` cho `Guest`).
+  - **Phase 3.3 (Tiện ích Thiết bị — Mục 18 & 19):** `CacheManagerModal` chỉ dành cho `Owner` (xoá lẻ/dọn sạch IndexedDB); PWA nâng cao (`manifest.webmanifest`, icons `192`/`512`/`maskable`/`apple-touch-icon`, `public/sw.js` tuân thủ chặt `QĐ-D` + `pwaRegister.ts`).
+  - **Kiểm định & Triển khai:** E2E trình duyệt PC (`Owner`) & Mobile (`Guest`) xanh 100%, unit test `sw.js` 14/14, `index-*.js = 84.70 kB` gzip (`<= 86.04 kB`), đã chạy migration `0013` trên D1 remote & deploy Worker.

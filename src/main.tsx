@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { reloadOnceForStaleChunk } from '@/lib/chunkReload';
+import { registerPwaServiceWorker } from '@/lib/pwaRegister';
 import App from './App.tsx';
 import './fonts.css';
 import './index.css';
@@ -19,6 +20,8 @@ createRoot(document.getElementById('root')!).render(
     </ErrorBoundary>
   </StrictMode>,
 );
+
+registerPwaServiceWorker();
 
 if (
   typeof window !== 'undefined' &&
