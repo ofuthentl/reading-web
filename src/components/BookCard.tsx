@@ -83,7 +83,7 @@ export function BookCard({
   const isMemberLocked = sessionRole === 'guest' && Boolean(book.guest_locked);
   const guestLockLabel = getGuestLockLabel(book, sessionRole);
   const isNew = !guestLockLabel && isRecentBookUpload(book.created_at);
-  const staggerDelayMs = (staggerIndex % 6) * 48;
+  const staggerDelayMs = (staggerIndex % 4) * 28;
 
   const handleActivate = () => {
     if (selectionMode) {
@@ -218,7 +218,7 @@ export function BookCard({
 
       {/* Cụm nút Xem giới thiệu & Chỉnh sửa kín đáo */}
       {!selectionMode && !compact && (onInspect || onEdit) && (
-        <div className="absolute left-1.5 top-1.5 flex items-center gap-1 opacity-85 transition-opacity focus-within:opacity-100 group-hover:opacity-100 sm:opacity-0">
+        <div className="touch-action-visible absolute left-1.5 top-1.5 flex items-center gap-1 opacity-85 transition-opacity focus-within:opacity-100 group-hover:opacity-100 sm:opacity-0">
           {onInspect && (
             <button
               type="button"
@@ -318,7 +318,7 @@ export function BookCard({
         </div>
 
         {!selectionMode && (onDismissContinue || onInspect) && (
-          <div className="absolute right-2 top-2 flex items-center gap-0.5 opacity-80 transition-opacity focus-within:opacity-100 group-hover:opacity-100 sm:opacity-0">
+          <div className="touch-action-visible absolute right-2 top-2 flex items-center gap-0.5 opacity-80 transition-opacity focus-within:opacity-100 group-hover:opacity-100 sm:opacity-0">
             {onInspect && (
               <button
                 type="button"

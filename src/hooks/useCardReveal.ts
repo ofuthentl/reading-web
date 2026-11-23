@@ -54,7 +54,7 @@ function getPreloadObserver(): IntersectionObserver | null {
           }
         }
       },
-      { rootMargin: '320px 0px' },
+      { rootMargin: '480px 260px' },
     );
   }
   return sharedPreloadObserver;
@@ -177,7 +177,7 @@ export function handleCoverTiltMove(
     el.style.setProperty('--tilt-dur', '85ms');
     el.style.setProperty('--rx', `${rx.toFixed(2)}deg`);
     el.style.setProperty('--ry', `${ry.toFixed(2)}deg`);
-    el.style.setProperty('--tilt-lift', '-5px');
+    el.style.setProperty('--tilt-lift', '-2px');
     el.style.setProperty('--tilt-scale', '1.022');
     el.style.setProperty('--gx', `${(px * 100).toFixed(1)}%`);
     el.style.setProperty('--gy', `${(py * 100).toFixed(1)}%`);
