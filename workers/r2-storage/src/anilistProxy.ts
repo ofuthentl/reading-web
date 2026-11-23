@@ -392,6 +392,7 @@ export async function searchAniListLightNovels(
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        'User-Agent': 'OfusLibrary/1.0 (+https://ofu.lol)',
       },
       body: JSON.stringify({
         query: ANILIST_LN_SEARCH_QUERY,

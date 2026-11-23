@@ -5,10 +5,11 @@ import { ensureShelfTagsSchema, parseShelfTagsJson } from './shelfTagsDb';
 
 const RELEASE_EMBED_COLOR = 0xc89b62;
 const MAX_BOOK_IDS_PER_ANNOUNCE = 50;
-const MAX_VOLUME_LINES_PER_EMBED = 15;
+const MAX_INLINE_LABELS_PER_EMBED = 6;
 const MAX_TAGS_PER_EMBED = 8;
 const DISCORD_REQUEST_TIMEOUT_MS = 8000;
 const DISCORD_SNOWFLAKE_RE = /^\d{5,32}$/;
+const SIMPLE_VOLUME_LABEL_RE = /^(tập|quyển|vol\.?|volume|phần)\s*(\d+)$/i;
 const DISCORD_WEBHOOK_RE =
   /^https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\/\d{5,32}\/[A-Za-z0-9._-]+(?:\?.*)?$/;
 
@@ -111,47 +112,92 @@ function sortBooksNaturally<T extends { title: string }>(items: T[]): T[] {
   );
 }
 
+function stripSeriesPrefix(bookTitle: string, shelfName: string): string {
+  const title = bookTitle.trim();
+  const shelf = shelfName.trim();
+  if (!shelf) return title;
+
+  const lowerTitle = title.toLocaleLowerCase('vi');
+  const lowerShelf = shelf.toLocaleLowerCase('vi');
+  if (lowerTitle === lowerShelf) return '';
+
+  if (lowerTitle.startsWith(lowerShelf)) {
+    const rest = title.slice(shelf.length).replace(/^[\s\-–—:|/]+/, '').trim();
+    if (rest) return rest;
+  }
+  return title;
+}
+
+function formatReleaseVolumeSummary(
+  sortedBooks: Array<{ title: string }>,
+  shelfName: string,
+): string {
+  const shortLabels = sortedBooks.map((book) => stripSeriesPrefix(book.title, shelfName));
+
+  if (sortedBooks.length === 1) {
+    const single = shortLabels[0]?.trim();
+    return single ? `**${single.slice(0, 180)}** vừa` : 'Vừa';
+  }
+
+  // Nếu mọi tập đều cùng mẫu "Tập 1..N" liên tiếp -> gom gọn thành "Tập 1 – Tập N (N tập)"
+  const parsedSeq: Array<{ unit: string; num: number }> = [];
+  for (const label of shortLabels) {
+    const match = label.trim().match(SIMPLE_VOLUME_LABEL_RE);
+    if (!match) break;
+    const rawUnit = match[1].replace(/\.$/, '');
+    const normalizedUnit =
+      rawUnit.toLocaleLowerCase('vi') === 'vol' || rawUnit.toLocaleLowerCase('vi') === 'volume'
+        ? 'Vol.'
+        : rawUnit.charAt(0).toLocaleUpperCase('vi') + rawUnit.slice(1).toLocaleLowerCase('vi');
+    parsedSeq.push({ unit: normalizedUnit, num: Number.parseInt(match[2], 10) });
+  }
+
+  if (parsedSeq.length === sortedBooks.length) {
+    const firstUnit = parsedSeq[0].unit;
+    const isConsecutive = parsedSeq.every(
+      (item, idx) =>
+        item.unit === firstUnit && (idx === 0 || item.num === parsedSeq[idx - 1].num + 1),
+    );
+    if (isConsecutive) {
+      const firstNum = parsedSeq[0].num;
+      const lastNum = parsedSeq[parsedSeq.length - 1].num;
+      return `**${firstUnit} ${firstNum} – ${firstUnit} ${lastNum}** (${sortedBooks.length} tập) vừa`;
+    }
+  }
+
+  const nonEmpty = shortLabels.map((s, idx) => (s || sortedBooks[idx].title).trim().slice(0, 80));
+  const shown = nonEmpty.slice(0, MAX_INLINE_LABELS_PER_EMBED);
+  const remaining = nonEmpty.length - shown.length;
+  const joined =
+    remaining > 0 ? `${shown.join(' · ')} … +${remaining} tập khác` : shown.join(' · ');
+  return `**${joined}** vừa`;
+}
+
 export function buildDiscordReleaseMessagePayload(
   group: DiscordReleaseGroupInput,
   options: { appUrl: string; keyChannelUrl: string; includeComponents?: boolean },
 ) {
   const sortedBooks = sortBooksNaturally(group.books);
-  const shownLines = sortedBooks
-    .slice(0, MAX_VOLUME_LINES_PER_EMBED)
-    .map((book) => `• **${book.title.trim().slice(0, 180)}**`);
-  const remaining = sortedBooks.length - shownLines.length;
-  if (remaining > 0) {
-    shownLines.push(`• *… và còn ${remaining} tập khác*`);
-  }
+  const volumePrefix = formatReleaseVolumeSummary(sortedBooks, group.shelfName);
+  const inviteLine = `${volumePrefix} lên kệ tại **Ofu's Library** (${options.appUrl}) — ghé thư viện đọc ngay nhé!`;
 
-  const inviteLine = `Tập mới vừa lên kệ tại **Ofu's Library** (${options.appUrl}) — ghé thư viện đọc ngay nhé!`;
-  const description = [...shownLines, '', inviteLine].join('\n').slice(0, 3900);
-
-  const fields: Array<{ name: string; value: string; inline: boolean }> = [
-    {
-      name: 'Tác giả',
-      value: summarizeGroupAuthors(sortedBooks),
-      inline: true,
-    },
-  ];
-
+  const authorLabel = summarizeGroupAuthors(sortedBooks);
   const cleanTags = group.tags
     .map((tag) => tag.trim())
     .filter(Boolean)
     .slice(0, MAX_TAGS_PER_EMBED);
-  if (cleanTags.length > 0) {
-    fields.push({
-      name: 'Thể loại',
-      value: cleanTags.join(' · ').slice(0, 240),
-      inline: true,
-    });
-  }
+
+  const metaLine =
+    cleanTags.length > 0
+      ? `**Tác giả:** ${authorLabel} · **Thể loại:** ${cleanTags.join(', ').slice(0, 240)}`
+      : `**Tác giả:** ${authorLabel}`;
+
+  const description = `${inviteLine}\n\n${metaLine}`.slice(0, 3900);
 
   const embed: Record<string, unknown> = {
     title: `📚 ${group.shelfName.trim().slice(0, 240)}`,
     description,
     color: RELEASE_EMBED_COLOR,
-    fields,
     footer: {
       text:
         sortedBooks.length > 1
@@ -162,7 +208,7 @@ export function buildDiscordReleaseMessagePayload(
   };
 
   if (group.hasCoverAttachment) {
-    embed.thumbnail = { url: 'attachment://cover.jpg' };
+    embed.image = { url: 'attachment://cover.jpg' };
   }
 
   const payload: Record<string, unknown> = {
