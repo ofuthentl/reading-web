@@ -251,7 +251,7 @@ export function LibraryHeader({
               title="Thống kê hệ thống (/usage)"
               className="inline-flex items-center rounded-xl border border-line bg-canvas p-2 text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink"
             >
-              <Activity className="h-4 w-4 text-crimson-accent" />
+              <Activity className="h-4 w-4 text-accent" />
             </button>
           )}
 

@@ -47,14 +47,15 @@ import { streamR2FileResponse } from './r2Files';
 import { upsertShelfTags } from './shelfTagsDb';
 import { scheduleUsageEvent } from './usageDb';
 
-function extractSubjectFromToken(token: string): string | null {
+function extractGuestUserIdFromToken(token: string): string | null {
   try {
     const payload = token.split('.')[0];
     if (!payload) return null;
     const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
     const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
     const parsed = JSON.parse(atob(padded)) as { sub?: unknown };
-    return typeof parsed.sub === 'string' && parsed.sub ? parsed.sub : null;
+    if (typeof parsed.sub !== 'string' || !parsed.sub) return null;
+    return parsed.sub.replace(/^discord:/, '');
   } catch {
     return null;
   }
@@ -158,11 +159,11 @@ async function handleApi(
     try {
       const session = await authenticatePasscodeOrKey(passcode, env, env.DB, userAgent);
       await clearLoginFailures(env.DB, clientIp);
-      const sub = extractSubjectFromToken(session.token);
+      const guestUserId = extractGuestUserIdFromToken(session.token);
       scheduleUsageEvent(ctx, env.DB, {
         metric: session.role === 'owner' ? 'owner_logins' : 'guest_logins',
         readerScope:
-          session.role === 'owner' ? 'owner' : sub ? `guest:${sub}` : undefined,
+          session.role === 'owner' ? 'owner' : guestUserId ? `guest:${guestUserId}` : undefined,
         readerRole: session.role,
       });
       return jsonResponse(session, 200, origin);

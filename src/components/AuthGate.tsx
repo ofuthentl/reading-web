@@ -25,7 +25,12 @@ import {
   isMissingProductionApi,
   loginWithPasscode,
 } from '@/lib/api';
-import { DEFAULT_OWNER_SESSION, inspectStoredSession } from '@/lib/authSession';
+import {
+  DEFAULT_OWNER_SESSION,
+  apiFetch,
+  inspectStoredSession,
+  setAuthToken,
+} from '@/lib/authSession';
 import {
   type GateRoute,
   buildGateHref,
@@ -89,11 +94,34 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
 
       const stored = inspectStoredSession();
 
-      // Stealth /usage (D-035): chỉ giữ /usage nếu phiên owner còn hiệu lực; guest về '/', người lạ đẩy ngay về '/locked'
+      // Stealth /usage (D-035): xác thực token trực tiếp với máy chủ trước khi mở chunk AdminUsageView
       if (currentRoute === 'usage') {
         if (stored.status === 'active' && !authReason) {
           if (stored.session.role === 'owner') {
-            onAuthenticated(stored.session);
+            try {
+              const sessionRes = await apiFetch('/api/auth/session');
+              const sessionBody = (await sessionRes.json().catch(() => ({}))) as {
+                ok?: boolean;
+                role?: string;
+                expiresAt?: number | null;
+              };
+              if (sessionRes.ok && sessionBody.ok && sessionBody.role === 'owner') {
+                onAuthenticated({
+                  role: 'owner',
+                  expiresAt:
+                    typeof sessionBody.expiresAt === 'number'
+                      ? sessionBody.expiresAt
+                      : stored.session.expiresAt,
+                });
+                return;
+              }
+            } catch {
+              // Token không hợp lệ/bị thu hồi/giả mạo: dọn sạch và đẩy âm thầm về /locked
+            }
+            setAuthToken(null);
+            replaceGateRoute('locked');
+            setRoute('locked');
+            setStatus('ready');
             return;
           }
           replaceGateRoute('root');

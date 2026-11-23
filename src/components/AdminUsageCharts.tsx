@@ -227,15 +227,13 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
                 onMouseEnter={() => setActiveIndex(idx)}
                 onClick={() => setActiveIndex(idx)}
               >
-                {/* Vùng chạm rộng theo cột */}
+                {/* Vùng chạm rộng theo cột (trong suốt, không vẽ khung xám nền sau cột) */}
                 <rect
                   x={padLeft + idx * slotW}
                   y={padTop}
                   width={slotW}
                   height={plotH}
-                  fill="currentColor"
-                  fillOpacity={isSelected ? 0.06 : 0}
-                  rx={4}
+                  fill="transparent"
                 />
 
                 {tab === 'reads' ? (
@@ -248,8 +246,9 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
                         width={barW}
                         height={Math.max(2, primaryH)}
                         rx={3}
-                        className="fill-crimson-accent transition-opacity"
-                        opacity={isSelected ? 1 : 0.78}
+                        fill="rgb(var(--color-crimson))"
+                        className="transition-opacity"
+                        opacity={isSelected ? 1 : 0.82}
                       />
                     )}
                     {d.secondary > 0 && (
@@ -259,8 +258,9 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
                         width={barW}
                         height={Math.max(2, secondaryH)}
                         rx={3}
-                        className="fill-accent transition-opacity"
-                        opacity={isSelected ? 0.95 : 0.62}
+                        fill="rgb(var(--color-accent))"
+                        className="transition-opacity"
+                        opacity={isSelected ? 0.95 : 0.65}
                       />
                     )}
                   </>
@@ -273,7 +273,8 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
                         width={barW}
                         height={Math.max(3, primaryH)}
                         rx={3}
-                        className="fill-accent transition-opacity"
+                        fill="rgb(var(--color-accent))"
+                        className="transition-opacity"
                         opacity={isSelected ? 0.95 : 0.72}
                       />
                     )}
@@ -284,7 +285,8 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
                         width={barW}
                         height={Math.max(3, secondaryH)}
                         rx={3}
-                        className="fill-crimson-accent transition-opacity"
+                        fill="rgb(var(--color-crimson))"
+                        className="transition-opacity"
                         opacity={isSelected ? 1 : 0.85}
                       />
                     )}
@@ -298,7 +300,7 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
                         width={Math.max(3, barW * 0.56)}
                         height={Math.max(2, primaryH)}
                         rx={2.5}
-                        className="fill-accent"
+                        fill="rgb(var(--color-accent))"
                         opacity={isSelected ? 1 : 0.78}
                       />
                     )}

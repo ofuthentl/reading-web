@@ -112,7 +112,7 @@ export function AdminUsageView({
             </button>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <Activity className="h-4 w-4 shrink-0 text-crimson-accent" />
+                <Activity className="h-4 w-4 shrink-0 text-accent" />
                 <h1 className="truncate font-display text-base font-semibold text-ink sm:text-lg">
                   Thống kê hệ thống
                 </h1>
