@@ -96,6 +96,7 @@ function computeLocalWeeklyPopularIds(
 }
 
 export const LOCAL_PTR_STORAGE_KEY = 'ofu-library-local-ptr-v1';
+export const LOCAL_PTR_BOOKS_STORAGE_KEY = 'ofu-library-local-ptr-books-v1';
 export const LOCAL_COLLECTIONS_STORAGE_KEY = 'ofu-library-local-collections-v1';
 
 function readLocalArraySafe<T>(storageKey: string): T[] {
@@ -113,6 +114,7 @@ export async function fetchLibraryState(): Promise<{
   weeklyPopularIds: string[];
   shelfPrefs: ShelfPrefsState;
   planToReadShelves: string[];
+  planToReadBooks: string[];
   collections: CustomCollection[];
   storage: StorageStats;
   session: AuthSessionInfo;
@@ -129,6 +131,7 @@ export async function fetchLibraryState(): Promise<{
       weeklyPopularIds: computeLocalWeeklyPopularIds(sorted, progress),
       shelfPrefs: localPrefs,
       planToReadShelves: readLocalArraySafe<string>(LOCAL_PTR_STORAGE_KEY),
+      planToReadBooks: readLocalArraySafe<string>(LOCAL_PTR_BOOKS_STORAGE_KEY),
       collections: readLocalArraySafe<CustomCollection>(LOCAL_COLLECTIONS_STORAGE_KEY),
       storage,
       session: DEFAULT_OWNER_SESSION,
@@ -145,6 +148,7 @@ export async function fetchLibraryState(): Promise<{
     shelfTags?: Record<string, string[]>;
     shelfAltTitles?: Record<string, string[]>;
     planToReadShelves?: string[];
+    planToReadBooks?: string[];
     collections?: CustomCollection[];
     shelfAccess?: Record<string, ShelfAccessSummary>;
     storage?: StorageStats;
@@ -192,6 +196,7 @@ export async function fetchLibraryState(): Promise<{
     weeklyPopularIds,
     shelfPrefs: nextPrefs,
     planToReadShelves: Array.isArray(data.planToReadShelves) ? data.planToReadShelves : [],
+    planToReadBooks: Array.isArray(data.planToReadBooks) ? data.planToReadBooks : [],
     collections: Array.isArray(data.collections) ? data.collections : [],
     storage: data.storage || {
       usedBytes: 0,

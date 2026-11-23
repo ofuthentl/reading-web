@@ -11,7 +11,6 @@ import type {
 } from '@/types';
 import { isCloudMode } from '@/lib/api';
 import { BookCard } from '@/components/BookCard';
-import { EditorialBookStrip } from '@/components/EditorialBookStrip';
 import { type LibraryAdvancedFilterProps, LibraryFilterBar } from '@/components/LibraryFilterBar';
 import { LibraryHeader } from '@/components/LibraryHeader';
 import { LibraryHomeShelvesSection } from '@/components/LibraryHomeShelvesSection';
@@ -31,6 +30,12 @@ const LazySupportView = lazy(() =>
   import('@/components/SupportView').then((mod) => ({ default: mod.SupportView })),
 );
 
+const LazyEditorialBookStrip = lazy(() =>
+  import('@/components/EditorialBookStrip').then((mod) => ({
+    default: mod.EditorialBookStrip,
+  })),
+);
+
 interface Library2DViewProps {
   books: Book[];
   progress: Record<string, ReadingProgress>;
@@ -40,6 +45,7 @@ interface Library2DViewProps {
   shelfAltTitles?: Readonly<Record<string, string[]>>;
   favoriteShelfKeys?: ReadonlySet<string>;
   planToReadShelfKeys?: ReadonlySet<string>;
+  planToReadBookIds?: ReadonlySet<string>;
   collections?: readonly CustomCollection[];
   storage: StorageStats | null;
   loading: boolean;
@@ -58,6 +64,7 @@ interface Library2DViewProps {
   onDismissContinue?: (book: Book) => void;
   onOpenStats?: () => void;
   onOpenUsage?: () => void;
+  onOpenCacheManager?: () => void;
   onUploadClick?: () => void;
   onProtectionClick?: () => void;
   unprotectedBookCount?: number;
@@ -70,6 +77,7 @@ interface Library2DViewProps {
   onShelfAltTitlesChanged?: (shelfName: string, altTitles: string[]) => void;
   onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
   onTogglePlanToRead?: (shelfName: string, nextPlanToRead: boolean) => void;
+  onTogglePlanToReadBook?: (book: Book, nextPlanToRead: boolean) => void;
   onCollectionSaved?: (collection: CustomCollection) => void;
   onCollectionDeleted?: (collectionId: string) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
@@ -96,95 +104,27 @@ function LibraryGridSkeleton() {
 }
 
 export function Library2DView({
-  books,
-  progress,
-  shelfCovers,
-  shelfAccess,
-  shelfTags,
-  shelfAltTitles,
-  favoriteShelfKeys,
-  planToReadShelfKeys,
-  collections,
-  storage,
-  loading,
-  theme,
-  viewState,
-  sessionRole = 'owner',
-  sessionExpiresAt = null,
-  canUse3D = false,
-  viewMode = '2d',
-  onChangeViewMode,
-  onCycleTheme,
-  onRefresh,
-  onLogout,
-  onOpenBook,
-  onInspectBook,
-  onDismissContinue,
-  onOpenStats,
-  onOpenUsage,
-  onUploadClick,
-  onProtectionClick,
-  unprotectedBookCount = 0,
-  onEditBook,
-  onBooksUpdated,
-  onRenameShelf,
-  onShelfCoverChanged,
-  onShelfAccessChanged,
-  onShelfTagsChanged,
-  onShelfAltTitlesChanged,
-  onToggleFavoriteShelf,
-  onTogglePlanToRead,
-  onCollectionSaved,
-  onCollectionDeleted,
-  onMoveSelectedToShelf,
-  onDeleteSelected,
-  onApiError,
-  onNotify,
+  books, progress, shelfCovers, shelfAccess, shelfTags, shelfAltTitles,
+  favoriteShelfKeys, planToReadShelfKeys, planToReadBookIds, collections,
+  storage, loading, theme, viewState, sessionRole = 'owner', sessionExpiresAt = null,
+  canUse3D = false, viewMode = '2d', onChangeViewMode, onCycleTheme, onRefresh, onLogout,
+  onOpenBook, onInspectBook, onDismissContinue, onOpenStats, onOpenUsage, onOpenCacheManager,
+  onUploadClick, onProtectionClick, unprotectedBookCount = 0, onEditBook, onBooksUpdated,
+  onRenameShelf, onShelfCoverChanged, onShelfAccessChanged, onShelfTagsChanged,
+  onShelfAltTitlesChanged, onToggleFavoriteShelf, onTogglePlanToRead, onTogglePlanToReadBook,
+  onCollectionSaved, onCollectionDeleted, onMoveSelectedToShelf, onDeleteSelected,
+  onApiError, onNotify,
 }: Library2DViewProps) {
   const isDark = isDarkTheme(theme);
   const {
-    activeTab,
-    setActiveTab,
-    openedLibraryShelf,
-    openLibraryShelf,
-    closeLibraryShelf,
-    searchQuery,
-    setSearchQuery,
-    statusFilter,
-    setStatusFilter,
-    sortMode,
-    setSortMode,
-    selectionMode,
-    selectedIds,
-    allShelves,
-    libraryShelves,
-    continueReadingBooks,
-    weeklyPopularBooks,
-    recentlyAddedBooks,
-    filteredBooks,
-    visibleShelves,
-    selectedBooks,
-    isFiltering,
-    toggleSelectionMode,
-    toggleSelectBook,
-    selectAllVisible,
-    selectBookIds,
-    clearSelection,
-    clearFilters,
-    authorFilter,
-    setAuthorFilter,
-    includedTags,
-    excludedTags,
-    tagMatchMode,
-    setTagMatchMode,
-    cycleTagFilter,
-    removeIncludedTag,
-    removeExcludedTag,
-    clearTagFilters,
-    filterByAuthor,
-    filterByTag,
-    availableAuthors,
-    activeCollectionId,
+    activeTab, setActiveTab, openedLibraryShelf, openLibraryShelf, closeLibraryShelf,
+    searchQuery, setSearchQuery, statusFilter, setStatusFilter, sortMode, setSortMode,
+    selectionMode, selectedIds, allShelves, libraryShelves, continueReadingBooks,
+    weeklyPopularBooks, recentlyAddedBooks, filteredBooks, visibleShelves, selectedBooks,
+    isFiltering, toggleSelectionMode, toggleSelectBook, selectAllVisible, selectBookIds,
+    clearSelection, clearFilters, authorFilter, setAuthorFilter, includedTags, excludedTags,
+    tagMatchMode, setTagMatchMode, cycleTagFilter, removeIncludedTag, removeExcludedTag,
+    clearTagFilters, filterByAuthor, filterByTag, availableAuthors, activeCollectionId,
     setActiveCollectionId,
   } = viewState;
 
@@ -259,6 +199,7 @@ export function Library2DView({
         onCycleTheme={onCycleTheme}
         onOpenStats={onOpenStats}
         onOpenUsage={onOpenUsage}
+        onOpenCacheManager={onOpenCacheManager}
         onUploadClick={onUploadClick}
         onProtectionClick={onProtectionClick}
         unprotectedBookCount={unprotectedBookCount}
@@ -311,6 +252,7 @@ export function Library2DView({
               shelfAltTitles={shelfAltTitles}
               favoriteShelfKeys={favoriteShelfKeys}
               planToReadShelfKeys={planToReadShelfKeys}
+              planToReadBookIds={planToReadBookIds}
               collections={collections}
               activeCollectionId={activeCollectionId}
               sessionRole={sessionRole}
@@ -347,6 +289,7 @@ export function Library2DView({
               onShelfAltTitlesChanged={onShelfAltTitlesChanged}
               onToggleFavoriteShelf={onToggleFavoriteShelf}
               onTogglePlanToRead={onTogglePlanToRead}
+              onTogglePlanToReadBook={onTogglePlanToReadBook}
               onCollectionSaved={onCollectionSaved}
               onCollectionDeleted={onCollectionDeleted}
               onMoveSelectedToShelf={onMoveSelectedToShelf}
@@ -442,13 +385,14 @@ export function Library2DView({
 
             {/* Cặp 2 dải biên tập: 01 Thịnh hành tuần này & 02 Mới cập nhật gần đây */}
             {!isFiltering && (
-              <>
-                <EditorialBookStrip
+              <Suspense fallback={null}>
+                <LazyEditorialBookStrip
                   eyebrow="01 · ĐỌC NHIỀU TRONG 7 NGÀY"
                   leadTitle="Thịnh hành"
                   accentTitle="tuần này"
                   books={weeklyPopularBooks}
                   progress={progress}
+                  planToReadBookIds={planToReadBookIds}
                   selectionMode={selectionMode}
                   selectedIds={selectedIds}
                   sessionRole={sessionRole}
@@ -456,14 +400,16 @@ export function Library2DView({
                   onOpenBook={onOpenBook}
                   onToggleSelect={toggleSelectBook}
                   onInspectBook={onInspectBook}
+                  onTogglePlanToReadBook={onTogglePlanToReadBook}
                 />
 
-                <EditorialBookStrip
+                <LazyEditorialBookStrip
                   eyebrow="02 · VỪA ĐƯA LÊN KỆ"
                   leadTitle="Mới cập nhật"
                   accentTitle="gần đây"
                   books={recentlyAddedBooks}
                   progress={progress}
+                  planToReadBookIds={planToReadBookIds}
                   selectionMode={selectionMode}
                   selectedIds={selectedIds}
                   sessionRole={sessionRole}
@@ -471,8 +417,9 @@ export function Library2DView({
                   onOpenBook={onOpenBook}
                   onToggleSelect={toggleSelectBook}
                   onInspectBook={onInspectBook}
+                  onTogglePlanToReadBook={onTogglePlanToReadBook}
                 />
-              </>
+              </Suspense>
             )}
 
             {/* Danh sách kệ sách */}
@@ -481,6 +428,7 @@ export function Library2DView({
               totalBooksCount={books.length}
               progress={progress}
               favoriteShelfKeys={favoriteShelfKeys}
+              planToReadBookIds={planToReadBookIds}
               sessionRole={sessionRole}
               isFiltering={isFiltering}
               selectionMode={selectionMode}
@@ -491,6 +439,7 @@ export function Library2DView({
               onEditBook={onEditBook}
               onRenameShelf={onRenameShelf}
               onToggleFavoriteShelf={onToggleFavoriteShelf}
+              onTogglePlanToReadBook={onTogglePlanToReadBook}
               onClearFilters={clearFilters}
             />
           </>

@@ -122,9 +122,15 @@ export default function App() {
     () => ({
       shelfAltTitles: store.shelfPrefs.altTitles,
       planToReadShelfKeys: store.planToReadShelfKeys,
+      planToReadBookIds: store.planToReadBookIds,
       collections: store.collections,
     }),
-    [store.collections, store.planToReadShelfKeys, store.shelfPrefs.altTitles],
+    [
+      store.collections,
+      store.planToReadBookIds,
+      store.planToReadShelfKeys,
+      store.shelfPrefs.altTitles,
+    ],
   );
 
   const libraryViewState = useLibraryViewState(
@@ -367,6 +373,9 @@ export default function App() {
             onCycleTheme={cycleTheme}
             onOpenStats={() => setStatsOpen(true)}
             onOpenUsage={isOwner ? () => navigateGateRoute('usage') : undefined}
+            onOpenCacheManager={
+              isOwner ? () => setModal({ kind: 'cache-manager' }) : undefined
+            }
             onRefresh={() => void loadLibrary()}
             onLogout={handleLogout}
             onOpenBook={(book: Book) => void reader.openBook(book)}
@@ -396,6 +405,7 @@ export default function App() {
             shelfAltTitles={store.shelfPrefs.altTitles}
             favoriteShelfKeys={store.effectiveFavoriteShelfKeys}
             planToReadShelfKeys={store.planToReadShelfKeys}
+            planToReadBookIds={store.planToReadBookIds}
             collections={store.collections}
             onShelfCoverChanged={isOwner ? store.handleShelfCoverChanged : undefined}
             onShelfAccessChanged={isOwner ? store.handleShelfAccessChanged : undefined}
@@ -403,6 +413,7 @@ export default function App() {
             onShelfAltTitlesChanged={isOwner ? store.handleShelfAltTitlesChanged : undefined}
             onToggleFavoriteShelf={store.handleToggleFavoriteShelf}
             onTogglePlanToRead={store.handleTogglePlanToRead}
+            onTogglePlanToReadBook={store.handleTogglePlanToReadBook}
             onCollectionSaved={isOwner ? store.handleCollectionSaved : undefined}
             onCollectionDeleted={isOwner ? store.handleCollectionDeleted : undefined}
             onApiError={handleApiError}
@@ -440,6 +451,7 @@ export default function App() {
             statsOpen={statsOpen}
             books={store.books}
             progress={store.progress}
+            planToReadBookIds={store.planToReadBookIds}
             sessionRole={session.role}
             onCloseInspect={() => setInspectedBookId(null)}
             onCloseStats={() => setStatsOpen(false)}
@@ -448,7 +460,11 @@ export default function App() {
             onSelectAuthor={libraryViewState.filterByAuthor}
             onMarkCompleted={store.handleMarkBookCompleted}
             onResetProgress={store.handleResetBookProgress}
+            onTogglePlanToReadBook={store.handleTogglePlanToReadBook}
             onEditBook={isOwner ? (book: Book) => setModal({ kind: 'edit', book }) : undefined}
+            onOpenCacheManager={
+              isOwner ? () => setModal({ kind: 'cache-manager' }) : undefined
+            }
           />
         </Suspense>
       )}

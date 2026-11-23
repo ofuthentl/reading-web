@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, Info, Lock } from 'lucide-react';
+import { Bookmark, Check, ChevronLeft, ChevronRight, Info, Lock } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
 import {
   computeBookProgressPercent,
@@ -16,12 +16,14 @@ interface EditorialCardProps {
   rankNumber: number;
   shouldLoadCover: boolean;
   progress?: ReadingProgress;
+  isPlanToRead?: boolean;
   selectionMode: boolean;
   selected: boolean;
   sessionRole?: AuthRole;
   onOpenBook: (book: Book) => void;
   onToggleSelect: (bookId: string) => void;
   onInspectBook?: (book: Book) => void;
+  onTogglePlanToReadBook?: (book: Book, nextPlanToRead: boolean) => void;
 }
 
 function EditorialRankedCard({
@@ -29,12 +31,14 @@ function EditorialRankedCard({
   rankNumber,
   shouldLoadCover,
   progress,
+  isPlanToRead = false,
   selectionMode,
   selected,
   sessionRole,
   onOpenBook,
   onToggleSelect,
   onInspectBook,
+  onTogglePlanToReadBook,
 }: EditorialCardProps) {
   const [imgFailed, setImgFailed] = useState(false);
 
@@ -149,19 +153,42 @@ function EditorialRankedCard({
           <Check className="h-3.5 w-3.5 stroke-[2.5]" />
         </span>
       ) : (
-        onInspectBook && (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onInspectBook(book);
-            }}
-            aria-label={`Xem giới thiệu ${book.title}`}
-            title="Xem giới thiệu & tuỳ chọn"
-            className="touch-action-visible absolute right-2 top-2 rounded-md border border-white/20 bg-black/65 p-1.5 text-white/90 opacity-85 backdrop-blur-sm transition-opacity hover:bg-black/90 focus:opacity-100 group-hover:opacity-100 sm:opacity-0"
-          >
-            <Info className="h-3.5 w-3.5" />
-          </button>
+        (onInspectBook || (!isMemberLocked && onTogglePlanToReadBook)) && (
+          <div className="absolute right-2 top-2 flex items-center gap-1">
+            {!isMemberLocked && onTogglePlanToReadBook && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onTogglePlanToReadBook(book, !isPlanToRead);
+                }}
+                aria-label={isPlanToRead ? `Bỏ Đọc sau ${book.title}` : `Lưu Đọc sau ${book.title}`}
+                aria-pressed={isPlanToRead}
+                title={isPlanToRead ? 'Gỡ tập này khỏi Đọc sau' : 'Lưu tập này vào Đọc sau'}
+                className={`rounded-md border p-1.5 backdrop-blur-sm transition-all ${
+                  isPlanToRead
+                    ? 'border-sky-400/55 bg-black/80 text-sky-300 opacity-100 hover:bg-black/95'
+                    : 'touch-action-visible border-white/20 bg-black/65 text-white/90 opacity-85 hover:bg-black/90 focus:opacity-100 group-hover:opacity-100 sm:opacity-0'
+                }`}
+              >
+                <Bookmark className={`h-3.5 w-3.5 ${isPlanToRead ? 'fill-sky-300' : ''}`} />
+              </button>
+            )}
+            {onInspectBook && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onInspectBook(book);
+                }}
+                aria-label={`Xem giới thiệu ${book.title}`}
+                title="Xem giới thiệu & tuỳ chọn"
+                className="touch-action-visible rounded-md border border-white/20 bg-black/65 p-1.5 text-white/90 opacity-85 backdrop-blur-sm transition-opacity hover:bg-black/90 focus:opacity-100 group-hover:opacity-100 sm:opacity-0"
+              >
+                <Info className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         )
       )}
 
@@ -207,6 +234,7 @@ export interface EditorialBookStripProps {
   accentTitle: string;
   books: Book[];
   progress: Record<string, ReadingProgress>;
+  planToReadBookIds?: ReadonlySet<string>;
   selectionMode: boolean;
   selectedIds: Set<string>;
   sessionRole?: AuthRole;
@@ -214,6 +242,7 @@ export interface EditorialBookStripProps {
   onOpenBook: (book: Book) => void;
   onToggleSelect: (bookId: string) => void;
   onInspectBook?: (book: Book) => void;
+  onTogglePlanToReadBook?: (book: Book, nextPlanToRead: boolean) => void;
 }
 
 /**
@@ -226,6 +255,7 @@ export function EditorialBookStrip({
   accentTitle,
   books,
   progress,
+  planToReadBookIds,
   selectionMode,
   selectedIds,
   sessionRole,
@@ -233,6 +263,7 @@ export function EditorialBookStrip({
   onOpenBook,
   onToggleSelect,
   onInspectBook,
+  onTogglePlanToReadBook,
 }: EditorialBookStripProps) {
   const { cardRef: sectionRef, isNearViewport } = useCardReveal<HTMLElement>();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -315,12 +346,14 @@ export function EditorialBookStrip({
             rankNumber={index + 1}
             shouldLoadCover={isNearViewport}
             progress={progress[book.id]}
+            isPlanToRead={Boolean(planToReadBookIds?.has(book.id))}
             selectionMode={selectionMode}
             selected={selectedIds.has(book.id)}
             sessionRole={sessionRole}
             onOpenBook={onOpenBook}
             onToggleSelect={onToggleSelect}
             onInspectBook={onInspectBook}
+            onTogglePlanToReadBook={onTogglePlanToReadBook}
           />
         ))}
       </div>

@@ -270,6 +270,7 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     computeWeeklyPopularBookIds(env.DB, rawBooks, 10),
     loadCatalogEnhancementsSnapshot(env.DB, auth, accessSnapshot, rawBooks).catch(() => ({
       planToReadShelves: [] as string[],
+      planToReadBooks: [] as string[],
       collections: [],
     })),
   ]);
@@ -290,6 +291,7 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     shelfTags,
     shelfAltTitles,
     planToReadShelves: catalogSnapshot.planToReadShelves,
+    planToReadBooks: catalogSnapshot.planToReadBooks,
     collections: catalogSnapshot.collections,
     ...(auth.role === 'owner' ? { shelfAccess: accessSnapshot.ownerShelfAccess } : {}),
     storage: effectiveStorage,
@@ -336,6 +338,7 @@ export async function deleteSingleBook(env: Env, bookId: string) {
     env.DB.prepare('DELETE FROM book_guest_packs WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
     env.DB.prepare('DELETE FROM guest_reading_progress WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
     env.DB.prepare('DELETE FROM book_bookmarks WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
+    env.DB.prepare('DELETE FROM user_plan_to_read_books WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
   ]);
 
   const keysToDelete = [
@@ -404,6 +407,7 @@ export async function bulkDeleteBooks(env: Env, rawIds: unknown) {
       env.DB.prepare(`DELETE FROM guest_reading_progress WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       env.DB.prepare(`DELETE FROM book_guest_packs WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       env.DB.prepare(`DELETE FROM book_bookmarks WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
+      env.DB.prepare(`DELETE FROM user_plan_to_read_books WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
     ]);
   }
 

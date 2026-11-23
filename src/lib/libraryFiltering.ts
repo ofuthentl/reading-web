@@ -146,9 +146,11 @@ export function matchesBookStatus(
   progress: Readonly<Record<string, ReadingProgress>>,
   filter: LibraryStatusFilter,
   planToReadShelfKeys?: ReadonlySet<string>,
+  planToReadBookIds?: ReadonlySet<string>,
 ): boolean {
   if (filter === 'all') return true;
   if (filter === 'plan_to_read') {
+    if (planToReadBookIds?.has(book.id)) return true;
     const shelfKey = toShelfPrefKey(book.shelf || 'Kho chưa phân loại');
     return Boolean(planToReadShelfKeys?.has(shelfKey));
   }
@@ -163,10 +165,12 @@ export function matchesShelfStatus(
   progress: Readonly<Record<string, ReadingProgress>>,
   filter: LibraryStatusFilter,
   planToReadShelfKeys?: ReadonlySet<string>,
+  planToReadBookIds?: ReadonlySet<string>,
 ): boolean {
   if (filter === 'all') return true;
   if (filter === 'plan_to_read') {
-    return Boolean(planToReadShelfKeys?.has(shelf.key));
+    if (planToReadShelfKeys?.has(shelf.key)) return true;
+    return Boolean(planToReadBookIds && shelf.books.some((b) => planToReadBookIds.has(b.id)));
   }
   const total = shelf.books.length;
   if (total === 0) return false;

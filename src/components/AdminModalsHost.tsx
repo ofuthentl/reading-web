@@ -16,10 +16,17 @@ const LazyAdminProtectionModal = lazy(() =>
   })),
 );
 
+const LazyCacheManagerModal = lazy(() =>
+  import('@/components/CacheManagerModal').then((mod) => ({
+    default: mod.CacheManagerModal,
+  })),
+);
+
 export type LibraryModalState =
   | { kind: 'none' }
   | { kind: 'upload' }
   | { kind: 'protection' }
+  | { kind: 'cache-manager' }
   | { kind: 'edit'; book: Book }
   | { kind: 'rename-shelf'; shelfName: string }
   | { kind: 'bulk-shelf'; books: Book[] }
@@ -86,6 +93,16 @@ export function AdminModalsHost({
             onClose={onClose}
             onBookPackSynced={onBookPackSynced}
             onApiError={onApiError}
+            onNotify={onNotify}
+          />
+        </Suspense>
+      )}
+      {modal.kind === 'cache-manager' && (
+        <Suspense fallback={null}>
+          <LazyCacheManagerModal
+            open
+            books={books}
+            onClose={onClose}
             onNotify={onNotify}
           />
         </Suspense>

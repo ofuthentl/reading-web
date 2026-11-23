@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import {
-  BookOpen, Calendar, CheckCircle2, HardDrive, Library, Lock, Pencil, RotateCcw, UserRound, X,
+  Bookmark, BookOpen, Calendar, CheckCircle2, HardDrive, Library, Lock, Pencil, RotateCcw, UserRound, X,
 } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
 import { formatBytes } from '@/lib/api';
@@ -18,6 +18,7 @@ import { useCoverUrl } from '@/hooks/useCoverUrl';
 export interface BookInfoModalProps {
   book: Book | null;
   progress?: ReadingProgress;
+  isPlanToRead?: boolean;
   sessionRole?: AuthRole;
   onClose: () => void;
   onOpenBook: (book: Book) => void;
@@ -25,12 +26,14 @@ export interface BookInfoModalProps {
   onSelectAuthor?: (authorName: string) => void;
   onMarkCompleted: (book: Book) => void;
   onResetProgress: (book: Book) => void;
+  onTogglePlanToRead?: (book: Book, nextPlanToRead: boolean) => void;
   onEditBook?: (book: Book) => void;
 }
 
 export function BookInfoModal({
   book,
   progress,
+  isPlanToRead = false,
   sessionRole,
   onClose,
   onOpenBook,
@@ -38,6 +41,7 @@ export function BookInfoModal({
   onSelectAuthor,
   onMarkCompleted,
   onResetProgress,
+  onTogglePlanToRead,
   onEditBook,
 }: BookInfoModalProps) {
   useEffect(() => {
@@ -239,6 +243,28 @@ export function BookInfoModal({
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-canvas/60 px-5 py-3.5">
           <div className="flex flex-wrap items-center gap-2">
+            {!isMemberLocked && onTogglePlanToRead && (
+              <button
+                type="button"
+                aria-pressed={isPlanToRead}
+                onClick={() => onTogglePlanToRead(book, !isPlanToRead)}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition-colors ${
+                  isPlanToRead
+                    ? 'border-sky-500/45 bg-sky-500/12 text-sky-700 hover:bg-sky-500/20 dark:border-sky-400/40 dark:text-sky-300'
+                    : 'border-line bg-surface text-ink hover:border-line-strong hover:bg-subtle'
+                }`}
+              >
+                <Bookmark
+                  className={`h-3.5 w-3.5 ${
+                    isPlanToRead
+                      ? 'fill-sky-500 text-sky-500 dark:fill-sky-400 dark:text-sky-400'
+                      : 'text-ink-muted'
+                  }`}
+                />
+                <span>{isPlanToRead ? 'Đã lưu Đọc sau' : 'Đọc sau'}</span>
+              </button>
+            )}
+
             {!isMemberLocked && !isGuestUnready && !isCompleted && (
               <button
                 type="button"

@@ -162,6 +162,13 @@ CREATE TABLE IF NOT EXISTS user_plan_to_read (
   PRIMARY KEY (user_scope, shelf_key)
 );
 
+CREATE TABLE IF NOT EXISTS user_plan_to_read_books (
+  user_scope TEXT NOT NULL,
+  book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_scope, book_id)
+);
+
 CREATE TABLE IF NOT EXISTS custom_collections (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -193,4 +200,5 @@ CREATE INDEX IF NOT EXISTS idx_usage_daily_readers_scope_day ON usage_daily_read
 CREATE INDEX IF NOT EXISTS idx_highlights_user_book ON book_highlights(user_scope, book_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_highlights_user_created ON book_highlights(user_scope, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_plan_to_read_user ON user_plan_to_read(user_scope, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_plan_to_read_books_user ON user_plan_to_read_books(user_scope, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_collection_shelves_shelf ON collection_shelves(shelf_key);

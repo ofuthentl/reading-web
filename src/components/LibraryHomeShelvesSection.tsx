@@ -7,6 +7,7 @@ export interface LibraryHomeShelvesSectionProps {
   totalBooksCount: number;
   progress: Record<string, ReadingProgress>;
   favoriteShelfKeys?: ReadonlySet<string>;
+  planToReadBookIds?: ReadonlySet<string>;
   sessionRole?: AuthRole;
   isFiltering: boolean;
   selectionMode: boolean;
@@ -17,6 +18,7 @@ export interface LibraryHomeShelvesSectionProps {
   onEditBook?: (book: Book) => void;
   onRenameShelf?: (shelfName: string) => void;
   onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
+  onTogglePlanToReadBook?: (book: Book, nextPlanToRead: boolean) => void;
   onClearFilters: () => void;
 }
 
@@ -25,6 +27,7 @@ export function LibraryHomeShelvesSection({
   totalBooksCount,
   progress,
   favoriteShelfKeys,
+  planToReadBookIds,
   sessionRole,
   isFiltering,
   selectionMode,
@@ -35,6 +38,7 @@ export function LibraryHomeShelvesSection({
   onEditBook,
   onRenameShelf,
   onToggleFavoriteShelf,
+  onTogglePlanToReadBook,
   onClearFilters,
 }: LibraryHomeShelvesSectionProps) {
   if (visibleShelves.length === 0) {
@@ -148,6 +152,7 @@ export function LibraryHomeShelvesSection({
                     book={book}
                     staggerIndex={index}
                     progress={progress[book.id]}
+                    isPlanToRead={Boolean(planToReadBookIds?.has(book.id))}
                     sessionRole={sessionRole}
                     selectionMode={selectionMode}
                     selected={selectedIds.has(book.id)}
@@ -155,6 +160,7 @@ export function LibraryHomeShelvesSection({
                     onToggleSelect={onToggleSelectBook}
                     onEdit={onEditBook}
                     onInspect={onInspectBook}
+                    onTogglePlanToRead={onTogglePlanToReadBook}
                   />
                 ))}
               </div>

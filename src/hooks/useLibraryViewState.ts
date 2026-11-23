@@ -55,6 +55,7 @@ function writeStoredLibraryTab(tab: LibraryTab) {
 export interface LibraryCatalogStateOptions {
   shelfAltTitles?: Readonly<Record<string, string[]>>;
   planToReadShelfKeys?: ReadonlySet<string>;
+  planToReadBookIds?: ReadonlySet<string>;
   collections?: readonly CustomCollection[];
 }
 
@@ -120,6 +121,7 @@ export function useLibraryViewState(
 ): LibraryViewState {
   const shelfAltTitles = catalogOptions?.shelfAltTitles;
   const planToReadShelfKeys = catalogOptions?.planToReadShelfKeys;
+  const planToReadBookIds = catalogOptions?.planToReadBookIds;
   const collections = catalogOptions?.collections;
 
   const [activeTab, setActiveTabState] = useState<LibraryTab>(readStoredLibraryTab);
@@ -318,7 +320,9 @@ export function useLibraryViewState(
   const libraryShelves = useMemo(() => {
     const matched = allShelves.filter((shelf) => {
       if (activeCollectionShelfSet && !activeCollectionShelfSet.has(shelf.key)) return false;
-      if (!matchesShelfStatus(shelf, progress, statusFilter, planToReadShelfKeys)) return false;
+      if (!matchesShelfStatus(shelf, progress, statusFilter, planToReadShelfKeys, planToReadBookIds)) {
+        return false;
+      }
       if (
         !matchesShelfTagFilters(
           shelf.key,
@@ -344,6 +348,7 @@ export function useLibraryViewState(
     includedTagKeys,
     normalizedAuthor,
     normalizedQuery,
+    planToReadBookIds,
     planToReadShelfKeys,
     progress,
     shelfAltTitles,
@@ -357,7 +362,9 @@ export function useLibraryViewState(
     return books.filter((book) => {
       const shelfKey = toShelfPrefKey(book.shelf || 'Kho chưa phân loại');
       if (activeShelfKey && shelfKey !== activeShelfKey) return false;
-      if (!matchesBookStatus(book, progress, statusFilter, planToReadShelfKeys)) return false;
+      if (!matchesBookStatus(book, progress, statusFilter, planToReadShelfKeys, planToReadBookIds)) {
+        return false;
+      }
       if (
         !matchesShelfTagFilters(
           shelfKey,
@@ -379,6 +386,7 @@ export function useLibraryViewState(
     includedTagKeys,
     normalizedAuthor,
     normalizedQuery,
+    planToReadBookIds,
     planToReadShelfKeys,
     progress,
     shelfAltTitles,

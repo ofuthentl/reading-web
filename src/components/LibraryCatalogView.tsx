@@ -42,6 +42,7 @@ export interface LibraryCatalogViewProps {
   shelfAltTitles?: Readonly<Record<string, string[]>>;
   favoriteShelfKeys?: ReadonlySet<string>;
   planToReadShelfKeys?: ReadonlySet<string>;
+  planToReadBookIds?: ReadonlySet<string>;
   collections?: readonly CustomCollection[];
   activeCollectionId?: string | null;
   sessionRole?: AuthRole;
@@ -78,6 +79,7 @@ export interface LibraryCatalogViewProps {
   onShelfAltTitlesChanged?: (shelfName: string, altTitles: string[]) => void;
   onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
   onTogglePlanToRead?: (shelfName: string, nextPlanToRead: boolean) => void;
+  onTogglePlanToReadBook?: (book: Book, nextPlanToRead: boolean) => void;
   onCollectionSaved?: (collection: CustomCollection) => void;
   onCollectionDeleted?: (collectionId: string) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
@@ -97,6 +99,7 @@ export function LibraryCatalogView({
   shelfAltTitles,
   favoriteShelfKeys,
   planToReadShelfKeys,
+  planToReadBookIds,
   collections = [],
   activeCollectionId = null,
   sessionRole,
@@ -133,6 +136,7 @@ export function LibraryCatalogView({
   onShelfAltTitlesChanged,
   onToggleFavoriteShelf,
   onTogglePlanToRead,
+  onTogglePlanToReadBook,
   onCollectionSaved,
   onCollectionDeleted,
   onMoveSelectedToShelf,
@@ -241,6 +245,7 @@ export function LibraryCatalogView({
         <ShelfDetailView
           summary={openedShelfSummary}
           progress={progress}
+          planToReadBookIds={planToReadBookIds}
           sessionRole={sessionRole}
           selectionMode={selectionMode}
           selectedIds={selectedIds}
@@ -265,6 +270,7 @@ export function LibraryCatalogView({
           }
           onToggleFavorite={onToggleFavoriteShelf}
           onTogglePlanToRead={onTogglePlanToRead}
+          onTogglePlanToReadBook={onTogglePlanToReadBook}
           onMoveSelectedToShelf={onMoveSelectedToShelf}
           onDeleteSelected={onDeleteSelected}
         />

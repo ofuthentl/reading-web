@@ -1,4 +1,4 @@
--- Wave 3 (D-036): Tên gọi khác (alt_titles), Để dành đọc sau (Plan to Read) & Bộ sưu tập tuỳ chỉnh (Custom Collections)
+-- Wave 3 (D-036): Tên gọi khác (alt_titles), Để dành đọc sau (Kệ & Tập) & Bộ sưu tập tuỳ chỉnh (Custom Collections)
 ALTER TABLE shelf_prefs ADD COLUMN alt_titles_json TEXT;
 
 CREATE TABLE IF NOT EXISTS user_plan_to_read (
@@ -10,6 +10,16 @@ CREATE TABLE IF NOT EXISTS user_plan_to_read (
 
 CREATE INDEX IF NOT EXISTS idx_plan_to_read_user
   ON user_plan_to_read(user_scope, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS user_plan_to_read_books (
+  user_scope TEXT NOT NULL,
+  book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_scope, book_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_plan_to_read_books_user
+  ON user_plan_to_read_books(user_scope, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS custom_collections (
   id TEXT PRIMARY KEY,

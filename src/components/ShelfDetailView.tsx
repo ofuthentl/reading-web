@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, BookMarked, FolderInput, Search, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Bookmark, BookMarked, FolderInput, Search, Trash2, X } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
 import type { ShelfSummary } from '@/lib/shelfSummary';
 import { BookCard } from '@/components/BookCard';
@@ -9,6 +9,7 @@ import { normalizeSearchText } from '@/hooks/useLibraryViewState';
 interface ShelfDetailViewProps {
   summary: ShelfSummary;
   progress: Record<string, ReadingProgress>;
+  planToReadBookIds?: ReadonlySet<string>;
   sessionRole?: AuthRole;
   selectionMode: boolean;
   selectedIds: Set<string>;
@@ -29,6 +30,7 @@ interface ShelfDetailViewProps {
   onManageAccess?: () => void;
   onToggleFavorite?: (shelfName: string, nextFavorite: boolean) => void;
   onTogglePlanToRead?: (shelfName: string, nextPlanToRead: boolean) => void;
+  onTogglePlanToReadBook?: (book: Book, nextPlanToRead: boolean) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
 }
@@ -36,6 +38,7 @@ interface ShelfDetailViewProps {
 export function ShelfDetailView({
   summary,
   progress,
+  planToReadBookIds,
   sessionRole,
   selectionMode,
   selectedIds,
@@ -56,24 +59,42 @@ export function ShelfDetailView({
   onManageAccess,
   onToggleFavorite,
   onTogglePlanToRead,
+  onTogglePlanToReadBook,
   onMoveSelectedToShelf,
   onDeleteSelected,
 }: ShelfDetailViewProps) {
   const { shelf, bookCount } = summary;
   const [volumeQuery, setVolumeQuery] = useState('');
+  const [onlyPtrVolumes, setOnlyPtrVolumes] = useState(false);
 
   useEffect(() => {
     setVolumeQuery('');
+    setOnlyPtrVolumes(false);
   }, [shelf.key]);
+
+  const ptrVolumeCount = useMemo(
+    () =>
+      planToReadBookIds
+        ? shelf.books.filter((book) => planToReadBookIds.has(book.id)).length
+        : 0,
+    [planToReadBookIds, shelf.books],
+  );
+
+  useEffect(() => {
+    if (onlyPtrVolumes && ptrVolumeCount === 0) {
+      setOnlyPtrVolumes(false);
+    }
+  }, [onlyPtrVolumes, ptrVolumeCount]);
 
   const normalizedQuery = useMemo(() => normalizeSearchText(volumeQuery), [volumeQuery]);
 
   const displayedBooks = useMemo(() => {
-    if (!normalizedQuery) return shelf.books;
-    return shelf.books.filter((book) =>
-      normalizeSearchText(`${book.title} ${book.author}`).includes(normalizedQuery),
-    );
-  }, [shelf.books, normalizedQuery]);
+    return shelf.books.filter((book) => {
+      if (onlyPtrVolumes && !planToReadBookIds?.has(book.id)) return false;
+      if (!normalizedQuery) return true;
+      return normalizeSearchText(`${book.title} ${book.author}`).includes(normalizedQuery);
+    });
+  }, [shelf.books, normalizedQuery, onlyPtrVolumes, planToReadBookIds]);
 
   const selectedInShelf = useMemo(
     () => shelf.books.filter((book) => selectedIds.has(book.id)),
@@ -171,11 +192,28 @@ export function ShelfDetailView({
       {/* Tiêu đề danh sách tập & ô tìm nhanh khi kệ dài */}
       <section aria-label={`Danh sách tập của ${shelf.name}`} className="space-y-4">
         <div className="flex flex-col gap-3 border-b border-line pb-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-display text-base font-semibold text-ink">Danh sách tập</h3>
             <span className="rounded-full border border-line bg-surface px-2 py-0.5 text-xs text-ink-muted">
-              {normalizedQuery ? `${displayedBooks.length} / ${bookCount}` : `${bookCount} tập`}
+              {normalizedQuery || onlyPtrVolumes
+                ? `${displayedBooks.length} / ${bookCount}`
+                : `${bookCount} tập`}
             </span>
+            {ptrVolumeCount > 0 && (
+              <button
+                type="button"
+                aria-pressed={onlyPtrVolumes}
+                onClick={() => setOnlyPtrVolumes((v) => !v)}
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                  onlyPtrVolumes
+                    ? 'border-sky-500/50 bg-sky-500/15 text-sky-700 dark:border-sky-400/45 dark:text-sky-300'
+                    : 'border-line bg-surface text-ink-muted hover:border-line-strong hover:text-ink'
+                }`}
+              >
+                <Bookmark className={`h-3 w-3 ${onlyPtrVolumes ? 'fill-current' : 'text-sky-500'}`} />
+                <span>Đọc sau ({ptrVolumeCount})</span>
+              </button>
+            )}
           </div>
 
           {bookCount >= 8 && (
@@ -226,6 +264,7 @@ export function ShelfDetailView({
                 book={book}
                 staggerIndex={index}
                 progress={progress[book.id]}
+                isPlanToRead={Boolean(planToReadBookIds?.has(book.id))}
                 sessionRole={sessionRole}
                 selectionMode={selectionMode}
                 selected={selectedIds.has(book.id)}
@@ -233,6 +272,7 @@ export function ShelfDetailView({
                 onToggleSelect={onToggleSelect}
                 onEdit={onEditBook}
                 onInspect={onInspectBook}
+                onTogglePlanToRead={onTogglePlanToReadBook}
               />
             ))}
           </div>

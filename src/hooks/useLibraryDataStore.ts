@@ -64,6 +64,7 @@ export function useLibraryDataStore({
   const [weeklyPopularIds, setWeeklyPopularIds] = useState<string[]>([]);
   const [shelfPrefs, setShelfPrefs] = useState<ShelfPrefsState>(readLocalShelfPrefs);
   const [planToReadShelfKeys, setPlanToReadShelfKeys] = useState<Set<string>>(() => new Set());
+  const [planToReadBookIds, setPlanToReadBookIds] = useState<Set<string>>(() => new Set());
   const [collections, setCollections] = useState<CustomCollection[]>([]);
   const [storage, setStorage] = useState<StorageStats | null>(null);
   const [selectionResetKey, setSelectionResetKey] = useState(0);
@@ -130,6 +131,7 @@ export function useLibraryDataStore({
       setPlanToReadShelfKeys(
         new Set((state.planToReadShelves || []).map(toShelfPrefKey).filter(Boolean)),
       );
+      setPlanToReadBookIds(new Set((state.planToReadBooks || []).filter(Boolean)));
       setCollections(sortCollectionsList(state.collections || []));
       setStorage(state.storage);
       setSession(state.session);
@@ -176,6 +178,7 @@ export function useLibraryDataStore({
     setWeeklyPopularIds([]);
     setShelfPrefs({ covers: {}, favorites: [] });
     setPlanToReadShelfKeys(new Set());
+    setPlanToReadBookIds(new Set());
     setCollections([]);
     setStorage(null);
   }, []);
@@ -303,6 +306,37 @@ export function useLibraryDataStore({
     [addToast, onApiError],
   );
 
+  const handleTogglePlanToReadBook = useCallback(
+    (book: Book, nextPlanToRead: boolean) => {
+      const bookId = book.id;
+      if (!bookId) return;
+      setPlanToReadBookIds((prev) => {
+        const next = new Set(prev);
+        if (nextPlanToRead) next.add(bookId);
+        else next.delete(bookId);
+        return next;
+      });
+      addToast(
+        nextPlanToRead
+          ? `Đã thêm "${book.title}" vào danh sách Đọc sau.`
+          : `Đã gỡ "${book.title}" khỏi danh sách Đọc sau.`,
+        'info',
+      );
+      void import('@/lib/catalogApi')
+        .then((m) => m.setPlanToReadBook(bookId, nextPlanToRead))
+        .catch((err) => {
+          setPlanToReadBookIds((prev) => {
+            const reverted = new Set(prev);
+            if (nextPlanToRead) reverted.delete(bookId);
+            else reverted.add(bookId);
+            return reverted;
+          });
+          onApiError(err, 'Không thể cập nhật Đọc sau cho tập sách.');
+        });
+    },
+    [addToast, onApiError],
+  );
+
   const handleCollectionSaved = useCallback((collection: CustomCollection) => {
     setCollections((prev) => {
       const exists = prev.some((c) => c.id === collection.id);
@@ -407,6 +441,15 @@ export function useLibraryDataStore({
       Object.fromEntries(Object.entries(prev).filter(([id]) => !idSet.has(id))),
     );
     setShelfPrefs((prev) => pruneDeletedBooksFromPrefs(prev, idSet));
+    setPlanToReadBookIds((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (idSet.has(id)) changed = true;
+        else next.add(id);
+      }
+      return changed ? next : prev;
+    });
     setStorage(nextStorage);
   }, []);
 
@@ -417,6 +460,7 @@ export function useLibraryDataStore({
     weeklyPopularIds,
     shelfPrefs,
     planToReadShelfKeys,
+    planToReadBookIds,
     collections,
     storage,
     selectionResetKey,
@@ -435,6 +479,7 @@ export function useLibraryDataStore({
     handleShelfTagsChanged,
     handleShelfAltTitlesChanged,
     handleTogglePlanToRead,
+    handleTogglePlanToReadBook,
     handleCollectionSaved,
     handleCollectionDeleted,
     handleToggleFavoriteShelf,

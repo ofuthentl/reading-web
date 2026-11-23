@@ -1,6 +1,7 @@
 import type { AniListNovelCandidate, CustomCollection } from '@/types';
 import {
   LOCAL_COLLECTIONS_STORAGE_KEY,
+  LOCAL_PTR_BOOKS_STORAGE_KEY,
   LOCAL_PTR_STORAGE_KEY,
   MAX_SHELF_NAME_LENGTH,
   apiFetch,
@@ -94,6 +95,33 @@ export async function setPlanToReadShelf(
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(data.error || 'Không thể cập nhật danh sách Đọc sau.');
+  }
+}
+
+export async function setPlanToReadBook(
+  bookId: string,
+  planToRead: boolean,
+): Promise<void> {
+  assertApiConfigured();
+  const id = bookId.trim();
+  if (!id) throw new Error('ID tập sách không hợp lệ.');
+
+  if (!isCloudMode) {
+    const current = new Set(readLocalJson<string[]>(LOCAL_PTR_BOOKS_STORAGE_KEY, []));
+    if (planToRead) current.add(id);
+    else current.delete(id);
+    writeLocalJson(LOCAL_PTR_BOOKS_STORAGE_KEY, Array.from(current));
+    return;
+  }
+
+  const res = await apiFetch('/api/plan-to-read', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bookId: id, planToRead }),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || 'Không thể cập nhật trạng thái Đọc sau cho tập sách.');
   }
 }
 
