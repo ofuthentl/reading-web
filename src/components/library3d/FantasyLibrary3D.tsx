@@ -39,7 +39,6 @@ export interface FantasyLibrary3DProps {
   onOpenBook: (book: Book) => void;
   onUploadClick: () => void;
   onEditBook?: (book: Book) => void;
-  onRenameShelf?: (shelfName: string) => void;
   onMoveSelectedToShelf?: (selectedBooks: Book[]) => void;
   onDeleteSelected?: (selectedBooks: Book[]) => void;
 }
@@ -310,9 +309,9 @@ export function FantasyLibrary3D({
     }
   }, [viewState.activeShelfKey, viewState.searchQuery, firstVisibleShelfKey, handleJumpToShelf]);
 
-  // Close pinned BookInspectCard / NPC Dialogue on Escape
+  // Close pinned BookInspectCard / NPC Dialogue / Boss Seal Notice on Escape
   useEffect(() => {
-    if ((!selectedBookId && !activeDialogue) || paused) return undefined;
+    if ((!selectedBookId && !activeDialogue && !bossSealNotice) || paused) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       const target = event.target;

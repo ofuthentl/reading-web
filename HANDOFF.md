@@ -1,21 +1,24 @@
 # HANDOFF
-Cập nhật: 2026-11-23 14:25 | Nhánh: fix/audit-bugs-drop-pdf-and-fonts | Build: 🟢 typecheck · 🟢 ESLint 0/0 · 🟢 build · 🟢 Worker tsc
-Nhiệm vụ hiện tại: **Vá lỗi tồn đọng toàn diện, gỡ bỏ PDF (`D-033`), 4 chế độ nền App 2D + Reader & font tiếng Việt tự lưu trữ (`docs/plans/audit-fixes-drop-pdf-and-fonts.md`)**.
+Cập nhật: 2026-11-23 14:55 | Nhánh: fix/audit-bugs-drop-pdf-and-fonts | Build: 🟢 typecheck · 🟢 ESLint 0/0 · 🟢 build (`85.52 kB` gzip) · 🟢 Worker tsc
+Nhiệm vụ hiện tại: **Hoàn tất 5/5 Phase kế hoạch `docs/plans/audit-fixes-drop-pdf-and-fonts.md`** (vá lỗi tồn đọng toàn diện, gỡ PDF `D-033`, font tiếng Việt cục bộ 0 CDN + 4 chế độ nền App 2D/Reader giữ nguyên 3D `D-034`).
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md
 
 ## Đang làm dở
-- **Phase 1–3 (Xong):** Gỡ PDF & drei; vá Backend Worker + D1/R2; font tiếng Việt cục bộ 0 CDN (`Literata`, `Be Vietnam Pro`, `JetBrains Mono`) + 4 chế độ nền (`Ban ngày` trắng sáng `#fcfbf8` · `Giữa trưa` giấy kem ấm `#f6f1e7`/`#f4ecd8` · `Chiều tối` `#0d1117` · `Đêm khuya` `#060608`) giữ nguyên 100% 3D + sửa B1 & M-04.
-- **Phase 4a & 4b (Xong):**
-  - **4a:** Auth lifecycle (`H-01`, `H-02`, `H-06`, `L-06`), Trình đọc/Lightbox/Guest stream (`H-04`, `H-09`, `M-05`, `M-09`, `M-10`, `L-04`, `L-05`) & đổi màu đúng `Ban ngày`/`Giữa trưa`.
-  - **4b:** Store/Rollback (`H-05`, `M-03`, race guard `loadLibrary`), lọc khách (`M-02`), ổn định form Modal (`M-06`, `M-07`, `M-08`), truyền thẳng `arrayBuffer` & `skipMediaBlobs` cho DOCX (`M-12`), UX/A11y (`L-01`–`L-06`, dọn `formatFilter` thừa, chuyển helper xử lý tác giả kệ sang `shelfSummary.ts`).
-- Đang chuyển sang **Phase 5** (vá lỗi 3D nhỏ, cập nhật `DECISIONS.md` + `ARCHITECTURE.md` và kiểm định thực tế).
+- Toàn bộ 5 Phase đã triển khai, kiểm định tĩnh và chạy thử thực tế (Worker local D1/R2 + Trình duyệt PC `1280×800`, Mobile dọc `390×844` & xoay ngang `844×390`) ĐẠT 100%, sẵn sàng đẩy nhánh & tạo Pull Request vào `main`.
 
-## Bước tiếp theo
-1. Thực hiện Phase 5: vá `gltfLoader.ts`, `LibraryCanvas.tsx`, `FantasyLibrary3D.tsx`, `InteractiveStations.tsx`, `layout3d.ts`, `KiritoAvatar.tsx`, `WorldQuickBar.tsx` (không sửa logic 3D theme); cập nhật `docs/DECISIONS.md` (`D-033`, `D-034`) & `docs/ARCHITECTURE.md`.
-2. Kiểm định thực tế Backend Worker & Frontend PC/Mobile trên trình duyệt theo checklist plan.
+## Bước tiếp theo (Triển khai Production — chờ người dùng thực hiện)
+1. **Chạy 2 migration D1 lên production** *(chạy trước khi deploy Worker nếu đang còn sách PDF cũ)*:
+   - `cd workers/r2-storage`
+   - `npx wrangler d1 execute library-db --remote --file=./migrations/0008_drop_pdf.sql`
+   - `npx wrangler d1 execute library-db --remote --file=./migrations/0009_perf_indexes.sql`
+2. **Deploy Cloudflare Worker:** `cd workers/r2-storage && npm run deploy`
+3. **Push nhánh & mở Pull Request vào `main`:** `git push -u origin fix/audit-bugs-drop-pdf-and-fonts` rồi merge PR khi CI xanh để auto-deploy `ofu.lol`.
+4. *(Tuỳ chọn sau khi kiểm tra)* Dọn các tệp PDF cũ mồ côi trên R2 bucket nếu trước đó đã từng tải PDF lên production.
 
 ## Lỗi / chặn
-- Không có lỗi/chặn nào.
+- Không có lỗi/chặn nào. Trong quá trình kiểm định thực tế đã phát hiện & vá thêm 2 lỗi tinh vi: R2 bỏ qua `Range` vượt biên trả `206` thay vì `416` (`r2Files.ts`) và phím `Enter` ở ô nhập Discord ID trong `ShelfAccessModal` vẫn kích hoạt submit ngầm (đã gỡ vỏ `<form>`).
 
 ## Xong gần nhất
-- **Phase 4b:** Vá toàn bộ lỗi Store/Rollback, Modal quản trị, DOCX RAM & UX/A11y (`index.js` giữ trong ngân sách `<= 86.04 kB` gzip, ESLint 0/0).
+- **Phase 1–2:** Gỡ hoàn toàn PDF + `@react-three/drei` (`D-033`); vá toàn bộ Backend Worker (`rateLimitDb.ts`, `bookUploadRoutes.ts`, `H-1`–`H-5`, `M-1`–`M-9`, `L-1`–`L-5`, `migrations/0008–0009`).
+- **Phase 3–4:** 39 tệp `.woff2` tiếng Việt tự lưu trữ 0 CDN (`Literata`, `Be Vietnam Pro`, `JetBrains Mono`) cho DOM + Canvas (`useReaderCanvasFontVersion`); 4 nền App 2D/Reader (`Ban ngày` trắng `#fcfbf8` · `Giữa trưa` kem ấm `#f6f1e7`/`#f4ecd8` · `Chiều tối` `#0d1117` · `Đêm khuya` `#060608`) giữ nguyên 100% 3D (`D-034`); vá `B1`, Auth, Reader, Lightbox, Store rollback, Modals & UX/A11y.
+- **Phase 5 & Kiểm định:** Vá 3D (`gltfLoader`, StrictMode `LibraryCanvas`/`InteractiveStations`, `Escape` `bossSealNotice`, Miku cursor, lazy fallback `KiritoAvatar`, gỡ `buildLibraryLayout3D`, timer `WorldQuickBar`); đồng bộ `DECISIONS.md` (`D-033`, `D-034`) & `ARCHITECTURE.md`; kiểm định thực tế 11/11 test Worker + 5/5 test Trình duyệt XANH (0 console error, 0 CDN ngoài).

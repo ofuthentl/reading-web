@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Globe, Loader2, Lock, X } from 'lucide-react';
 import type {
@@ -186,8 +186,7 @@ export function ShelfAccessModal({
     setManualLabel('');
   };
 
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault();
+  const handleSave = async () => {
     if (saving) return;
     setSaving(true);
     try {
@@ -260,7 +259,7 @@ export function ShelfAccessModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col">
           <div className="scrollbar-thin flex-1 space-y-4 overflow-y-auto px-5 py-4">
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               <button
@@ -346,15 +345,16 @@ export function ShelfAccessModal({
               Huỷ
             </button>
             <button
-              type="submit"
+              type="button"
               disabled={saving || loading}
+              onClick={() => void handleSave()}
               className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover disabled:opacity-45"
             >
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               <span>{saving ? 'Đang lưu...' : 'Lưu phân quyền'}</span>
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>,
     document.body,

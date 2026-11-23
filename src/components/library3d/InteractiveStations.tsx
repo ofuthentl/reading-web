@@ -201,16 +201,24 @@ export function InteractiveStations({
     return { runeTexture, veilTexture, discGeo, haloGeo, veilGeo };
   }, []);
 
+  const disposeTimerRef = useRef<number | null>(null);
   useEffect(() => {
+    if (disposeTimerRef.current !== null) {
+      window.clearTimeout(disposeTimerRef.current);
+      disposeTimerRef.current = null;
+    }
     return () => {
-      shared.runeTexture.dispose();
-      shared.veilTexture.dispose();
-      shared.discGeo.dispose();
-      shared.haloGeo.dispose();
-      shared.veilGeo.dispose();
-      if (typeof document !== 'undefined') {
-        document.body.style.cursor = 'auto';
+      if (typeof document !== 'undefined' && document.body.style.cursor === 'pointer') {
+        document.body.style.cursor = '';
       }
+      disposeTimerRef.current = window.setTimeout(() => {
+        disposeTimerRef.current = null;
+        shared.runeTexture.dispose();
+        shared.veilTexture.dispose();
+        shared.discGeo.dispose();
+        shared.haloGeo.dispose();
+        shared.veilGeo.dispose();
+      }, 0);
     };
   }, [shared]);
 
@@ -353,7 +361,9 @@ export function InteractiveStations({
               document.body.style.cursor = 'pointer';
             }}
             onPointerOut={() => {
-              document.body.style.cursor = 'auto';
+              if (document.body.style.cursor === 'pointer') {
+                document.body.style.cursor = '';
+              }
             }}
           />
 

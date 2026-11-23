@@ -210,8 +210,9 @@ export function ShelfAccessMemberList({
             value={manualId}
             onChange={(e) => onManualIdChange(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                 e.preventDefault();
+                e.stopPropagation();
                 if (manualId.trim()) onAddManualId();
               }
             }}
@@ -223,8 +224,9 @@ export function ShelfAccessMemberList({
             value={manualLabel}
             onChange={(e) => onManualLabelChange(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                 e.preventDefault();
+                e.stopPropagation();
                 if (manualId.trim()) onAddManualId();
               }
             }}

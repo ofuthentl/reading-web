@@ -163,10 +163,19 @@ function WorldSceneContent({
     [],
   );
 
+  const disposeTimerRef = useRef<number | null>(null);
   useEffect(() => {
+    if (disposeTimerRef.current !== null) {
+      window.clearTimeout(disposeTimerRef.current);
+      disposeTimerRef.current = null;
+    }
     return () => {
-      libraryMaterials.dispose();
-      worldMaterials.dispose();
+      // Trì hoãn 1 tick để React 18 <StrictMode> không huỷ sớm vật liệu vừa tạo khi remount ngay trong cùng tick
+      disposeTimerRef.current = window.setTimeout(() => {
+        disposeTimerRef.current = null;
+        libraryMaterials.dispose();
+        worldMaterials.dispose();
+      }, 0);
     };
   }, [libraryMaterials, worldMaterials]);
 

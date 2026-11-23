@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObjec
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { AnimatedPlayerGlb } from './AnimatedPlayerGlb';
+import { hasCachedLocalGlb } from './gltfLoader';
 import { createContactShadowTexture } from './worldMaterials';
 import type { PlayerMotionState } from './worldTypes';
 
@@ -137,7 +138,9 @@ export function KiritoAvatar({
   prefersReducedMotion,
   customModelUrl = DEFAULT_PLAYER_MODEL_URL,
 }: KiritoAvatarProps) {
-  const [glbLoaded, setGlbLoaded] = useState(false);
+  const [glbLoaded, setGlbLoaded] = useState(() =>
+    Boolean(customModelUrl && hasCachedLocalGlb(customModelUrl)),
+  );
   const handleGlbLoadedChange = useCallback((loaded: boolean) => {
     setGlbLoaded(loaded);
   }, []);
@@ -154,17 +157,36 @@ export function KiritoAvatar({
   const walkCycleRef = useRef(0);
   const idleTimeRef = useRef(0);
 
-  const headTexture = useMemo(() => createKiritoHeadTexture(), []);
-  const shadowTexture = useMemo(() => createContactShadowTexture(), []);
-  useEffect(() => {
-    return () => {
-      headTexture.dispose();
-      shadowTexture.dispose();
-    };
-  }, [headTexture, shadowTexture]);
+  const shadowAssets = useMemo(() => {
+    const texture = createContactShadowTexture();
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      depthWrite: false,
+    });
+    return { texture, material };
+  }, []);
 
-  const mats = useMemo(
-    () => ({
+  const shadowDisposeTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (shadowDisposeTimerRef.current !== null) {
+      window.clearTimeout(shadowDisposeTimerRef.current);
+      shadowDisposeTimerRef.current = null;
+    }
+    return () => {
+      shadowDisposeTimerRef.current = window.setTimeout(() => {
+        shadowDisposeTimerRef.current = null;
+        shadowAssets.material.dispose();
+        shadowAssets.texture.dispose();
+      }, 0);
+    };
+  }, [shadowAssets]);
+
+  // Chỉ tạo texture khuôn mặt & bộ vật liệu procedural khi player.glb chưa sẵn sàng; giải phóng ngay khi GLB đã tải
+  const fallbackAssets = useMemo(() => {
+    if (glbLoaded) return null;
+    const headTexture = createKiritoHeadTexture();
+    const mats = {
       // Readable dark slate-charcoal so contours & folds stay crisp in Day/Dusk/Night
       coat: new THREE.MeshStandardMaterial({ color: '#2b3140', roughness: 0.68, metalness: 0.1 }),
       coatDark: new THREE.MeshStandardMaterial({ color: '#1f2430', roughness: 0.72, metalness: 0.08 }),
@@ -177,16 +199,27 @@ export function KiritoAvatar({
       boot: new THREE.MeshStandardMaterial({ color: '#1d222d', roughness: 0.58, metalness: 0.14 }),
       swordBlade: new THREE.MeshStandardMaterial({ color: '#1b202c', roughness: 0.24, metalness: 0.82 }),
       swordSilver: new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.22, metalness: 0.86 }),
-      shadow: new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false }),
-    }),
-    [headTexture, shadowTexture],
-  );
-
-  useEffect(() => {
-    return () => {
-      Object.values(mats).forEach((m) => m.dispose());
     };
-  }, [mats]);
+    return { headTexture, mats };
+  }, [glbLoaded]);
+
+  const fallbackDisposeTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (fallbackDisposeTimerRef.current !== null) {
+      window.clearTimeout(fallbackDisposeTimerRef.current);
+      fallbackDisposeTimerRef.current = null;
+    }
+    if (!fallbackAssets) return undefined;
+    return () => {
+      fallbackDisposeTimerRef.current = window.setTimeout(() => {
+        fallbackDisposeTimerRef.current = null;
+        Object.values(fallbackAssets.mats).forEach((m) => m.dispose());
+        fallbackAssets.headTexture.dispose();
+      }, 0);
+    };
+  }, [fallbackAssets]);
+
+  const mats = fallbackAssets?.mats ?? null;
 
   useFrame((_, delta) => {
     const root = rootRef.current;
@@ -241,7 +274,7 @@ export function KiritoAvatar({
   return (
     <group ref={rootRef} name="kirito-avatar">
       {/* Ground contact shadow disc (grounds boots smoothly in both GLB & fallback modes) */}
-      <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]} material={mats.shadow}>
+      <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]} material={shadowAssets.material}>
         <planeGeometry args={[0.92, 0.92]} />
       </mesh>
 
@@ -255,7 +288,7 @@ export function KiritoAvatar({
         />
       )}
 
-      {!glbLoaded && (
+      {!glbLoaded && mats && (
         <group ref={bodyRef}>
         {/* Tapered athletic torso & Coat of Midnight upper jacket */}
         <group position={[0, 1.07, 0]}>

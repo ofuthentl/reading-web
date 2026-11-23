@@ -24,10 +24,11 @@ function getLazyFantasyLibrary3D(
 
 interface Library3DHostProps extends FantasyLibrary3DProps {
   retryKey: number;
+  onRenameShelf?: (shelfName: string) => void;
 }
 
 interface FallbackBridgeProps {
-  props: FantasyLibrary3DProps;
+  props: Omit<Library3DHostProps, 'retryKey'>;
   reason: string;
 }
 
@@ -65,7 +66,7 @@ function Library3DFallbackBridge({ props, reason }: FallbackBridgeProps) {
   );
 }
 
-export function Library3DHost({ retryKey, ...libraryProps }: Library3DHostProps) {
+export function Library3DHost({ retryKey, onRenameShelf, ...libraryProps }: Library3DHostProps) {
   const LazyFantasyLibrary3D = getLazyFantasyLibrary3D(retryKey);
 
   return (
@@ -73,7 +74,7 @@ export function Library3DHost({ retryKey, ...libraryProps }: Library3DHostProps)
       key={retryKey}
       fallback={() => (
         <Library3DFallbackBridge
-          props={libraryProps}
+          props={{ ...libraryProps, onRenameShelf }}
           reason="Không thể tải không gian Thư viện 3D, đã tự động chuyển về chế độ 2D."
         />
       )}
