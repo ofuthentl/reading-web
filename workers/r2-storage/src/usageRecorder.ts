@@ -127,33 +127,80 @@ export async function recordUsageEvent(db: D1Database, input: UsageEventInput): 
   const dayKey = toVietnamDayKey(now);
 
   let creditedSec = 0;
-  let nextSyncAt = 0;
 
-  if (requestedSec > 0 && hasReader && input.readerScope && input.readerRole) {
-    const prevReader = await db
-      .prepare(
-        `SELECT last_reading_sync_at
-         FROM usage_daily_readers
-         WHERE reader_scope = ?
-         ORDER BY day_key DESC
-         LIMIT 1`,
-      )
-      .bind(input.readerScope)
-      .first<{ last_reading_sync_at: number | null }>()
-      .catch(() => null);
+  if (hasReader && input.readerScope && input.readerRole) {
+    const prevReader =
+      requestedSec > 0
+        ? await db
+            .prepare(
+              `SELECT last_reading_sync_at
+               FROM usage_daily_readers
+               WHERE reader_scope = ? AND last_reading_sync_at > 0
+               ORDER BY day_key DESC
+               LIMIT 1`,
+            )
+            .bind(input.readerScope)
+            .first<{ last_reading_sync_at: number | null }>()
+            .catch(() => null)
+        : null;
 
     const prevSync = Number(prevReader?.last_reading_sync_at ?? 0);
-    if (prevSync > 0) {
-      const budgetSec = Math.max(0, Math.floor((now + 2000 - prevSync) / 1000));
-      creditedSec = Math.min(requestedSec, MAX_READING_DELTA_SEC, budgetSec);
-      nextSyncAt =
-        creditedSec > 0
-          ? Math.min(now + 2000, Math.max(now - 5000, prevSync + creditedSec * 1000))
-          : prevSync;
-    } else {
-      creditedSec = Math.min(requestedSec, FIRST_SYNC_MAX_DELTA_SEC);
-      nextSyncAt = now;
-    }
+    const initialBudget =
+      requestedSec > 0
+        ? prevSync > 0
+          ? Math.min(requestedSec, MAX_READING_DELTA_SEC, Math.max(0, Math.floor((now + 2000 - prevSync) / 1000)))
+          : Math.min(requestedSec, FIRST_SYNC_MAX_DELTA_SEC)
+        : 0;
+
+    // Ghi usage_daily_readers với kẹp đồng hồ thực nguyên tử trong SQLite để chống race song song
+    const beforeRow = await db
+      .prepare(
+        'SELECT reading_seconds FROM usage_daily_readers WHERE day_key = ? AND reader_scope = ?',
+      )
+      .bind(dayKey, input.readerScope)
+      .first<{ reading_seconds: number }>()
+      .catch(() => null);
+    const beforeSec = Number(beforeRow?.reading_seconds ?? 0);
+
+    const afterRow = await db
+      .prepare(
+        `INSERT INTO usage_daily_readers (day_key, reader_scope, role, last_seen_at, reading_seconds, last_reading_sync_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(day_key, reader_scope) DO UPDATE SET
+           last_seen_at = excluded.last_seen_at,
+           reading_seconds = usage_daily_readers.reading_seconds + CASE
+             WHEN ? <= 0 THEN 0
+             WHEN usage_daily_readers.last_reading_sync_at > 0 THEN MIN(?, MAX(0, CAST((? + 2000 - usage_daily_readers.last_reading_sync_at) / 1000 AS INTEGER)))
+             ELSE ?
+           END,
+           last_reading_sync_at = CASE
+             WHEN ? > 0 AND (
+               usage_daily_readers.last_reading_sync_at <= 0
+               OR (? + 2000 - usage_daily_readers.last_reading_sync_at) >= 1000
+             ) THEN ?
+             ELSE usage_daily_readers.last_reading_sync_at
+           END
+         RETURNING reading_seconds`,
+      )
+      .bind(
+        dayKey,
+        input.readerScope,
+        input.readerRole,
+        now,
+        initialBudget,
+        initialBudget > 0 ? now : 0,
+        initialBudget,
+        initialBudget,
+        now,
+        initialBudget,
+        initialBudget,
+        now,
+        now,
+      )
+      .first<{ reading_seconds: number }>();
+
+    const afterSec = Number(afterRow?.reading_seconds ?? beforeSec);
+    creditedSec = Math.max(0, Math.min(initialBudget, afterSec - beforeSec));
   }
 
   const stmts: D1PreparedStatement[] = [];
@@ -200,31 +247,6 @@ export async function recordUsageEvent(db: D1Database, input: UsageEventInput): 
              updated_at = excluded.updated_at`,
         )
         .bind(dayKey, creditedSec, now),
-    );
-  }
-
-  if (hasReader && input.readerScope && input.readerRole) {
-    stmts.push(
-      db
-        .prepare(
-          `INSERT INTO usage_daily_readers (day_key, reader_scope, role, last_seen_at, reading_seconds, last_reading_sync_at)
-           VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(day_key, reader_scope) DO UPDATE SET
-             last_seen_at = excluded.last_seen_at,
-             reading_seconds = usage_daily_readers.reading_seconds + excluded.reading_seconds,
-             last_reading_sync_at = CASE
-               WHEN excluded.last_reading_sync_at > 0 THEN excluded.last_reading_sync_at
-               ELSE usage_daily_readers.last_reading_sync_at
-             END`,
-        )
-        .bind(
-          dayKey,
-          input.readerScope,
-          input.readerRole,
-          now,
-          creditedSec,
-          creditedSec > 0 ? nextSyncAt : 0,
-        ),
     );
   }
 

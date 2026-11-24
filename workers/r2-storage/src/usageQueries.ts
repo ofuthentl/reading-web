@@ -1,3 +1,5 @@
+import { toShelfAccessKey } from './shelfAccessDb';
+
 export interface DailyStatRow {
   day_key: string;
   owner_logins: number;
@@ -116,7 +118,7 @@ export function queryGuestBookHistoryRows(db: D1Database, discordUserId: string)
     .catch(() => ({ results: [] as GuestBookHistoryRow[] }));
 }
 
-export function queryTopBooksAndShelves(db: D1Database, windowCutoffMs: number) {
+export async function queryTopBooksAndShelves(db: D1Database, windowCutoffMs: number) {
   const topBooksPromise = db
     .prepare(
       `SELECT
@@ -156,30 +158,107 @@ export function queryTopBooksAndShelves(db: D1Database, windowCutoffMs: number) 
     .all<TopBookRow>()
     .catch(() => ({ results: [] as TopBookRow[] }));
 
-  const topShelvesPromise = db
-    .prepare(
-      `SELECT
-         b.shelf,
-         COUNT(DISTINCT b.id) AS book_count,
-         COUNT(DISTINCT p.reader_key) AS active_readers,
-         SUM(CASE WHEN p.completed = 1 THEN 1 ELSE 0 END) AS completed_reads,
-         COALESCE(SUM(p.reading_seconds), 0) AS reading_seconds_total,
-         MAX(p.updated_at) AS last_read_at
-       FROM books b
-       LEFT JOIN (
-         SELECT book_id, 'owner' AS reader_key, completed, COALESCE(reading_seconds, 0) AS reading_seconds, updated_at FROM reading_progress
-         UNION ALL
-         SELECT book_id, 'guest:' || discord_user_id AS reader_key, completed, COALESCE(reading_seconds, 0) AS reading_seconds, updated_at FROM guest_reading_progress
-       ) p ON p.book_id = b.id
-       GROUP BY LOWER(TRIM(b.shelf))
-       HAVING active_readers > 0
-       ORDER BY active_readers DESC, reading_seconds_total DESC, completed_reads DESC, last_read_at DESC
-       LIMIT 10`,
-    )
-    .all<TopShelfRow>()
-    .catch(() => ({ results: [] as TopShelfRow[] }));
+  const shelfBooksPromise = db
+    .prepare('SELECT id, shelf FROM books')
+    .all<{ id: string; shelf: string }>()
+    .catch(() => ({ results: [] as Array<{ id: string; shelf: string }> }));
 
-  return Promise.all([topBooksPromise, topShelvesPromise]);
+  const shelfProgressPromise = db
+    .prepare(
+      `SELECT book_id, 'owner' AS reader_key, completed, COALESCE(reading_seconds, 0) AS reading_seconds, updated_at FROM reading_progress
+       UNION ALL
+       SELECT book_id, 'guest:' || discord_user_id AS reader_key, completed, COALESCE(reading_seconds, 0) AS reading_seconds, updated_at FROM guest_reading_progress`,
+    )
+    .all<{
+      book_id: string;
+      reader_key: string;
+      completed: number;
+      reading_seconds: number;
+      updated_at: number;
+    }>()
+    .catch(() => ({
+      results: [] as Array<{
+        book_id: string;
+        reader_key: string;
+        completed: number;
+        reading_seconds: number;
+        updated_at: number;
+      }>,
+    }));
+
+  const [topBooksRes, shelfBooksRes, shelfProgressRes] = await Promise.all([
+    topBooksPromise,
+    shelfBooksPromise,
+    shelfProgressPromise,
+  ]);
+
+  // Nhóm kệ bằng toShelfAccessKey (NFC + tiếng Việt) thay vì SQLite LOWER() chỉ hỗ trợ ASCII
+  const bookToShelfKey = new Map<string, string>();
+  const shelfAgg = new Map<
+    string,
+    {
+      shelf: string;
+      bookCount: number;
+      readers: Set<string>;
+      completedReads: number;
+      readingSecondsTotal: number;
+      lastReadAt: number | null;
+    }
+  >();
+
+  for (const row of shelfBooksRes.results || []) {
+    const cleanName = (row.shelf || 'Kho chưa phân loại').normalize('NFC').trim() || 'Kho chưa phân loại';
+    const key = toShelfAccessKey(cleanName);
+    bookToShelfKey.set(row.id, key);
+    const entry = shelfAgg.get(key);
+    if (entry) {
+      entry.bookCount += 1;
+    } else {
+      shelfAgg.set(key, {
+        shelf: cleanName,
+        bookCount: 1,
+        readers: new Set<string>(),
+        completedReads: 0,
+        readingSecondsTotal: 0,
+        lastReadAt: null,
+      });
+    }
+  }
+
+  for (const p of shelfProgressRes.results || []) {
+    const key = bookToShelfKey.get(p.book_id);
+    if (!key) continue;
+    const entry = shelfAgg.get(key);
+    if (!entry) continue;
+    entry.readers.add(p.reader_key);
+    if (Number(p.completed) === 1) entry.completedReads += 1;
+    entry.readingSecondsTotal += Math.max(0, Number(p.reading_seconds ?? 0));
+    const ts = Number(p.updated_at ?? 0);
+    if (ts > 0 && (entry.lastReadAt === null || ts > entry.lastReadAt)) {
+      entry.lastReadAt = ts;
+    }
+  }
+
+  const topShelfRows: TopShelfRow[] = Array.from(shelfAgg.values())
+    .filter((entry) => entry.readers.size > 0)
+    .map((entry) => ({
+      shelf: entry.shelf,
+      book_count: entry.bookCount,
+      active_readers: entry.readers.size,
+      completed_reads: entry.completedReads,
+      reading_seconds_total: entry.readingSecondsTotal,
+      last_read_at: entry.lastReadAt,
+    }))
+    .sort(
+      (a, b) =>
+        b.active_readers - a.active_readers ||
+        b.reading_seconds_total - a.reading_seconds_total ||
+        b.completed_reads - a.completed_reads ||
+        (b.last_read_at ?? 0) - (a.last_read_at ?? 0),
+    )
+    .slice(0, 10);
+
+  return [topBooksRes, { results: topShelfRows }, shelfAgg.size] as const;
 }
 
 export function queryGuestActivityRows(db: D1Database, day7Key: string, day30Key: string) {

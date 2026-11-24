@@ -92,7 +92,7 @@ export async function searchGuestBookChapters(
   if (auth.role === 'guest') {
     await consumeGuestRateToken(env.DB, auth.userId, {
       cost: SEARCH_BUCKET_COST,
-      trackStrikes: false,
+      trackStrikes: true,
       tooFastMessage: (waitSec) =>
         `Bạn đang tìm kiếm liên tục quá nhanh. Vui lòng đợi khoảng ${waitSec} giây rồi thử lại.`,
     });

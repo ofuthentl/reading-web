@@ -256,7 +256,13 @@ export async function uploadBookGuestPack(
       )
       .run();
   } catch (dbErr) {
-    await env.BOOKS_BUCKET.delete(packKey).catch(() => undefined);
+    const committed = await env.DB.prepare('SELECT pack_key FROM book_guest_packs WHERE book_id = ?')
+      .bind(bookId)
+      .first<{ pack_key: string }>()
+      .catch(() => null);
+    if (!committed || committed.pack_key !== packKey) {
+      await env.BOOKS_BUCKET.delete(packKey).catch(() => undefined);
+    }
     throw dbErr;
   }
 
@@ -396,6 +402,15 @@ export async function getGuestEncryptedMediaResponse(
   const { manifest } = await loadManifestRecord(env, bookId);
   const mediaMeta = manifest.media[mediaIndex];
   if (!mediaMeta) throw new HttpError('Không tìm thấy ảnh minh hoạ.', 404);
+
+  if (auth.role === 'guest') {
+    await consumeGuestRateToken(env.DB, auth.userId, {
+      cost: 0.2,
+      trackStrikes: false,
+      tooFastMessage: (waitSec) =>
+        `Bạn đang tải ảnh minh hoạ quá nhanh. Vui lòng đợi khoảng ${waitSec} giây rồi thử lại.`,
+    });
+  }
 
   const bookRow = await env.DB.prepare('SELECT file_key FROM books WHERE id = ?')
     .bind(bookId)

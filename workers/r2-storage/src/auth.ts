@@ -302,6 +302,9 @@ export async function authenticatePasscodeOrKey(
   const sessionId = crypto.randomUUID().replace(/-/g, '');
   const sessionExpiresAt = now + GUEST_SESSION_TTL_MS;
   const uaHash = await computeUserAgentHash(userAgent);
+  // QĐ-2 (2A): Không reset đầy rl_tokens / rl_strikes mỗi lần lấy key Discord mới (15s),
+  // chỉ hồi theo đồng hồ thực và tự reset strike nếu đã yên ổn >= 24 giờ.
+  const STRIKE_RESET_IDLE_MS = 24 * 60 * 60 * 1000;
   const updateRes = await db
     .prepare(
       `UPDATE discord_access
@@ -310,9 +313,12 @@ export async function authenticatePasscodeOrKey(
            active_session_id = ?,
            session_expires_at = ?,
            ua_hash = ?,
-           rl_tokens = 10,
+           rl_tokens = MIN(10, COALESCE(rl_tokens, 10) + MAX(0, ? - CASE WHEN rl_updated_at > 0 THEN rl_updated_at ELSE ? END) * (1.0 / 6000.0)),
            rl_updated_at = ?,
-           rl_strikes = 0,
+           rl_strikes = CASE
+             WHEN rl_updated_at > 0 AND (? - rl_updated_at) >= ? THEN 0
+             ELSE COALESCE(rl_strikes, 0)
+           END,
            updated_at = ?
        WHERE discord_user_id = ? AND key_hash = ? AND key_expires_at >= ? AND COALESCE(is_banned, 0) = 0`,
     )
@@ -321,6 +327,10 @@ export async function authenticatePasscodeOrKey(
       sessionExpiresAt,
       uaHash,
       now,
+      now,
+      now,
+      now,
+      STRIKE_RESET_IDLE_MS,
       now,
       row.discord_user_id,
       keyHash,

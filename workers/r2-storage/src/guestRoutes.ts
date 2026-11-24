@@ -77,13 +77,20 @@ export async function tryHandleGuestRoutes(
 
   const guestMediaMatch = normalizedPath.match(/^\/api\/guest\/books\/([^/]+)\/media\/(\d+)$/);
   if (guestMediaMatch) {
-    return getGuestEncryptedMediaResponse(
-      env,
-      auth,
-      guestMediaMatch[1],
-      Number(guestMediaMatch[2]),
-      applyCorsToHeaders,
-    );
+    try {
+      return await getGuestEncryptedMediaResponse(
+        env,
+        auth,
+        guestMediaMatch[1],
+        Number(guestMediaMatch[2]),
+        applyCorsToHeaders,
+      );
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 429) {
+        scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
+      }
+      throw err;
+    }
   }
 
   const guestSearchMatch = normalizedPath.match(/^\/api\/guest\/books\/([^/]+)\/search$/);

@@ -91,19 +91,6 @@ export async function ensureProgressReadingTimeColumns(env: Env): Promise<void> 
   }
 }
 
-function clampAcceptedReadingDelta(
-  requestedDelta: number,
-  updatedAt: number,
-  prevUpdatedAt: number | null,
-): number {
-  if (requestedDelta <= 0) return 0;
-  if (prevUpdatedAt && prevUpdatedAt > 0) {
-    const elapsedSec = Math.max(0, Math.ceil((updatedAt - prevUpdatedAt) / 1000));
-    return Math.min(requestedDelta, Math.min(MAX_READING_DELTA_SEC, elapsedSec + 3));
-  }
-  return Math.min(requestedDelta, FIRST_BOOK_SAVE_MAX_SEC);
-}
-
 export async function upsertReadingProgress(
   env: Env,
   auth: AuthContext,
@@ -168,23 +155,12 @@ export async function upsertReadingProgress(
       : 0;
 
   let readingDeltaAccepted = 0;
+  const firstSaveCapped = Math.min(requestedDelta, FIRST_BOOK_SAVE_MAX_SEC);
 
   if (auth.role === 'owner') {
     await ensureProgressReadingTimeColumns(env);
-    if (requestedDelta > 0) {
-      const prevRow = await env.DB.prepare(
-        'SELECT updated_at FROM reading_progress WHERE book_id = ?',
-      )
-        .bind(bookId)
-        .first<{ updated_at: number }>();
-      readingDeltaAccepted = clampAcceptedReadingDelta(
-        requestedDelta,
-        updatedAt,
-        prevRow?.updated_at ?? null,
-      );
-    }
-
-    await env.DB.prepare(
+    // Kẹp reading_seconds nguyên tử trực tiếp trong SQL chống bắn song song nhân bội thời gian đọc
+    const row = await env.DB.prepare(
       `INSERT INTO reading_progress (book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(book_id) DO UPDATE SET
@@ -195,8 +171,15 @@ export async function upsertReadingProgress(
          scroll_ratio = excluded.scroll_ratio,
          scroll_top = excluded.scroll_top,
          completed = excluded.completed,
-         reading_seconds = COALESCE(reading_progress.reading_seconds, 0) + excluded.reading_seconds,
-         updated_at = excluded.updated_at`,
+         reading_seconds = COALESCE(reading_progress.reading_seconds, 0) + MIN(
+           ?,
+           CASE
+             WHEN reading_progress.updated_at > 0 THEN MIN(?, MAX(0, CAST((excluded.updated_at - reading_progress.updated_at + 999) / 1000 AS INTEGER)) + 3)
+             ELSE ?
+           END
+         ),
+         updated_at = MAX(reading_progress.updated_at, excluded.updated_at)
+       RETURNING reading_seconds`,
     )
       .bind(
         bookId,
@@ -207,26 +190,17 @@ export async function upsertReadingProgress(
         scrollRatio,
         scrollTop,
         completed,
-        readingDeltaAccepted,
+        firstSaveCapped,
         updatedAt,
+        requestedDelta,
+        MAX_READING_DELTA_SEC,
+        FIRST_BOOK_SAVE_MAX_SEC,
       )
-      .run();
+      .first<{ reading_seconds: number }>();
+    readingDeltaAccepted = row ? requestedDelta : 0;
   } else {
     await ensureGuestProgressTable(env);
-    if (requestedDelta > 0) {
-      const prevRow = await env.DB.prepare(
-        'SELECT updated_at FROM guest_reading_progress WHERE discord_user_id = ? AND book_id = ?',
-      )
-        .bind(auth.userId, bookId)
-        .first<{ updated_at: number }>();
-      readingDeltaAccepted = clampAcceptedReadingDelta(
-        requestedDelta,
-        updatedAt,
-        prevRow?.updated_at ?? null,
-      );
-    }
-
-    await env.DB.prepare(
+    const row = await env.DB.prepare(
       `INSERT INTO guest_reading_progress (discord_user_id, book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(discord_user_id, book_id) DO UPDATE SET
@@ -237,8 +211,15 @@ export async function upsertReadingProgress(
          scroll_ratio = excluded.scroll_ratio,
          scroll_top = excluded.scroll_top,
          completed = excluded.completed,
-         reading_seconds = COALESCE(guest_reading_progress.reading_seconds, 0) + excluded.reading_seconds,
-         updated_at = excluded.updated_at`,
+         reading_seconds = COALESCE(guest_reading_progress.reading_seconds, 0) + MIN(
+           ?,
+           CASE
+             WHEN guest_reading_progress.updated_at > 0 THEN MIN(?, MAX(0, CAST((excluded.updated_at - guest_reading_progress.updated_at + 999) / 1000 AS INTEGER)) + 3)
+             ELSE ?
+           END
+         ),
+         updated_at = MAX(guest_reading_progress.updated_at, excluded.updated_at)
+       RETURNING reading_seconds`,
     )
       .bind(
         auth.userId,
@@ -250,10 +231,14 @@ export async function upsertReadingProgress(
         scrollRatio,
         scrollTop,
         completed,
-        readingDeltaAccepted,
+        firstSaveCapped,
         updatedAt,
+        requestedDelta,
+        MAX_READING_DELTA_SEC,
+        FIRST_BOOK_SAVE_MAX_SEC,
       )
-      .run();
+      .first<{ reading_seconds: number }>();
+    readingDeltaAccepted = row ? requestedDelta : 0;
   }
 
   return { ok: true, updatedAt, readingDeltaAccepted };

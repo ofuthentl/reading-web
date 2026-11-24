@@ -138,12 +138,7 @@ async function hashClientIp(rawIp: string): Promise<string> {
   return (await sha256Hex(`login-ip-v1:${clean}`)).slice(0, 32);
 }
 
-function computeLoginLockDurationMs(failCount: number): number {
-  if (failCount >= 12) return 15 * 60 * 1000;
-  if (failCount >= 8) return 3 * 60 * 1000;
-  if (failCount >= 5) return 30 * 1000;
-  return 0;
-}
+const STALE_LOGIN_LIMIT_MS = 7 * 24 * 60 * 60 * 1000;
 
 export async function assertLoginNotRateLimited(db: D1Database, rawIp: string): Promise<void> {
   await ensureLoginRateLimitTable(db);
@@ -167,28 +162,49 @@ export async function recordLoginFailure(db: D1Database, rawIp: string): Promise
   await ensureLoginRateLimitTable(db);
   const ipHash = await hashClientIp(rawIp);
   const now = Date.now();
-  const existing = await db
-    .prepare('SELECT fail_count, window_start FROM login_rate_limits WHERE ip_hash = ?')
-    .bind(ipHash)
-    .first<{ fail_count: number; window_start: number }>();
+  const staleBefore = now - STALE_LOGIN_LIMIT_MS;
 
-  const withinWindow = existing && now - existing.window_start <= LOGIN_WINDOW_MS;
-  const nextCount = withinWindow ? existing.fail_count + 1 : 1;
-  const windowStart = withinWindow ? existing.window_start : now;
-  const lockMs = computeLoginLockDurationMs(nextCount);
-  const lockedUntil = lockMs > 0 ? now + lockMs : 0;
-
-  await db
-    .prepare(
-      `INSERT INTO login_rate_limits (ip_hash, fail_count, window_start, locked_until)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(ip_hash) DO UPDATE SET
-         fail_count = excluded.fail_count,
-         window_start = excluded.window_start,
-         locked_until = excluded.locked_until`,
-    )
-    .bind(ipHash, nextCount, windowStart, lockedUntil)
-    .run();
+  // Nguyên tử hoàn toàn trong SQLite để chống bắn song song vượt ngưỡng khoá 5/8/12 lần sai
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO login_rate_limits (ip_hash, fail_count, window_start, locked_until)
+         VALUES (?, 1, ?, 0)
+         ON CONFLICT(ip_hash) DO UPDATE SET
+           fail_count = CASE
+             WHEN (? - login_rate_limits.window_start) <= ? THEN login_rate_limits.fail_count + 1
+             ELSE 1
+           END,
+           window_start = CASE
+             WHEN (? - login_rate_limits.window_start) <= ? THEN login_rate_limits.window_start
+             ELSE ?
+           END,
+           locked_until = CASE
+             WHEN (? - login_rate_limits.window_start) > ? THEN 0
+             WHEN login_rate_limits.fail_count + 1 >= 12 THEN ? + 900000
+             WHEN login_rate_limits.fail_count + 1 >= 8 THEN ? + 180000
+             WHEN login_rate_limits.fail_count + 1 >= 5 THEN ? + 30000
+             ELSE login_rate_limits.locked_until
+           END`,
+      )
+      .bind(
+        ipHash,
+        now,
+        now,
+        LOGIN_WINDOW_MS,
+        now,
+        LOGIN_WINDOW_MS,
+        now,
+        now,
+        LOGIN_WINDOW_MS,
+        now,
+        now,
+        now,
+      ),
+    db
+      .prepare('DELETE FROM login_rate_limits WHERE window_start < ? AND locked_until < ?')
+      .bind(staleBefore, now),
+  ]);
 }
 
 export async function clearLoginFailures(db: D1Database, rawIp: string): Promise<void> {

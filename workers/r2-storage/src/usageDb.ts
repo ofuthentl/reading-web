@@ -68,13 +68,12 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
     readingWindowRow,
     dailyStatsRes,
     dailyReadersRes,
-    [topBooksRes, topShelvesRes],
+    [topBooksRes, topShelvesRes, totalUniqueShelves],
     guestActivityRes,
   ] = await Promise.all([
     env.DB.prepare(
       `SELECT
          COUNT(*) AS total_books,
-         COUNT(DISTINCT LOWER(TRIM(shelf))) AS total_shelves,
          SUM(CASE WHEN file_type = 'epub' THEN 1 ELSE 0 END) AS epub_count,
          SUM(CASE WHEN file_type = 'docx' THEN 1 ELSE 0 END) AS docx_count,
          COALESCE(SUM(file_size), 0) AS file_bytes,
@@ -82,7 +81,6 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
        FROM books`,
     ).first<{
       total_books: number;
-      total_shelves: number;
       epub_count: number;
       docx_count: number;
       file_bytes: number;
@@ -302,7 +300,7 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
     days,
     overview: {
       totalBooks: Number(booksSummary?.total_books ?? 0),
-      totalShelves: Number(booksSummary?.total_shelves ?? 0),
+      totalShelves: totalUniqueShelves,
       epubCount: Number(booksSummary?.epub_count ?? 0),
       docxCount: Number(booksSummary?.docx_count ?? 0),
       guestReadyBooks: Number(packsSummary?.pack_count ?? 0),

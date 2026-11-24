@@ -54,7 +54,7 @@ export async function getGuestBookIllustrations(
   if (auth.role === 'guest') {
     await consumeGuestRateToken(env.DB, auth.userId, {
       cost: GALLERY_INDEX_BUCKET_COST,
-      trackStrikes: false,
+      trackStrikes: true,
       tooFastMessage: (waitSec) =>
         `Bạn đang mở danh sách minh hoạ quá nhanh. Vui lòng đợi khoảng ${waitSec} giây rồi thử lại.`,
     });
