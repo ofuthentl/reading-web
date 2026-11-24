@@ -4,14 +4,16 @@ import { pickClothCoverColor } from '@/lib/bookMetadata';
 import type { ShelfSummary } from '@/lib/shelfSummary';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 
-const BOOK_HEIGHT_STEPS = [164, 168, 170, 172, 174, 176, 178] as const;
+const DESKTOP_HEIGHT_STEPS = [204, 208, 211, 214, 217, 220] as const;
+const COMPACT_HEIGHT_STEPS = [162, 165, 168, 170, 172, 174] as const;
 
-function computeSpineHeight(seed: string): number {
+function computeSpineHeight(seed: string, compact: boolean): number {
   let hash = 0;
   for (let i = 0; i < seed.length; i += 1) {
     hash = (hash * 31 + seed.charCodeAt(i)) | 0;
   }
-  return BOOK_HEIGHT_STEPS[Math.abs(hash) % BOOK_HEIGHT_STEPS.length];
+  const steps = compact ? COMPACT_HEIGHT_STEPS : DESKTOP_HEIGHT_STEPS;
+  return steps[Math.abs(hash) % steps.length];
 }
 
 function lightenHex(hex: string, amount = 22): string {
@@ -26,6 +28,7 @@ function lightenHex(hex: string, amount = 22): string {
 export interface SpineBookshelfSlotProps {
   summary: ShelfSummary;
   spineWidth: number;
+  compact?: boolean;
   isOpen: boolean;
   isRowVisible: boolean;
   registerButtonRef?: (shelfKey: string, node: HTMLButtonElement | null) => void;
@@ -38,6 +41,7 @@ export interface SpineBookshelfSlotProps {
 export function SpineBookshelfSlot({
   summary,
   spineWidth,
+  compact = false,
   isOpen,
   isRowVisible,
   registerButtonRef,
@@ -69,7 +73,7 @@ export function SpineBookshelfSlot({
   const showImage = Boolean(coverUrl && !imgFailed);
 
   const spineW = spineWidth;
-  const bookH = computeSpineHeight(shelf.key);
+  const bookH = computeSpineHeight(shelf.key, compact);
   const coverW = Math.round(bookH * 0.7);
   const baseColor = pickClothCoverColor(`${shelf.key}-${shelf.name}`);
   const highlightColor = lightenHex(baseColor, 24);
@@ -156,7 +160,11 @@ export function SpineBookshelfSlot({
             </span>
           )}
 
-          <span className="spine-title max-h-[112px] overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-semibold leading-none">
+          <span
+            className={`spine-title overflow-hidden text-ellipsis whitespace-nowrap font-semibold leading-none ${
+              compact ? 'max-h-[120px] text-[10.5px]' : 'max-h-[154px] text-[12px]'
+            }`}
+          >
             {isFavorite ? '★ ' : ''}
             {shelf.name}
           </span>

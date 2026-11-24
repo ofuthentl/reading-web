@@ -1,24 +1,20 @@
 # HANDOFF
-Cập nhật: 2026-11-24 23:42 | Nhánh: feat/v4-spine-shelf-and-catalog | Build: 🟢 XANH (`index-*.js = 84.79 kB` gzip <= `86.04 kB`)
-Nhiệm vụ hiện tại: **Hoàn tất trọn bộ nâng cấp v4 (8 hạng mục: A1, A2, C12 chỉ độ đậm chữ, C13, D15 bỏ Tạm ngưng, D16, D18, D19 Khoá Tập/Chương — `D-042`)**.
+Cập nhật: 2026-11-25 00:24 | Nhánh: fix/spine-bookshelf-rows | Build: 🟢 XANH (`index-*.js = 84.79 kB` gzip <= `86.04 kB`)
+Nhiệm vụ hiện tại: **Sửa chia hàng nhiều tầng & triệt tiêu lỗi lộ bìa phối cảnh 3D cho Tủ Gáy Sách (`SpineBookshelfView`)**.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/v4-spine-shelf-and-catalog.md
 
 ## Đang làm dở
-- Không có — toàn bộ 4 Phase, kiểm thử tích hợp Worker + D1 cục bộ (9/9 chặng), trình duyệt thật Desktop/Mobile (`Owner` + `Guest`, `0` lỗi Console/Page) và tài liệu `D-042` đã hoàn tất 100%, sẵn sàng mở PR sang `main`.
+- Không có — bản sửa giao diện Tủ Gáy Sách đã hoàn tất, đã kiểm thử trực quan với 29 bộ sách trên Desktop (`1280×800`, chia 3 tầng `12 + 12 + 5`) và Mobile (`390×844`), sẵn sàng mở PR sang `main`.
 
 ## Xong trong nhánh này
-1. **Phase 1 — Backend Worker & Migration `0018_v4_catalog_ratings_and_access.sql`:**
-   - Chấm nửa sao `0.5..5.0` (`rating_half` tương thích ngược), `reread_count` bảo toàn `reading_seconds`, whitelist `fontWeight` + `eyeBreakMinutes`, liên kết `shelf_relations` (ẩn sạch với `guest` khi chạm bộ khoá theo `D-030`) và phân quyền 3 tầng `Bộ → Tập → Chương` (`0 B` re-pack R2, gộp mảnh `-pN`, chặn cứng `403` trên TOC/chapter/media độc quyền/bookmarks/highlights, loại khỏi `search`/`illustrations`).
-2. **Phase 2 — Thị giác Kho sách (`A1` Tủ Gáy Sách 2D & `A2` Hiệu ứng Ánh Kim):**
-   - `SpineBookshelfView` nạp lười (`preserve-3d` bản lề gáy bên **PHẢI** mở 90° sang **TRÁI** chuẩn Light Novel Nhật, `ResizeObserver`, hover-intent `40ms`, cảm ứng 2 chạm Mobile, 4 nền) & `.cover-foil-card` tái sử dụng `--gx`/`--gy`.
-3. **Phase 3 — Trình đọc (`C12` Độ đậm chữ, `C13` Tự học WPM + Nhắc nghỉ mắt & UI Chương khoá):**
-   - Độ đậm chữ `Thường` · `Vừa` · `Đậm` trên cả DOM & `<canvas>`, tự học WPM bằng EMA (`120..450` + nút `Đặt lại 220`), nhắc nghỉ mắt `30/45/60p` (tự reset khi ẩn tab `>= 2p`) & màn hình `GuestLockedChapterCard`.
-4. **Phase 4 — Cộng đồng, Hệ sinh thái Kho sách & Quản trị (`D15`, `D16`, `D18`, `D19`):**
-   - `HalfStarRatingControl` + Đọc lại `↻ ×N` (không thêm Tạm ngưng), *Cùng vũ trụ & Liên kết* 2 chiều + *Cùng gu trong kho* (`0` query D1), xuất `.md` trích dẫn riêng cho `Owner` + `AdminLibraryHealthModal` (`LibraryHeader` & `Ctrl+K`), và `BookAccessModal` phân quyền Tập/Chương.
+1. **Chia hàng nhiều tầng cân đối (`SpineBookshelfView.tsx` & `SpineBookshelfSlot.tsx`):**
+   - Tăng tỷ lệ gáy sách chuẩn Light Novel theo `sqrt(số tập)` (`54..76px` trên Desktop, `38..50px` trên Mobile; chiều cao `204..220px` / `162..174px`), giới hạn tối đa `12` bộ/tầng trên Desktop (`9` / `6` / `4` ở khung hẹp hơn) và gắn `ResizeObserver` qua `useLayoutEffect([hasSummaries])` để không bỏ lỡ lần đo đầu khi dữ liệu tải bất đồng bộ.
+   - Đưa khung `.spine-shelf-stage` về `max-width: 1120px` căn giữa để các kệ đầy đặn (~85–95% chiều ngang đợt gỗ), không còn hiện tượng dồn cả 29 bộ vào 1 hàng duy nhất.
+2. **Triệt tiêu lỗi lộ bìa nghiêng ở nửa phải kệ (`src/styles/bookshelf.css`):**
+   - Chuyển `perspective: 1050px` từ `.spine-shelf-row` về từng `.book-slot` riêng lẻ để pháp tuyến mặt `.face-front` (`rotateY(-90deg)`) của mọi sách đang đóng luôn bị `backface-visibility: hidden` ẩn sạch 100% ở mọi vị trí trái/phải trên kệ.
 
 ## Bước tiếp theo
-1. Đã áp migration `0018_v4_catalog_ratings_and_access.sql` lên D1 remote (`library-db`) và đã deploy Cloudflare Worker `arcane-library-api` lên production.
-2. Mở Pull Request từ nhánh `feat/v4-spine-shelf-and-catalog` vào `main` trên GitHub; khi CI xanh và merge vào `main`, GitHub Actions sẽ tự động build & deploy frontend lên `https://ofu.lol`.
+1. Mở Pull Request từ nhánh `fix/spine-bookshelf-rows` vào `main` trên GitHub; khi CI xanh và merge vào `main`, GitHub Actions tự động build & deploy frontend lên `https://ofu.lol` (không cần chạy lại migration D1 hay deploy lại Worker).
 
 ## Lỗi / chặn
 - Không có lỗi/chặn. Giữ nguyên không đụng 3 tệp/thư mục chưa theo dõi sẵn ngoài Git ở thư mục gốc.
