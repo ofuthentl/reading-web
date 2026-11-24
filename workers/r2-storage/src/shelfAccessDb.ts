@@ -124,6 +124,31 @@ export async function loadShelfAccessSnapshot(
   return { restrictedKeys, allowedRestrictedKeys, ownerShelfAccess };
 }
 
+async function collectMatchingRawAccessKeys(
+  db: D1Database,
+  normalizedKey: string,
+): Promise<{ ruleKeys: string[]; grantKeys: string[] }> {
+  const [ruleRows, grantRows] = await Promise.all([
+    db.prepare('SELECT shelf_key FROM shelf_access_rules').all<{ shelf_key: string }>(),
+    db.prepare('SELECT DISTINCT shelf_key FROM shelf_guest_grants').all<{ shelf_key: string }>(),
+  ]);
+  const ruleKeys = Array.from(
+    new Set(
+      (ruleRows.results || [])
+        .map((r) => r.shelf_key)
+        .filter((k) => typeof k === 'string' && toShelfAccessKey(k) === normalizedKey),
+    ),
+  );
+  const grantKeys = Array.from(
+    new Set(
+      (grantRows.results || [])
+        .map((r) => r.shelf_key)
+        .filter((k) => typeof k === 'string' && toShelfAccessKey(k) === normalizedKey),
+    ),
+  );
+  return { ruleKeys, grantKeys };
+}
+
 export async function assertGuestShelfAccess(
   db: D1Database,
   auth: AuthContext,
@@ -133,18 +158,25 @@ export async function assertGuestShelfAccess(
 
   await ensureShelfAccessTables(db);
   const shelfKey = toShelfAccessKey(rawShelfName);
-  const accessRow = await db
-    .prepare(
-      `SELECT r.access_mode, g.discord_user_id AS granted_user
-       FROM shelf_access_rules r
-       LEFT JOIN shelf_guest_grants g
-         ON g.shelf_key = r.shelf_key AND g.discord_user_id = ?
-       WHERE r.shelf_key = ?`,
-    )
-    .bind(auth.userId, shelfKey)
-    .first<{ access_mode: string; granted_user: string | null }>();
+  const restrictedRows = await db
+    .prepare("SELECT shelf_key FROM shelf_access_rules WHERE access_mode = 'restricted'")
+    .all<{ shelf_key: string }>();
 
-  if (accessRow?.access_mode === 'restricted' && !accessRow.granted_user) {
+  const matchedRuleKeys = (restrictedRows.results || [])
+    .map((r) => r.shelf_key)
+    .filter((k) => typeof k === 'string' && toShelfAccessKey(k) === shelfKey);
+
+  if (matchedRuleKeys.length === 0) return;
+
+  const userGrants = await db
+    .prepare('SELECT shelf_key FROM shelf_guest_grants WHERE discord_user_id = ?')
+    .bind(auth.userId)
+    .all<{ shelf_key: string }>();
+  const isGranted = (userGrants.results || []).some(
+    (g) => typeof g.shelf_key === 'string' && toShelfAccessKey(g.shelf_key) === shelfKey,
+  );
+
+  if (!isGranted) {
     throw new HttpError(
       '🔒 Bộ truyện này chỉ mở quyền đọc cho thành viên Discord được chỉ định.',
       403,
@@ -197,24 +229,42 @@ export async function getAdminShelfAccessOverview(
       }>(),
   ]);
 
-  const grantsByShelf = new Map<string, ShelfAccessGrantUser[]>();
+  const grantsByShelf = new Map<string, Map<string, ShelfAccessGrantUser>>();
   for (const row of grantsRes.results || []) {
-    const list = grantsByShelf.get(row.shelf_key) || [];
-    list.push({
-      discordUserId: row.discord_user_id,
-      label: row.granted_label ?? null,
-      discordUsername: row.discord_username ?? null,
-      createdAt: row.created_at,
-    });
-    grantsByShelf.set(row.shelf_key, list);
+    const normKey = toShelfAccessKey(row.shelf_key);
+    let userMap = grantsByShelf.get(normKey);
+    if (!userMap) {
+      userMap = new Map<string, ShelfAccessGrantUser>();
+      grantsByShelf.set(normKey, userMap);
+    }
+    const existing = userMap.get(row.discord_user_id);
+    if (!existing) {
+      userMap.set(row.discord_user_id, {
+        discordUserId: row.discord_user_id,
+        label: row.granted_label ?? null,
+        discordUsername: row.discord_username ?? null,
+        createdAt: row.created_at,
+      });
+    } else if (!existing.label && row.granted_label) {
+      existing.label = row.granted_label;
+    }
   }
 
-  const rules: ShelfAccessRuleDetail[] = (rulesRes.results || []).map((rule) => ({
-    shelfKey: rule.shelf_key,
-    mode: 'restricted',
-    updatedAt: rule.updated_at,
-    allowedUsers: grantsByShelf.get(rule.shelf_key) || [],
-  }));
+  const mergedRules = new Map<string, number>();
+  for (const rule of rulesRes.results || []) {
+    const normKey = toShelfAccessKey(rule.shelf_key);
+    const prevUpdated = mergedRules.get(normKey) ?? 0;
+    mergedRules.set(normKey, Math.max(prevUpdated, Number(rule.updated_at ?? 0)));
+  }
+
+  const rules: ShelfAccessRuleDetail[] = Array.from(mergedRules.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([normKey, updatedAt]) => ({
+      shelfKey: normKey,
+      mode: 'restricted',
+      updatedAt,
+      allowedUsers: Array.from(grantsByShelf.get(normKey)?.values() || []),
+    }));
 
   return { rules };
 }
@@ -238,11 +288,16 @@ export async function putAdminShelfAccessConfig(db: D1Database, rawBody: unknown
 
   const shelfKey = toShelfAccessKey(shelfName);
   await ensureShelfAccessTables(db);
+  const { ruleKeys, grantKeys } = await collectMatchingRawAccessKeys(db, shelfKey);
+  const allRuleKeysToClear = Array.from(new Set([shelfKey, ...ruleKeys]));
+  const allGrantKeysToClear = Array.from(new Set([shelfKey, ...grantKeys]));
 
   if (mode === 'public') {
+    const gPlaceholders = allGrantKeysToClear.map(() => '?').join(', ');
+    const rPlaceholders = allRuleKeysToClear.map(() => '?').join(', ');
     await db.batch([
-      db.prepare('DELETE FROM shelf_guest_grants WHERE shelf_key = ?').bind(shelfKey),
-      db.prepare('DELETE FROM shelf_access_rules WHERE shelf_key = ?').bind(shelfKey),
+      db.prepare(`DELETE FROM shelf_guest_grants WHERE shelf_key IN (${gPlaceholders})`).bind(...allGrantKeysToClear),
+      db.prepare(`DELETE FROM shelf_access_rules WHERE shelf_key IN (${rPlaceholders})`).bind(...allRuleKeysToClear),
     ]);
     return {
       ok: true,
@@ -281,7 +336,9 @@ export async function putAdminShelfAccessConfig(db: D1Database, rawBody: unknown
     });
   }
 
-  // Gom toàn bộ UPSERT rule + DELETE grants cũ + INSERT grants mới vào 1 transaction batch duy nhất (vá M-5)
+  // Gom toàn bộ UPSERT rule NFC chuẩn + xoá biến thể NFD cũ + DELETE grants cũ + INSERT grants mới vào 1 batch duy nhất
+  const legacyRuleKeys = allRuleKeysToClear.filter((k) => k !== shelfKey);
+  const gPlaceholders = allGrantKeysToClear.map(() => '?').join(', ');
   const statements: D1PreparedStatement[] = [
     db
       .prepare(
@@ -292,8 +349,14 @@ export async function putAdminShelfAccessConfig(db: D1Database, rawBody: unknown
            updated_at = excluded.updated_at`,
       )
       .bind(shelfKey, now),
-    db.prepare('DELETE FROM shelf_guest_grants WHERE shelf_key = ?').bind(shelfKey),
+    db.prepare(`DELETE FROM shelf_guest_grants WHERE shelf_key IN (${gPlaceholders})`).bind(...allGrantKeysToClear),
   ];
+  if (legacyRuleKeys.length > 0) {
+    const legacyPlaceholders = legacyRuleKeys.map(() => '?').join(', ');
+    statements.push(
+      db.prepare(`DELETE FROM shelf_access_rules WHERE shelf_key IN (${legacyPlaceholders})`).bind(...legacyRuleKeys),
+    );
+  }
 
   for (let i = 0; i < deduped.length; i += MULTI_INSERT_ROWS_PER_STMT) {
     const chunk = deduped.slice(i, i + MULTI_INSERT_ROWS_PER_STMT);
@@ -334,18 +397,28 @@ export async function prepareShelfAccessForRename(
   oldKey: string,
   newKey: string,
 ): Promise<void> {
-  if (!oldKey || !newKey || oldKey === newKey) return;
+  const normOld = toShelfAccessKey(oldKey);
+  const normNew = toShelfAccessKey(newKey);
+  if (!normOld || !normNew || normOld === normNew) return;
   await ensureShelfAccessTables(db);
 
+  const [oldMatches, newMatches] = await Promise.all([
+    collectMatchingRawAccessKeys(db, normOld),
+    collectMatchingRawAccessKeys(db, normNew),
+  ]);
+  const checkRuleKeys = Array.from(new Set([normOld, normNew, ...oldMatches.ruleKeys, ...newMatches.ruleKeys]));
+  const placeholders = checkRuleKeys.map(() => '?').join(', ');
   const existing = await db
-    .prepare('SELECT shelf_key, access_mode FROM shelf_access_rules WHERE shelf_key IN (?, ?)')
-    .bind(oldKey, newKey)
+    .prepare(`SELECT shelf_key, access_mode FROM shelf_access_rules WHERE shelf_key IN (${placeholders})`)
+    .bind(...checkRuleKeys)
     .all<{ shelf_key: string; access_mode: string }>();
 
   const anyRestricted = (existing.results || []).some((r) => r.access_mode === 'restricted');
   if (!anyRestricted) return;
 
   const now = Date.now();
+  const srcGrantKeys = Array.from(new Set([normOld, ...oldMatches.grantKeys]));
+  const srcPlaceholders = srcGrantKeys.map(() => '?').join(', ');
   await db.batch([
     db
       .prepare(
@@ -355,30 +428,37 @@ export async function prepareShelfAccessForRename(
            access_mode = 'restricted',
            updated_at = excluded.updated_at`,
       )
-      .bind(newKey, now),
+      .bind(normNew, now),
     db
       .prepare(
         `INSERT OR IGNORE INTO shelf_guest_grants (shelf_key, discord_user_id, granted_label, created_at)
          SELECT ?, discord_user_id, granted_label, created_at
          FROM shelf_guest_grants
-         WHERE shelf_key = ?`,
+         WHERE shelf_key IN (${srcPlaceholders})`,
       )
-      .bind(newKey, oldKey),
+      .bind(normNew, ...srcGrantKeys),
   ]);
 }
 
 /**
- * Pha 2 khi đổi tên kệ (vá H-5): chỉ xoá rule & grants của `oldKey` SAU khi toàn bộ sách đã đổi sang tên mới.
+ * Pha 2 khi đổi tên kệ (vá H-5): chỉ xoá rule & grants của `oldKey` (gồm cả biến thể NFD cũ) SAU khi toàn bộ sách đã đổi sang tên mới.
  */
 export async function cleanupOldShelfAccessAfterRename(
   db: D1Database,
   oldKey: string,
   newKey: string,
 ): Promise<void> {
-  if (!oldKey || !newKey || oldKey === newKey) return;
+  const normOld = toShelfAccessKey(oldKey);
+  const normNew = toShelfAccessKey(newKey);
+  if (!normOld || !normNew || normOld === normNew) return;
   await ensureShelfAccessTables(db);
+  const { ruleKeys, grantKeys } = await collectMatchingRawAccessKeys(db, normOld);
+  const delRuleKeys = Array.from(new Set([normOld, ...ruleKeys]));
+  const delGrantKeys = Array.from(new Set([normOld, ...grantKeys]));
+  const gPlaceholders = delGrantKeys.map(() => '?').join(', ');
+  const rPlaceholders = delRuleKeys.map(() => '?').join(', ');
   await db.batch([
-    db.prepare('DELETE FROM shelf_guest_grants WHERE shelf_key = ?').bind(oldKey),
-    db.prepare('DELETE FROM shelf_access_rules WHERE shelf_key = ?').bind(oldKey),
+    db.prepare(`DELETE FROM shelf_guest_grants WHERE shelf_key IN (${gPlaceholders})`).bind(...delGrantKeys),
+    db.prepare(`DELETE FROM shelf_access_rules WHERE shelf_key IN (${rPlaceholders})`).bind(...delRuleKeys),
   ]);
 }

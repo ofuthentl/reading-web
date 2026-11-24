@@ -148,58 +148,56 @@ export async function recordUsageEvent(db: D1Database, input: UsageEventInput): 
     const initialBudget =
       requestedSec > 0
         ? prevSync > 0
-          ? Math.min(requestedSec, MAX_READING_DELTA_SEC, Math.max(0, Math.floor((now + 2000 - prevSync) / 1000)))
+          ? Math.min(requestedSec, MAX_READING_DELTA_SEC, Math.max(0, Math.floor((now - prevSync) / 1000)))
           : Math.min(requestedSec, FIRST_SYNC_MAX_DELTA_SEC)
         : 0;
 
-    // Ghi usage_daily_readers với kẹp đồng hồ thực nguyên tử trong SQLite để chống race song song
-    const beforeRow = await db
-      .prepare(
-        'SELECT reading_seconds FROM usage_daily_readers WHERE day_key = ? AND reader_scope = ?',
-      )
-      .bind(dayKey, input.readerScope)
-      .first<{ reading_seconds: number }>()
-      .catch(() => null);
-    const beforeSec = Number(beforeRow?.reading_seconds ?? 0);
+    // Ghi usage_daily_readers nguyên tử trong 1 db.batch (kẹp chặt đồng hồ thực, bỏ cộng cứng +2s)
+    const [beforeBatchRes, afterBatchRes] = await db.batch<{ reading_seconds: number }>([
+      db
+        .prepare(
+          'SELECT reading_seconds FROM usage_daily_readers WHERE day_key = ? AND reader_scope = ?',
+        )
+        .bind(dayKey, input.readerScope),
+      db
+        .prepare(
+          `INSERT INTO usage_daily_readers (day_key, reader_scope, role, last_seen_at, reading_seconds, last_reading_sync_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(day_key, reader_scope) DO UPDATE SET
+             last_seen_at = excluded.last_seen_at,
+             reading_seconds = usage_daily_readers.reading_seconds + CASE
+               WHEN ? <= 0 THEN 0
+               WHEN usage_daily_readers.last_reading_sync_at > 0 THEN MIN(?, MAX(0, CAST((? - usage_daily_readers.last_reading_sync_at) / 1000 AS INTEGER)))
+               ELSE ?
+             END,
+             last_reading_sync_at = CASE
+               WHEN ? > 0 AND (
+                 usage_daily_readers.last_reading_sync_at <= 0
+                 OR (? - usage_daily_readers.last_reading_sync_at) >= 1000
+               ) THEN ?
+               ELSE usage_daily_readers.last_reading_sync_at
+             END
+           RETURNING reading_seconds`,
+        )
+        .bind(
+          dayKey,
+          input.readerScope,
+          input.readerRole,
+          now,
+          initialBudget,
+          initialBudget > 0 ? now : 0,
+          initialBudget,
+          initialBudget,
+          now,
+          initialBudget,
+          initialBudget,
+          now,
+          now,
+        ),
+    ]);
 
-    const afterRow = await db
-      .prepare(
-        `INSERT INTO usage_daily_readers (day_key, reader_scope, role, last_seen_at, reading_seconds, last_reading_sync_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(day_key, reader_scope) DO UPDATE SET
-           last_seen_at = excluded.last_seen_at,
-           reading_seconds = usage_daily_readers.reading_seconds + CASE
-             WHEN ? <= 0 THEN 0
-             WHEN usage_daily_readers.last_reading_sync_at > 0 THEN MIN(?, MAX(0, CAST((? + 2000 - usage_daily_readers.last_reading_sync_at) / 1000 AS INTEGER)))
-             ELSE ?
-           END,
-           last_reading_sync_at = CASE
-             WHEN ? > 0 AND (
-               usage_daily_readers.last_reading_sync_at <= 0
-               OR (? + 2000 - usage_daily_readers.last_reading_sync_at) >= 1000
-             ) THEN ?
-             ELSE usage_daily_readers.last_reading_sync_at
-           END
-         RETURNING reading_seconds`,
-      )
-      .bind(
-        dayKey,
-        input.readerScope,
-        input.readerRole,
-        now,
-        initialBudget,
-        initialBudget > 0 ? now : 0,
-        initialBudget,
-        initialBudget,
-        now,
-        initialBudget,
-        initialBudget,
-        now,
-        now,
-      )
-      .first<{ reading_seconds: number }>();
-
-    const afterSec = Number(afterRow?.reading_seconds ?? beforeSec);
+    const beforeSec = Number(beforeBatchRes.results?.[0]?.reading_seconds ?? 0);
+    const afterSec = Number(afterBatchRes.results?.[0]?.reading_seconds ?? beforeSec);
     creditedSec = Math.max(0, Math.min(initialBudget, afterSec - beforeSec));
   }
 

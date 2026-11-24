@@ -18,6 +18,7 @@ import {
   authorizeExistingCommentAccess,
   buildDeleteCommentTreeStatements,
   loadReactionsForComments,
+  loadRepliesForRootComments,
   toggleCommunityCommentReaction,
 } from './communityReactionsDb';
 
@@ -125,7 +126,7 @@ export async function getCommunitySummary(
   );
   const userScope = resolveCommunityUserScope(auth);
 
-  const [ratingSummary, rootsRes, repliesRes, countRow] = await Promise.all([
+  const [ratingSummary, rootsRes, countRow] = await Promise.all([
     loadRatingSummary(db, targetType, targetKey, userScope),
     db
       .prepare(
@@ -138,24 +139,18 @@ export async function getCommunitySummary(
       .bind(targetType, targetKey, MAX_COMMENTS_RETURNED)
       .all<RawCommentRow>(),
     db
-      .prepare(
-        `SELECT id, user_scope, author_name, author_role, content, parent_id, chapter_number, created_at, updated_at
-         FROM library_comments
-         WHERE target_type = ? AND target_key = ? AND parent_id IS NOT NULL
-         ORDER BY created_at ASC`,
-      )
-      .bind(targetType, targetKey)
-      .all<RawCommentRow>(),
-    db
       .prepare('SELECT COUNT(*) AS cnt FROM library_comments WHERE target_type = ? AND target_key = ?')
       .bind(targetType, targetKey)
       .first<{ cnt: number }>(),
   ]);
 
   const rootRows = rootsRes.results || [];
-  const rootIdSet = new Set(rootRows.map((r) => r.id));
-  const replyRows = (repliesRes.results || []).filter(
-    (r) => Boolean(r.parent_id && rootIdSet.has(r.parent_id)),
+  const replyRows = await loadRepliesForRootComments<RawCommentRow>(
+    db,
+    targetType,
+    targetKey,
+    rootRows.map((r) => r.id),
+    500,
   );
   const combinedRows = [...rootRows, ...replyRows];
   const reactionMap = await loadReactionsForComments(
@@ -267,8 +262,13 @@ export async function createCommunityComment(
   }
 
   const explicitChapter = parseChapterNumber(body?.chapterNumber, targetType);
+  // Phản hồi không bao giờ được hạ thấp ngưỡng che spoiler của bình luận cha (Math.max)
   const chapterNumber =
-    targetType === 'book' ? (explicitChapter ?? inheritedChapter ?? null) : null;
+    targetType === 'book'
+      ? explicitChapter !== null && inheritedChapter !== null
+        ? Math.max(explicitChapter, inheritedChapter)
+        : (explicitChapter ?? inheritedChapter ?? null)
+      : null;
 
   const userScope = resolveCommunityUserScope(auth);
   const now = Date.now();
@@ -276,9 +276,8 @@ export async function createCommunityComment(
   const authorName = resolveCommunityAuthorName(auth);
   const authorRole: AuthRole = auth.role;
 
-  const insertRes = await db
-    .prepare(
-      `INSERT INTO library_comments (
+  const insertSql = parentId
+    ? `INSERT INTO library_comments (
          id, target_type, target_key, user_scope, author_name, author_role,
          content, parent_id, chapter_number, created_at, updated_at
        )
@@ -286,26 +285,52 @@ export async function createCommunityComment(
        WHERE NOT EXISTS (
          SELECT 1 FROM library_comments
          WHERE user_scope = ? AND created_at > ?
-       )`,
-    )
-    .bind(
-      id,
-      targetType,
-      targetKey,
-      userScope,
-      authorName,
-      authorRole,
-      content,
-      parentId,
-      chapterNumber,
-      now,
-      now,
-      userScope,
-      now - COMMENT_COOLDOWN_MS,
-    )
-    .run();
+       )
+         AND EXISTS (
+           SELECT 1 FROM library_comments
+           WHERE id = ? AND target_type = ? AND target_key = ? AND parent_id IS NULL
+         )`
+    : `INSERT INTO library_comments (
+         id, target_type, target_key, user_scope, author_name, author_role,
+         content, parent_id, chapter_number, created_at, updated_at
+       )
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM library_comments
+         WHERE user_scope = ? AND created_at > ?
+       )`;
+
+  const insertParams: unknown[] = [
+    id,
+    targetType,
+    targetKey,
+    userScope,
+    authorName,
+    authorRole,
+    content,
+    parentId,
+    chapterNumber,
+    now,
+    now,
+    userScope,
+    now - COMMENT_COOLDOWN_MS,
+    ...(parentId ? [parentId, targetType, targetKey] : []),
+  ];
+
+  const insertRes = await db.prepare(insertSql).bind(...insertParams).run();
 
   if ((insertRes.meta?.changes ?? 0) !== 1) {
+    if (parentId) {
+      const parentStillExists = await db
+        .prepare(
+          'SELECT id FROM library_comments WHERE id = ? AND target_type = ? AND target_key = ? AND parent_id IS NULL',
+        )
+        .bind(parentId, targetType, targetKey)
+        .first<{ id: string }>();
+      if (!parentStillExists) {
+        throw new HttpError('Không tìm thấy bình luận gốc để trả lời.', 404);
+      }
+    }
     const recentRow = await db
       .prepare(
         'SELECT created_at FROM library_comments WHERE user_scope = ? ORDER BY created_at DESC LIMIT 1',
@@ -378,10 +403,26 @@ export async function updateCommunityComment(
     throw new HttpError(`Nội dung bình luận phải từ 1 đến ${MAX_COMMENT_LENGTH} ký tự.`, 400);
   }
 
-  const nextChapterNumber =
+  let nextChapterNumber =
     body && 'chapterNumber' in body
       ? parseChapterNumber(body.chapterNumber, existing.target_type)
       : existing.chapter_number;
+
+  // Khi sửa phản hồi cấp sách, bảo đảm không hạ thấp mốc chương spoiler của bình luận cha
+  if (existing.parent_id && existing.target_type === 'book') {
+    const parentChapterRow = await db
+      .prepare('SELECT chapter_number FROM library_comments WHERE id = ?')
+      .bind(existing.parent_id)
+      .first<{ chapter_number: number | null }>();
+    const parentCh =
+      typeof parentChapterRow?.chapter_number === 'number' && parentChapterRow.chapter_number >= 1
+        ? parentChapterRow.chapter_number
+        : null;
+    if (parentCh !== null) {
+      nextChapterNumber =
+        nextChapterNumber !== null ? Math.max(nextChapterNumber, parentCh) : parentCh;
+    }
+  }
 
   const updatedAt = Math.max(Date.now(), Number(existing.created_at) + 1);
   await db

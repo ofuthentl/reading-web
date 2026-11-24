@@ -192,30 +192,71 @@ export function buildDeleteCommentTreeStatements(
 }
 
 /**
- * Sinh cặp câu lệnh xoá sạch reaction trước khi xoá toàn bộ bình luận thuộc tập sách hoặc kệ sách.
+ * Xoá sạch reaction & toàn bộ bình luận thuộc tập sách hoặc kệ sách một cách an toàn:
+ * tách riêng 2 câu lệnh (và cho phép gọi `ensureSchema` trước) để lỗi thiếu bảng
+ * `library_comment_reactions` trên DB cũ không bao giờ làm rollback mất `DELETE FROM library_comments`.
  */
-export function buildDeleteTargetCommentsStatements(
+export async function deleteTargetCommentsSafely(
   db: D1Database,
   targetType: 'shelf' | 'book',
   targetKeys: readonly string[],
-): D1PreparedStatement[] {
-  if (targetKeys.length === 0) return [];
+  ensureSchema?: (db: D1Database) => Promise<void>,
+): Promise<void> {
+  if (targetKeys.length === 0) return;
+  if (ensureSchema) {
+    await ensureSchema(db).catch(() => undefined);
+  }
   const placeholders = targetKeys.map(() => '?').join(', ');
-  return [
-    db
+  await db
+    .prepare(
+      `DELETE FROM library_comment_reactions
+       WHERE comment_id IN (
+         SELECT id FROM library_comments
+         WHERE target_type = ? AND target_key IN (${placeholders})
+       )`,
+    )
+    .bind(targetType, ...targetKeys)
+    .run()
+    .catch(() => undefined);
+  await db
+    .prepare(
+      `DELETE FROM library_comments
+       WHERE target_type = ? AND target_key IN (${placeholders})`,
+    )
+    .bind(targetType, ...targetKeys)
+    .run()
+    .catch(() => undefined);
+}
+
+/**
+ * Tải phản hồi con 1 cấp cho tập bình luận gốc đã lấy (giới hạn chặt `maxReplies` chống phình truy vấn).
+ */
+export async function loadRepliesForRootComments<T>(
+  db: D1Database,
+  targetType: 'shelf' | 'book',
+  targetKey: string,
+  rootIds: readonly string[],
+  maxReplies = 500,
+): Promise<T[]> {
+  if (rootIds.length === 0) return [];
+  const collected: T[] = [];
+  for (const chunk of chunkStrings(rootIds, BULK_D1_CHUNK_SIZE)) {
+    const remaining = maxReplies - collected.length;
+    if (remaining <= 0) break;
+    const placeholders = chunk.map(() => '?').join(', ');
+    const res = await db
       .prepare(
-        `DELETE FROM library_comment_reactions
-         WHERE comment_id IN (
-           SELECT id FROM library_comments
-           WHERE target_type = ? AND target_key IN (${placeholders})
-         )`,
+        `SELECT id, user_scope, author_name, author_role, content, parent_id, chapter_number, created_at, updated_at
+         FROM library_comments
+         WHERE target_type = ? AND target_key = ? AND parent_id IN (${placeholders})
+         ORDER BY created_at ASC
+         LIMIT ?`,
       )
-      .bind(targetType, ...targetKeys),
-    db
-      .prepare(
-        `DELETE FROM library_comments
-         WHERE target_type = ? AND target_key IN (${placeholders})`,
-      )
-      .bind(targetType, ...targetKeys),
-  ];
+      .bind(targetType, targetKey, ...chunk, remaining)
+      .all<T>();
+    if (res.results?.length) {
+      collected.push(...res.results);
+    }
+  }
+  return collected;
 }

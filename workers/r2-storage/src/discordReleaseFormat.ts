@@ -32,6 +32,25 @@ export function escapeDiscordMarkdown(text: string): string {
   return text.replace(/([\\*_~`|])/g, '\\$1');
 }
 
+function truncateAndEscapeDiscordText(
+  raw: string,
+  maxRawChars: number,
+  maxEscapedChars: number,
+): string {
+  const escaped = escapeDiscordMarkdown(raw.trim().slice(0, maxRawChars));
+  if (escaped.length <= maxEscapedChars) return escaped;
+  let cut = escaped.slice(0, maxEscapedChars);
+  // Không bao giờ cắt đứt chuỗi thoát `\` ở biên cuối
+  let trailingSlashes = 0;
+  for (let i = cut.length - 1; i >= 0 && cut[i] === '\\'; i -= 1) {
+    trailingSlashes += 1;
+  }
+  if (trailingSlashes % 2 === 1) {
+    cut = cut.slice(0, -1);
+  }
+  return cut;
+}
+
 export function splitLegacyReleaseBookFields(
   rawTitle: string,
   rawAuthor: string,
@@ -269,21 +288,24 @@ export function buildDiscordReleaseMessagePayload(
   const volumePrefix = formatReleaseVolumeSummary(sortedBooks, group.shelfName);
   const inviteLine = `${volumePrefix} lên kệ tại **Ofu's Library** (${options.appUrl}) — ghé thư viện đọc ngay nhé!`;
 
-  const authorLabel = escapeDiscordMarkdown(summarizeGroupAuthors(sortedBooks));
-  const cleanTags = group.tags
-    .map((tag) => escapeDiscordMarkdown(tag.trim()))
+  const authorLabel = truncateAndEscapeDiscordText(summarizeGroupAuthors(sortedBooks), 200, 240);
+  // Cắt ngắn chuỗi tag TRƯỚC khi escape để tuyệt đối không cắt đứt dấu `\` ở biên 240 ký tự
+  const rawTags = group.tags
+    .map((tag) => tag.trim().slice(0, 40))
     .filter(Boolean)
     .slice(0, MAX_TAGS_PER_EMBED);
+  const rawTagText = rawTags.join(', ').slice(0, 180);
+  const escapedTagText = rawTagText ? truncateAndEscapeDiscordText(rawTagText, 180, 240) : '';
 
-  const metaLine =
-    cleanTags.length > 0
-      ? `**Tác giả:** ${authorLabel} · **Thể loại:** ${cleanTags.join(', ').slice(0, 240)}`
-      : `**Tác giả:** ${authorLabel}`;
+  const metaLine = escapedTagText
+    ? `**Tác giả:** ${authorLabel} · **Thể loại:** ${escapedTagText}`
+    : `**Tác giả:** ${authorLabel}`;
 
   const description = `${inviteLine}\n\n${metaLine}`.slice(0, 3900);
 
+  const safeEmbedTitle = truncateAndEscapeDiscordText(group.shelfName, 200, 240);
   const embed: Record<string, unknown> = {
-    title: `📚 ${group.shelfName.trim().slice(0, 240)}`,
+    title: `📚 ${safeEmbedTitle}`,
     description,
     color: RELEASE_EMBED_COLOR,
     footer: {

@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS discord_access (
   rl_tokens REAL NOT NULL DEFAULT 10,
   rl_updated_at INTEGER NOT NULL DEFAULT 0,
   rl_strikes INTEGER NOT NULL DEFAULT 0,
+  rl_last_strike_at INTEGER NOT NULL DEFAULT 0,
   is_banned INTEGER NOT NULL DEFAULT 0,
   ban_reason TEXT,
   updated_at INTEGER NOT NULL

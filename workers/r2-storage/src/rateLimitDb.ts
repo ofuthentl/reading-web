@@ -1,9 +1,54 @@
-import { HttpError, sha256Hex } from './auth';
+import { HttpError, ensureDiscordAccessTable, sha256Hex } from './auth';
 
 // Token Bucket chống tool cào tự động (KHÔNG đặt trần tổng chương/ngày cho bạn bè đọc thật)
 export const BUCKET_CAPACITY = 10; // Mở liên tiếp 10 chương đầu tức thì (0ms chờ) để dò mục lục
 export const BUCKET_REFILL_PER_MS = 1 / 6000; // Hồi 1 chương mới mỗi 6 giây (10 chương mới/phút)
+export const STRIKE_DECAY_STEP_MS = 30 * 60 * 1000; // Giảm -1 strike mỗi 30 phút yên ổn không vi phạm (QĐ-1 = 1A)
+export const STRIKE_RESET_IDLE_MS = 24 * 60 * 60 * 1000; // Reset sạch về 0 sau 24 giờ yên ổn (D-038 / QĐ-1 = 1A)
 const AUTO_CLOSE_SESSION_STRIKES = 10;
+
+// Biểu thức SQL nguyên tử tính lại rl_strikes & rl_last_strike_at theo thời gian yên ổn thực (không bao giờ reset về 0 sau 1 request)
+export const DECAYED_STRIKES_SQL = `CASE
+  WHEN COALESCE(rl_strikes, 0) <= 0 THEN 0
+  WHEN (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END) <= 0 THEN COALESCE(rl_strikes, 0)
+  WHEN (? - (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END)) >= ? THEN 0
+  WHEN (? - (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END)) >= ?
+    THEN MAX(0, COALESCE(rl_strikes, 0) - CAST((? - (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END)) / ? AS INTEGER))
+  ELSE COALESCE(rl_strikes, 0)
+END`;
+
+export const DECAYED_STRIKE_AT_SQL = `CASE
+  WHEN COALESCE(rl_strikes, 0) <= 0 THEN 0
+  WHEN (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END) <= 0 THEN COALESCE(rl_last_strike_at, 0)
+  WHEN (? - (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END)) >= ? THEN 0
+  WHEN (? - (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END)) >= ? THEN
+    CASE
+      WHEN COALESCE(rl_strikes, 0) - CAST((? - (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END)) / ? AS INTEGER) <= 0 THEN 0
+      ELSE (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END)
+           + CAST((? - (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END)) / ? AS INTEGER) * ?
+    END
+  ELSE COALESCE(rl_last_strike_at, 0)
+END`;
+
+export function buildStrikeDecayBindParams(now: number): number[] {
+  return [
+    now,
+    STRIKE_RESET_IDLE_MS,
+    now,
+    STRIKE_DECAY_STEP_MS,
+    now,
+    STRIKE_DECAY_STEP_MS,
+    now,
+    STRIKE_RESET_IDLE_MS,
+    now,
+    STRIKE_DECAY_STEP_MS,
+    now,
+    STRIKE_DECAY_STEP_MS,
+    now,
+    STRIKE_DECAY_STEP_MS,
+    STRIKE_DECAY_STEP_MS,
+  ];
+}
 
 // Chống dò mật mã / chìa khoá theo IP (M-8)
 const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 phút
@@ -16,15 +61,17 @@ export interface GuestRateLimitOptions {
 }
 
 /**
- * Tiêu thụ token nguyên tử trực tiếp trong SQLite/D1 (vá race-condition H-1):
+ * Tiêu thụ token nguyên tử trực tiếp trong SQLite/D1 (vá race-condition H-1 & QĐ-1 = 1A):
  * - Một câu `UPDATE ... WHERE (refilled) >= cost` duy nhất, kiểm tra `meta.changes === 1`.
- * - Nếu hết token, tăng `rl_strikes` nguyên tử (với tải chương) và tự đóng phiên khi chạm ngưỡng.
+ * - Request thành công KHÔNG xoá trắng `rl_strikes`; chỉ hồi bậc thang `-1 / 30 phút` và về `0` sau `24 giờ` yên ổn.
+ * - Nếu hết token (`trackStrikes = true`), tăng `rl_strikes` nguyên tử, ghi `rl_last_strike_at = now` và tự đóng phiên ở mốc 10.
  */
 export async function consumeGuestRateToken(
   db: D1Database,
   discordUserId: string,
   options: GuestRateLimitOptions,
 ): Promise<void> {
+  await ensureDiscordAccessTable(db);
   const now = Date.now();
   const { cost, trackStrikes, tooFastMessage } = options;
 
@@ -33,7 +80,8 @@ export async function consumeGuestRateToken(
       `UPDATE discord_access
        SET rl_tokens = MIN(?, COALESCE(rl_tokens, ?) + MAX(0, ? - CASE WHEN rl_updated_at > 0 THEN rl_updated_at ELSE ? END) * ?) - ?,
            rl_updated_at = ?,
-           rl_strikes = CASE WHEN ? = 1 THEN 0 ELSE rl_strikes END
+           rl_strikes = ${DECAYED_STRIKES_SQL},
+           rl_last_strike_at = ${DECAYED_STRIKE_AT_SQL}
        WHERE discord_user_id = ?
          AND MIN(?, COALESCE(rl_tokens, ?) + MAX(0, ? - CASE WHEN rl_updated_at > 0 THEN rl_updated_at ELSE ? END) * ?) >= ?`,
     )
@@ -45,7 +93,7 @@ export async function consumeGuestRateToken(
       BUCKET_REFILL_PER_MS,
       cost,
       now,
-      trackStrikes ? 1 : 0,
+      ...buildStrikeDecayBindParams(now),
       discordUserId,
       BUCKET_CAPACITY,
       BUCKET_CAPACITY,
@@ -67,10 +115,11 @@ export async function consumeGuestRateToken(
         `UPDATE discord_access
          SET rl_tokens = MIN(?, COALESCE(rl_tokens, ?) + MAX(0, ? - CASE WHEN rl_updated_at > 0 THEN rl_updated_at ELSE ? END) * ?),
              rl_updated_at = ?,
-             rl_strikes = COALESCE(rl_strikes, 0) + 1,
-             active_session_id = CASE WHEN COALESCE(rl_strikes, 0) + 1 >= ? THEN NULL ELSE active_session_id END,
-             session_expires_at = CASE WHEN COALESCE(rl_strikes, 0) + 1 >= ? THEN NULL ELSE session_expires_at END,
-             updated_at = CASE WHEN COALESCE(rl_strikes, 0) + 1 >= ? THEN ? ELSE updated_at END
+             rl_strikes = (${DECAYED_STRIKES_SQL}) + 1,
+             rl_last_strike_at = ?,
+             active_session_id = CASE WHEN (${DECAYED_STRIKES_SQL}) + 1 >= ? THEN NULL ELSE active_session_id END,
+             session_expires_at = CASE WHEN (${DECAYED_STRIKES_SQL}) + 1 >= ? THEN NULL ELSE session_expires_at END,
+             updated_at = CASE WHEN (${DECAYED_STRIKES_SQL}) + 1 >= ? THEN ? ELSE updated_at END
          WHERE discord_user_id = ?
          RETURNING rl_tokens, rl_strikes`,
       )
@@ -81,8 +130,33 @@ export async function consumeGuestRateToken(
         now,
         BUCKET_REFILL_PER_MS,
         now,
+        now,
+        STRIKE_RESET_IDLE_MS,
+        now,
+        STRIKE_DECAY_STEP_MS,
+        now,
+        STRIKE_DECAY_STEP_MS,
+        now,
+        now,
+        STRIKE_RESET_IDLE_MS,
+        now,
+        STRIKE_DECAY_STEP_MS,
+        now,
+        STRIKE_DECAY_STEP_MS,
         AUTO_CLOSE_SESSION_STRIKES,
+        now,
+        STRIKE_RESET_IDLE_MS,
+        now,
+        STRIKE_DECAY_STEP_MS,
+        now,
+        STRIKE_DECAY_STEP_MS,
         AUTO_CLOSE_SESSION_STRIKES,
+        now,
+        STRIKE_RESET_IDLE_MS,
+        now,
+        STRIKE_DECAY_STEP_MS,
+        now,
+        STRIKE_DECAY_STEP_MS,
         AUTO_CLOSE_SESSION_STRIKES,
         now,
         discordUserId,
