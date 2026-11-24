@@ -214,7 +214,7 @@ export function SpineBookshelfSlot({
               aria-hidden="true"
               className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/35"
             >
-              <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/25 bg-[#120b0e]/82 text-rose-100 shadow-md">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/25 bg-[#120b0e]/85 text-rose-100 shadow-md">
                 <Lock className="h-3.5 w-3.5" />
               </span>
             </span>

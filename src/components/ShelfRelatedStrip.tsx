@@ -18,17 +18,30 @@ function compactRelationBadge(label: string): string {
   return label;
 }
 
+function formatRecommendSubtext(reasonLabel: string, hideWhenPureSameAuthor: boolean): string | null {
+  if (reasonLabel.startsWith('Chung gu:')) {
+    return reasonLabel.replace(/^Chung gu:\s*/i, '').trim() || null;
+  }
+  if (reasonLabel.startsWith('Cùng tác giả ·')) {
+    return reasonLabel;
+  }
+  if (reasonLabel.startsWith('Cùng tác giả')) {
+    return hideWhenPureSameAuthor ? null : 'Cùng tác giả';
+  }
+  return reasonLabel || null;
+}
+
 function EditorialRelatedShelfCard({
   summary,
-  badgeLabel,
-  badgeTone,
+  topBadgeLabel,
+  subtextLabel,
   staggerIndex,
   shouldLoadCover,
   onOpenShelf,
 }: {
   summary: ShelfSummary;
-  badgeLabel: string;
-  badgeTone: 'relation' | 'recommend';
+  topBadgeLabel?: string | null;
+  subtextLabel?: string | null;
   staggerIndex: number;
   shouldLoadCover: boolean;
   onOpenShelf: (shelfKey: string) => void;
@@ -98,7 +111,7 @@ function EditorialRelatedShelfCard({
               aria-hidden="true"
               className="pointer-events-none absolute inset-2.5 left-3.5 rounded-[2px] border border-[#f5ead6]/20"
             />
-            <div className="pl-2.5 pt-6">
+            <div className={`pl-2.5 ${topBadgeLabel ? 'pt-6' : 'pt-2'}`}>
               <p className="line-clamp-4 font-display text-sm font-semibold leading-snug text-[#f6efe2]">
                 {summary.shelf.name}
               </p>
@@ -110,23 +123,19 @@ function EditorialRelatedShelfCard({
           </div>
         )}
 
-        {/* Nhãn mối liên hệ / lý do gợi ý ở góc trên-trái */}
-        <span
-          className={`pointer-events-none absolute left-1.5 top-1.5 max-w-[calc(100%-0.75rem)] truncate rounded border px-1.5 py-0.5 text-[10px] font-semibold tracking-tight backdrop-blur-sm ${
-            badgeTone === 'relation'
-              ? 'border-[#f5b3b3]/35 bg-[#8f1818]/92 text-white'
-              : 'border-white/18 bg-[#111113]/82 text-[#f4f4f5]'
-          }`}
-        >
-          {badgeLabel}
-        </span>
+        {/* Nhãn mối liên hệ vũ trụ ngắn gọn ở góc trên-trái (nền đặc 95% nổi rõ trên mọi bìa sáng) */}
+        {topBadgeLabel && (
+          <span className="pointer-events-none absolute left-1.5 top-1.5 max-w-[calc(100%-0.75rem)] truncate rounded border border-[#f5b3b3]/35 bg-[#8f1818]/95 px-1.5 py-0.5 text-[10px] font-semibold tracking-tight text-white shadow-sm">
+            {topBadgeLabel}
+          </span>
+        )}
 
         {summary.isGuestLocked && (
           <span
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/25 bg-[#120b0e]/80 text-[#fce7eb] shadow-lg backdrop-blur-md">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/25 bg-[#120b0e]/85 text-[#fce7eb] shadow-lg backdrop-blur-md">
               <Lock className="h-4 w-4" />
             </span>
           </span>
@@ -134,14 +143,14 @@ function EditorialRelatedShelfCard({
 
         {/* Điểm đánh giá trung bình góc dưới-trái */}
         {summary.ratingCount > 0 && summary.ratingAverage !== null && (
-          <span className="pointer-events-none absolute bottom-2 left-1.5 inline-flex items-center gap-0.5 rounded border border-amber-300/35 bg-[#16120f]/88 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-amber-300 backdrop-blur-sm">
+          <span className="pointer-events-none absolute bottom-2 left-1.5 inline-flex items-center gap-0.5 rounded border border-amber-300/35 bg-[#16120f]/90 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-amber-300 shadow-sm backdrop-blur-sm">
             <span aria-hidden="true">★</span>
             <span>{summary.ratingAverage.toFixed(1)}</span>
           </span>
         )}
 
         {/* Nhãn tổng số tập góc dưới-phải */}
-        <span className="pointer-events-none absolute bottom-2 right-1.5 rounded border border-white/15 bg-[#111113]/85 px-1.5 py-0.5 text-[10px] font-semibold tracking-tight text-[#f1f1f1] backdrop-blur-sm">
+        <span className="pointer-events-none absolute bottom-2 right-1.5 rounded border border-white/15 bg-[#111113]/90 px-1.5 py-0.5 text-[10px] font-semibold tracking-tight text-[#f1f1f1] shadow-sm backdrop-blur-sm">
           {summary.bookCount} tập
         </span>
 
@@ -165,6 +174,11 @@ function EditorialRelatedShelfCard({
           {summary.shelf.name}
         </h4>
         <p className="truncate text-xs text-ink-muted">{summary.authorLabel}</p>
+        {subtextLabel && (
+          <p className="truncate pt-0.5 text-[11px] font-medium text-crimson-accent">
+            {subtextLabel}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -226,8 +240,7 @@ export function ShelfLinkedUniverseStrip({
           <EditorialRelatedShelfCard
             key={item.summary.shelf.key}
             summary={item.summary}
-            badgeLabel={compactRelationBadge(item.badgeLabel)}
-            badgeTone="relation"
+            topBadgeLabel={compactRelationBadge(item.badgeLabel)}
             staggerIndex={idx}
             shouldLoadCover={isNearViewport}
             onOpenShelf={onOpenShelf}
@@ -285,8 +298,7 @@ export function ShelfSameTasteStrip({
           <EditorialRelatedShelfCard
             key={item.summary.shelf.key}
             summary={item.summary}
-            badgeLabel={item.reasonLabel}
-            badgeTone="recommend"
+            subtextLabel={formatRecommendSubtext(item.reasonLabel, allSameAuthor)}
             staggerIndex={idx}
             shouldLoadCover={isNearViewport}
             onOpenShelf={onOpenShelf}

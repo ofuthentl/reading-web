@@ -187,7 +187,7 @@ export function BookCard({
         <>
           <span
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 bg-black/15 transition-colors duration-300 group-hover:bg-black/28"
+            className="pointer-events-none absolute inset-0 bg-black/15 transition-colors duration-300 group-hover:bg-black/30"
           />
           {compact ? (
             <span className="pointer-events-none absolute bottom-1 left-1 inline-flex items-center justify-center rounded border border-rose-300/40 bg-[#140b0e]/85 p-1 text-rose-200 backdrop-blur-sm">
@@ -196,7 +196,7 @@ export function BookCard({
           ) : (
             <span
               aria-hidden="true"
-              className="pointer-events-none absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-[#120b0e]/78 text-[#fce7eb] shadow-lg backdrop-blur-md transition-transform duration-300 group-hover:scale-105"
+              className="pointer-events-none absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-[#120b0e]/80 text-[#fce7eb] shadow-lg backdrop-blur-md transition-transform duration-300 group-hover:scale-105"
             >
               <Lock className="h-4 w-4" />
             </span>
@@ -209,13 +209,13 @@ export function BookCard({
         <span
           className={`pointer-events-none absolute bottom-2 left-1.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9.5px] font-semibold tracking-wide ${
             isMemberLocked
-              ? 'border-rose-300/40 bg-[#140b0e]/92 text-rose-100'
+              ? 'border-rose-300/40 bg-[#140b0e]/90 text-rose-100'
               : ownerAccessBadge
                 ? bookAccessSummary?.mode === 'public' && (bookAccessSummary.lockedChapterCount ?? 0) === 0
                   ? 'border-emerald-300/40 bg-[#0b1712]/90 text-emerald-200'
-                  : 'border-rose-300/40 bg-[#140b0e]/92 text-rose-100'
+                  : 'border-rose-300/40 bg-[#140b0e]/90 text-rose-100'
                 : guestLockLabel
-                  ? 'border-amber-300/35 bg-black/88 text-amber-200'
+                  ? 'border-amber-300/35 bg-black/90 text-amber-200'
                   : 'border-[#f5b3b3]/35 bg-[#8f1818]/95 text-white'
           }`}
         >

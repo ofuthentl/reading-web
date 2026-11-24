@@ -262,7 +262,7 @@ export function LibraryHeader({
               title="Kiểm tra sức khoẻ kho sách (thiếu bìa, thiếu mô tả, kệ trùng...)"
               className="hidden items-center rounded-xl border border-line bg-canvas p-2 text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink sm:inline-flex"
             >
-              <HeartPulse className="h-4 w-4 text-crimson-accent" />
+              <HeartPulse className="h-4 w-4 text-accent" />
             </button>
           )}
 
