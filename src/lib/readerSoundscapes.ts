@@ -1,11 +1,12 @@
 /**
- * Bộ tổng hợp Âm thanh Môi trường Đọc sách (Reader Soundscapes) bằng Web Audio API thuần:
- * - 0 phụ thuộc `three`, 0 CDN, 0 tệp âm thanh ngoài (`$0`, `0 B` R2).
+ * Bộ phát Âm thanh Môi trường Đọc sách (Reader Soundscapes — PA-A):
+ * - Phát 3 bản nhạc nền Piano/Lofi + tiếng môi trường thật nối vòng lặp mượt (`acrossfade`) lưu nội bộ tại `public/sounds/*.m4a` (`0` CDN, `0 B` R2, `0 B` tải trước khi chưa bật).
+ * - Định tuyến `<audio loop>` qua Web Audio `GainNode` để thanh Âm lượng & Hẹn giờ tắt êm (`15/30/60p` fade-out) hoạt động trọn vẹn trên cả Safari iOS lẫn Desktop/Android.
  * - Luôn mặc định TẮT (`preset = 'off'`) khi mở sách (`QĐ-2 = 2A`), chỉ lưu `volume` & `pageTurnSound` ở `localStorage`.
- * - Tự `suspend()` khi ẩn tab (`visibilityState === 'hidden'`) và `AudioContext.close()` triệt để khi đóng sách.
+ * - Tự tạm dừng/`suspend()` khi ẩn tab và giải phóng bộ đệm `<audio>` + `AudioContext.close()` khi đóng sách.
  */
 
-export type ReaderSoundscapeId = 'off' | 'night_rain' | 'warm_study' | 'sakura_wind' | 'late_hearth';
+export type ReaderSoundscapeId = 'off' | 'night_rain' | 'warm_study' | 'sakura_wind';
 export type SleepTimerMinutes = 0 | 15 | 30 | 60;
 
 export interface ReaderSoundPrefs {
@@ -15,30 +16,43 @@ export interface ReaderSoundPrefs {
 
 const SOUND_PREFS_STORAGE_KEY = 'ofu-reader-soundscape-prefs-v1';
 
+type ActiveSoundTrackId = Exclude<ReaderSoundscapeId, 'off'>;
+
+const SOUND_TRACK_FILES: Record<ActiveSoundTrackId, string> = {
+  night_rain: 'night-rain.m4a',
+  warm_study: 'warm-study.m4a',
+  sakura_wind: 'sakura-wind.m4a',
+};
+
 export const SOUNDSCAPE_OPTIONS: ReadonlyArray<{
   id: ReaderSoundscapeId;
   label: string;
   subtitle: string;
 }> = [
   { id: 'off', label: 'Tắt âm nền', subtitle: 'Yên tĩnh hoàn toàn' },
-  { id: 'night_rain', label: 'Mưa đêm', subtitle: 'Tiếng mưa rơi dịu ngoài hiên' },
-  { id: 'warm_study', label: 'Thư phòng ấm', subtitle: 'Không gian tĩnh lặng trầm ấm' },
-  { id: 'sakura_wind', label: 'Gió rừng anh đào', subtitle: 'Gió thoảng qua tán lá nhẹ' },
-  { id: 'late_hearth', label: 'Lò sưởi khuya', subtitle: 'Củi lửa tí tách êm dịu' },
+  { id: 'night_rain', label: 'Mưa đêm', subtitle: 'Piano dịu êm & tiếng mưa rơi ngoài hiên' },
+  { id: 'warm_study', label: 'Thư phòng ấm', subtitle: 'Piano thư giãn & lửa ấm bập bùng' },
+  { id: 'sakura_wind', label: 'Gió rừng anh đào', subtitle: 'Piano Nhật thanh bình & gió xuân nhẹ' },
 ];
+
+function resolveSoundUrl(fileName: string): string {
+  const base = import.meta.env.BASE_URL || '/';
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+  return `${normalizedBase}sounds/${fileName}`;
+}
 
 export function loadReaderSoundPrefs(): ReaderSoundPrefs {
   try {
     const raw = localStorage.getItem(SOUND_PREFS_STORAGE_KEY);
-    if (!raw) return { volume: 0.45, pageTurnSound: false };
+    if (!raw) return { volume: 0.5, pageTurnSound: false };
     const parsed = JSON.parse(raw) as Partial<ReaderSoundPrefs>;
     const volume =
       typeof parsed.volume === 'number' && Number.isFinite(parsed.volume)
         ? Math.min(1, Math.max(0.05, Math.round(parsed.volume * 100) / 100))
-        : 0.45;
+        : 0.5;
     return { volume, pageTurnSound: Boolean(parsed.pageTurnSound) };
   } catch {
-    return { volume: 0.45, pageTurnSound: false };
+    return { volume: 0.5, pageTurnSound: false };
   }
 }
 
@@ -50,33 +64,31 @@ export function saveReaderSoundPrefs(prefs: ReaderSoundPrefs): void {
   }
 }
 
-function createNoiseBuffer(ctx: AudioContext, seconds: number, mode: 'pink' | 'brown'): AudioBuffer {
+function createPinkNoiseBuffer(ctx: AudioContext, seconds: number): AudioBuffer {
   const length = Math.floor(ctx.sampleRate * seconds);
   const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
   const out = buffer.getChannelData(0);
-
-  if (mode === 'brown') {
-    let last = 0;
-    for (let i = 0; i < length; i += 1) {
-      const white = Math.random() * 2 - 1;
-      last = (last + 0.022 * white) / 1.022;
-      out[i] = last * 3.1;
-    }
-  } else {
-    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-    for (let i = 0; i < length; i += 1) {
-      const white = Math.random() * 2 - 1;
-      b0 = 0.99886 * b0 + white * 0.0555179;
-      b1 = 0.99332 * b1 + white * 0.0750759;
-      b2 = 0.96900 * b2 + white * 0.1538520;
-      b3 = 0.86650 * b3 + white * 0.3104856;
-      b4 = 0.55000 * b4 + white * 0.5329522;
-      b5 = -0.7616 * b5 - white * 0.0168980;
-      out[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.1;
-      b6 = white * 0.115926;
-    }
+  let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+  for (let i = 0; i < length; i += 1) {
+    const white = Math.random() * 2 - 1;
+    b0 = 0.99886 * b0 + white * 0.0555179;
+    b1 = 0.99332 * b1 + white * 0.0750759;
+    b2 = 0.96900 * b2 + white * 0.1538520;
+    b3 = 0.86650 * b3 + white * 0.3104856;
+    b4 = 0.55000 * b4 + white * 0.5329522;
+    b5 = -0.7616 * b5 - white * 0.0168980;
+    out[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.1;
+    b6 = white * 0.115926;
   }
   return buffer;
+}
+
+interface TrackDeck {
+  audio: HTMLAudioElement;
+  sourceNode: MediaElementAudioSourceNode | null;
+  trackGain: GainNode | null;
+  pauseTimer: number | null;
+  routedViaWebAudio: boolean;
 }
 
 export interface ReaderSoundscapeEngine {
@@ -91,13 +103,15 @@ export interface ReaderSoundscapeEngine {
 export function createReaderSoundscapeEngine(): ReaderSoundscapeEngine {
   let ctx: AudioContext | null = null;
   let masterGain: GainNode | null = null;
-  let activeCleanup: (() => void) | null = null;
   let currentPreset: ReaderSoundscapeId = 'off';
-  let userVolume = 0.45;
+  let userVolume = 0.5;
   let fadeMult = 1;
   let isDisposed = false;
+  let isDocHidden = false;
   let pinkBuf: AudioBuffer | null = null;
-  let brownBuf: AudioBuffer | null = null;
+  const decks = new Map<ActiveSoundTrackId, TrackDeck>();
+
+  const effectiveLinearVolume = () => Math.max(0, Math.min(1, userVolume * fadeMult));
 
   const ensureContext = (): AudioContext | null => {
     if (isDisposed || typeof window === 'undefined') return null;
@@ -106,210 +120,132 @@ export function createReaderSoundscapeEngine(): ReaderSoundscapeEngine {
         window.AudioContext ||
         (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtor) return null;
-      ctx = new AudioCtor();
-      masterGain = ctx.createGain();
-      masterGain.gain.value = userVolume * fadeMult;
-      masterGain.connect(ctx.destination);
+      try {
+        ctx = new AudioCtor();
+        masterGain = ctx.createGain();
+        masterGain.gain.value = effectiveLinearVolume();
+        masterGain.connect(ctx.destination);
+      } catch {
+        ctx = null;
+        masterGain = null;
+        return null;
+      }
     }
-    if (ctx.state === 'suspended') {
+    if (!isDocHidden && ctx.state === 'suspended') {
       void ctx.resume().catch(() => undefined);
     }
     return ctx;
   };
 
   const syncGain = () => {
-    if (!ctx || !masterGain) return;
-    const target = Math.max(0, Math.min(1, userVolume * fadeMult));
-    masterGain.gain.setTargetAtTime(target, ctx.currentTime, 0.08);
+    const target = effectiveLinearVolume();
+    if (ctx && masterGain) {
+      masterGain.gain.setTargetAtTime(target, ctx.currentTime, 0.08);
+    }
+    for (const [id, deck] of decks.entries()) {
+      if (!deck.routedViaWebAudio && id === currentPreset) {
+        deck.audio.volume = target;
+      }
+    }
   };
 
-  const stopActiveGraph = () => {
-    activeCleanup?.();
-    activeCleanup = null;
-  };
+  const ensureDeck = (id: ActiveSoundTrackId): TrackDeck | null => {
+    if (isDisposed || typeof Audio === 'undefined') return null;
+    const existing = decks.get(id);
+    if (existing) return existing;
 
-  const startPresetGraph = (preset: ReaderSoundscapeId) => {
-    stopActiveGraph();
-    currentPreset = preset;
-    if (preset === 'off') {
-      if (ctx && ctx.state === 'running') {
-        void ctx.suspend().catch(() => undefined);
-      }
-      return;
-    }
+    const audio = new Audio(resolveSoundUrl(SOUND_TRACK_FILES[id]));
+    audio.loop = true;
+    audio.preload = 'auto';
+    audio.setAttribute('playsinline', 'true');
 
-    const audio = ensureContext();
-    if (!audio || !masterGain) return;
-    if (!pinkBuf) pinkBuf = createNoiseBuffer(audio, 4, 'pink');
-    if (!brownBuf) brownBuf = createNoiseBuffer(audio, 4, 'brown');
+    const audioCtx = ensureContext();
+    let sourceNode: MediaElementAudioSourceNode | null = null;
+    let trackGain: GainNode | null = null;
+    let routedViaWebAudio = false;
 
-    const groupGain = audio.createGain();
-    groupGain.gain.setValueAtTime(0.001, audio.currentTime);
-    groupGain.gain.exponentialRampToValueAtTime(1, audio.currentTime + 0.65);
-    groupGain.connect(masterGain);
-
-    const nodesToStop: AudioScheduledSourceNode[] = [];
-    const timers: number[] = [];
-
-    const makeLoopNoise = (buf: AudioBuffer) => {
-      const src = audio.createBufferSource();
-      src.buffer = buf;
-      src.loop = true;
-      nodesToStop.push(src);
-      return src;
-    };
-
-    if (preset === 'night_rain') {
-      const rainSrc = makeLoopNoise(pinkBuf);
-      const lp = audio.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 1350;
-      const hp = audio.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.value = 210;
-      const g = audio.createGain();
-      g.gain.value = 0.42;
-      rainSrc.connect(lp);
-      lp.connect(hp);
-      hp.connect(g);
-      g.connect(groupGain);
-      rainSrc.start();
-
-      const dropTimer = window.setInterval(() => {
-        if (audio.state !== 'running') return;
-        if (Math.random() > 0.55) return;
-        const osc = audio.createOscillator();
-        const dg = audio.createGain();
-        const now = audio.currentTime;
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(680 + Math.random() * 520, now);
-        osc.frequency.exponentialRampToValueAtTime(340, now + 0.09);
-        dg.gain.setValueAtTime(0.018 * Math.random(), now);
-        dg.gain.exponentialRampToValueAtTime(0.0001, now + 0.11);
-        osc.connect(dg);
-        dg.connect(groupGain);
-        osc.start(now);
-        osc.stop(now + 0.12);
-      }, 950);
-      timers.push(dropTimer);
-    } else if (preset === 'warm_study') {
-      const roomSrc = makeLoopNoise(brownBuf);
-      const lp = audio.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 340;
-      const rg = audio.createGain();
-      rg.gain.value = 0.36;
-      roomSrc.connect(lp);
-      lp.connect(rg);
-      rg.connect(groupGain);
-      roomSrc.start();
-
-      for (const freq of [110, 164.81]) {
-        const osc = audio.createOscillator();
-        const og = audio.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        og.gain.value = 0.022;
-        osc.connect(og);
-        og.connect(groupGain);
-        osc.start();
-        nodesToStop.push(osc);
-      }
-    } else if (preset === 'sakura_wind') {
-      const windSrc = makeLoopNoise(pinkBuf);
-      const bp = audio.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.frequency.value = 460;
-      bp.Q.value = 1.6;
-
-      const lfo = audio.createOscillator();
-      const lfoGain = audio.createGain();
-      lfo.type = 'sine';
-      lfo.frequency.value = 0.12;
-      lfoGain.gain.value = 210;
-      lfo.connect(lfoGain);
-      lfoGain.connect(bp.frequency);
-
-      const wg = audio.createGain();
-      wg.gain.value = 0.46;
-      windSrc.connect(bp);
-      bp.connect(wg);
-      wg.connect(groupGain);
-      windSrc.start();
-      lfo.start();
-      nodesToStop.push(lfo);
-
-      const chimeNotes = [523.25, 587.33, 659.25, 783.99, 880];
-      const chimeTimer = window.setInterval(() => {
-        if (audio.state !== 'running' || Math.random() > 0.36) return;
-        const now = audio.currentTime;
-        const osc = audio.createOscillator();
-        const cg = audio.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = chimeNotes[Math.floor(Math.random() * chimeNotes.length)];
-        cg.gain.setValueAtTime(0.015, now);
-        cg.gain.exponentialRampToValueAtTime(0.0001, now + 1.4);
-        osc.connect(cg);
-        cg.connect(groupGain);
-        osc.start(now);
-        osc.stop(now + 1.45);
-      }, 2400);
-      timers.push(chimeTimer);
-    } else if (preset === 'late_hearth') {
-      const rumble = makeLoopNoise(brownBuf);
-      const lp = audio.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 260;
-      const fg = audio.createGain();
-      fg.gain.value = 0.48;
-      rumble.connect(lp);
-      lp.connect(fg);
-      fg.connect(groupGain);
-      rumble.start();
-
-      const crackleTimer = window.setInterval(() => {
-        if (audio.state !== 'running' || Math.random() > 0.65) return;
-        if (!pinkBuf) return;
-        const now = audio.currentTime;
-        const burst = audio.createBufferSource();
-        burst.buffer = pinkBuf;
-        const hp = audio.createBiquadFilter();
-        hp.type = 'bandpass';
-        hp.frequency.value = 1800 + Math.random() * 1600;
-        hp.Q.value = 2.4;
-        const cg = audio.createGain();
-        cg.gain.setValueAtTime(0.045 + Math.random() * 0.04, now);
-        cg.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
-        burst.connect(hp);
-        hp.connect(cg);
-        cg.connect(groupGain);
-        burst.start(now, Math.random() * 2, 0.05);
-      }, 280);
-      timers.push(crackleTimer);
-    }
-
-    activeCleanup = () => {
-      for (const id of timers) window.clearInterval(id);
-      for (const n of nodesToStop) {
-        try {
-          n.stop();
-          n.disconnect();
-        } catch {
-          // Ignore already stopped nodes
-        }
-      }
+    if (audioCtx && masterGain) {
       try {
-        groupGain.disconnect();
+        sourceNode = audioCtx.createMediaElementSource(audio);
+        trackGain = audioCtx.createGain();
+        trackGain.gain.value = 0.0001;
+        sourceNode.connect(trackGain);
+        trackGain.connect(masterGain);
+        audio.volume = 1;
+        routedViaWebAudio = true;
       } catch {
-        // Ignore disconnect errors
+        sourceNode = null;
+        trackGain = null;
+        audio.volume = effectiveLinearVolume();
       }
+    } else {
+      audio.volume = effectiveLinearVolume();
+    }
+
+    const deck: TrackDeck = {
+      audio,
+      sourceNode,
+      trackGain,
+      pauseTimer: null,
+      routedViaWebAudio,
     };
+    decks.set(id, deck);
+    return deck;
+  };
+
+  const fadeOutDeck = (deck: TrackDeck) => {
+    if (deck.pauseTimer !== null) {
+      window.clearTimeout(deck.pauseTimer);
+      deck.pauseTimer = null;
+    }
+    if (ctx && deck.trackGain && deck.routedViaWebAudio) {
+      const now = ctx.currentTime;
+      deck.trackGain.gain.cancelScheduledValues(now);
+      deck.trackGain.gain.setValueAtTime(Math.max(0.0001, deck.trackGain.gain.value), now);
+      deck.trackGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
+      deck.pauseTimer = window.setTimeout(() => {
+        deck.pauseTimer = null;
+        deck.audio.pause();
+      }, 340);
+    } else {
+      deck.audio.pause();
+    }
+  };
+
+  const fadeInDeck = (deck: TrackDeck) => {
+    if (deck.pauseTimer !== null) {
+      window.clearTimeout(deck.pauseTimer);
+      deck.pauseTimer = null;
+    }
+    if (ctx && deck.trackGain && deck.routedViaWebAudio) {
+      const now = ctx.currentTime;
+      deck.trackGain.gain.cancelScheduledValues(now);
+      deck.trackGain.gain.setValueAtTime(Math.max(0.0001, deck.trackGain.gain.value), now);
+      deck.trackGain.gain.exponentialRampToValueAtTime(1, now + 0.55);
+    } else {
+      deck.audio.volume = effectiveLinearVolume();
+    }
+    if (!isDocHidden) {
+      void deck.audio.play().catch(() => undefined);
+    }
+  };
+
+  const switchPreset = (preset: ReaderSoundscapeId) => {
+    currentPreset = preset;
+    for (const [id, deck] of decks.entries()) {
+      if (id !== preset) fadeOutDeck(deck);
+    }
+    if (preset === 'off') return;
+    ensureContext();
+    const activeDeck = ensureDeck(preset);
+    if (activeDeck) fadeInDeck(activeDeck);
   };
 
   return {
     setPreset(preset) {
+      if (isDisposed) return;
       fadeMult = 1;
-      startPresetGraph(preset);
+      switchPreset(preset);
       syncGain();
     },
     setVolume(volume) {
@@ -321,10 +257,10 @@ export function createReaderSoundscapeEngine(): ReaderSoundscapeEngine {
       syncGain();
     },
     playPageTurn(volume) {
-      if (isDisposed) return;
+      if (isDisposed || isDocHidden) return;
       const audio = ensureContext();
       if (!audio) return;
-      if (!pinkBuf) pinkBuf = createNoiseBuffer(audio, 2, 'pink');
+      if (!pinkBuf) pinkBuf = createPinkNoiseBuffer(audio, 1.2);
       const now = audio.currentTime;
       const src = audio.createBufferSource();
       src.buffer = pinkBuf;
@@ -341,20 +277,55 @@ export function createReaderSoundscapeEngine(): ReaderSoundscapeEngine {
       src.connect(bp);
       bp.connect(g);
       g.connect(audio.destination);
-      src.start(now, Math.random() * 0.8, 0.07);
+      src.start(now, Math.random() * 0.6, 0.07);
     },
     setDocumentHidden(hidden) {
-      if (!ctx || isDisposed) return;
+      if (isDisposed) return;
+      isDocHidden = hidden;
       if (hidden) {
-        if (ctx.state === 'running') void ctx.suspend().catch(() => undefined);
-      } else if (currentPreset !== 'off' && ctx.state === 'suspended') {
-        void ctx.resume().catch(() => undefined);
+        for (const deck of decks.values()) {
+          if (deck.pauseTimer !== null) {
+            window.clearTimeout(deck.pauseTimer);
+            deck.pauseTimer = null;
+          }
+          deck.audio.pause();
+        }
+        if (ctx && ctx.state === 'running') {
+          void ctx.suspend().catch(() => undefined);
+        }
+      } else if (currentPreset !== 'off') {
+        if (ctx && ctx.state === 'suspended') {
+          void ctx.resume().catch(() => undefined);
+        }
+        const deck = decks.get(currentPreset);
+        if (deck) {
+          void deck.audio.play().catch(() => undefined);
+        }
       }
     },
     dispose() {
       if (isDisposed) return;
       isDisposed = true;
-      stopActiveGraph();
+      for (const deck of decks.values()) {
+        if (deck.pauseTimer !== null) {
+          window.clearTimeout(deck.pauseTimer);
+          deck.pauseTimer = null;
+        }
+        try {
+          deck.audio.pause();
+          deck.audio.removeAttribute('src');
+          deck.audio.load();
+        } catch {
+          // Ignore media cleanup errors
+        }
+        try {
+          deck.sourceNode?.disconnect();
+          deck.trackGain?.disconnect();
+        } catch {
+          // Ignore disconnect errors
+        }
+      }
+      decks.clear();
       if (ctx) {
         const toClose = ctx;
         ctx = null;

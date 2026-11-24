@@ -28,7 +28,7 @@
 
 ### Phase 3 — Nhóm 2: Trình đọc Chuyên sâu, Web Audio Soundscapes & Furigana (`0 B` entry)
 - **Phạm vi:**
-  - `src/lib/readerSoundscapes.ts` (Web Audio thuần, `0` `three`, `0` CDN, 4 bối cảnh: *Mưa đêm*, *Thư phòng ấm*, *Gió rừng anh đào*, *Lò sưởi khuya*, âm lật trang nhẹ, Sleep Timer `15/30/60p` fade-out, mặc định TẮT, `suspend()` khi ẩn tab, `close()` khi đóng sách) + `src/components/ReaderSoundscapePopover.tsx`.
+  - `src/lib/readerSoundscapes.ts` (**PA-A**: 3 bối cảnh nhạc nền Piano/Lofi + tiếng môi trường thật nối vòng lặp mượt tại `public/sounds/{night-rain,warm-study,sakura-wind}.m4a`, bỏ *Lò sưởi khuya* trùng lặp, `0` `three`, `0` CDN, `0 B` R2, âm lật trang nhẹ, Sleep Timer `15/30/60p` fade-out qua Web Audio `GainNode`, mặc định TẮT, tạm dừng/`suspend()` khi ẩn tab, `close()` khi đóng sách) + `src/components/ReaderSoundscapePopover.tsx`.
   - Bóng gáy sách giữa 2 cột & chuyển trang trượt mượt `220ms` cho `ReaderPaginatedView.tsx` & `GuestCanvasPaginatedView.tsx` (tôn trọng `prefers-reduced-motion`).
   - Thanh Dẫn Mắt (`Reading Ruler` / `Focus Paragraph`) làm dịu vùng xung quanh (~40% opacity) cho cả `ReaderView` DOM & `GuestCanvasReader` `<canvas>` (bảo toàn `D-028`), đồng bộ `user_reader_prefs`.
   - Tự động cuộn rảnh tay (`useReaderAutoScroll.ts` + `ReaderAutoScrollBar.tsx`, tốc độ `1–10`, `Space`/chạm tạm dừng, tự dừng cuối chương/mở modal) & vuốt dọc mép trái Mobile `<= 24px` chỉnh `nightDimPercent` (`0..50%` kèm HUD `%`, `useMobileLeftEdgeDimGesture.ts`).
