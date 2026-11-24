@@ -121,7 +121,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     const [spreadIndex, setSpreadIndex] = useState(0);
     const [flashSourceY, setFlashSourceY] = useState<number | null>(null);
     const appliedSearchNonceRef = useRef(0);
-    const fontVersion = useReaderCanvasFontVersion(settings.font);
+    const fontVersion = useReaderCanvasFontVersion(settings.font, settings.fontWeight);
 
     const footnoteKeys = useMemo(
       () => (footnoteMap && footnoteMap.size > 0 ? new Set(footnoteMap.keys()) : undefined),
@@ -262,14 +262,15 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       if (!canvas) return;
       hitRectsRef.current = paintGuestPaginatedCanvas({
         canvas, leftPage, rightPage, columnWidth: geometry.columnWidth, columnGap: geometry.columnGap,
-        pageHeight: geometry.pageHeight, columns: geometry.columns, theme: settings.theme, font: settings.font,
+        pageHeight: geometry.pageHeight, columns: geometry.columns, theme: settings.theme,
+        font: settings.font, fontWeight: settings.fontWeight,
         watermarkLabel, bitmaps: bitmapsRef.current, highlightSourceY: flashSourceY, footnoteKeys,
         footnoteHitRectsOut: footnoteRectsRef.current, focusedTarget,
       });
     }, [
       bitmapsRef, flashSourceY, focusedTarget, footnoteKeys, geometry.columnGap, geometry.columnWidth,
       geometry.columns, geometry.pageHeight, imageSizes, leftPage, rightPage,
-      settings.font, settings.theme, watermarkLabel,
+      settings.font, settings.fontWeight, settings.theme, watermarkLabel,
     ]);
 
     const jumpToRatio = useCallback(

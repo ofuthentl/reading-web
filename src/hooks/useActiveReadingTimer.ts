@@ -1,35 +1,60 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ReaderEyeBreakMinutes } from '@/types';
 
 const ACTIVE_IDLE_WINDOW_MS = 90_000;
+const EYE_BREAK_HIDDEN_RESET_MS = 120_000;
 const MAX_DELTA_SEC = 300;
 const AUTO_CHECKPOINT_SEC = 60;
 
 export interface UseActiveReadingTimerOptions {
   enabled: boolean;
+  eyeBreakMinutes?: ReaderEyeBreakMinutes;
   onAutoCheckpoint: () => void;
   onKeepaliveFlush: () => void;
 }
 
 /**
- * Bộ đếm thời gian đọc thực tế ở phía Client (D-036 PA-1):
+ * Bộ đếm thời gian đọc thực tế ở phía Client (D-036 PA-1 + C13 Eye-Care Break):
  * - Chỉ cộng giây khi `document.visibilityState === 'visible'` VÀ người dùng có thao tác
  *   cuộn / chạm / gõ phím / di chuột trong vòng 90 giây gần nhất.
- * - Gửi ghép `readingDeltaSec` vào `PUT /api/progress/:bookId`, tự checkpoint nhẹ mỗi 60s
- *   đọc liên tục và flush `keepalive: true` ngay khi `pagehide` hoặc ẩn tab.
+ * - Theo dõi thêm giây đọc liên tục cho Nhắc nghỉ mắt (tự đặt lại nếu ẩn tab >= 2 phút).
  */
 export function useActiveReadingTimer({
   enabled,
+  eyeBreakMinutes = 0,
   onAutoCheckpoint,
   onKeepaliveFlush,
 }: UseActiveReadingTimerOptions) {
   const pendingSecondsRef = useRef(0);
+  const totalActiveSecRef = useRef(0);
+  const continuousBreakSecRef = useRef(0);
+  const hiddenSinceRef = useRef<number | null>(null);
+  const eyeBreakMinutesRef = useRef<ReaderEyeBreakMinutes>(eyeBreakMinutes);
   const lastInteractionAtRef = useRef<number>(Date.now());
   const lastPointerMoveMarkRef = useRef(0);
   const autoCheckpointRef = useRef(onAutoCheckpoint);
   const keepaliveFlushRef = useRef(onKeepaliveFlush);
+  const [eyeBreakDue, setEyeBreakDue] = useState(false);
 
+  eyeBreakMinutesRef.current = eyeBreakMinutes;
   autoCheckpointRef.current = onAutoCheckpoint;
   keepaliveFlushRef.current = onKeepaliveFlush;
+
+  useEffect(() => {
+    if (!eyeBreakMinutes) {
+      continuousBreakSecRef.current = 0;
+      setEyeBreakDue(false);
+    } else if (continuousBreakSecRef.current < eyeBreakMinutes * 60) {
+      setEyeBreakDue(false);
+    }
+  }, [eyeBreakMinutes]);
+
+  const acknowledgeEyeBreak = useCallback(() => {
+    continuousBreakSecRef.current = 0;
+    setEyeBreakDue(false);
+  }, []);
+
+  const getTotalActiveSec = useCallback((): number => totalActiveSecRef.current, []);
 
   const consumeDeltaSec = useCallback((minSeconds = 1): number => {
     const available = Math.floor(pendingSecondsRef.current);
@@ -64,11 +89,21 @@ export function useActiveReadingTimer({
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
+        hiddenSinceRef.current = Date.now();
         if (pendingSecondsRef.current >= 2) {
           keepaliveFlushRef.current();
         }
       } else {
-        lastInteractionAtRef.current = Date.now();
+        const now = Date.now();
+        if (
+          hiddenSinceRef.current !== null &&
+          now - hiddenSinceRef.current >= EYE_BREAK_HIDDEN_RESET_MS
+        ) {
+          continuousBreakSecRef.current = 0;
+          setEyeBreakDue(false);
+        }
+        hiddenSinceRef.current = null;
+        lastInteractionAtRef.current = now;
       }
     };
     const onPageHide = () => {
@@ -84,9 +119,18 @@ export function useActiveReadingTimer({
       if (document.visibilityState !== 'visible') return;
       if (Date.now() - lastInteractionAtRef.current > ACTIVE_IDLE_WINDOW_MS) return;
 
+      totalActiveSecRef.current += 1;
       pendingSecondsRef.current = Math.min(MAX_DELTA_SEC, pendingSecondsRef.current + 1);
       if (pendingSecondsRef.current >= AUTO_CHECKPOINT_SEC) {
         autoCheckpointRef.current();
+      }
+
+      const limitMin = eyeBreakMinutesRef.current;
+      if (limitMin > 0) {
+        continuousBreakSecRef.current += 1;
+        if (continuousBreakSecRef.current >= limitMin * 60) {
+          setEyeBreakDue((prev) => (prev ? prev : true));
+        }
       }
     }, 1000);
 
@@ -107,5 +151,5 @@ export function useActiveReadingTimer({
     };
   }, [enabled]);
 
-  return { consumeDeltaSec };
+  return { consumeDeltaSec, getTotalActiveSec, eyeBreakDue, acknowledgeEyeBreak };
 }

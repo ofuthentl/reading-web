@@ -222,6 +222,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       geometry.pageHeight,
       measurePages,
       settings.font,
+      settings.fontWeight,
       settings.fontSizePx,
       settings.lineHeight,
       settings.paragraphIndent,

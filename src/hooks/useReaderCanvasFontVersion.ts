@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ReaderFont } from '@/types';
+import type { ReaderFont, ReaderFontWeight } from '@/types';
 import {
   clearCanvasWidthCache,
   ensureReaderCanvasFontsLoaded,
@@ -7,13 +7,17 @@ import {
 
 /**
  * Kích hoạt nạp webfont cục bộ cho trình đọc Canvas 2D và tăng phiên bản mỗi khi
- * `document.fonts` hoàn tất để xoá cache đo chữ & vẽ lại chính xác theo font mới.
+ * `document.fonts` hoàn tất hoặc đổi font/độ đậm chữ để xoá cache đo chữ & vẽ lại chính xác.
  */
-export function useReaderCanvasFontVersion(font: ReaderFont): number {
+export function useReaderCanvasFontVersion(
+  font: ReaderFont,
+  fontWeight: ReaderFontWeight = 'normal',
+): number {
   const [fontVersion, setFontVersion] = useState(0);
 
   useEffect(() => {
     let active = true;
+    clearCanvasWidthCache();
     const triggerReflow = () => {
       if (!active) return;
       clearCanvasWidthCache();
@@ -26,7 +30,7 @@ export function useReaderCanvasFontVersion(font: ReaderFont): number {
       active = false;
       fontSet?.removeEventListener('loadingdone', triggerReflow);
     };
-  }, [font]);
+  }, [font, fontWeight]);
 
   return fontVersion;
 }

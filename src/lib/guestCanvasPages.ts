@@ -1,4 +1,4 @@
-import type { ReaderFont, ReaderTheme } from '@/types';
+import type { ReaderFont, ReaderFontWeight, ReaderTheme } from '@/types';
 import {
   INLINE_FOOTNOTE_TOKEN_RE,
   normalizeFootnoteKey,
@@ -90,6 +90,7 @@ function shiftColumnItems(
   offsetX: number,
   pageHeight: number,
   font: ReaderFont,
+  fontWeight: ReaderFontWeight,
   hitRects: CanvasImageHitRect[],
   footnoteRects: CanvasFootnoteHitRect[],
   footnoteKeys: ReadonlySet<string> | undefined,
@@ -128,6 +129,7 @@ function shiftColumnItems(
             item.fontSize,
             item.isHeading || frag.bold,
             frag.italic,
+            fontWeight,
           );
           INLINE_FOOTNOTE_TOKEN_RE.lastIndex = 0;
           let m: RegExpExecArray | null;
@@ -169,6 +171,7 @@ export function paintGuestPaginatedCanvas(options: {
   columns: 1 | 2;
   theme: ReaderTheme;
   font: ReaderFont;
+  fontWeight?: ReaderFontWeight;
   watermarkLabel: string;
   bitmaps: ReadonlyMap<number, ImageBitmap>;
   highlightSourceY?: number | null;
@@ -186,6 +189,7 @@ export function paintGuestPaginatedCanvas(options: {
     columns,
     theme,
     font,
+    fontWeight = 'normal',
     watermarkLabel,
     bitmaps,
     highlightSourceY = null,
@@ -233,6 +237,7 @@ export function paintGuestPaginatedCanvas(options: {
       padX,
       pageHeight,
       font,
+      fontWeight,
       hitRects,
       footnoteRects,
       footnoteKeys,
@@ -248,6 +253,7 @@ export function paintGuestPaginatedCanvas(options: {
       canvasCssWidth: surfaceW,
       palette,
       font,
+      fontWeight,
       watermarkLabel,
       bitmaps,
       footnoteKeys,
@@ -264,6 +270,7 @@ export function paintGuestPaginatedCanvas(options: {
       rightOffsetX,
       pageHeight,
       font,
+      fontWeight,
       hitRects,
       footnoteRects,
       footnoteKeys,
@@ -279,6 +286,7 @@ export function paintGuestPaginatedCanvas(options: {
       canvasCssWidth: surfaceW,
       palette,
       font,
+      fontWeight,
       watermarkLabel,
       bitmaps,
       footnoteKeys,

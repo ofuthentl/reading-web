@@ -133,7 +133,11 @@ export async function fetchGuestChapterDecrypted(
     error?: string;
   };
   if (!res.ok || !body.iv || !body.nonce || !body.data) {
-    throw new Error(body.error || 'Không thể tải nội dung chương.');
+    const err = new Error(body.error || 'Không thể tải nội dung chương.') as Error & {
+      status?: number;
+    };
+    err.status = res.status;
+    throw err;
   }
 
   const cipherBytes = base64ToBytes(body.data);

@@ -1,5 +1,5 @@
 import type { CanvasSpanFragment } from '@/lib/guestCanvasLayout';
-import type { ReaderFont } from '@/types';
+import type { ReaderFont, ReaderFontWeight } from '@/types';
 
 const FONT_STACK_MAP: Record<ReaderFont, string> = {
   serif: '"Literata", Georgia, "Times New Roman", serif',
@@ -13,14 +13,25 @@ const CANVAS_PRIMARY_FAMILY: Record<ReaderFont, string> = {
   mono: '"JetBrains Mono"',
 };
 
+function resolveCanvasFontWeightToken(
+  font: ReaderFont,
+  bold: boolean,
+  baseWeight: ReaderFontWeight,
+): string {
+  if (bold || baseWeight === 'bold') return '700 ';
+  if (baseWeight === 'semibold') return font === 'mono' ? '700 ' : '600 ';
+  return '400 ';
+}
+
 export function buildCanvasFontSpec(
   font: ReaderFont,
   sizePx: number,
   bold: boolean,
   italic: boolean,
+  baseWeight: ReaderFontWeight = 'normal',
 ): string {
   const style = italic ? 'italic ' : '';
-  const weight = bold ? '700 ' : '400 ';
+  const weight = resolveCanvasFontWeightToken(font, bold, baseWeight);
   return `${style}${weight}${Math.round(sizePx * 10) / 10}px ${FONT_STACK_MAP[font]}`;
 }
 
@@ -35,12 +46,16 @@ export async function ensureReaderCanvasFontsLoaded(font: ReaderFont): Promise<v
   if (typeof document === 'undefined' || !('fonts' in document)) return;
   const primary = CANVAS_PRIMARY_FAMILY[font];
   const sample = 'Việt Nam ệữởắồỷ ABC 0123';
-  await Promise.allSettled([
+  const jobs: Promise<FontFace[]>[] = [
     document.fonts.load(`400 18px ${primary}`, sample),
     document.fonts.load(`italic 400 18px ${primary}`, sample),
     document.fonts.load(`700 18px ${primary}`, sample),
     document.fonts.load('700 22px "Literata"', sample),
-  ]);
+  ];
+  if (font === 'serif' || font === 'sans') {
+    jobs.push(document.fonts.load(`600 18px ${primary}`, sample));
+  }
+  await Promise.allSettled(jobs);
 }
 
 function getMeasureContext(): CanvasRenderingContext2D | null {
@@ -95,6 +110,7 @@ export function justifyLineFragments(
   lineStartX: number,
   targetEndX: number,
   forceBold: boolean,
+  fontWeight: ReaderFontWeight = 'normal',
 ): CanvasSpanFragment[] {
   const tokens: Array<{
     text: string;
@@ -109,7 +125,7 @@ export function justifyLineFragments(
 
   for (const frag of fragments) {
     const bold = forceBold || frag.bold;
-    const spec = buildCanvasFontSpec(font, fontSize, bold, frag.italic);
+    const spec = buildCanvasFontSpec(font, fontSize, bold, frag.italic, fontWeight);
     if (frag.rt) {
       const baseW = measureCanvasTextWidth(frag.text, spec);
       const rtW = measureCanvasTextWidth(frag.rt, rtSpec);

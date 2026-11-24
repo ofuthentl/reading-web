@@ -1,5 +1,44 @@
-import { Clock } from 'lucide-react';
+import { Check, Clock, Eye } from 'lucide-react';
+import type { ReaderEyeBreakMinutes } from '@/types';
 import type { ReaderThemePalette } from '@/lib/readerConfig';
+
+export interface ReaderEyeBreakBannerProps {
+  due?: boolean;
+  minutes?: ReaderEyeBreakMinutes;
+  palette: ReaderThemePalette;
+  onAcknowledge?: () => void;
+}
+
+export function ReaderEyeBreakBanner({
+  due = false,
+  minutes = 0,
+  palette,
+  onAcknowledge,
+}: ReaderEyeBreakBannerProps) {
+  if (!due || !minutes || !onAcknowledge) return null;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={`flex flex-wrap items-center justify-between gap-2 border-t px-3.5 py-1.5 text-xs sm:px-6 ${palette.border} ${palette.accentSoftBg} ${palette.textPrimary}`}
+    >
+      <span className="inline-flex items-center gap-1.5">
+        <Eye className={`h-3.5 w-3.5 shrink-0 ${palette.accentText}`} />
+        <span>
+          Bạn đã đọc liên tục <strong>{minutes} phút</strong> — hãy nhìn xa 20 giây cho dịu mắt nhé.
+        </span>
+      </span>
+      <button
+        type="button"
+        onClick={onAcknowledge}
+        className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${palette.accentBg} ${palette.accentFg}`}
+      >
+        <Check className="h-3 w-3" />
+        <span>Đã nghỉ mắt</span>
+      </button>
+    </div>
+  );
+}
 
 export interface ReaderNightDimOverlayProps {
   nightDimPercent: number;
@@ -32,6 +71,9 @@ export interface ReaderFooterStatusBarProps {
   immersiveHidden: boolean;
   palette: ReaderThemePalette;
   modeBadge?: string;
+  eyeBreakDue?: boolean;
+  eyeBreakMinutes?: ReaderEyeBreakMinutes;
+  onAcknowledgeEyeBreak?: () => void;
 }
 
 export function ReaderFooterStatusBar({
@@ -42,9 +84,18 @@ export function ReaderFooterStatusBar({
   immersiveHidden,
   palette,
   modeBadge,
+  eyeBreakDue,
+  eyeBreakMinutes,
+  onAcknowledgeEyeBreak,
 }: ReaderFooterStatusBarProps) {
   return (
     <div className="z-20 w-full shrink-0">
+      <ReaderEyeBreakBanner
+        due={eyeBreakDue}
+        minutes={eyeBreakMinutes}
+        palette={palette}
+        onAcknowledge={onAcknowledgeEyeBreak}
+      />
       {!immersiveHidden && (
         <div
           className={`flex items-center justify-between gap-3 border-t px-3.5 py-1 text-[11px] tabular-nums sm:px-6 ${palette.border} ${palette.headerBg} ${palette.textSecondary}`}

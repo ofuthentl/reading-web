@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   Book,
   ReaderSettings,
@@ -9,6 +9,11 @@ import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
 import { useReaderController } from '@/hooks/useReaderController';
 import { formatCombinedReadingEstimate } from '@/lib/readingEstimate';
 import type { ReaderSearchJumpTarget } from '@/lib/readerSearchJump';
+import {
+  readLearnedWpm,
+  recordReadingSpeedSample,
+  subscribeLearnedWpm,
+} from '@/lib/readingSpeedTracker';
 
 export interface ReaderChapterItemMeta {
   id: string;
@@ -24,6 +29,7 @@ export interface UseReaderChapterProgressOptions {
   timerEnabled?: boolean;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
   paginatedRef: React.RefObject<PaginatedStageHandle | null>;
+  onUpdateSettings: (next: Partial<ReaderSettings>) => void;
   onSaveProgress: (progress: ReadingProgress, options?: SaveProgressOptions) => void;
   onSameChapterJump?: () => void;
   onOpenNextBook?: (nextBook: Book) => void;
@@ -39,6 +45,7 @@ export function useReaderChapterProgress({
   timerEnabled = true,
   scrollContainerRef,
   paginatedRef,
+  onUpdateSettings,
   onSaveProgress,
   onSameChapterJump,
   onOpenNextBook,
@@ -107,11 +114,87 @@ export function useReaderChapterProgress({
 
   const {
     completedRef,
+    getTotalActiveSec,
     lastScrollTopRef,
     queueProgressSave,
     setImmersiveHidden,
     setTocOpen,
   } = ctrl;
+
+  const [learnedWpm, setLearnedWpm] = useState(() => readLearnedWpm().wpm);
+  const wpmAnchorRef = useRef<{
+    chapterId: string;
+    chapterIdx: number;
+    ratio: number;
+    lastRatio: number;
+    activeSec: number;
+    words: number;
+  } | null>(null);
+  const manualSeekRef = useRef(false);
+
+  useEffect(() => {
+    return subscribeLearnedWpm(() => {
+      setLearnedWpm(readLearnedWpm().wpm);
+    });
+  }, []);
+
+  const syncChapterWords = useCallback(
+    (words: number) => {
+      if (!currentChapterMeta || words <= 0) return;
+      const nowSec = getTotalActiveSec();
+      const prev = wpmAnchorRef.current;
+
+      if (!prev || prev.chapterId !== currentChapterMeta.id) {
+        // Khi vừa đọc hết chương trước chuyển tuần tự sang chương kế tiếp -> ghi mẫu phần cuối chương trước
+        if (
+          prev &&
+          !manualSeekRef.current &&
+          chapterIndex === prev.chapterIdx + 1 &&
+          prev.words >= 80
+        ) {
+          const endRatio = Math.max(prev.lastRatio, 0.96);
+          const deltaRatio = endRatio - prev.ratio;
+          if (deltaRatio >= 0.12) {
+            recordReadingSpeedSample(
+              Math.round(deltaRatio * prev.words),
+              nowSec - prev.activeSec,
+            );
+          }
+        }
+        manualSeekRef.current = false;
+        wpmAnchorRef.current = {
+          chapterId: currentChapterMeta.id,
+          chapterIdx: chapterIndex,
+          ratio: chapterScrollRatio,
+          lastRatio: chapterScrollRatio,
+          activeSec: nowSec,
+          words,
+        };
+        return;
+      }
+
+      prev.words = words;
+      if (manualSeekRef.current || chapterScrollRatio < prev.ratio - 0.04) {
+        manualSeekRef.current = false;
+        prev.ratio = chapterScrollRatio;
+        prev.lastRatio = chapterScrollRatio;
+        prev.activeSec = nowSec;
+        return;
+      }
+
+      prev.lastRatio = chapterScrollRatio;
+      const deltaRatio = chapterScrollRatio - prev.ratio;
+      if (deltaRatio >= 0.12) {
+        recordReadingSpeedSample(
+          Math.round(deltaRatio * words),
+          nowSec - prev.activeSec,
+        );
+        prev.ratio = chapterScrollRatio;
+        prev.activeSec = nowSec;
+      }
+    },
+    [chapterIndex, chapterScrollRatio, currentChapterMeta, getTotalActiveSec],
+  );
 
   const goToChapter = useCallback(
     (nextIndex: number, targetRatio = 0) => {
@@ -120,6 +203,7 @@ export function useReaderChapterProgress({
       if (!target) return;
 
       const safeRatio = Math.min(1, Math.max(0, targetRatio));
+      manualSeekRef.current = !(clamped === chapterIndex + 1 && safeRatio === 0);
       setTocOpen(false);
       setImmersiveHidden(false);
 
@@ -269,8 +353,35 @@ export function useReaderChapterProgress({
         laterBookWords,
         isLastChapter: chapterIndex >= chapters.length - 1,
         scrollRatio: chapterScrollRatio,
+        wpm: learnedWpm,
       }),
-    [chapterIndex, chapterScrollRatio, chapters.length],
+    [chapterIndex, chapterScrollRatio, chapters.length, learnedWpm],
+  );
+
+  const chapterScrollRatioRef = useRef(chapterScrollRatio);
+  chapterScrollRatioRef.current = chapterScrollRatio;
+
+  const handleUpdateSettings = useCallback(
+    (patch: Partial<ReaderSettings>) => {
+      if (patch.layoutMode && patch.layoutMode !== settings.layoutMode) {
+        if (patch.layoutMode === 'paginated') setPaginatedStartRatio(chapterScrollRatioRef.current);
+        else restoreTargetRatioRef.current = chapterScrollRatioRef.current;
+      } else if (
+        !isPaginated &&
+        (patch.width ||
+          patch.fontSizePx ||
+          patch.lineHeight ||
+          patch.font ||
+          patch.fontWeight ||
+          patch.textAlign ||
+          patch.paragraphIndent !== undefined ||
+          patch.paragraphSpacing)
+      ) {
+        restoreTargetRatioRef.current = chapterScrollRatioRef.current;
+      }
+      onUpdateSettings(patch);
+    },
+    [isPaginated, onUpdateSettings, settings.layoutMode],
   );
 
   return {
@@ -284,7 +395,9 @@ export function useReaderChapterProgress({
     restoreTargetRatioRef,
     suppressSaveRef,
     overallPercent,
+    syncChapterWords,
     computeRemainingEstimate,
+    handleUpdateSettings,
     goToChapter,
     goPrevChapter,
     goNextChapter,
