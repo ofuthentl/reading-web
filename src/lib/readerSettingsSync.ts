@@ -1,6 +1,6 @@
 import type { ReaderSettings } from '@/types';
 import { apiFetch, isCloudMode } from '@/lib/authSession';
-import { normalizeReaderSettings, saveReaderSettings } from '@/lib/readerConfig';
+import { normalizeReaderSettings, saveReaderSettings } from '@/lib/readerSettingsStorage';
 
 const SYNC_DEBOUNCE_MS = 1200;
 

@@ -1,8 +1,7 @@
-import { useMemo, useState } from 'react';
-import { HardDrive, ShieldAlert } from 'lucide-react';
-import { formatBytes } from '@/lib/api';
+import { useEffect, useMemo, useState } from 'react';
 import { formatReadingDuration } from '@/lib/readingStreak';
-import type { AdminUsageDailyPoint, AdminUsageReport } from '@/lib/usageApi';
+import type { AdminUsageDailyPoint } from '@/lib/usageApi';
+export { StorageAndSecurityPanel } from '@/components/AdminStorageSecurityPanel';
 
 type ChartMetricTab = 'time' | 'reads' | 'readers' | 'auth';
 
@@ -12,14 +11,27 @@ function formatShortDay(dayKey: string): string {
   return `${parts[2]}/${parts[1]}`;
 }
 
+function formatCompactCount(val: number): string {
+  const rounded = Math.round(val);
+  if (rounded >= 1_000_000) {
+    const m = rounded / 1_000_000;
+    return `${m >= 10 ? Math.round(m) : Number(m.toFixed(1))}M`;
+  }
+  if (rounded >= 1_000) {
+    const k = rounded / 1_000;
+    return `${k >= 10 ? Math.round(k) : Number(k.toFixed(1))}k`;
+  }
+  return String(rounded);
+}
+
 function formatAxisLabel(val: number, tab: ChartMetricTab, maxScale: number): string {
-  if (tab !== 'time') return String(Math.round(val));
+  if (tab !== 'time') return formatCompactCount(val);
   if (val <= 0) return '0p';
   const mins = Math.round(val / 60);
   if (maxScale >= 7200 && mins % 60 === 0) {
-    return `${mins / 60}g`;
+    return `${formatCompactCount(mins / 60)}g`;
   }
-  return `${mins}p`;
+  return `${formatCompactCount(mins)}p`;
 }
 
 export interface DailyActivityChartProps {
@@ -30,6 +42,10 @@ export interface DailyActivityChartProps {
 export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
   const [tab, setTab] = useState<ChartMetricTab>('time');
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    setActiveIndex(null);
+  }, [days, series]);
 
   const selectedPoint =
     activeIndex !== null && series[activeIndex]
@@ -384,130 +400,11 @@ export function DailyActivityChart({ series, days }: DailyActivityChartProps) {
 
         {isAllZero && (
           <div className="pointer-events-none absolute inset-x-10 top-1/2 -translate-y-1/2 flex justify-center">
-            <span className="rounded-xl border border-dashed border-line bg-surface/90 px-3.5 py-1.5 text-center text-[11px] text-ink-muted shadow-sm backdrop-blur-xs">
+            <span className="rounded-xl border border-dashed border-line bg-surface/90 px-3.5 py-1.5 text-center text-[11px] text-ink-muted shadow-sm backdrop-blur-[2px]">
               Chưa ghi nhận số liệu cho mục này trong {days} ngày qua — cột sẽ tự hiển thị ngay khi có hoạt động mới.
             </span>
           </div>
         )}
-      </div>
-    </section>
-  );
-}
-
-export function StorageAndSecurityPanel({
-  storage,
-  security,
-  overview,
-}: Pick<AdminUsageReport, 'storage' | 'security' | 'overview'>) {
-  const limit = Math.max(1, storage.limitBytes);
-  const usedPct = Math.min(100, (storage.usedBytes / limit) * 100);
-  const filePct = (storage.fileBytes / limit) * 100;
-  const packPct = (storage.packBytes / limit) * 100;
-  const coverPct = (storage.coverBytes / limit) * 100;
-  const guestPackRatio =
-    overview.totalBooks > 0
-      ? Math.round((overview.guestReadyBooks / overview.totalBooks) * 100)
-      : 100;
-
-  return (
-    <section className="moonlit-card flex flex-col justify-between gap-4 rounded-2xl border border-line bg-surface p-4 shadow-sm sm:p-5 dark:border-line-strong/60">
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="inline-flex items-center gap-2 font-display text-base font-semibold text-ink">
-            <HardDrive className="h-4 w-4 text-accent" />
-            <span>Phân bổ R2 Free Tier</span>
-          </h2>
-          <span className="text-xs font-semibold tabular-nums text-ink">
-            {usedPct.toFixed(1)}%
-          </span>
-        </div>
-
-        <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-subtle">
-          <div
-            className="h-full bg-crimson-accent transition-all"
-            style={{ width: `${Math.min(100, filePct)}%` }}
-            title={`File sách gốc: ${formatBytes(storage.fileBytes)}`}
-          />
-          <div
-            className="h-full bg-accent transition-all"
-            style={{ width: `${Math.min(100 - filePct, packPct)}%` }}
-            title={`Gói bảo mật guest-packs: ${formatBytes(storage.packBytes)}`}
-          />
-          <div
-            className="h-full bg-emerald-500 transition-all"
-            style={{ width: `${Math.min(100 - filePct - packPct, coverPct)}%` }}
-            title={`Ảnh bìa: ${formatBytes(storage.coverBytes)}`}
-          />
-        </div>
-
-        <div className="space-y-1.5 text-xs">
-          <div className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-1.5 text-ink-muted">
-              <span className="h-2 w-2 rounded-full bg-crimson-accent" />
-              File sách gốc ({overview.epubCount} EPUB · {overview.docxCount} DOCX)
-            </span>
-            <span className="font-medium tabular-nums text-ink">
-              {formatBytes(storage.fileBytes)}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-1.5 text-ink-muted">
-              <span className="h-2 w-2 rounded-full bg-accent" />
-              Gói bảo mật khách ({guestPackRatio}%)
-            </span>
-            <span className="font-medium tabular-nums text-ink">
-              {formatBytes(storage.packBytes)}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-1.5 text-ink-muted">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Ảnh bìa nén
-            </span>
-            <span className="font-medium tabular-nums text-ink">
-              {formatBytes(storage.coverBytes)}
-            </span>
-          </div>
-          <div className="flex items-center justify-between border-t border-line/70 pt-1.5">
-            <span className="text-ink-muted">Còn trống / Hạn mức an toàn</span>
-            <span className="font-semibold tabular-nums text-ink">
-              {formatBytes(storage.remainingBytes)} / {formatBytes(storage.limitBytes)}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-line/80 bg-canvas/80 p-3 text-xs">
-        <p className="inline-flex items-center gap-1.5 font-semibold text-ink">
-          <ShieldAlert className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-          <span>An toàn &amp; Chống lạm dụng</span>
-        </p>
-        <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
-          <div className="rounded-lg border border-line/70 bg-surface px-2.5 py-1.5">
-            <p className="text-ink-faint">Chạm giới hạn 429</p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums text-ink">
-              {security.recentRateLimitHits}
-            </p>
-          </div>
-          <div className="rounded-lg border border-line/70 bg-surface px-2.5 py-1.5">
-            <p className="text-ink-faint">Sai mật mã / key</p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums text-ink">
-              {security.recentLoginFailures}
-            </p>
-          </div>
-          <div className="rounded-lg border border-line/70 bg-surface px-2.5 py-1.5">
-            <p className="text-ink-faint">IP khoá tạm / Strikes</p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums text-ink">
-              {security.activeLockedIps} / {security.totalStrikes}
-            </p>
-          </div>
-          <div className="rounded-lg border border-line/70 bg-surface px-2.5 py-1.5">
-            <p className="text-ink-faint">Tài khoản bị khoá</p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums text-ink">
-              {security.bannedGuests}
-            </p>
-          </div>
-        </div>
       </div>
     </section>
   );

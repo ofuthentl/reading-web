@@ -1,6 +1,7 @@
 import type { AuthRole, Book, ReadingProgress } from '@/types';
 import { BookInfoModal } from '@/components/BookInfoModal';
 import { ReadingStatsModal } from '@/components/ReadingStatsModal';
+import type { BookOpenJumpTarget } from '@/hooks/useBookReader';
 
 export interface Library2DDialogsHostProps {
   inspectedBook: Book | null;
@@ -11,7 +12,7 @@ export interface Library2DDialogsHostProps {
   sessionRole?: AuthRole;
   onCloseInspect: () => void;
   onCloseStats: () => void;
-  onOpenBook: (book: Book) => void;
+  onOpenBook: (book: Book, jumpTarget?: BookOpenJumpTarget) => void;
   onJumpToShelf: (shelfKey: string) => void;
   onSelectAuthor?: (authorName: string) => void;
   onMarkCompleted: (book: Book) => void;

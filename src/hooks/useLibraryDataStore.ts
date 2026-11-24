@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AuthSessionInfo,
   Book,
@@ -21,6 +21,7 @@ import {
   patchShelfFavorite,
   patchShelfTags,
   pruneDeletedBooksFromPrefs,
+  pruneMovedBooksFromShelfCovers,
   readLocalShelfPrefs,
   renameShelfPrefs,
   setShelfFavorite,
@@ -41,6 +42,19 @@ function sortCollectionsList(items: CustomCollection[]): CustomCollection[] {
   return [...items].sort((a, b) =>
     a.sortOrder !== b.sortOrder ? a.sortOrder - b.sortOrder : a.createdAt - b.createdAt,
   );
+}
+
+function toggleSetValue(prev: Set<string>, value: string, include: boolean): Set<string> {
+  const next = new Set(prev);
+  if (include) next.add(value);
+  else next.delete(value);
+  return next;
+}
+
+function bumpKeyVersion(map: Map<string, number>, key: string): number {
+  const next = (map.get(key) ?? 0) + 1;
+  map.set(key, next);
+  return next;
 }
 
 interface UseLibraryDataStoreOptions {
@@ -70,6 +84,17 @@ export function useLibraryDataStore({
   const [selectionResetKey, setSelectionResetKey] = useState(0);
   const coreReadersPreloadedRef = useRef(false);
   const loadRequestIdRef = useRef(0);
+  const legacyCoverTimerRef = useRef<number | null>(null);
+  const toggleVerRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    return () => {
+      if (legacyCoverTimerRef.current !== null) {
+        window.clearTimeout(legacyCoverTimerRef.current);
+        legacyCoverTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const { guestFavoriteKeys, toggleGuestFavorite, syncRenamedGuestFavorite } =
     useGuestLocalFavorites();
@@ -153,10 +178,20 @@ export function useLibraryDataStore({
           });
         }
         if (state.books.some((b) => Boolean(b.file_key) && !b.cover_key?.endsWith('-v2.jpg'))) {
-          window.setTimeout(() => {
+          if (legacyCoverTimerRef.current !== null) {
+            window.clearTimeout(legacyCoverTimerRef.current);
+          }
+          legacyCoverTimerRef.current = window.setTimeout(() => {
+            legacyCoverTimerRef.current = null;
+            if (requestId !== loadRequestIdRef.current) return;
             void import('@/lib/legacyCoverSync')
               .then((m) =>
-                m.syncLegacyCoversInBackground(state.books, handleBooksBatchUpdated, addToast),
+                m.syncLegacyCoversInBackground(
+                  state.books,
+                  handleBooksBatchUpdated,
+                  addToast,
+                  onApiError,
+                ),
               )
               .catch(() => undefined);
           }, 1200);
@@ -172,6 +207,11 @@ export function useLibraryDataStore({
 
   const clearStoreOnLogout = useCallback(() => {
     loadRequestIdRef.current += 1;
+    if (legacyCoverTimerRef.current !== null) {
+      window.clearTimeout(legacyCoverTimerRef.current);
+      legacyCoverTimerRef.current = null;
+    }
+    toggleVerRef.current.clear();
     setLoading(false);
     setBooks([]);
     setProgress({});
@@ -210,6 +250,9 @@ export function useLibraryDataStore({
           item.id === updatedBook.id ? mergeBookPreservingFlags(item, updatedBook) : item,
         ),
       ),
+    );
+    setShelfPrefs((prev) =>
+      pruneMovedBooksFromShelfCovers(prev, new Set([updatedBook.id]), updatedBook.shelf),
     );
     if (nextStorage) setStorage(nextStorage);
   }, []);
@@ -279,12 +322,9 @@ export function useLibraryDataStore({
     (shelfName: string, nextPlanToRead: boolean) => {
       const key = toShelfPrefKey(shelfName);
       if (!key) return;
-      setPlanToReadShelfKeys((prev) => {
-        const next = new Set(prev);
-        if (nextPlanToRead) next.add(key);
-        else next.delete(key);
-        return next;
-      });
+      const verKey = `ptr-shelf:${key}`;
+      const ver = bumpKeyVersion(toggleVerRef.current, verKey);
+      setPlanToReadShelfKeys((prev) => toggleSetValue(prev, key, nextPlanToRead));
       addToast(
         nextPlanToRead
           ? `Đã thêm "${shelfName}" vào danh sách Đọc sau.`
@@ -294,12 +334,8 @@ export function useLibraryDataStore({
       void import('@/lib/catalogApi')
         .then((m) => m.setPlanToReadShelf(shelfName, nextPlanToRead))
         .catch((err) => {
-          setPlanToReadShelfKeys((prev) => {
-            const reverted = new Set(prev);
-            if (nextPlanToRead) reverted.delete(key);
-            else reverted.add(key);
-            return reverted;
-          });
+          if (toggleVerRef.current.get(verKey) !== ver) return;
+          setPlanToReadShelfKeys((prev) => toggleSetValue(prev, key, !nextPlanToRead));
           onApiError(err, 'Không thể cập nhật danh sách Đọc sau.');
         });
     },
@@ -310,12 +346,9 @@ export function useLibraryDataStore({
     (book: Book, nextPlanToRead: boolean) => {
       const bookId = book.id;
       if (!bookId) return;
-      setPlanToReadBookIds((prev) => {
-        const next = new Set(prev);
-        if (nextPlanToRead) next.add(bookId);
-        else next.delete(bookId);
-        return next;
-      });
+      const verKey = `ptr-book:${bookId}`;
+      const ver = bumpKeyVersion(toggleVerRef.current, verKey);
+      setPlanToReadBookIds((prev) => toggleSetValue(prev, bookId, nextPlanToRead));
       addToast(
         nextPlanToRead
           ? `Đã thêm "${book.title}" vào danh sách Đọc sau.`
@@ -325,12 +358,8 @@ export function useLibraryDataStore({
       void import('@/lib/catalogApi')
         .then((m) => m.setPlanToReadBook(bookId, nextPlanToRead))
         .catch((err) => {
-          setPlanToReadBookIds((prev) => {
-            const reverted = new Set(prev);
-            if (nextPlanToRead) reverted.delete(bookId);
-            else reverted.add(bookId);
-            return reverted;
-          });
+          if (toggleVerRef.current.get(verKey) !== ver) return;
+          setPlanToReadBookIds((prev) => toggleSetValue(prev, bookId, !nextPlanToRead));
           onApiError(err, 'Không thể cập nhật Đọc sau cho tập sách.');
         });
     },
@@ -363,6 +392,8 @@ export function useLibraryDataStore({
         );
         return;
       }
+      const verKey = `fav:${toShelfPrefKey(shelfName)}`;
+      const ver = bumpKeyVersion(toggleVerRef.current, verKey);
       setShelfPrefs((prev) => patchShelfFavorite(prev, shelfName, nextFavorite));
       addToast(
         nextFavorite
@@ -371,6 +402,7 @@ export function useLibraryDataStore({
         'info',
       );
       void setShelfFavorite(shelfName, nextFavorite).catch((err) => {
+        if (toggleVerRef.current.get(verKey) !== ver) return;
         setShelfPrefs((prev) => patchShelfFavorite(prev, shelfName, !nextFavorite));
         onApiError(err, 'Không thể cập nhật kệ yêu thích.');
       });
@@ -431,6 +463,7 @@ export function useLibraryDataStore({
     setBooks((prev) =>
       prev.map((item) => (idSet.has(item.id) ? { ...item, shelf: targetShelf } : item)),
     );
+    setShelfPrefs((prev) => pruneMovedBooksFromShelfCovers(prev, idSet, targetShelf));
     setSelectionResetKey((prev) => prev + 1);
   }, []);
 

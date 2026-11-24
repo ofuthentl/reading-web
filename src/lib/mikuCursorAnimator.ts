@@ -88,6 +88,14 @@ const CURSOR_GROUPS: readonly CursorGroupSpec[] = [
   },
   {
     selector:
+      "input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='submit']):not([type='button']), textarea, [contenteditable='true'], .cursor-text",
+    hotX: 4,
+    hotY: 9,
+    fallback: 'text',
+    frames: [22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33],
+  },
+  {
+    selector:
       "a[href], button, [role='button'], summary, select, input[type='checkbox'], input[type='radio'], input[type='range'], input[type='file'], input[type='submit'], input[type='button'], label[for], .cursor-pointer, .cursor-zoom-out",
     hotX: 4,
     hotY: 0,
@@ -95,8 +103,7 @@ const CURSOR_GROUPS: readonly CursorGroupSpec[] = [
     frames: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
   },
   {
-    selector:
-      "input, textarea, [contenteditable='true'], .reading-content p, .reading-content li, .reading-content blockquote, .cursor-text",
+    selector: '.reading-content p, .reading-content li, .reading-content blockquote',
     hotX: 4,
     hotY: 9,
     fallback: 'text',
@@ -244,8 +251,14 @@ export function startMikuCursorAnimation(): Promise<void> {
           currentGroupIdx = DEFAULT_GROUP_IDX;
           lastAppliedValue = '';
         }
-        if ('disabled' in currentEl && Boolean((currentEl as HTMLButtonElement).disabled)) {
+        const isDisabledEl =
+          ('disabled' in currentEl && Boolean((currentEl as HTMLButtonElement).disabled)) ||
+          currentEl.getAttribute('aria-disabled') === 'true' ||
+          currentEl.classList.contains('cursor-not-allowed');
+        if (isDisabledEl) {
           currentGroupIdx = 0;
+        } else if (currentGroupIdx === 0) {
+          currentGroupIdx = resolveHoveredCursorTarget(currentEl).groupIdx;
         }
         const nextVal = prebuiltValues[currentGroupIdx][step];
         if (nextVal !== lastAppliedValue) {

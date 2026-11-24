@@ -10,6 +10,7 @@ import {
   X,
 } from 'lucide-react';
 import type { AuthRole, Book, HighlightColor, LibraryHighlightItem } from '@/types';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import {
   HIGHLIGHT_COLOR_OPTIONS,
   deleteBookHighlight,
@@ -39,6 +40,7 @@ export function QuoteVaultModal({
   const [query, setQuery] = useState('');
   const [colorFilter, setColorFilter] = useState<HighlightColor | 'all'>('all');
   const protectCopy = sessionRole === 'guest';
+  useBodyScrollLock(open);
 
   useEffect(() => {
     if (!open) return;

@@ -89,7 +89,7 @@ export function CollectionFilterStrip({
                   >
                     <span className="max-w-[180px] truncate">{collection.name}</span>
                     <span
-                      className={`rounded-full px-1.5 py-0.2 text-[10.5px] tabular-nums ${
+                      className={`rounded-full px-1.5 py-0.5 text-[10.5px] tabular-nums ${
                         isActive ? 'bg-white/20 text-white' : 'bg-subtle text-ink-muted'
                       }`}
                     >

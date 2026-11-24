@@ -26,8 +26,13 @@ function resolveRelativePath(pathname) {
   return pathname.startsWith('/') ? pathname : `/${pathname}`;
 }
 
+const ROOT_NAV_TIMEOUT_MS = 1500;
+
 self.addEventListener('install', () => {
-  self.skipWaiting();
+  // Chỉ tự skipWaiting ở lần cài đầu tiên khi chưa có SW kiểm soát để không cắt ngang chunk của tab đang mở
+  if (!self.registration.active) {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('activate', (event) => {
@@ -67,14 +72,18 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // NetworkFirst cho trang gốc index.html để luôn nhận bản deploy mới nhất
+  // NetworkFirst (timeout 1.5s) cho trang gốc index.html để vừa nhận bản deploy mới nhất vừa không treo trên mạng yếu
   const isRootHtmlNavigation =
     req.mode === 'navigate' && (relPath === '/' || relPath === '/index.html');
   if (isRootHtmlNavigation) {
     const indexKey = new URL('./index.html', self.registration.scope).href;
     event.respondWith(
-      fetch(req)
-        .then((networkRes) => {
+      (async () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), ROOT_NAV_TIMEOUT_MS);
+        try {
+          const networkRes = await fetch(req, { signal: controller.signal });
+          clearTimeout(timer);
           if (networkRes && networkRes.ok && networkRes.type === 'basic') {
             const copy = networkRes.clone();
             caches
@@ -83,8 +92,13 @@ self.addEventListener('fetch', (event) => {
               .catch(() => undefined);
           }
           return networkRes;
-        })
-        .catch(() => caches.match(indexKey).then((cached) => cached || Response.error())),
+        } catch {
+          clearTimeout(timer);
+          const cached = await caches.match(indexKey);
+          if (cached) return cached;
+          return fetch(req).catch(() => Response.error());
+        }
+      })(),
     );
     return;
   }

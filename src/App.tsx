@@ -184,7 +184,11 @@ export default function App() {
 
   useEffect(() => {
     if (!authenticated) return;
-    if (gateRoute === 'usage' && session.role !== 'owner') {
+    if (
+      gateRoute === 'locked' ||
+      gateRoute === 'entrance' ||
+      (gateRoute === 'usage' && session.role !== 'owner')
+    ) {
       replaceGateRoute('root');
       syncGateDocumentTitle('root', true);
       return;
@@ -456,7 +460,7 @@ export default function App() {
             sessionRole={session.role}
             onCloseInspect={() => setInspectedBookId(null)}
             onCloseStats={() => setStatsOpen(false)}
-            onOpenBook={(book: Book) => void reader.openBook(book)}
+            onOpenBook={(book, jumpTarget) => void reader.openBook(book, jumpTarget)}
             onJumpToShelf={handleJumpToShelf}
             onSelectAuthor={libraryViewState.filterByAuthor}
             onMarkCompleted={store.handleMarkBookCompleted}

@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
 import { ReadingHeatmapSection } from '@/components/ReadingHeatmapSection';
+import type { BookOpenJumpTarget } from '@/hooks/useBookReader';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import { getBookSortTitle, getDisplayAuthor } from '@/lib/bookMetadata';
 import { computeDetailedLibraryInsights } from '@/lib/readingStats';
 import {
@@ -31,7 +33,7 @@ export interface ReadingStatsModalProps {
   progress: Record<string, ReadingProgress>;
   sessionRole?: AuthRole;
   onClose: () => void;
-  onOpenBook: (book: Book) => void;
+  onOpenBook: (book: Book, jumpTarget?: BookOpenJumpTarget) => void;
   onOpenCacheManager?: () => void;
 }
 
@@ -60,14 +62,16 @@ export function ReadingStatsModal({
   const [activityLoading, setActivityLoading] = useState(false);
   const [quoteVaultOpen, setQuoteVaultOpen] = useState(false);
 
+  useBodyScrollLock(open);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape' && !quoteVaultOpen) onClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, quoteVaultOpen]);
 
   useEffect(() => {
     if (!open) return;
@@ -103,13 +107,14 @@ export function ReadingStatsModal({
   const { rpg } = insights;
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="reading-stats-title"
-      onClick={onClose}
-    >
+    <>
+      <div
+        className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reading-stats-title"
+        onClick={onClose}
+      >
       <div
         className="moonlit-card fade-in flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
         onClick={(event) => event.stopPropagation()}
@@ -313,6 +318,7 @@ export function ReadingStatsModal({
           </div>
         </div>
       </div>
+      </div>
 
       {quoteVaultOpen && (
         <Suspense fallback={null}>
@@ -321,14 +327,14 @@ export function ReadingStatsModal({
             books={books}
             sessionRole={sessionRole}
             onClose={() => setQuoteVaultOpen(false)}
-            onOpenHighlightBook={(targetBook) => {
+            onOpenHighlightBook={(targetBook, chIdx, ratio) => {
               setQuoteVaultOpen(false);
               onClose();
-              onOpenBook(targetBook);
+              onOpenBook(targetBook, { chapterIndex: chIdx, scrollRatio: ratio });
             }}
           />
         </Suspense>
       )}
-    </div>
+    </>
   );
 }

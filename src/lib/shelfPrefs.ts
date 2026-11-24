@@ -44,7 +44,7 @@ export function normalizeClientAltTitles(rawTitles: readonly string[]): string[]
 }
 
 export function toShelfPrefKey(shelfName: string): string {
-  return shelfName.trim().toLocaleLowerCase('vi');
+  return shelfName.normalize('NFC').trim().toLocaleLowerCase('vi');
 }
 
 export function readLocalShelfPrefs(): ShelfPrefsState {
@@ -56,11 +56,13 @@ export function readLocalShelfPrefs(): ShelfPrefsState {
       favorites?: unknown;
       tags?: unknown;
       altTitles?: unknown;
+      access?: unknown;
     };
     const covers: Record<string, string> = {};
     if (parsed?.covers && typeof parsed.covers === 'object' && !Array.isArray(parsed.covers)) {
       for (const [k, v] of Object.entries(parsed.covers as Record<string, unknown>)) {
-        if (typeof k === 'string' && typeof v === 'string' && k && v) covers[k] = v;
+        const normKey = typeof k === 'string' ? toShelfPrefKey(k) : '';
+        if (normKey && typeof v === 'string' && v) covers[normKey] = v;
       }
     }
     const favorites = Array.isArray(parsed?.favorites)
@@ -96,11 +98,26 @@ export function readLocalShelfPrefs(): ShelfPrefsState {
         if (normalized.length > 0) altTitles[toShelfPrefKey(k)] = normalized;
       }
     }
+    const access: Record<string, ShelfAccessSummary> = {};
+    if (parsed?.access && typeof parsed.access === 'object' && !Array.isArray(parsed.access)) {
+      for (const [k, v] of Object.entries(parsed.access as Record<string, unknown>)) {
+        const normKey = typeof k === 'string' ? toShelfPrefKey(k) : '';
+        if (!normKey || !v || typeof v !== 'object') continue;
+        const entry = v as { mode?: unknown; allowedCount?: unknown };
+        if (entry.mode === 'restricted') {
+          access[normKey] = {
+            mode: 'restricted',
+            allowedCount: Math.max(0, Number(entry.allowedCount) || 0),
+          };
+        }
+      }
+    }
     return {
       covers,
       favorites,
       ...(Object.keys(tags).length > 0 ? { tags } : {}),
       ...(Object.keys(altTitles).length > 0 ? { altTitles } : {}),
+      ...(Object.keys(access).length > 0 ? { access } : {}),
     };
   } catch {
     return { covers: {}, favorites: [] };
@@ -256,6 +273,24 @@ export function pruneDeletedBooksFromPrefs(
   for (const [k, bookId] of Object.entries(prev.covers)) {
     if (deletedBookIds.has(bookId)) changed = true;
     else covers[k] = bookId;
+  }
+  return changed ? { ...prev, covers } : prev;
+}
+
+export function pruneMovedBooksFromShelfCovers(
+  prev: ShelfPrefsState,
+  movedBookIds: ReadonlySet<string>,
+  targetShelfName: string,
+): ShelfPrefsState {
+  const targetKey = toShelfPrefKey(targetShelfName);
+  let changed = false;
+  const covers: Record<string, string> = {};
+  for (const [shelfKey, bookId] of Object.entries(prev.covers)) {
+    if (movedBookIds.has(bookId) && shelfKey !== targetKey) {
+      changed = true;
+    } else {
+      covers[shelfKey] = bookId;
+    }
   }
   return changed ? { ...prev, covers } : prev;
 }

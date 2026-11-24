@@ -5,6 +5,12 @@ import type {
   ShelfAccessSummary,
 } from '@/types';
 import { apiFetch, assertApiConfigured, isCloudMode } from '@/lib/authSession';
+import {
+  patchShelfAccessSummary,
+  readLocalShelfPrefs,
+  toShelfPrefKey,
+  writeLocalShelfPrefs,
+} from '@/lib/shelfPrefs';
 
 export async function fetchAdminShelfAccessRules(): Promise<ShelfAccessRuleDetail[]> {
   assertApiConfigured();
@@ -32,17 +38,23 @@ export async function saveAdminShelfAccessRule(input: {
 }> {
   assertApiConfigured();
   if (!isCloudMode) {
-    const shelfKey = input.shelfName.trim().toLocaleLowerCase('vi');
+    const shelfKey = toShelfPrefKey(input.shelfName);
     if (input.mode === 'public') {
+      writeLocalShelfPrefs(patchShelfAccessSummary(readLocalShelfPrefs(), input.shelfName, null));
       return { shelfKey, summary: null, allowedUsers: [] };
     }
     const allowedUsers: ShelfAccessGrantUser[] = input.allowedUsers.map((u) => ({
       discordUserId: u.discordUserId.trim(),
       label: u.label?.trim() || null,
     }));
+    const summary: ShelfAccessSummary = {
+      mode: 'restricted',
+      allowedCount: allowedUsers.length,
+    };
+    writeLocalShelfPrefs(patchShelfAccessSummary(readLocalShelfPrefs(), input.shelfName, summary));
     return {
       shelfKey,
-      summary: { mode: 'restricted', allowedCount: allowedUsers.length },
+      summary,
       allowedUsers,
     };
   }

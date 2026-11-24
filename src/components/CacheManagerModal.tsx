@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  AlertTriangle,
   BookOpen,
   Database,
   Image,
@@ -11,7 +12,8 @@ import {
   X,
 } from 'lucide-react';
 import type { Book } from '@/types';
-import { formatBytes } from '@/lib/api';
+import { formatBytes, isCloudMode } from '@/lib/api';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import { getBookSortTitle } from '@/lib/bookMetadata';
 import {
   type IndexedDbCacheSummary,
@@ -63,6 +65,8 @@ export function CacheManagerModal({
     }
   }, []);
 
+  useBodyScrollLock(open);
+
   useEffect(() => {
     if (!open) return;
     setQuery('');
@@ -112,6 +116,13 @@ export function CacheManagerModal({
 
   const handleRemoveSingleBook = async (fileKey: string, titleLabel: string) => {
     if (busyAction) return;
+    if (!isCloudMode && bookByFileKey.has(fileKey)) {
+      onNotify?.(
+        'Chế độ Local Dev: tệp trong IndexedDB là bản gốc duy nhất, hãy dùng nút Xoá sách trên kệ.',
+        'warning',
+      );
+      return;
+    }
     setBusyAction(fileKey);
     try {
       await deleteCachedBookBlob(fileKey);
@@ -123,6 +134,7 @@ export function CacheManagerModal({
   };
 
   const handleClearBooksOnly = async () => {
+    if (!isCloudMode) return;
     if (busyAction || !summary || summary.bookEntries.length === 0) return;
     setBusyAction('clear-books');
     try {
@@ -136,6 +148,7 @@ export function CacheManagerModal({
   };
 
   const handleClearCoversOnly = async () => {
+    if (!isCloudMode) return;
     if (busyAction || !summary || summary.coverEntries.length === 0) return;
     setBusyAction('clear-covers');
     try {
@@ -149,6 +162,7 @@ export function CacheManagerModal({
   };
 
   const handleClearAllCache = async () => {
+    if (!isCloudMode) return;
     if (busyAction || !summary || summary.totalBytes === 0) return;
     setBusyAction('clear-all');
     try {
@@ -227,6 +241,18 @@ export function CacheManagerModal({
           </div>
         </div>
 
+        {/* Cảnh báo chế độ Local Dev */}
+        {!isCloudMode && (
+          <div className="flex items-start gap-2 border-b border-amber-500/30 bg-amber-500/10 px-5 py-2.5 text-xs text-amber-800 dark:text-amber-200">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>
+              Đang chạy chế độ <strong>Local Dev</strong>: tệp sách &amp; ảnh bìa trong IndexedDB là{' '}
+              <strong>bản gốc duy nhất</strong> (không có R2). Nút dọn hàng loạt đã được khoá an toàn;
+              chỉ cho phép xoá các tệp mồ côi.
+            </p>
+          </div>
+        )}
+
         {/* Tổng quan 3 thẻ dung lượng */}
         <div className="grid grid-cols-3 gap-2.5 border-b border-line bg-canvas/50 px-5 py-3.5">
           <div className="rounded-xl border border-line bg-surface p-3">
@@ -251,7 +277,7 @@ export function CacheManagerModal({
             </p>
             <button
               type="button"
-              disabled={Boolean(busyAction) || bookEntryCount === 0}
+              disabled={!isCloudMode || Boolean(busyAction) || bookEntryCount === 0}
               onClick={() => void handleClearBooksOnly()}
               className="mt-1 text-[11px] font-medium text-crimson-accent hover:underline disabled:opacity-40"
             >
@@ -269,7 +295,7 @@ export function CacheManagerModal({
             </p>
             <button
               type="button"
-              disabled={Boolean(busyAction) || coverEntryCount === 0}
+              disabled={!isCloudMode || Boolean(busyAction) || coverEntryCount === 0}
               onClick={() => void handleClearCoversOnly()}
               className="mt-1 text-[11px] font-medium text-crimson-accent hover:underline disabled:opacity-40"
             >
@@ -365,10 +391,14 @@ export function CacheManagerModal({
                         </span>
                         <button
                           type="button"
-                          disabled={Boolean(busyAction)}
+                          disabled={Boolean(busyAction) || (!isCloudMode && Boolean(matchedBook))}
                           onClick={() => void handleRemoveSingleBook(entry.key, titleLabel)}
                           aria-label={`Xoá bộ nhớ đệm của ${titleLabel}`}
-                          title="Xoá lẻ tệp sách này khỏi bộ nhớ đệm"
+                          title={
+                            !isCloudMode && matchedBook
+                              ? 'Local Dev: tệp sách gốc đang gắn trên kệ'
+                              : 'Xoá lẻ tệp sách này khỏi bộ nhớ đệm'
+                          }
                           className="inline-flex items-center gap-1 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:border-rose-500/40 hover:bg-rose-500/10 hover:text-rose-600 disabled:opacity-40 dark:hover:text-rose-300"
                         >
                           {isDeleting ? (
@@ -391,7 +421,7 @@ export function CacheManagerModal({
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-canvas/60 px-5 py-3.5">
           <button
             type="button"
-            disabled={Boolean(busyAction) || totalBytes === 0}
+            disabled={!isCloudMode || Boolean(busyAction) || totalBytes === 0}
             onClick={() => void handleClearAllCache()}
             className="inline-flex items-center gap-1.5 rounded-xl border border-rose-600/35 bg-rose-600/10 px-3.5 py-2 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-600/20 disabled:opacity-40 dark:border-rose-400/35 dark:text-rose-300"
           >

@@ -15,7 +15,7 @@ import {
   appThemeToReaderTheme,
   loadReaderSettings,
   saveReaderSettings,
-} from '@/lib/readerConfig';
+} from '@/lib/readerSettingsStorage';
 
 export interface GuestReaderSessionState {
   chapters: GuestTocItem[];

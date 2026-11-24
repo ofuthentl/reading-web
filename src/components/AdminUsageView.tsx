@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -56,6 +56,7 @@ export function AdminUsageView({
   const [days, setDays] = useState<AdminUsageWindowDays>(14);
   const [report, setReport] = useState<AdminUsageReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const activeFetchAbortRef = useRef<AbortController | null>(null);
 
   // Chặn trình thu thập dữ liệu đánh chỉ mục trang quản trị /usage (D-035)
   useEffect(() => {
@@ -78,16 +79,29 @@ export function AdminUsageView({
   }, []);
 
   const loadReport = useCallback(
-    async (windowDays: AdminUsageWindowDays, signal?: AbortSignal) => {
+    async (windowDays: AdminUsageWindowDays, externalSignal?: AbortSignal) => {
+      activeFetchAbortRef.current?.abort();
+      const controller = new AbortController();
+      activeFetchAbortRef.current = controller;
+      if (externalSignal) {
+        if (externalSignal.aborted) {
+          controller.abort();
+          return;
+        }
+        externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+      }
       setLoading(true);
       try {
-        const next = await fetchAdminUsageReport(windowDays, signal);
-        if (!signal?.aborted) setReport(next);
+        const next = await fetchAdminUsageReport(windowDays, controller.signal);
+        if (!controller.signal.aborted) setReport(next);
       } catch (err) {
-        if (signal?.aborted) return;
+        if (controller.signal.aborted) return;
         onApiError(err, 'Không thể tải báo cáo thống kê sử dụng.');
       } finally {
-        if (!signal?.aborted) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
+        if (activeFetchAbortRef.current === controller) {
+          activeFetchAbortRef.current = null;
+        }
       }
     },
     [onApiError],
@@ -96,7 +110,11 @@ export function AdminUsageView({
   useEffect(() => {
     const controller = new AbortController();
     void loadReport(days, controller.signal);
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      activeFetchAbortRef.current?.abort();
+      activeFetchAbortRef.current = null;
+    };
   }, [days, loadReport]);
 
   return (
