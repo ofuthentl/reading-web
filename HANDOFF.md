@@ -16,11 +16,9 @@ Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · d
 4. **Phase 4 — Cộng đồng, Hệ sinh thái Kho sách & Quản trị (`D15`, `D16`, `D18`, `D19`):**
    - `HalfStarRatingControl` + Đọc lại `↻ ×N` (không thêm Tạm ngưng), *Cùng vũ trụ & Liên kết* 2 chiều + *Cùng gu trong kho* (`0` query D1), xuất `.md` trích dẫn riêng cho `Owner` + `AdminLibraryHealthModal` (`LibraryHeader` & `Ctrl+K`), và `BookAccessModal` phân quyền Tập/Chương.
 
-## Bước tiếp theo (Khi deploy lên Production)
-1. Push nhánh `feat/v4-spine-shelf-and-catalog` và tạo Pull Request vào `main` (chờ CI xanh).
-2. Khi deploy Worker lên Cloudflare Production: chạy migration D1 từ xa **trước hoặc ngay cùng lúc** deploy Worker:
-   - `cd workers/r2-storage && npx wrangler d1 execute library-db --remote --file=./migrations/0018_v4_catalog_ratings_and_access.sql && npx wrangler deploy`
-   *(Worker cũng đã có cơ chế tự `CREATE TABLE IF NOT EXISTS` / auto-`ALTER` dự phòng an toàn).*
+## Bước tiếp theo
+1. Đã áp migration `0018_v4_catalog_ratings_and_access.sql` lên D1 remote (`library-db`) và đã deploy Cloudflare Worker `arcane-library-api` lên production.
+2. Mở Pull Request từ nhánh `feat/v4-spine-shelf-and-catalog` vào `main` trên GitHub; khi CI xanh và merge vào `main`, GitHub Actions sẽ tự động build & deploy frontend lên `https://ofu.lol`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn. Giữ nguyên không đụng 3 tệp/thư mục chưa theo dõi sẵn ngoài Git ở thư mục gốc.
