@@ -15,12 +15,7 @@ export function stripSearchDiacritics(input: string): string {
     .replace(/đ/gi, 'd');
 }
 
-function countQueryMatchesInText(
-  rawText: string,
-  needleLower: string,
-  queryHasDiacritics: boolean,
-  needleAscii: string,
-): number {
+function countExactMatches(rawText: string, needleLower: string): number {
   if (!rawText || !needleLower) return 0;
   const hayLower = rawText.normalize('NFC').replace(/\s+/g, ' ').toLocaleLowerCase('vi');
   let count = 0;
@@ -31,10 +26,16 @@ function countQueryMatchesInText(
     count += 1;
     cursor = idx + needleLower.length;
   }
-  if (count > 0 || queryHasDiacritics || needleAscii.length < 2) return count;
+  return count;
+}
 
-  const hayAscii = stripSearchDiacritics(hayLower);
-  cursor = 0;
+function countAsciiMatches(rawText: string, needleAscii: string): number {
+  if (!rawText || needleAscii.length < 2) return 0;
+  const hayAscii = stripSearchDiacritics(
+    rawText.normalize('NFC').replace(/\s+/g, ' ').toLocaleLowerCase('vi'),
+  );
+  let count = 0;
+  let cursor = 0;
   while (cursor <= hayAscii.length - needleAscii.length) {
     const idx = hayAscii.indexOf(needleAscii, cursor);
     if (idx === -1) break;
@@ -44,9 +45,15 @@ function countQueryMatchesInText(
   return count;
 }
 
+const SEARCH_BLOCK_SELECTOR =
+  '.reading-content p, .reading-content li, .reading-content blockquote, .reading-content h1, .reading-content h2, .reading-content h3, .reading-content h4, .reading-content h5, .reading-content h6, .reading-content td, .reading-content th, .reading-content figcaption, .reading-content pre, .reading-content div';
+
+const NESTED_LEAF_SELECTOR =
+  'p, li, blockquote, h1, h2, h3, h4, h5, h6, td, th, figcaption, pre';
+
 /**
- * Tìm phần tử văn bản lá (`p, li, blockquote, h1..h4, td`) trong `.reading-content`
- * chứa lần khớp thứ `occurrenceIndex` của từ khoá (D-036 Mục 3).
+ * Tìm phần tử văn bản lá trong `.reading-content` chứa lần khớp thứ `occurrenceIndex`
+ * (chỉ fallback bỏ dấu khi toàn chương không có khớp chính xác, đồng bộ `ReaderSearchAndBookmarks`).
  */
 export function findDomBlockForSearchQuery(
   root: HTMLElement,
@@ -59,29 +66,33 @@ export function findDomBlockForSearchQuery(
   const queryHasDiacritics = stripSearchDiacritics(needleLower) !== needleLower;
   const needleAscii = stripSearchDiacritics(needleLower);
 
-  const candidates = Array.from(
-    root.querySelectorAll<HTMLElement>(
-      '.reading-content p, .reading-content li, .reading-content blockquote, .reading-content h1, .reading-content h2, .reading-content h3, .reading-content h4, .reading-content td',
-    ),
+  const candidates = Array.from(root.querySelectorAll<HTMLElement>(SEARCH_BLOCK_SELECTOR)).filter(
+    (el) => {
+      if ((el.tagName === 'DIV' || el.tagName === 'BLOCKQUOTE') && el.querySelector(NESTED_LEAF_SELECTOR)) {
+        return false;
+      }
+      if (el.tagName === 'DIV' && el.querySelector('div')) return false;
+      return true;
+    },
   );
 
-  let seenOccurrences = 0;
-  let firstMatchedEl: HTMLElement | null = null;
-
-  for (const el of candidates) {
-    // Bỏ qua blockquote bọc ngoài nếu bên trong nó đã có thẻ <p> con nằm trong danh sách
-    if (el.tagName === 'BLOCKQUOTE' && el.querySelector('p')) continue;
-    const text = el.textContent || '';
-    const hits = countQueryMatchesInText(text, needleLower, queryHasDiacritics, needleAscii);
-    if (hits <= 0) continue;
-    if (!firstMatchedEl) firstMatchedEl = el;
-    if (seenOccurrences + hits > occurrenceIndex) {
-      return el;
+  const scanPass = (matcher: (text: string) => number): HTMLElement | null => {
+    let seen = 0;
+    let firstMatchedEl: HTMLElement | null = null;
+    for (const el of candidates) {
+      const hits = matcher(el.textContent || '');
+      if (hits <= 0) continue;
+      if (!firstMatchedEl) firstMatchedEl = el;
+      if (seen + hits > occurrenceIndex) return el;
+      seen += hits;
     }
-    seenOccurrences += hits;
-  }
+    return firstMatchedEl;
+  };
 
-  return firstMatchedEl;
+  const exactHit = scanPass((text) => countExactMatches(text, needleLower));
+  if (exactHit || queryHasDiacritics || needleAscii.length < 2) return exactHit;
+
+  return scanPass((text) => countAsciiMatches(text, needleAscii));
 }
 
 export function flashDomSearchElement(element: HTMLElement, durationMs = 2250): () => void {
@@ -112,34 +123,35 @@ export function findCanvasItemIndexForQuery(
   const queryHasDiacritics = stripSearchDiacritics(needleLower) !== needleLower;
   const needleAscii = stripSearchDiacritics(needleLower);
 
-  let seen = 0;
-  let firstMatchIdx = -1;
-
-  // Dò theo từng dòng trước; nếu cụm từ vắt qua 2 dòng liên tiếp thì dò cửa sổ 2 dòng kề nhau
-  for (let i = 0; i < items.length; i += 1) {
-    const item = items[i];
-    if (item.kind !== 'text-line') continue;
-    const lineText = item.fragments.map((f) => f.text).join('');
-    const hits = countQueryMatchesInText(lineText, needleLower, queryHasDiacritics, needleAscii);
-    if (hits > 0) {
-      if (firstMatchIdx === -1) firstMatchIdx = i;
-      if (seen + hits > occurrenceIndex) return i;
-      seen += hits;
+  const scanCanvasPass = (matcher: (text: string) => number): number => {
+    let seen = 0;
+    let firstMatchIdx = -1;
+    for (let i = 0; i < items.length; i += 1) {
+      const item = items[i];
+      if (item.kind !== 'text-line') continue;
+      const lineText = item.fragments.map((f) => f.text).join('');
+      const hits = matcher(lineText);
+      if (hits > 0) {
+        if (firstMatchIdx === -1) firstMatchIdx = i;
+        if (seen + hits > occurrenceIndex) return i;
+        seen += hits;
+      }
     }
-  }
+    if (firstMatchIdx !== -1) return firstMatchIdx;
 
-  if (firstMatchIdx !== -1) return firstMatchIdx;
-
-  // Dự phòng khi cụm từ khoá nhiều chữ bị ngắt xuống dòng giữa chừng trên Canvas
-  for (let i = 0; i < items.length - 1; i += 1) {
-    const cur = items[i];
-    const nxt = items[i + 1];
-    if (cur.kind !== 'text-line' || nxt.kind !== 'text-line') continue;
-    const pairText = `${cur.fragments.map((f) => f.text).join('')} ${nxt.fragments.map((f) => f.text).join('')}`;
-    if (countQueryMatchesInText(pairText, needleLower, queryHasDiacritics, needleAscii) > 0) {
-      return i;
+    // Dự phòng khi cụm từ khoá nhiều chữ bị ngắt xuống dòng giữa chừng trên Canvas
+    for (let i = 0; i < items.length - 1; i += 1) {
+      const cur = items[i];
+      const nxt = items[i + 1];
+      if (cur.kind !== 'text-line' || nxt.kind !== 'text-line') continue;
+      const pairText = `${cur.fragments.map((f) => f.text).join('')} ${nxt.fragments.map((f) => f.text).join('')}`;
+      if (matcher(pairText) > 0) return i;
     }
-  }
+    return -1;
+  };
 
-  return -1;
+  const exactIdx = scanCanvasPass((text) => countExactMatches(text, needleLower));
+  if (exactIdx !== -1 || queryHasDiacritics || needleAscii.length < 2) return exactIdx;
+
+  return scanCanvasPass((text) => countAsciiMatches(text, needleAscii));
 }

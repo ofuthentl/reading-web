@@ -14,8 +14,10 @@ import {
 import { isChunkLoadError } from '@/lib/chunkReload';
 import {
   pruneDeletedBooksFromPrefs,
+  pruneMovedBooksFromShelfCovers,
   readLocalShelfPrefs,
   renameShelfPrefs,
+  toShelfPrefKey,
   writeLocalShelfPrefs,
 } from '@/lib/shelfPrefs';
 
@@ -76,7 +78,7 @@ export async function uploadBook(
     const fileKey = `books/${bookId}.${fileType}`;
     const coverKey = coverBlob ? `covers/${bookId}-v2.jpg` : null;
 
-    await setCachedBookBlob(fileKey, file);
+    await setCachedBookBlob(fileKey, file, true);
     if (coverKey && coverBlob) {
       await setCachedCoverBlob(coverKey, coverBlob);
     }
@@ -176,6 +178,11 @@ export async function updateBookMetadata(
     if (!target) throw new Error('Không tìm thấy sách.');
     const updated: Book = { ...target, ...patch };
     await putLocalBook(updated);
+    if (patch.shelf && toShelfPrefKey(patch.shelf) !== toShelfPrefKey(target.shelf)) {
+      writeLocalShelfPrefs(
+        pruneMovedBooksFromShelfCovers(readLocalShelfPrefs(), new Set([bookId]), patch.shelf),
+      );
+    }
     return updated;
   }
 
@@ -186,6 +193,11 @@ export async function updateBookMetadata(
   });
   const data = (await res.json().catch(() => ({}))) as { book?: Book; error?: string };
   if (!res.ok || !data.book) throw new Error(data.error || 'Không thể cập nhật thông tin sách.');
+  if (patch.shelf) {
+    writeLocalShelfPrefs(
+      pruneMovedBooksFromShelfCovers(readLocalShelfPrefs(), new Set([bookId]), data.book.shelf),
+    );
+  }
   return data.book;
 }
 
@@ -234,14 +246,18 @@ export async function renameShelfAll(oldName: string, newName: string): Promise<
     throw new Error(`Tên kệ sách không hợp lệ (tối đa ${MAX_SHELF_NAME_LENGTH} ký tự).`);
   }
   if (!isCloudMode) {
-    const oldKey = oldName.trim().toLocaleLowerCase('vi');
+    const oldKey = toShelfPrefKey(oldName);
     const books = await getLocalBooks();
     for (const b of books) {
-      if ((b.shelf || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi') === oldKey) {
+      if (toShelfPrefKey(b.shelf || 'Kho chưa phân loại') === oldKey) {
         await putLocalBook({ ...b, shelf: trimmedNew });
       }
     }
     writeLocalShelfPrefs(renameShelfPrefs(readLocalShelfPrefs(), oldName, trimmedNew));
+    const [{ syncLocalCatalogOnShelfRenamed }, { syncLocalCommunityOnShelfRenamed }] =
+      await Promise.all([import('@/lib/catalogApi'), import('@/lib/communityApi')]);
+    syncLocalCatalogOnShelfRenamed(oldName, trimmedNew);
+    syncLocalCommunityOnShelfRenamed(oldName, trimmedNew);
     return;
   }
 
@@ -273,6 +289,7 @@ export async function bulkUpdateBooksShelf(bookIds: string[], targetShelf: strin
         await putLocalBook({ ...b, shelf });
       }
     }
+    writeLocalShelfPrefs(pruneMovedBooksFromShelfCovers(readLocalShelfPrefs(), idSet, shelf));
     return;
   }
 
@@ -285,6 +302,7 @@ export async function bulkUpdateBooksShelf(bookIds: string[], targetShelf: strin
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(data.error || 'Không thể chuyển kệ cho các sách đã chọn.');
   }
+  writeLocalShelfPrefs(pruneMovedBooksFromShelfCovers(readLocalShelfPrefs(), new Set(bookIds), shelf));
 }
 
 export async function deleteBooks(booksToDelete: Book[]): Promise<StorageStats> {
@@ -300,11 +318,27 @@ export async function deleteBooks(booksToDelete: Book[]): Promise<StorageStats> 
 
   let nextStorage: StorageStats;
   if (!isCloudMode) {
+    const deletedIdSet = new Set(booksToDelete.map((b) => b.id));
+    const [
+      { deleteAllLocalHighlightsForBook },
+      { syncLocalCatalogOnBooksDeleted },
+      { syncLocalCommunityOnBooksDeleted },
+    ] = await Promise.all([
+      import('@/lib/highlightsApi'),
+      import('@/lib/catalogApi'),
+      import('@/lib/communityApi'),
+    ]);
     for (const b of booksToDelete) {
       await deleteLocalBook(b.id);
       await deleteLocalProgress(b.id);
+      deleteAllLocalHighlightsForBook(b.id);
     }
     const remaining = await getLocalBooks();
+    const remainingShelfKeys = new Set(
+      remaining.map((b) => toShelfPrefKey(b.shelf || 'Kho chưa phân loại')),
+    );
+    syncLocalCatalogOnBooksDeleted(deletedIdSet, remainingShelfKeys);
+    syncLocalCommunityOnBooksDeleted(deletedIdSet, remainingShelfKeys);
     nextStorage = await computeLocalStorageStats(remaining);
   } else if (booksToDelete.length === 1) {
     const res = await apiFetch(`/api/books/${booksToDelete[0].id}`, { method: 'DELETE' });

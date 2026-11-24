@@ -15,6 +15,7 @@ import {
   isValidId,
   safeDecodeHeader,
 } from './booksDb';
+import { cleanupOrphanShelves } from './shelfMutationsDb';
 import { toShelfAccessKey } from './shelfAccessDb';
 
 export async function handleBookFileUpload(request: Request, env: Env, bookId: string) {
@@ -46,15 +47,21 @@ export async function handleBookFileUpload(request: Request, env: Env, bookId: s
   const title = safeDecodeHeader(
     request.headers.get('X-Book-Title'),
     'Sách chưa đặt tên',
-  ).slice(0, MAX_TEXT_FIELD_LENGTH);
+  )
+    .normalize('NFC')
+    .slice(0, MAX_TEXT_FIELD_LENGTH);
   const author = safeDecodeHeader(
     request.headers.get('X-Book-Author'),
     'Không rõ tác giả',
-  ).slice(0, MAX_TEXT_FIELD_LENGTH);
+  )
+    .normalize('NFC')
+    .slice(0, MAX_TEXT_FIELD_LENGTH);
   const shelf = safeDecodeHeader(
     request.headers.get('X-Book-Shelf'),
     'Kho chưa phân loại',
-  ).slice(0, MAX_SHELF_NAME_LENGTH);
+  )
+    .normalize('NFC')
+    .slice(0, MAX_SHELF_NAME_LENGTH);
   const coverColor = safeDecodeHeader(request.headers.get('X-Cover-Color'), '#4f46e5').slice(0, 32);
   const fileKey = `books/${bookId}.${fileType}`;
   const contentType = CONTENT_TYPES[fileType] || 'application/octet-stream';
@@ -150,7 +157,13 @@ export async function handleBookCoverUpload(request: Request, env: Env, bookId: 
       .run();
     changes = updateRes.meta?.changes ?? 0;
   } catch (dbErr) {
-    await env.BOOKS_BUCKET.delete(coverKey).catch(() => undefined);
+    const committed = await env.DB.prepare('SELECT cover_key FROM books WHERE id = ?')
+      .bind(bookId)
+      .first<{ cover_key: string | null }>()
+      .catch(() => null);
+    if (!committed || committed.cover_key !== coverKey) {
+      await env.BOOKS_BUCKET.delete(coverKey).catch(() => undefined);
+    }
     throw dbErr;
   }
 
@@ -188,14 +201,14 @@ export async function handleBookMetadataPatch(request: Request, env: Env, bookId
 
   if (typeof body.title === 'string' && body.title.trim()) {
     fields.push('title = ?');
-    values.push(body.title.trim().slice(0, MAX_TEXT_FIELD_LENGTH));
+    values.push(body.title.normalize('NFC').trim().slice(0, MAX_TEXT_FIELD_LENGTH));
   }
   if (typeof body.author === 'string' && body.author.trim()) {
     fields.push('author = ?');
-    values.push(body.author.trim().slice(0, MAX_TEXT_FIELD_LENGTH));
+    values.push(body.author.normalize('NFC').trim().slice(0, MAX_TEXT_FIELD_LENGTH));
   }
   if (typeof body.shelf === 'string' && body.shelf.trim()) {
-    const cleanShelf = body.shelf.trim().slice(0, MAX_SHELF_NAME_LENGTH);
+    const cleanShelf = body.shelf.normalize('NFC').trim().slice(0, MAX_SHELF_NAME_LENGTH);
     fields.push('shelf = ?');
     values.push(cleanShelf);
     nextShelfKey = toShelfAccessKey(cleanShelf);
@@ -206,7 +219,7 @@ export async function handleBookMetadataPatch(request: Request, env: Env, bookId
     }
     const normalizedDescription =
       typeof body.description === 'string'
-        ? body.description.trim().slice(0, MAX_DESCRIPTION_LENGTH) || null
+        ? body.description.normalize('NFC').trim().slice(0, MAX_DESCRIPTION_LENGTH) || null
         : null;
     fields.push('description = ?');
     values.push(normalizedDescription);
@@ -216,6 +229,16 @@ export async function handleBookMetadataPatch(request: Request, env: Env, bookId
     values.push(body.cover_color.trim().slice(0, 32));
   }
   if (fields.length === 0) throw new HttpError('Không có trường nào cần cập nhật.', 400);
+
+  let prevShelfKey: string | null = null;
+  if (nextShelfKey) {
+    const prevRow = await env.DB.prepare('SELECT shelf FROM books WHERE id = ?')
+      .bind(bookId)
+      .first<{ shelf: string }>();
+    if (prevRow?.shelf) {
+      prevShelfKey = toShelfAccessKey(prevRow.shelf);
+    }
+  }
 
   values.push(bookId);
   await env.DB.prepare(`UPDATE books SET ${fields.join(', ')} WHERE id = ?`)
@@ -229,6 +252,9 @@ export async function handleBookMetadataPatch(request: Request, env: Env, bookId
 
   if (nextShelfKey) {
     await clearStaleShelfCoverForBook(env.DB, bookId, nextShelfKey);
+    if (prevShelfKey && prevShelfKey !== nextShelfKey) {
+      await cleanupOrphanShelves(env.DB, [prevShelfKey]);
+    }
   }
 
   return { book: updatedBook };

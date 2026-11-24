@@ -7,6 +7,7 @@ import {
 } from '@/components/ReaderHighlightPopover';
 import type { ReaderLightboxTarget } from '@/components/ReaderImageLightbox';
 import { type ReaderDrawerTab, ReaderTocDrawer } from '@/components/ReaderTocDrawer';
+import type { BookOpenJumpTarget } from '@/hooks/useBookReader';
 import type { useReaderBookFeatures } from '@/hooks/useReaderBookFeatures';
 import type { VisibleGuestParagraphOption } from '@/lib/highlightsApi';
 import type { ReaderThemePalette } from '@/lib/readerConfig';
@@ -46,7 +47,7 @@ export interface ReaderOverlaysHostProps {
     approximateRatio: number;
   }) => void;
   onSetLightboxTarget: (target: ReaderLightboxTarget | null) => void;
-  onOpenOtherBook?: (targetBook: Book) => void;
+  onOpenOtherBook?: (targetBook: Book, jumpTarget?: BookOpenJumpTarget) => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
 
@@ -102,12 +103,13 @@ export function ReaderOverlaysHost({
           }
           onOpenGuestImage={
             isGuest
-              ? (bitmap, alt) =>
+              ? (bitmap, alt, ownedBitmap) =>
                   onSetLightboxTarget({
                     kind: 'guest-bitmap',
                     bitmap,
                     watermarkLabel: watermarkLabel || 'Guest',
                     alt,
+                    ownedBitmap,
                   })
               : undefined
           }
@@ -186,12 +188,17 @@ export function ReaderOverlaysHost({
             books={allBooks.length > 0 ? allBooks : [book]}
             sessionRole={role}
             onClose={() => features.setQuoteVaultOpen(false)}
+            onDeletedHighlight={(hlId, hlBookId) => {
+              if (hlBookId === book.id) {
+                features.removeHighlightLocal(hlId);
+              }
+            }}
             onOpenHighlightBook={(targetBook, chIdx, ratio) => {
               features.setQuoteVaultOpen(false);
               if (targetBook.id === book.id) {
                 onJumpToRatio(chIdx, ratio);
               } else {
-                onOpenOtherBook?.(targetBook);
+                onOpenOtherBook?.(targetBook, { chapterIndex: chIdx, scrollRatio: ratio });
               }
             }}
           />

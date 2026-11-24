@@ -91,6 +91,9 @@ export function useActiveReadingTimer({
     }, 1000);
 
     return () => {
+      if (pendingSecondsRef.current >= 2) {
+        keepaliveFlushRef.current();
+      }
       window.clearInterval(intervalId);
       window.removeEventListener('scroll', markInteraction, true);
       window.removeEventListener('wheel', markInteraction);

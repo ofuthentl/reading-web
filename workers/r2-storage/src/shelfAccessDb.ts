@@ -57,7 +57,15 @@ export async function ensureShelfAccessTables(db: D1Database): Promise<void> {
 }
 
 export function toShelfAccessKey(shelfName: string | null | undefined): string {
-  return (shelfName || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi');
+  return (shelfName || 'Kho chưa phân loại').normalize('NFC').trim().toLocaleLowerCase('vi');
+}
+
+export async function shelfExistsInBooks(db: D1Database, shelfKey: string): Promise<boolean> {
+  const normalizedTarget = toShelfAccessKey(shelfKey);
+  const rows = await db.prepare('SELECT DISTINCT shelf FROM books').all<{ shelf: string }>();
+  return (rows.results || []).some(
+    (row) => typeof row.shelf === 'string' && toShelfAccessKey(row.shelf) === normalizedTarget,
+  );
 }
 
 export async function loadShelfAccessSnapshot(
@@ -75,7 +83,7 @@ export async function loadShelfAccessSnapshot(
 
   const restrictedKeys = new Set<string>();
   for (const row of rulesRes.results || []) {
-    if (row.shelf_key) restrictedKeys.add(row.shelf_key);
+    if (row.shelf_key) restrictedKeys.add(toShelfAccessKey(row.shelf_key));
   }
 
   const allowedRestrictedKeys = new Set<string>();
@@ -91,7 +99,8 @@ export async function loadShelfAccessSnapshot(
       .all<{ shelf_key: string; cnt: number }>();
     const countMap = new Map<string, number>();
     for (const row of countsRes.results || []) {
-      countMap.set(row.shelf_key, Number(row.cnt ?? 0));
+      const normKey = toShelfAccessKey(row.shelf_key);
+      countMap.set(normKey, (countMap.get(normKey) ?? 0) + Number(row.cnt ?? 0));
     }
     for (const key of restrictedKeys) {
       ownerShelfAccess[key] = {
@@ -105,8 +114,9 @@ export async function loadShelfAccessSnapshot(
       .bind(auth.userId)
       .all<{ shelf_key: string }>();
     for (const row of userGrantsRes.results || []) {
-      if (restrictedKeys.has(row.shelf_key)) {
-        allowedRestrictedKeys.add(row.shelf_key);
+      const normKey = toShelfAccessKey(row.shelf_key);
+      if (restrictedKeys.has(normKey)) {
+        allowedRestrictedKeys.add(normKey);
       }
     }
   }

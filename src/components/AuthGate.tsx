@@ -29,6 +29,7 @@ import {
   DEFAULT_OWNER_SESSION,
   apiFetch,
   inspectStoredSession,
+  isAuthError,
   setAuthToken,
 } from '@/lib/authSession';
 import {
@@ -87,14 +88,16 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
     try {
       const health = await checkHealth();
 
-      if (!health.authRequired && (currentRoute === 'root' || currentRoute === 'usage')) {
+      if (!health.authRequired) {
+        replaceGateRoute(currentRoute === 'usage' ? 'usage' : 'root');
         onAuthenticated(DEFAULT_OWNER_SESSION);
         return;
       }
 
       const stored = inspectStoredSession();
 
-      // Stealth /usage (D-035): xác thực token trực tiếp với máy chủ trước khi mở chunk AdminUsageView
+      // Stealth /usage (D-035): xác thực token trực tiếp với máy chủ trước khi mở chunk AdminUsageView.
+      // Chỉ xoá token Admin khi máy chủ xác nhận 401/403 (không tự đăng xuất oan khi lỗi mạng/5xx).
       if (currentRoute === 'usage') {
         if (stored.status === 'active' && !authReason) {
           if (stored.session.role === 'owner') {
@@ -115,8 +118,21 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
                 });
                 return;
               }
-            } catch {
-              // Token không hợp lệ/bị thu hồi/giả mạo: dọn sạch và đẩy âm thầm về /locked
+              if (sessionRes.status >= 500) {
+                setErrorMessage('Máy chủ đang tạm bận khi xác thực phiên. Hãy thử kết nối lại.');
+                setStatus('error');
+                return;
+              }
+            } catch (sessionErr) {
+              if (!isAuthError(sessionErr)) {
+                setErrorMessage(
+                  sessionErr instanceof Error
+                    ? sessionErr.message
+                    : 'Không thể kết nối máy chủ để xác thực phiên.',
+                );
+                setStatus('error');
+                return;
+              }
             }
             setAuthToken(null);
             replaceGateRoute('locked');
@@ -134,11 +150,14 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
         return;
       }
 
+      // Cho phép tự khôi phục phiên đang hoạt động trên cả '/', '/locked' và '/entrance'
+      if (stored.status === 'active' && !authReason) {
+        replaceGateRoute('root');
+        onAuthenticated(stored.session);
+        return;
+      }
+
       if (currentRoute === 'root') {
-        if (stored.status === 'active' && !authReason) {
-          onAuthenticated(stored.session);
-          return;
-        }
         if (stored.status === 'expired' && !authReason) {
           setErrorMessage(
             stored.role === 'guest'

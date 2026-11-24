@@ -5,13 +5,19 @@ import { ensureShelfTagsSchema, parseShelfTagsJson } from './shelfTagsDb';
 
 const RELEASE_EMBED_COLOR = 0xc89b62;
 const MAX_BOOK_IDS_PER_ANNOUNCE = 50;
+const MAX_GROUPS_PER_ANNOUNCE = 20;
 const MAX_INLINE_LABELS_PER_EMBED = 6;
 const MAX_TAGS_PER_EMBED = 8;
 const DISCORD_REQUEST_TIMEOUT_MS = 8000;
+const DISCORD_MAX_RETRY_WAIT_MS = 5000;
 const DISCORD_SNOWFLAKE_RE = /^\d{5,32}$/;
 const SIMPLE_VOLUME_LABEL_RE = /^(tập|quyển|vol\.?|volume|phần)\s*(\d+)$/i;
 const DISCORD_WEBHOOK_RE =
   /^https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\/\d{5,32}\/[A-Za-z0-9._-]+(?:\?.*)?$/;
+
+function escapeDiscordMarkdown(text: string): string {
+  return text.replace(/([\\*_~`|])/g, '\\$1');
+}
 
 export interface DiscordReleaseGroupInput {
   shelfKey: string;
@@ -113,8 +119,8 @@ function sortBooksNaturally<T extends { title: string }>(items: T[]): T[] {
 }
 
 function stripSeriesPrefix(bookTitle: string, shelfName: string): string {
-  const title = bookTitle.trim();
-  const shelf = shelfName.trim();
+  const title = bookTitle.normalize('NFC').trim();
+  const shelf = shelfName.normalize('NFC').trim();
   if (!shelf) return title;
 
   const lowerTitle = title.toLocaleLowerCase('vi');
@@ -122,8 +128,11 @@ function stripSeriesPrefix(bookTitle: string, shelfName: string): string {
   if (lowerTitle === lowerShelf) return '';
 
   if (lowerTitle.startsWith(lowerShelf)) {
-    const rest = title.slice(shelf.length).replace(/^[\s\-–—:|/]+/, '').trim();
-    if (rest) return rest;
+    const after = title.slice(shelf.length);
+    if (/^[\s\-–—:|/]/.test(after)) {
+      const rest = after.replace(/^[\s\-–—:|/]+/, '').trim();
+      if (rest) return rest;
+    }
   }
   return title;
 }
@@ -136,7 +145,7 @@ function formatReleaseVolumeSummary(
 
   if (sortedBooks.length === 1) {
     const single = shortLabels[0]?.trim();
-    return single ? `**${single.slice(0, 180)}** vừa` : 'Vừa';
+    return single ? `**${escapeDiscordMarkdown(single.slice(0, 180))}** vừa` : 'Vừa';
   }
 
   // Nếu mọi tập đều cùng mẫu "Tập 1..N" liên tiếp -> gom gọn thành "Tập 1 – Tập N (N tập)"
@@ -165,7 +174,9 @@ function formatReleaseVolumeSummary(
     }
   }
 
-  const nonEmpty = shortLabels.map((s, idx) => (s || sortedBooks[idx].title).trim().slice(0, 80));
+  const nonEmpty = shortLabels.map((s, idx) =>
+    escapeDiscordMarkdown((s || sortedBooks[idx].title).trim().slice(0, 80)),
+  );
   const shown = nonEmpty.slice(0, MAX_INLINE_LABELS_PER_EMBED);
   const remaining = nonEmpty.length - shown.length;
   const joined =
@@ -181,9 +192,9 @@ export function buildDiscordReleaseMessagePayload(
   const volumePrefix = formatReleaseVolumeSummary(sortedBooks, group.shelfName);
   const inviteLine = `${volumePrefix} lên kệ tại **Ofu's Library** (${options.appUrl}) — ghé thư viện đọc ngay nhé!`;
 
-  const authorLabel = summarizeGroupAuthors(sortedBooks);
+  const authorLabel = escapeDiscordMarkdown(summarizeGroupAuthors(sortedBooks));
   const cleanTags = group.tags
-    .map((tag) => tag.trim())
+    .map((tag) => escapeDiscordMarkdown(tag.trim()))
     .filter(Boolean)
     .slice(0, MAX_TAGS_PER_EMBED);
 
@@ -259,11 +270,16 @@ async function readCoverBytesFromR2(
   }
 }
 
+async function sleepMs(ms: number): Promise<void> {
+  if (ms <= 0) return;
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function postSingleDiscordRelease(
   target: DiscordReleaseDeliveryTarget,
   payload: Record<string, unknown>,
   coverBytes: Uint8Array | null,
-): Promise<{ ok: boolean; status: number; errorText?: string }> {
+): Promise<{ ok: boolean; status: number; retryAfterMs?: number; errorText?: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DISCORD_REQUEST_TIMEOUT_MS);
 
@@ -295,9 +311,27 @@ async function postSingleDiscordRelease(
       return { ok: true, status: response.status };
     }
     const text = await response.text().catch(() => '');
+    let retryAfterMs: number | undefined;
+    if (response.status === 429) {
+      const headerVal = Number(response.headers.get('Retry-After') || 0);
+      if (Number.isFinite(headerVal) && headerVal > 0) {
+        retryAfterMs = Math.min(DISCORD_MAX_RETRY_WAIT_MS, Math.ceil(headerVal * 1000));
+      } else {
+        try {
+          const parsed = JSON.parse(text) as { retry_after?: unknown };
+          const bodyVal = Number(parsed?.retry_after ?? 0);
+          if (Number.isFinite(bodyVal) && bodyVal > 0) {
+            retryAfterMs = Math.min(DISCORD_MAX_RETRY_WAIT_MS, Math.ceil(bodyVal * 1000));
+          }
+        } catch {
+          retryAfterMs = 1500;
+        }
+      }
+    }
     return {
       ok: false,
       status: response.status,
+      ...(retryAfterMs ? { retryAfterMs } : {}),
       errorText: text.slice(0, 200) || `HTTP ${response.status}`,
     };
   } catch (err) {
@@ -433,7 +467,13 @@ export async function announceDiscordReleases(
   let failedGroups = 0;
   const errors: string[] = [];
 
-  for (const [shelfKey, entry] of grouped.entries()) {
+  const groupEntries = Array.from(grouped.entries()).slice(0, MAX_GROUPS_PER_ANNOUNCE);
+  let groupIndex = 0;
+  for (const [shelfKey, entry] of groupEntries) {
+    if (groupIndex >= 4) {
+      await sleepMs(350);
+    }
+    groupIndex += 1;
     const sortedBooks = sortBooksNaturally(entry.books);
     const pref = prefsMap.get(shelfKey);
     const uploadedCoverKey = sortedBooks.find((b) => Boolean(b.cover_key))?.cover_key ?? null;
@@ -458,6 +498,11 @@ export async function announceDiscordReleases(
     });
 
     let sendRes = await postSingleDiscordRelease(target, payload, coverBytes);
+
+    if (!sendRes.ok && sendRes.status === 429) {
+      await sleepMs(sendRes.retryAfterMs ?? 1500);
+      sendRes = await postSingleDiscordRelease(target, payload, coverBytes);
+    }
 
     // Nếu dùng Webhook cá nhân (không phải app-owned) bị Discord từ chối trường components → tự gửi lại không kèm components
     if (!sendRes.ok && target.mode === 'webhook' && sendRes.status === 400) {

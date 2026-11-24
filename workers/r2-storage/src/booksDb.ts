@@ -13,6 +13,7 @@ import {
 import { loadShelfAccessSnapshot, toShelfAccessKey } from './shelfAccessDb';
 import {
   bulkUpdateBooksShelf,
+  cleanupOrphanShelves,
   clearStaleShelfCoverForBook,
   renameShelfCaseInsensitive,
   upsertShelfCover,
@@ -192,11 +193,18 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
       env.DB.prepare('SELECT book_id FROM book_guest_packs')
         .all<{ book_id: string }>()
         .catch(() => ({ results: [] as Array<{ book_id: string }> })),
-      loadShelfAccessSnapshot(env.DB, auth).catch(() => ({
-        restrictedKeys: new Set<string>(),
-        allowedRestrictedKeys: new Set<string>(),
-        ownerShelfAccess: {},
-      })),
+      auth.role === 'guest'
+        ? loadShelfAccessSnapshot(env.DB, auth).catch(() => {
+            throw new HttpError(
+              'Không thể xác minh phân quyền kệ sách. Vui lòng thử lại sau giây lát.',
+              503,
+            );
+          })
+        : loadShelfAccessSnapshot(env.DB, auth).catch(() => ({
+            restrictedKeys: new Set<string>(),
+            allowedRestrictedKeys: new Set<string>(),
+            ownerShelfAccess: {},
+          })),
       // Chỉ truy vấn thống kê dung lượng R2 cho Owner; Guest không hiển thị thanh dung lượng (L-5)
       auth.role === 'owner' ? getStorageStats(env) : Promise.resolve(null),
     ]);
@@ -240,17 +248,18 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
   const shelfAltTitles: Record<string, string[]> = {};
   for (const row of shelfPrefsRes.results || []) {
     if (!row.shelf_key) continue;
-    if (row.cover_book_id) shelfCovers[row.shelf_key] = row.cover_book_id;
-    if (row.is_favorite === 1) favoriteShelves.push(row.shelf_key);
+    const shelfKey = toShelfAccessKey(row.shelf_key);
+    if (row.cover_book_id) shelfCovers[shelfKey] = row.cover_book_id;
+    if (row.is_favorite === 1) favoriteShelves.push(shelfKey);
     const parsedTags = parseShelfTagsJson(row.tags_json);
-    if (parsedTags.length > 0) shelfTags[row.shelf_key] = parsedTags;
+    if (parsedTags.length > 0) shelfTags[shelfKey] = parsedTags;
     const isGuestLockedShelf =
       isGuest &&
-      accessSnapshot.restrictedKeys.has(row.shelf_key) &&
-      !accessSnapshot.allowedRestrictedKeys.has(row.shelf_key);
+      accessSnapshot.restrictedKeys.has(shelfKey) &&
+      !accessSnapshot.allowedRestrictedKeys.has(shelfKey);
     if (!isGuestLockedShelf) {
       const parsedAlt = parseShelfAltTitlesJson(row.alt_titles_json);
-      if (parsedAlt.length > 0) shelfAltTitles[row.shelf_key] = parsedAlt;
+      if (parsedAlt.length > 0) shelfAltTitles[shelfKey] = parsedAlt;
     }
   }
 
@@ -316,9 +325,9 @@ async function deleteR2KeysInChunks(bucket: R2Bucket, keys: string[]): Promise<v
 export async function deleteSingleBook(env: Env, bookId: string) {
   if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
 
-  const existing = await env.DB.prepare('SELECT file_key, cover_key FROM books WHERE id = ?')
+  const existing = await env.DB.prepare('SELECT file_key, cover_key, shelf FROM books WHERE id = ?')
     .bind(bookId)
-    .first<{ file_key: string; cover_key: string | null }>();
+    .first<{ file_key: string; cover_key: string | null; shelf: string }>();
   if (!existing) throw new HttpError('Không tìm thấy sách.', 404);
 
   const packRow = await env.DB.prepare('SELECT pack_key FROM book_guest_packs WHERE book_id = ?')
@@ -341,10 +350,12 @@ export async function deleteSingleBook(env: Env, bookId: string) {
     env.DB.prepare('DELETE FROM book_guest_packs WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
     env.DB.prepare('DELETE FROM guest_reading_progress WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
     env.DB.prepare('DELETE FROM book_bookmarks WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
+    env.DB.prepare('DELETE FROM book_highlights WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
     env.DB.prepare('DELETE FROM user_plan_to_read_books WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
     env.DB.prepare("DELETE FROM library_ratings WHERE target_type = 'book' AND target_key = ?").bind(bookId).run().catch(() => undefined),
     env.DB.prepare("DELETE FROM library_comments WHERE target_type = 'book' AND target_key = ?").bind(bookId).run().catch(() => undefined),
   ]);
+  await cleanupOrphanShelves(env.DB, [toShelfAccessKey(existing.shelf)]);
 
   const keysToDelete = [
     existing.file_key,
@@ -366,13 +377,14 @@ export async function bulkDeleteBooks(env: Env, rawIds: unknown) {
 
   const idChunks = chunkArray(ids, BULK_D1_CHUNK_SIZE);
   const keysToDelete: string[] = [];
+  const affectedShelfKeys = new Set<string>();
 
   for (const chunk of idChunks) {
     const placeholders = chunk.map(() => '?').join(', ');
     const [rows, packRows] = await Promise.all([
-      env.DB.prepare(`SELECT id, file_key, cover_key FROM books WHERE id IN (${placeholders})`)
+      env.DB.prepare(`SELECT id, file_key, cover_key, shelf FROM books WHERE id IN (${placeholders})`)
         .bind(...chunk)
-        .all<{ id: string; file_key: string; cover_key: string | null }>(),
+        .all<{ id: string; file_key: string; cover_key: string | null; shelf: string }>(),
       env.DB.prepare(`SELECT pack_key FROM book_guest_packs WHERE book_id IN (${placeholders})`)
         .bind(...chunk)
         .all<{ pack_key: string }>()
@@ -382,6 +394,7 @@ export async function bulkDeleteBooks(env: Env, rawIds: unknown) {
       if (row.file_key) keysToDelete.push(row.file_key);
       if (row.cover_key) keysToDelete.push(row.cover_key);
       keysToDelete.push(`guest-packs/${row.id}.pack`);
+      affectedShelfKeys.add(toShelfAccessKey(row.shelf));
     }
     for (const p of packRows.results || []) {
       if (p.pack_key) keysToDelete.push(p.pack_key);
@@ -412,10 +425,15 @@ export async function bulkDeleteBooks(env: Env, rawIds: unknown) {
       env.DB.prepare(`DELETE FROM guest_reading_progress WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       env.DB.prepare(`DELETE FROM book_guest_packs WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       env.DB.prepare(`DELETE FROM book_bookmarks WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
+      env.DB.prepare(`DELETE FROM book_highlights WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       env.DB.prepare(`DELETE FROM user_plan_to_read_books WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       env.DB.prepare(`DELETE FROM library_ratings WHERE target_type = 'book' AND target_key IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       env.DB.prepare(`DELETE FROM library_comments WHERE target_type = 'book' AND target_key IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
     ]);
+  }
+
+  if (affectedShelfKeys.size > 0) {
+    await cleanupOrphanShelves(env.DB, Array.from(affectedShelfKeys));
   }
 
   await deleteR2KeysInChunks(env.BOOKS_BUCKET, keysToDelete);

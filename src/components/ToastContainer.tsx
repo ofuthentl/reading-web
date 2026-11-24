@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
 import type { ToastItem, ToastType } from '@/hooks/useToast';
 
@@ -36,11 +37,11 @@ const STYLE_BY_TYPE: Record<
 };
 
 export function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
-  if (toasts.length === 0) return null;
+  if (toasts.length === 0 || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div
-      className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[calc(100vw-2rem)] max-w-sm flex-col gap-2"
+      className="pointer-events-none fixed bottom-4 right-4 z-[90] flex w-[calc(100vw-2rem)] max-w-sm flex-col gap-2"
       aria-live="polite"
     >
       {toasts.map((toast) => {
@@ -64,6 +65,7 @@ export function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
           </div>
         );
       })}
-    </div>
+    </div>,
+    document.body,
   );
 }

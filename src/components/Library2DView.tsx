@@ -152,6 +152,12 @@ export function Library2DView({
   );
 
   const isLibraryGridMode = activeTab === 'library' && !openedLibraryShelf;
+  const selectedVisibleCount = useMemo(
+    () => filteredBooks.reduce((acc, b) => acc + (selectedIds.has(b.id) ? 1 : 0), 0),
+    [filteredBooks, selectedIds],
+  );
+  const allVisibleSelected =
+    filteredBooks.length > 0 && selectedVisibleCount === filteredBooks.length;
 
   // Phím tắt `/` hoặc `Ctrl+K` nhảy nhanh vào ô tìm kiếm thư viện 2D (D-029)
   useEffect(() => {
@@ -329,13 +335,9 @@ export function Library2DView({
                   selectedCount={selectedIds.size}
                   totalVisibleCount={filteredBooks.length}
                   unitLabel="cuốn sách"
-                  allSelected={selectedIds.size === filteredBooks.length && filteredBooks.length > 0}
+                  allSelected={allVisibleSelected}
                   selectedBooks={selectedBooks}
-                  onToggleSelectAll={
-                    selectedIds.size === filteredBooks.length && filteredBooks.length > 0
-                      ? clearSelection
-                      : selectAllVisible
-                  }
+                  onToggleSelectAll={allVisibleSelected ? clearSelection : selectAllVisible}
                   onMoveSelected={onMoveSelectedToShelf}
                   onDeleteSelected={onDeleteSelected}
                   onDone={toggleSelectionMode}

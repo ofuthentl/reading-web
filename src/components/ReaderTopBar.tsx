@@ -95,7 +95,7 @@ export function ReaderTopBar({
             aria-label="Lưu đoạn đang đọc"
             title="Lưu đoạn đang đọc vào Kho trích dẫn"
           >
-            <Highlighter className="h-4 w-4 text-accent" />
+            <Highlighter className={`h-4 w-4 ${palette.accentText}`} />
           </button>
         )}
 

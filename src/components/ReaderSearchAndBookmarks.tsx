@@ -135,16 +135,16 @@ export function ReaderSearchPanel({
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     setSearching(true);
     setSearchError(null);
     const timer = window.setTimeout(() => {
-      void searchGuestBookChaptersApi(book.id, trimmed)
+      void searchGuestBookChaptersApi(book.id, trimmed, controller.signal)
         .then((list) => {
-          if (!cancelled) setGuestMatches(list);
+          if (!controller.signal.aborted) setGuestMatches(list);
         })
         .catch((err: unknown) => {
-          if (cancelled) return;
+          if (controller.signal.aborted) return;
           if (isAuthError(err)) {
             onApiError?.(err, 'Phiên truy cập đã hết hiệu lực.');
             return;
@@ -152,13 +152,13 @@ export function ReaderSearchPanel({
           setSearchError(err instanceof Error ? err.message : 'Không thể tìm kiếm.');
         })
         .finally(() => {
-          if (!cancelled) setSearching(false);
+          if (!controller.signal.aborted) setSearching(false);
         });
     }, 400);
 
     return () => {
-      cancelled = true;
       window.clearTimeout(timer);
+      controller.abort();
     };
   }, [book.id, isLocalMode, onApiError, trimmed]);
 
@@ -176,7 +176,7 @@ export function ReaderSearchPanel({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Nhập từ khoá cần tìm (>= 2 ký tự)..."
             aria-label="Tìm nội dung trong cuốn sách"
-            className={`w-full rounded-lg border bg-transparent py-1.5 pl-8 pr-7 text-xs outline-none focus:border-accent ${palette.border}`}
+            className={`w-full rounded-lg border bg-transparent py-1.5 pl-8 pr-7 text-xs outline-none ${palette.border} ${palette.focusBorder}`}
           />
           {query && (
             <button
@@ -318,15 +318,15 @@ export function ReaderBookmarksPanel({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
     setErrorMsg(null);
-    void fetchBookBookmarks(book.id)
+    void fetchBookBookmarks(book.id, controller.signal)
       .then((list) => {
-        if (!cancelled) setBookmarks(list);
+        if (!controller.signal.aborted) setBookmarks(list);
       })
       .catch((err: unknown) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         if (isAuthError(err)) {
           onApiError?.(err, 'Phiên truy cập đã hết hiệu lực.');
           return;
@@ -334,10 +334,10 @@ export function ReaderBookmarksPanel({
         setErrorMsg(err instanceof Error ? err.message : 'Không thể tải dấu trang.');
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       });
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [book.id, onApiError]);
 
@@ -398,7 +398,7 @@ export function ReaderBookmarksPanel({
           onChange={(e) => setNote(e.target.value)}
           placeholder="Ghi chú ngắn cho đoạn này (tuỳ chọn)..."
           aria-label="Ghi chú dấu trang"
-          className={`w-full rounded-lg border bg-transparent px-2.5 py-1.5 text-xs outline-none focus:border-accent ${palette.border}`}
+          className={`w-full rounded-lg border bg-transparent px-2.5 py-1.5 text-xs outline-none ${palette.border} ${palette.focusBorder}`}
         />
         <button
           type="submit"

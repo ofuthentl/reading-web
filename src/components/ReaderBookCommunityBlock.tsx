@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { MessageSquare, X } from 'lucide-react';
 import type { ReaderThemePalette } from '@/lib/readerConfig';
@@ -51,9 +51,11 @@ export function ReaderBookCommunityModalButton({
   onApiError,
 }: ReaderBookCommunityBlockProps) {
   const [open, setOpen] = useState(false);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    dialogRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
@@ -79,12 +81,14 @@ export function ReaderBookCommunityModalButton({
         typeof document !== 'undefined' &&
         createPortal(
           <div
+            ref={dialogRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
             aria-label={`Bình luận — ${bookTitle}`}
             onClick={() => setOpen(false)}
             onKeyDown={(event) => event.stopPropagation()}
-            className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 backdrop-blur-sm sm:items-center sm:p-4"
+            className="fixed inset-0 z-[64] flex items-end justify-center bg-black/60 p-3 outline-none backdrop-blur-sm sm:items-center sm:p-4"
           >
             <div
               onClick={(event) => event.stopPropagation()}

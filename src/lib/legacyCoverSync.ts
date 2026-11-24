@@ -1,6 +1,6 @@
 import type { Book, StorageStats } from '@/types';
 import { HARD_LIMIT_BYTES, fetchBookBlobCached, isCloudMode } from '@/lib/api';
-import { apiFetch, getActiveAuthSession } from '@/lib/authSession';
+import { apiFetch, getActiveAuthSession, isAuthError } from '@/lib/authSession';
 import {
   deleteCachedCoverBlob,
   getLocalBooks,
@@ -44,10 +44,14 @@ async function uploadPrecompressedCover(
   coverBlob: Blob,
 ): Promise<{ book: Book; storage?: StorageStats } | null> {
   if (!isCloudMode) {
-    if (book.cover_key) await deleteCachedCoverBlob(book.cover_key);
+    const existingAll = await getLocalBooks();
+    const latest = existingAll.find((b) => b.id === book.id);
+    // Nếu sách vừa bị xoá trong lúc chạy nền thì bỏ qua, tuyệt đối không hồi sinh hay ghi đè metadata mới sửa
+    if (!latest) return null;
+    if (latest.cover_key) await deleteCachedCoverBlob(latest.cover_key);
     const nextCoverKey = `covers/${book.id}-${Date.now()}-v2.jpg`;
     await setCachedCoverBlob(nextCoverKey, coverBlob);
-    const updated: Book = { ...book, cover_key: nextCoverKey, cover_size: coverBlob.size };
+    const updated: Book = { ...latest, cover_key: nextCoverKey, cover_size: coverBlob.size };
     await putLocalBook(updated);
     const all = await getLocalBooks();
     const usedBytes = all.reduce((sum, b) => sum + (b.file_size || 0) + (b.cover_size || 0), 0);
@@ -87,6 +91,7 @@ export async function syncLegacyCoversInBackground(
   books: Book[],
   onBooksBatchUpdated: (books: Book[], latestStorage?: StorageStats) => void,
   onNotify?: (message: string, type?: ToastType) => void,
+  onApiError?: (err: unknown, fallbackMessage: string) => void,
 ): Promise<void> {
   if (syncInFlight) return;
   if (isCloudMode && getActiveAuthSession().role !== 'owner') return;
@@ -98,6 +103,7 @@ export async function syncLegacyCoversInBackground(
   syncInFlight = true;
   let updatedCount = 0;
   let workerOutdated = false;
+  let authFailed = false;
   let pendingBooks: Book[] = [];
   let latestStorage: StorageStats | undefined;
 
@@ -116,7 +122,7 @@ export async function syncLegacyCoversInBackground(
 
     let cursor = 0;
     const runWorker = async () => {
-      while (cursor < targets.length && !workerOutdated) {
+      while (cursor < targets.length && !workerOutdated && !authFailed) {
         if (isCloudMode && getActiveAuthSession().role !== 'owner') return;
         const book = targets[cursor++];
         try {
@@ -141,7 +147,14 @@ export async function syncLegacyCoversInBackground(
               }
             }
           }
-        } catch {
+        } catch (err) {
+          if (isAuthError(err)) {
+            if (!authFailed) {
+              authFailed = true;
+              onApiError?.(err, 'Phiên đăng nhập đã hết hạn.');
+            }
+            return;
+          }
           // Bỏ qua cuốn lỗi mạng/tệp lẻ để tiếp tục các cuốn còn lại
         }
         await new Promise<void>((resolve) => window.setTimeout(resolve, 60));

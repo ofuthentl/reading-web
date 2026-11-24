@@ -10,15 +10,14 @@ import {
   useRef,
   useState,
 } from 'react';
-import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Book, BookHighlight, Chapter, ReaderSettings } from '@/types';
-import { ReaderBookCommunityModalButton } from '@/components/ReaderBookCommunityBlock';
-import { getBookSortTitle } from '@/lib/bookMetadata';
+import { ReaderPaginatedFooter } from '@/components/ReaderPaginatedFooter';
 import { applyChapterDomHighlights } from '@/lib/domHighlights';
 import type { CanvasLayoutItem } from '@/lib/guestCanvasLayout';
 import {
   READER_FONT_CLASS,
   type ReaderThemePalette,
+  findClickedReaderImage,
   handleReaderContentLinkClick,
   resolvePaginatedSpreadWidth,
 } from '@/lib/readerConfig';
@@ -92,6 +91,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
     ref,
   ) {
     const outerRef = useRef<HTMLDivElement | null>(null);
+    const clipRef = useRef<HTMLDivElement | null>(null);
     const trackRef = useRef<HTMLDivElement | null>(null);
     const touchStartRef = useRef<{ x: number; y: number } | null>(null);
     const wheelCooldownRef = useRef(0);
@@ -108,6 +108,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
     const [totalPages, setTotalPages] = useState(1);
     const [pageIndex, setPageIndex] = useState(0);
     const [animateTurn, setAnimateTurn] = useState(false);
+    const [imagesSettled, setImagesSettled] = useState(false);
 
     // Khi đổi chương mới, cập nhật neo ratio ban đầu (0 khi sang chương sau, 1 khi lùi chương trước)
     useLayoutEffect(() => {
@@ -168,17 +169,32 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       if (!track) return;
 
       const imgs = Array.from(track.querySelectorAll('img'));
+      let pendingImgs = 0;
       let imgRaf = 0;
+      let settleTimer = 0;
+      const markSettledIfDone = () => {
+        if (pendingImgs <= 0) setImagesSettled(true);
+      };
       const onImgDone = () => {
+        pendingImgs = Math.max(0, pendingImgs - 1);
         if (imgRaf) cancelAnimationFrame(imgRaf);
-        imgRaf = requestAnimationFrame(measurePages);
+        imgRaf = requestAnimationFrame(() => {
+          measurePages();
+          markSettledIfDone();
+        });
       };
       for (const img of imgs) {
         img.loading = 'eager';
         if (!img.complete) {
+          pendingImgs += 1;
           img.addEventListener('load', onImgDone);
           img.addEventListener('error', onImgDone);
         }
+      }
+
+      setImagesSettled(pendingImgs === 0);
+      if (pendingImgs > 0) {
+        settleTimer = window.setTimeout(() => setImagesSettled(true), 1600);
       }
 
       measurePages();
@@ -186,6 +202,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       return () => {
         cancelAnimationFrame(raf1);
         if (imgRaf) cancelAnimationFrame(imgRaf);
+        if (settleTimer) window.clearTimeout(settleTimer);
         for (const img of imgs) {
           img.removeEventListener('load', onImgDone);
           img.removeEventListener('error', onImgDone);
@@ -208,9 +225,9 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
     const safePageIndex = Math.max(0, Math.min(pageIndex, totalPages - 1));
     const singlePageEndReportedRef = useRef<string | null>(null);
 
-    // Tự động ghi nhận hoàn thành khi chương cuối chỉ có đúng 1 trang (vá M-05)
+    // Tự động ghi nhận hoàn thành khi chương cuối chỉ có đúng 1 trang sau khi ảnh đã ổn định
     useEffect(() => {
-      if (chapterIndex === totalChapters - 1 && totalPages === 1) {
+      if (chapterIndex === totalChapters - 1 && totalPages === 1 && imagesSettled) {
         if (singlePageEndReportedRef.current !== chapter.id) {
           singlePageEndReportedRef.current = chapter.id;
           onRatioChange(1, true);
@@ -218,7 +235,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       } else {
         singlePageEndReportedRef.current = null;
       }
-    }, [chapter.id, chapterIndex, onRatioChange, totalChapters, totalPages]);
+    }, [chapter.id, chapterIndex, imagesSettled, onRatioChange, totalChapters, totalPages]);
 
     const commitPage = useCallback(
       (nextPage: number, animate = true) => {
@@ -277,6 +294,27 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       };
     }, []);
 
+    const jumpToElementInTrack = useCallback(
+      (el: HTMLElement) => {
+        const track = trackRef.current;
+        if (!track) return;
+        if (clipRef.current) clipRef.current.scrollLeft = 0;
+        const trackRect = track.getBoundingClientRect();
+        const elRect = el.getBoundingClientRect();
+        const relLeft = Math.max(0, elRect.left - trackRect.left);
+        const step = Math.max(1, geometry.colWidth + geometry.gap);
+        const colIdx = Math.floor((relLeft + 4) / step);
+        const targetPage = Math.min(
+          totalPages - 1,
+          Math.max(0, Math.floor(colIdx / geometry.columns)),
+        );
+        commitPage(targetPage, false);
+        flashCleanupRef.current?.();
+        flashCleanupRef.current = flashDomSearchElement(el);
+      },
+      [commitPage, geometry.colWidth, geometry.columns, geometry.gap, totalPages],
+    );
+
     useEffect(() => {
       if (!searchTarget || searchTarget.chapterIndex !== chapterIndex) return;
       if (appliedSearchNonceRef.current === searchTarget.nonce) return;
@@ -290,30 +328,10 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
         );
         appliedSearchNonceRef.current = searchTarget.nonce;
         if (!matched) return;
-        const trackRect = track.getBoundingClientRect();
-        const mRect = matched.getBoundingClientRect();
-        const relLeft = Math.max(0, mRect.left - trackRect.left);
-        const step = Math.max(1, geometry.colWidth + geometry.gap);
-        const colIdx = Math.floor((relLeft + 4) / step);
-        const targetPage = Math.min(
-          totalPages - 1,
-          Math.max(0, Math.floor(colIdx / geometry.columns)),
-        );
-        commitPage(targetPage, false);
-        flashCleanupRef.current?.();
-        flashCleanupRef.current = flashDomSearchElement(matched);
+        jumpToElementInTrack(matched);
       }, 60);
       return () => window.clearTimeout(timer);
-    }, [
-      chapter.id,
-      chapterIndex,
-      commitPage,
-      geometry.colWidth,
-      geometry.columns,
-      geometry.gap,
-      searchTarget,
-      totalPages,
-    ]);
+    }, [chapter.id, chapterIndex, jumpToElementInTrack, searchTarget]);
 
     const isLastChapter = chapterIndex >= totalChapters - 1;
     const isLastSpread = safePageIndex >= totalPages - 1;
@@ -332,25 +350,23 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
 
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {/* Vùng trang sách lật ngang (CSS Multi-column 1–2 cột, D-011) */}
+        {/* Vùng trang sách lật ngang (CSS Multi-column 1–2 cột, D-011) — giữ padding cố định tránh ResizeObserver thrashing */}
         <div
-          className={`relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4 pb-2 transition-all duration-200 sm:px-8 ${
-            immersiveHidden ? 'pt-5 sm:pt-6' : 'pt-[4.25rem] sm:pt-[4.5rem]'
-          }`}
+          className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4 pb-2 pt-[3.75rem] sm:px-8 sm:pt-[4rem]"
           onMouseUp={() => onSelectionEnd?.(trackRef.current)}
           onClick={(event) => {
             if (onCloseSettings()) return;
             if (onContentInteractionClick?.(event, trackRef.current)) return;
-            if (handleReaderContentLinkClick(event, trackRef.current)) return;
+            if (handleReaderContentLinkClick(event, trackRef.current, jumpToElementInTrack)) return;
             const selection = window.getSelection()?.toString();
             if (selection) return;
 
-            const target = event.target as HTMLElement | null;
-            const clickedImg = target?.closest('.reading-content img') as HTMLImageElement | null;
-            if (clickedImg?.src) {
-              onOpenImage(clickedImg.src, clickedImg.alt || bookTitle);
+            const clickedImg = findClickedReaderImage(event.target, bookTitle);
+            if (clickedImg) {
+              onOpenImage(clickedImg.src, clickedImg.alt);
               return;
             }
+            const target = event.target as HTMLElement | null;
             if (target?.closest('button, a, input, select, textarea')) return;
 
             const rect = event.currentTarget.getBoundingClientRect();
@@ -368,13 +384,21 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
             }
           }}
           onTouchStart={(event) => {
+            if (event.touches.length !== 1) {
+              touchStartRef.current = null;
+              return;
+            }
             const touch = event.touches[0];
             if (touch) touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+          }}
+          onTouchMove={(event) => {
+            if (event.touches.length > 1) touchStartRef.current = null;
           }}
           onTouchEnd={(event) => {
             onSelectionEnd?.(trackRef.current);
             const start = touchStartRef.current;
             touchStartRef.current = null;
+            if (window.getSelection()?.toString()) return;
             const end = event.changedTouches[0];
             if (!start || !end) return;
             const dx = end.clientX - start.x;
@@ -406,6 +430,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
 
           <div ref={outerRef} className="relative h-full w-full">
             <div
+              ref={clipRef}
               className="relative mx-auto h-full overflow-hidden"
               style={{ width: `${geometry.innerWidth}px` }}
             >
@@ -437,75 +462,24 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
           </div>
         </div>
 
-        {/* Thanh chân trang số trang & nút lật trang / hoàn thành */}
-        <footer
-          className={`flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 text-xs sm:px-6 ${palette.border} ${palette.headerBg}`}
-        >
-          <button
-            type="button"
-            onClick={stepPrev}
-            disabled={isFirstSpread}
-            className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 font-medium transition disabled:cursor-not-allowed disabled:opacity-30 ${palette.border} ${palette.hover}`}
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-            <span>Trang trước</span>
-          </button>
-
-          {isLastChapter && isLastSpread ? (
-            <div className="flex min-w-0 max-w-full flex-wrap items-center justify-center gap-2">
-              <button
-                type="button"
-                onClick={() => onCompleteBook()}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 font-semibold text-white transition hover:bg-emerald-500"
-              >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>Hoàn thành cuốn này!</span>
-              </button>
-              <ReaderBookCommunityModalButton
-                bookId={bookId}
-                bookTitle={bookTitle}
-                palette={palette}
-                onApiError={onApiError}
-              />
-              {nextBook && (
-                <button
-                  type="button"
-                  onClick={() => onCompleteBook(nextBook)}
-                  className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 font-semibold text-accent-foreground transition hover:bg-accent-hover sm:max-w-[16rem]"
-                >
-                  <span className="min-w-0 truncate">Đọc tiếp: {getBookSortTitle(nextBook)}</span>
-                  <ArrowRight className="h-3.5 w-3.5 shrink-0" />
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className={`flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 tabular-nums ${palette.textSecondary}`}>
-              <span>
-                Trang <strong className={palette.textPrimary}>{safePageIndex + 1}</strong> / {totalPages}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>
-                Chương {chapterIndex + 1}/{totalChapters}
-              </span>
-              {remainingEstimate && (
-                <>
-                  <span aria-hidden="true" className="hidden sm:inline">·</span>
-                  <span className="hidden sm:inline">{remainingEstimate}</span>
-                </>
-              )}
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={stepNext}
-            disabled={isLastChapter && isLastSpread}
-            className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 font-medium transition disabled:cursor-not-allowed disabled:opacity-30 ${palette.border} ${palette.hover}`}
-          >
-            <span>Trang sau</span>
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
-        </footer>
+        <ReaderPaginatedFooter
+          bookId={bookId}
+          bookTitle={bookTitle}
+          chapterIndex={chapterIndex}
+          totalChapters={totalChapters}
+          currentPage={safePageIndex + 1}
+          totalPages={totalPages}
+          isFirstSpread={isFirstSpread}
+          isLastChapter={isLastChapter}
+          isLastSpread={isLastSpread}
+          remainingEstimate={remainingEstimate}
+          nextBook={nextBook}
+          palette={palette}
+          onStepPrev={stepPrev}
+          onStepNext={stepNext}
+          onCompleteBook={onCompleteBook}
+          onApiError={onApiError}
+        />
       </div>
     );
   },

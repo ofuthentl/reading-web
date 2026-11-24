@@ -52,8 +52,9 @@ export function useReaderChapterProgress({
   }, [chapters, initialProgress]);
 
   const initialStartRatio =
-    initialProgress && initialProgress.chapterId === chapters[initialIdx]?.id
-      ? initialProgress.scrollRatio
+    initialProgress &&
+    (!initialProgress.chapterId || initialProgress.chapterId === chapters[initialIdx]?.id)
+      ? Math.min(1, Math.max(0, initialProgress.scrollRatio || 0))
       : 0;
 
   const [chapterIndex, setChapterIndex] = useState(initialIdx);
@@ -62,8 +63,9 @@ export function useReaderChapterProgress({
   const [searchTarget, setSearchTarget] = useState<ReaderSearchJumpTarget | null>(null);
 
   const restoreTargetRatioRef = useRef<number | null>(
-    initialProgress && initialProgress.chapterId === chapters[initialIdx]?.id
-      ? initialProgress.scrollRatio
+    initialProgress &&
+      (!initialProgress.chapterId || initialProgress.chapterId === chapters[initialIdx]?.id)
+      ? Math.min(1, Math.max(0, initialProgress.scrollRatio || 0))
       : null,
   );
   const suppressSaveRef = useRef(false);

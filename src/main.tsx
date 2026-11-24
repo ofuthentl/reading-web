@@ -6,6 +6,8 @@ import { registerPwaServiceWorker } from '@/lib/pwaRegister';
 import App from './App.tsx';
 import './fonts.css';
 import './index.css';
+import './styles/reader.css';
+import './styles/cursors.css';
 
 window.addEventListener('vite:preloadError', (event) => {
   if (reloadOnceForStaleChunk()) {

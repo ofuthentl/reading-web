@@ -8,12 +8,10 @@ import {
   useRef,
   useState,
 } from 'react';
-import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Book, GuestChapterPayload, HighlightColor, ReaderSettings } from '@/types';
-import { ReaderBookCommunityModalButton } from '@/components/ReaderBookCommunityBlock';
+import { ReaderPaginatedFooter } from '@/components/ReaderPaginatedFooter';
 import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
 import { useReaderCanvasFontVersion } from '@/hooks/useReaderCanvasFontVersion';
-import { getBookSortTitle } from '@/lib/bookMetadata';
 import type { ResolvedFootnoteItem } from '@/lib/epubFootnotes';
 import { computeChapterCanvasLayout } from '@/lib/guestCanvasLayout';
 import {
@@ -325,9 +323,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     return (
       <div className={`flex min-h-0 flex-1 flex-col overflow-hidden transition-all ${pageHidden ? 'blur-lg' : ''}`}>
         <div
-          className={`relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-3.5 pb-2 transition-all duration-200 sm:px-7 ${
-            immersiveHidden ? 'pt-5 sm:pt-6' : 'pt-[4.25rem] sm:pt-[4.5rem]'
-          }`}
+          className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-3.5 pb-2 pt-[3.75rem] sm:px-7 sm:pt-[4rem]"
           onClick={(event) => {
             if (onCloseSettings()) return;
             const target = event.target as HTMLElement | null;
@@ -381,8 +377,15 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
             }
           }}
           onTouchStart={(event) => {
+            if (event.touches.length !== 1) {
+              touchStartRef.current = null;
+              return;
+            }
             const touch = event.touches[0];
             if (touch) touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+          }}
+          onTouchMove={(event) => {
+            if (event.touches.length > 1) touchStartRef.current = null;
           }}
           onTouchEnd={(event) => {
             const start = touchStartRef.current;
@@ -425,74 +428,24 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
           </div>
         </div>
 
-        <footer
-          className={`flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 text-xs sm:px-6 ${palette.border} ${palette.headerBg}`}
-        >
-          <button
-            type="button"
-            onClick={stepPrev}
-            disabled={isFirstSpread}
-            className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 font-medium transition disabled:cursor-not-allowed disabled:opacity-30 ${palette.border} ${palette.hover}`}
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-            <span>Trang trước</span>
-          </button>
-
-          {isLastChapter && isLastSpread ? (
-            <div className="flex min-w-0 max-w-full flex-wrap items-center justify-center gap-2">
-              <button
-                type="button"
-                onClick={() => onCompleteBook()}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 font-semibold text-white transition hover:bg-emerald-500"
-              >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>Hoàn thành cuốn này!</span>
-              </button>
-              <ReaderBookCommunityModalButton
-                bookId={bookId}
-                bookTitle={bookTitle}
-                palette={palette}
-                onApiError={onApiError}
-              />
-              {nextBook && (
-                <button
-                  type="button"
-                  onClick={() => onCompleteBook(nextBook)}
-                  className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 font-semibold text-accent-foreground transition hover:bg-accent-hover sm:max-w-[16rem]"
-                >
-                  <span className="min-w-0 truncate">Đọc tiếp: {getBookSortTitle(nextBook)}</span>
-                  <ArrowRight className="h-3.5 w-3.5 shrink-0" />
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className={`flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 tabular-nums ${palette.textSecondary}`}>
-              <span>
-                Trang <strong className={palette.textPrimary}>{safeSpreadIndex + 1}</strong> / {totalSpreads}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>
-                Chương {chapterIndex + 1}/{totalChapters}
-              </span>
-              {remainingEstimate && (
-                <>
-                  <span aria-hidden="true" className="hidden sm:inline">·</span>
-                  <span className="hidden sm:inline">{remainingEstimate}</span>
-                </>
-              )}
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={stepNext}
-            disabled={isLastChapter && isLastSpread}
-            className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 font-medium transition disabled:cursor-not-allowed disabled:opacity-30 ${palette.border} ${palette.hover}`}
-          >
-            <span>Trang sau</span>
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
-        </footer>
+        <ReaderPaginatedFooter
+          bookId={bookId}
+          bookTitle={bookTitle}
+          chapterIndex={chapterIndex}
+          totalChapters={totalChapters}
+          currentPage={safeSpreadIndex + 1}
+          totalPages={totalSpreads}
+          isFirstSpread={isFirstSpread}
+          isLastChapter={isLastChapter}
+          isLastSpread={isLastSpread}
+          remainingEstimate={remainingEstimate}
+          nextBook={nextBook}
+          palette={palette}
+          onStepPrev={stepPrev}
+          onStepNext={stepNext}
+          onCompleteBook={onCompleteBook}
+          onApiError={onApiError}
+        />
       </div>
     );
   },

@@ -12,6 +12,7 @@ import {
 import {
   assertGuestBookAccess,
   loadShelfAccessSnapshot,
+  shelfExistsInBooks,
   toShelfAccessKey,
 } from './shelfAccessDb';
 import { upsertShelfAltTitles } from './shelfTagsDb';
@@ -135,8 +136,8 @@ export async function loadCatalogEnhancementsSnapshot(
   const isGuest = auth.role === 'guest';
   const planToReadShelves: string[] = [];
   for (const row of ptrRes.results || []) {
-    const key = row.shelf_key;
-    if (!key) continue;
+    const key = row.shelf_key ? toShelfAccessKey(row.shelf_key) : '';
+    if (!key || !existingShelfKeys.has(key)) continue;
     if (
       isGuest &&
       isShelfLockedForGuest(key, accessSnapshot.restrictedKeys, accessSnapshot.allowedRestrictedKeys)
@@ -228,9 +229,14 @@ export async function upsertUserPlanToRead(
     throw new HttpError('Tên bộ truyện không hợp lệ.', 400);
   }
 
-  const shelfKey = shelfName.toLocaleLowerCase('vi');
+  const shelfKey = toShelfAccessKey(shelfName);
 
   if (body.planToRead) {
+    const exists = await shelfExistsInBooks(db, shelfKey);
+    if (!exists) {
+      throw new HttpError('Không tìm thấy bộ truyện này trong thư viện.', 404);
+    }
+
     if (auth.role === 'guest') {
       const access = await loadShelfAccessSnapshot(db, auth);
       if (isShelfLockedForGuest(shelfKey, access.restrictedKeys, access.allowedRestrictedKeys)) {
@@ -238,6 +244,13 @@ export async function upsertUserPlanToRead(
           '🔒 Bộ truyện này chỉ mở quyền đọc cho thành viên Discord được chỉ định.',
           403,
         );
+      }
+      const countRow = await db
+        .prepare('SELECT COUNT(*) AS cnt FROM user_plan_to_read WHERE user_scope = ?')
+        .bind(scope)
+        .first<{ cnt: number }>();
+      if (Number(countRow?.cnt ?? 0) >= 500) {
+        throw new HttpError('Danh sách Đọc sau đã đạt giới hạn tối đa 500 bộ.', 400);
       }
     }
 
@@ -264,11 +277,18 @@ export async function upsertUserPlanToRead(
 async function listCollectionsRoute(db: D1Database, auth: AuthContext) {
   const [booksRes, accessSnapshot] = await Promise.all([
     db.prepare('SELECT id, shelf FROM books').all<Pick<BookRow, 'id' | 'shelf'>>(),
-    loadShelfAccessSnapshot(db, auth).catch(() => ({
-      restrictedKeys: new Set<string>(),
-      allowedRestrictedKeys: new Set<string>(),
-      ownerShelfAccess: {},
-    })),
+    auth.role === 'guest'
+      ? loadShelfAccessSnapshot(db, auth).catch(() => {
+          throw new HttpError(
+            'Không thể xác minh phân quyền kệ sách. Vui lòng thử lại sau giây lát.',
+            503,
+          );
+        })
+      : loadShelfAccessSnapshot(db, auth).catch(() => ({
+          restrictedKeys: new Set<string>(),
+          allowedRestrictedKeys: new Set<string>(),
+          ownerShelfAccess: {},
+        })),
   ]);
   const snapshot = await loadCatalogEnhancementsSnapshot(
     db,

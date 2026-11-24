@@ -37,7 +37,13 @@ export function findDirectChild(parent: Element, localName: string): Element | n
 }
 
 export function resolveDocxPath(baseDir: string, target: string): string {
-  const cleaned = target.replace(/\\/g, '/').split('#')[0].split('?')[0];
+  const rawCleaned = target.replace(/\\/g, '/').split('#')[0].split('?')[0];
+  let cleaned = rawCleaned;
+  try {
+    cleaned = decodeURIComponent(rawCleaned);
+  } catch {
+    cleaned = rawCleaned;
+  }
   if (cleaned.startsWith('/')) return cleaned.replace(/^\/+/, '');
   const parts = `${baseDir}/${cleaned}`.split('/');
   const resolved: string[] = [];
@@ -154,7 +160,7 @@ export function resolveHeadingFromStyle(
     visited.add(currentId);
     const meta = styles.get(currentId);
     const candidate = `${meta?.name || ''} ${currentId}`.trim();
-    if (/^(?:title|tiêu\s*đề)\b/i.test(meta?.name || currentId)) {
+    if (/^(?:title|tiêu\s*đề)(?:$|[\s:.\-–—])/i.test((meta?.name || currentId).normalize('NFC').trim())) {
       return { headingLevel: null, isTitle: true };
     }
     const headingMatch =
@@ -263,4 +269,32 @@ export async function collectDocxCoverCandidates(zip: JSZip): Promise<string[]> 
   }
 
   return candidates;
+}
+
+export async function parseDocxNotes(
+  zip: JSZip,
+  xmlPath: 'word/footnotes.xml' | 'word/endnotes.xml',
+  itemTag: 'footnote' | 'endnote',
+): Promise<Map<string, string>> {
+  const notes = new Map<string, string>();
+  const xml = await zip.file(xmlPath)?.async('string');
+  if (!xml) return notes;
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  for (const el of Array.from(doc.getElementsByTagName('*'))) {
+    if (el.localName !== itemTag) continue;
+    const id = getAttr(el, 'id');
+    const type = getAttr(el, 'type')?.toLowerCase();
+    if (!id || Number(id) <= 0 || type === 'separator' || type === 'continuationseparator') continue;
+    const textParts: string[] = [];
+    for (const t of Array.from(el.getElementsByTagName('*'))) {
+      if (t.localName === 't' && t.textContent) {
+        textParts.push(t.textContent.normalize('NFC'));
+      } else if (t.localName === 'br' || t.localName === 'cr') {
+        textParts.push('\n');
+      }
+    }
+    const clean = textParts.join('').replace(/\s+/g, ' ').trim();
+    if (clean) notes.set(id, clean);
+  }
+  return notes;
 }

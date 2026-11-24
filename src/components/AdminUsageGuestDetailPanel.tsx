@@ -22,7 +22,7 @@ export function AdminUsageGuestDetailPanel({
   onRefresh,
 }: AdminUsageGuestDetailPanelProps) {
   return (
-    <div className="rounded-xl border border-line bg-surface p-3.5 shadow-xs">
+    <div className="rounded-xl border border-line bg-surface p-3.5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/70 pb-2.5">
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <BookOpen className="h-3.5 w-3.5 text-accent" />

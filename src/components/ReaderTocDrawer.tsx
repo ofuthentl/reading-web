@@ -40,7 +40,7 @@ interface ReaderTocDrawerProps {
     approximateRatio: number;
   }) => void;
   onOpenDomImage?: (src: string, alt: string) => void;
-  onOpenGuestImage?: (bitmap: ImageBitmap, alt: string) => void;
+  onOpenGuestImage?: (bitmap: ImageBitmap, alt: string, ownedBitmap?: boolean) => void;
   onDeleteHighlight?: (id: string) => void;
   onOpenGuestAddHighlight?: () => void;
   onOpenQuoteVault?: () => void;
@@ -295,7 +295,7 @@ export function ReaderTocDrawer({
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Lọc tên chương nhanh..."
                   aria-label="Lọc chương nhanh"
-                  className={`w-full rounded-lg border bg-transparent py-1.5 pl-8 pr-3 text-xs outline-none focus:border-accent ${palette.border}`}
+                  className={`w-full rounded-lg border bg-transparent py-1.5 pl-8 pr-3 text-xs outline-none ${palette.border} ${palette.focusBorder}`}
                 />
               </div>
             </div>

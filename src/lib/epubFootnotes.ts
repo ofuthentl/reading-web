@@ -21,8 +21,8 @@ const FOOTNOTE_ID_HINT_RE = /(?:^|[-_])(?:fn|ftn|note|footnote|endnote|noteref|c
 
 const BACKLINK_STRIP_RE = /(?:\s*(?:↩︎?|↑|⇧|\[\s*(?:quay\s*lại|back|trở\s*lại)\s*\]))+\s*$/gi;
 
-// Regex nhận diện dấu chú thích inline trong văn bản (ví dụ `[1]`, `[12]`, `[*]`, `(*)`)
-export const INLINE_FOOTNOTE_TOKEN_RE = /(\[\d{1,3}\]|\[\*{1,3}\]|\(\*{1,3}\))/g;
+// Regex nhận diện dấu chú thích inline trong văn bản (ví dụ `[1]`, `[a]`, `(1)`, `[*]`, `(*)`)
+export const INLINE_FOOTNOTE_TOKEN_RE = /(\[\d{1,3}\]|\[[a-z]\]|\[\*{1,3}\]|\(\d{1,3}\)|\(\*{1,3}\))/gi;
 
 export function normalizeFootnoteKey(rawMarker: string): string {
   return rawMarker
@@ -91,6 +91,33 @@ function isLikelyFootnoteLink(link: HTMLAnchorElement, fragment: string, label: 
   if (link.closest('sup') && label.length <= 16) return true;
   if (FOOTNOTE_MARKER_LABEL_RE.test(label)) return true;
   return false;
+}
+
+function extractHrefTargetStem(rawHref: string, hashIdx: number): string {
+  if (hashIdx <= 0) return '';
+  const pathPart = rawHref.slice(0, hashIdx).trim();
+  const base = pathPart.split('/').pop() || '';
+  return base.replace(/\.(?:x?html?|xml)$/i, '').trim().toLowerCase();
+}
+
+function buildCrossChapterSearchOrder(
+  chapters: readonly Chapter[],
+  currentChapterIndex: number,
+  targetStem: string,
+): number[] {
+  const prioritized: number[] = [];
+  const rest: number[] = [];
+  for (let i = chapters.length - 1; i >= 0; i -= 1) {
+    if (i === currentChapterIndex) continue;
+    const chap = chapters[i];
+    const hay = `${chap?.id || ''} ${chap?.title || ''}`.toLowerCase();
+    if (targetStem && hay.includes(targetStem)) {
+      prioritized.push(i);
+    } else {
+      rest.push(i);
+    }
+  }
+  return [...prioritized, ...rest];
 }
 
 const parsedChapterDocCache = new WeakMap<Chapter, Document>();
@@ -163,11 +190,9 @@ export function resolveOwnerFootnoteClick(
     }
   }
 
-  // 2. Quét sang các chương khác (ưu tiên từ cuối sách ngược lên vì chương Chú thích thường nằm cuối)
-  const searchOrder: number[] = [];
-  for (let i = chapters.length - 1; i >= 0; i -= 1) {
-    if (i !== currentChapterIndex) searchOrder.push(i);
-  }
+  // 2. Quét sang các chương khác (ưu tiên tệp đích trong href, sau đó ngược từ cuối sách)
+  const targetStem = extractHrefTargetStem(rawHref, hashIdx);
+  const searchOrder = buildCrossChapterSearchOrder(chapters, currentChapterIndex, targetStem);
 
   for (const idx of searchOrder) {
     const chap = chapters[idx];
@@ -195,8 +220,8 @@ export function resolveOwnerFootnoteClick(
 }
 
 const DEFINITION_LINE_PATTERNS: RegExp[] = [
-  /^\[\s*(\d{1,3}|\*{1,3})\s*\]\s*[:.\-–—]?\s+(.{3,})$/s,
-  /^\(\s*(\d{1,3}|\*{1,3})\s*\)\s*[:.\-–—]\s*(.{3,})$/s,
+  /^\[\s*(\d{1,3}|[a-z]|\*{1,3})\s*\]\s*[:.\-–—]?\s+(.{3,})$/is,
+  /^\(\s*(\d{1,3}|[a-z]|\*{1,3})\s*\)\s*[:.\-–—]?\s+(.{3,})$/is,
   /^(?:chú\s*thích|note|ct)\s*(\d{1,3})\s*[:.\-–—]\s*(.{3,})$/is,
   /^(\*{1,3})\s+(.{4,})$/s,
 ];
@@ -292,7 +317,12 @@ export function extractChapterFootnotesForGuestPack(
     const rawHref = (link.getAttribute('href') || '').trim();
     const hashIdx = rawHref.indexOf('#');
     if (hashIdx < 0) continue;
-    const fragment = rawHref.slice(hashIdx + 1);
+    let fragment = rawHref.slice(hashIdx + 1);
+    try {
+      fragment = decodeURIComponent(fragment);
+    } catch {
+      // Keep raw fragment
+    }
     const label = (link.textContent || '').replace(/\s+/g, ' ').trim();
     if (!fragment || !isLikelyFootnoteLink(link, fragment, label)) continue;
 
@@ -301,9 +331,12 @@ export function extractChapterFootnotesForGuestPack(
 
     let targetEl = findElementByFragment(doc, fragment);
     if (!targetEl) {
-      for (let i = allChapters.length - 1; i >= 0; i -= 1) {
-        const other = allChapters[i];
-        if (other.id === chapter.id || !other.content_html?.includes(fragment)) continue;
+      const currentIdx = allChapters.findIndex((c) => c.id === chapter.id);
+      const targetStem = extractHrefTargetStem(rawHref, hashIdx);
+      const order = buildCrossChapterSearchOrder(allChapters, currentIdx, targetStem);
+      for (const idx of order) {
+        const other = allChapters[idx];
+        if (!other || other.id === chapter.id || !other.content_html?.includes(fragment)) continue;
         const otherDoc = getParsedChapterDocument(other);
         targetEl = otherDoc ? findElementByFragment(otherDoc, fragment) : null;
         if (targetEl) break;

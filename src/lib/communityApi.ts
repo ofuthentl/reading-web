@@ -99,6 +99,61 @@ function getLocalIdentity() {
   };
 }
 
+export function syncLocalCommunityOnShelfRenamed(oldName: string, newName: string): void {
+  const oldKey = toShelfPrefKey(oldName);
+  const newKey = toShelfPrefKey(newName);
+  if (!oldKey || !newKey || oldKey === newKey) return;
+  const store = readLocalStore();
+  const oldBucket = makeBucketKey('shelf', oldKey);
+  const newBucket = makeBucketKey('shelf', newKey);
+  let changed = false;
+  if (store.ratings[oldBucket]) {
+    store.ratings[newBucket] = { ...(store.ratings[oldBucket] || {}), ...(store.ratings[newBucket] || {}) };
+    delete store.ratings[oldBucket];
+    changed = true;
+  }
+  if (store.comments[oldBucket]) {
+    store.comments[newBucket] = [...(store.comments[newBucket] || []), ...store.comments[oldBucket]];
+    delete store.comments[oldBucket];
+    changed = true;
+  }
+  if (changed) writeLocalStore(store);
+}
+
+export function syncLocalCommunityOnBooksDeleted(
+  deletedBookIds: ReadonlySet<string>,
+  remainingShelfKeys: ReadonlySet<string>,
+): void {
+  const store = readLocalStore();
+  let changed = false;
+  for (const id of deletedBookIds) {
+    const bk = makeBucketKey('book', id);
+    if (bk in store.ratings) {
+      delete store.ratings[bk];
+      changed = true;
+    }
+    if (bk in store.comments) {
+      delete store.comments[bk];
+      changed = true;
+    }
+  }
+  for (const bucketKey of [...Object.keys(store.ratings), ...Object.keys(store.comments)]) {
+    if (!bucketKey.startsWith('shelf:')) continue;
+    const shelfKey = bucketKey.slice('shelf:'.length);
+    if (!remainingShelfKeys.has(shelfKey)) {
+      if (bucketKey in store.ratings) {
+        delete store.ratings[bucketKey];
+        changed = true;
+      }
+      if (bucketKey in store.comments) {
+        delete store.comments[bucketKey];
+        changed = true;
+      }
+    }
+  }
+  if (changed) writeLocalStore(store);
+}
+
 export async function fetchCommunitySummary(
   targetType: CommunityTargetType,
   rawKey: string,

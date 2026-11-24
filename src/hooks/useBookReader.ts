@@ -15,11 +15,16 @@ import {
   appThemeToReaderTheme,
   loadReaderSettings,
   saveReaderSettings,
-} from '@/lib/readerConfig';
+} from '@/lib/readerSettingsStorage';
 
 export interface GuestReaderSessionState {
   chapters: GuestTocItem[];
   watermarkLabel: string;
+}
+
+export interface BookOpenJumpTarget {
+  chapterIndex: number;
+  scrollRatio: number;
 }
 
 interface UseBookReaderOptions {
@@ -47,11 +52,16 @@ export function useBookReader({
   const [parsedBook, setParsedBook] = useState<ParsedBook | null>(null);
   const [guestSession, setGuestSession] = useState<GuestReaderSessionState | null>(null);
   const [loadedFromCache, setLoadedFromCache] = useState(false);
+  const [initialJump, setInitialJump] = useState<(BookOpenJumpTarget & { bookId: string }) | null>(
+    null,
+  );
 
   const requestIdRef = useRef(0);
   const parsedBookRef = useRef<ParsedBook | null>(null);
   const openAbortRef = useRef<AbortController | null>(null);
   const prevAppThemeRef = useRef<UiTheme>(appTheme);
+  const appThemeRef = useRef<UiTheme>(appTheme);
+  appThemeRef.current = appTheme;
 
   // Chỉ đồng bộ nền trình đọc khi người dùng THỰC SỰ bấm đổi theme App, không ghi đè lúc mount/F5
   useEffect(() => {
@@ -71,12 +81,13 @@ export function useBookReader({
     });
   }, [appTheme, authenticated]);
 
-  // Tải cài đặt trình đọc đồng bộ từ D1 khi đăng nhập thành công (D-036 Mục 7)
+  // Tải cài đặt trình đọc đồng bộ từ D1 1 lần khi đăng nhập thành công (D-036 Mục 7).
+  // Không đưa appTheme vào deps để tránh GET /api/reader-settings đè ngược theme mới vừa đổi (debounce 1.2s).
   useEffect(() => {
     if (!authenticated || !isCloudMode) return;
     let cancelled = false;
     void import('@/lib/readerSettingsSync')
-      .then((m) => m.fetchRemoteReaderSettings(appThemeToReaderTheme(appTheme)))
+      .then((m) => m.fetchRemoteReaderSettings(appThemeToReaderTheme(appThemeRef.current)))
       .then((remote) => {
         if (cancelled || !remote) return;
         saveReaderSettings(remote);
@@ -86,7 +97,7 @@ export function useBookReader({
     return () => {
       cancelled = true;
     };
-  }, [appTheme, authenticated]);
+  }, [authenticated]);
 
   const disposeCurrent = useCallback(() => {
     if (parsedBookRef.current) {
@@ -138,10 +149,11 @@ export function useBookReader({
     setParsedBook(null);
     setGuestSession(null);
     setLoadedFromCache(false);
+    setInitialJump(null);
   }, [disposeCurrent]);
 
   const openBook = useCallback(
-    async (book: Book) => {
+    async (book: Book, jumpTarget?: BookOpenJumpTarget) => {
       if (sessionRole === 'guest' && book.guest_locked) {
         onApiError(
           new Error('🔒 Bộ truyện này chỉ mở quyền đọc cho thành viên Discord được chỉ định.'),
@@ -161,7 +173,7 @@ export function useBookReader({
         if (isCloudMode && sessionRole === 'guest') {
           const { fetchGuestBookToc } = await import('@/lib/guestCrypto');
           if (requestId !== requestIdRef.current) return;
-          const toc = await fetchGuestBookToc(book.id);
+          const toc = await fetchGuestBookToc(book.id, controller.signal);
           if (requestId !== requestIdRef.current) return;
 
           disposeCurrent();
@@ -170,6 +182,7 @@ export function useBookReader({
             chapters: toc.chapters,
             watermarkLabel: toc.watermarkLabel,
           });
+          setInitialJump(jumpTarget ? { bookId: book.id, ...jumpTarget } : null);
           setActiveBook(book);
           setLoadedFromCache(false);
           setOpeningBook(null);
@@ -191,6 +204,7 @@ export function useBookReader({
         disposeCurrent();
         parsedBookRef.current = parsed;
         setGuestSession(null);
+        setInitialJump(jumpTarget ? { bookId: book.id, ...jumpTarget } : null);
         setActiveBook(book);
         setParsedBook(parsed);
         setLoadedFromCache(fromCache);
@@ -239,6 +253,7 @@ export function useBookReader({
     parsedBook,
     guestSession,
     loadedFromCache,
+    initialJump,
     updateSettings,
     openBook,
     cancelOpeningBook,

@@ -34,6 +34,62 @@ function writeLocalJson(key: string, value: unknown): void {
   }
 }
 
+export function syncLocalCatalogOnShelfRenamed(oldName: string, newName: string): void {
+  const oldKey = toShelfPrefKey(oldName);
+  const newKey = toShelfPrefKey(newName);
+  if (!oldKey || !newKey || oldKey === newKey) return;
+
+  const ptrShelves = readLocalJson<string[]>(LOCAL_PTR_STORAGE_KEY, []).map(toShelfPrefKey);
+  if (ptrShelves.includes(oldKey)) {
+    writeLocalJson(
+      LOCAL_PTR_STORAGE_KEY,
+      Array.from(new Set(ptrShelves.map((k) => (k === oldKey ? newKey : k)))),
+    );
+  }
+
+  const cols = readLocalJson<CustomCollection[]>(LOCAL_COLLECTIONS_STORAGE_KEY, []);
+  let colChanged = false;
+  const nextCols = cols.map((col) => {
+    const normalized = col.shelfKeys.map(toShelfPrefKey);
+    if (!normalized.includes(oldKey)) return col;
+    colChanged = true;
+    return {
+      ...col,
+      shelfKeys: Array.from(new Set(normalized.map((k) => (k === oldKey ? newKey : k)))),
+    };
+  });
+  if (colChanged) writeLocalJson(LOCAL_COLLECTIONS_STORAGE_KEY, nextCols);
+}
+
+export function syncLocalCatalogOnBooksDeleted(
+  deletedBookIds: ReadonlySet<string>,
+  remainingShelfKeys: ReadonlySet<string>,
+): void {
+  const ptrBooks = readLocalJson<string[]>(LOCAL_PTR_BOOKS_STORAGE_KEY, []);
+  const nextPtrBooks = ptrBooks.filter((id) => !deletedBookIds.has(id));
+  if (nextPtrBooks.length !== ptrBooks.length) {
+    writeLocalJson(LOCAL_PTR_BOOKS_STORAGE_KEY, nextPtrBooks);
+  }
+
+  const ptrShelves = readLocalJson<string[]>(LOCAL_PTR_STORAGE_KEY, []).map(toShelfPrefKey);
+  const nextPtrShelves = ptrShelves.filter((k) => remainingShelfKeys.has(k));
+  if (nextPtrShelves.length !== ptrShelves.length) {
+    writeLocalJson(LOCAL_PTR_STORAGE_KEY, nextPtrShelves);
+  }
+
+  const cols = readLocalJson<CustomCollection[]>(LOCAL_COLLECTIONS_STORAGE_KEY, []);
+  let colChanged = false;
+  const nextCols = cols.map((col) => {
+    const filtered = col.shelfKeys.filter((k) => remainingShelfKeys.has(toShelfPrefKey(k)));
+    if (filtered.length !== col.shelfKeys.length) {
+      colChanged = true;
+      return { ...col, shelfKeys: filtered };
+    }
+    return col;
+  });
+  if (colChanged) writeLocalJson(LOCAL_COLLECTIONS_STORAGE_KEY, nextCols);
+}
+
 export async function setShelfAltTitles(
   shelfName: string,
   rawAltTitles: readonly string[],

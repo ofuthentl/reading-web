@@ -1,4 +1,5 @@
 import { HttpError } from './auth';
+import { toShelfAccessKey } from './shelfAccessDb';
 
 export const MAX_SHELF_TAGS = 20;
 export const MAX_SHELF_TAG_LENGTH = 40;
@@ -199,12 +200,12 @@ export async function upsertShelfTags(
   rawShelfName: unknown,
   rawTags: unknown,
 ) {
-  const shelfName = typeof rawShelfName === 'string' ? rawShelfName.trim() : '';
+  const shelfName = typeof rawShelfName === 'string' ? rawShelfName.normalize('NFC').trim() : '';
   if (!shelfName || shelfName.length > MAX_SHELF_NAME_LENGTH) {
     throw new HttpError('Tên kệ sách không hợp lệ.', 400);
   }
   const tags = normalizeShelfTags(rawTags);
-  const shelfKey = shelfName.toLocaleLowerCase('vi');
+  const shelfKey = toShelfAccessKey(shelfName);
   const tagsJson = tags.length > 0 ? JSON.stringify(tags) : null;
 
   await ensureShelfTagsSchema(db);
@@ -230,12 +231,12 @@ export async function upsertShelfAltTitles(
   rawShelfName: unknown,
   rawAltTitles: unknown,
 ) {
-  const shelfName = typeof rawShelfName === 'string' ? rawShelfName.trim() : '';
+  const shelfName = typeof rawShelfName === 'string' ? rawShelfName.normalize('NFC').trim() : '';
   if (!shelfName || shelfName.length > MAX_SHELF_NAME_LENGTH) {
     throw new HttpError('Tên kệ sách không hợp lệ.', 400);
   }
   const altTitles = normalizeShelfAltTitles(rawAltTitles);
-  const shelfKey = shelfName.toLocaleLowerCase('vi');
+  const shelfKey = toShelfAccessKey(shelfName);
   const altTitlesJson = altTitles.length > 0 ? JSON.stringify(altTitles) : null;
 
   await ensureShelfTagsSchema(db);

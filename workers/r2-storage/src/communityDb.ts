@@ -1,6 +1,6 @@
 import { type AuthContext, type AuthRole, HttpError } from './auth';
 import { MAX_SHELF_NAME_LENGTH, isValidId } from './booksDb';
-import { assertGuestShelfAccess, toShelfAccessKey } from './shelfAccessDb';
+import { assertGuestShelfAccess, shelfExistsInBooks, toShelfAccessKey } from './shelfAccessDb';
 
 export type CommunityTargetType = 'shelf' | 'book';
 
@@ -90,9 +90,10 @@ async function resolveAndAuthorizeTarget(
   auth: AuthContext,
   rawType: unknown,
   rawKey: unknown,
+  requireShelfExists = false,
 ): Promise<{ targetType: CommunityTargetType; targetKey: string }> {
   const targetType = parseTargetType(rawType);
-  const keyText = typeof rawKey === 'string' ? rawKey.trim() : '';
+  const keyText = typeof rawKey === 'string' ? rawKey.normalize('NFC').trim() : '';
   if (!keyText) {
     throw new HttpError('Thiếu mã bộ truyện hoặc mã tập sách.', 400);
   }
@@ -103,6 +104,12 @@ async function resolveAndAuthorizeTarget(
     }
     const shelfKey = toShelfAccessKey(keyText);
     await assertGuestShelfAccess(db, auth, shelfKey);
+    if (requireShelfExists) {
+      const exists = await shelfExistsInBooks(db, shelfKey);
+      if (!exists) {
+        throw new HttpError('Không tìm thấy bộ truyện này trong thư viện.', 404);
+      }
+    }
     return { targetType: 'shelf', targetKey: shelfKey };
   }
 
@@ -240,6 +247,7 @@ export async function upsertCommunityRating(
     auth,
     body?.targetType,
     body?.targetKey,
+    true,
   );
   const userScope = resolveUserScope(auth);
 
@@ -299,10 +307,11 @@ export async function createCommunityComment(
     auth,
     body?.targetType,
     body?.targetKey,
+    true,
   );
 
   const rawContent = typeof body?.content === 'string' ? body.content : '';
-  const content = rawContent.replace(/\r\n/g, '\n').trim();
+  const content = rawContent.normalize('NFC').replace(/\r\n/g, '\n').trim();
   if (content.length < 1 || content.length > MAX_COMMENT_LENGTH) {
     throw new HttpError(
       `Nội dung bình luận phải từ 1 đến ${MAX_COMMENT_LENGTH} ký tự.`,
@@ -312,42 +321,57 @@ export async function createCommunityComment(
 
   const userScope = resolveUserScope(auth);
   const now = Date.now();
+  const id = crypto.randomUUID().replace(/-/g, '');
+  const authorName = resolveAuthorName(auth);
+  const authorRole: AuthRole = auth.role;
 
-  const recentRow = await db
+  // Chống spam bình luận song song bằng INSERT có điều kiện nguyên tử trực tiếp trong SQLite
+  const insertRes = await db
     .prepare(
-      `SELECT created_at
-       FROM library_comments
-       WHERE user_scope = ?
-       ORDER BY created_at DESC
-       LIMIT 1`,
+      `INSERT INTO library_comments (
+         id, target_type, target_key, user_scope, author_name, author_role, content, created_at, updated_at
+       )
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM library_comments
+         WHERE user_scope = ? AND created_at > ?
+       )`,
     )
-    .bind(userScope)
-    .first<{ created_at: number }>();
+    .bind(
+      id,
+      targetType,
+      targetKey,
+      userScope,
+      authorName,
+      authorRole,
+      content,
+      now,
+      now,
+      userScope,
+      now - COMMENT_COOLDOWN_MS,
+    )
+    .run();
 
-  if (recentRow && now - Number(recentRow.created_at) < COMMENT_COOLDOWN_MS) {
-    const waitSec = Math.max(
-      1,
-      Math.ceil((COMMENT_COOLDOWN_MS - (now - Number(recentRow.created_at))) / 1000),
-    );
+  if ((insertRes.meta?.changes ?? 0) !== 1) {
+    const recentRow = await db
+      .prepare(
+        `SELECT created_at
+         FROM library_comments
+         WHERE user_scope = ?
+         ORDER BY created_at DESC
+         LIMIT 1`,
+      )
+      .bind(userScope)
+      .first<{ created_at: number }>();
+    const waitSec = recentRow
+      ? Math.max(1, Math.ceil((COMMENT_COOLDOWN_MS - (now - Number(recentRow.created_at))) / 1000))
+      : Math.ceil(COMMENT_COOLDOWN_MS / 1000);
     throw new HttpError(
       `Bạn đang gửi bình luận quá nhanh. Vui lòng đợi ${waitSec} giây rồi thử lại.`,
       429,
       { 'Retry-After': String(waitSec) },
     );
   }
-
-  const id = crypto.randomUUID().replace(/-/g, '');
-  const authorName = resolveAuthorName(auth);
-  const authorRole: AuthRole = auth.role;
-
-  await db
-    .prepare(
-      `INSERT INTO library_comments (
-         id, target_type, target_key, user_scope, author_name, author_role, content, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .bind(id, targetType, targetKey, userScope, authorName, authorRole, content, now, now)
-    .run();
 
   const comment: CommunityCommentItem = {
     id,

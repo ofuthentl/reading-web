@@ -10,6 +10,7 @@ import {
   fetchAdminDiscordGuests, runAdminForensicWatermarkCheck, setAdminDiscordGuestBan,
 } from '@/lib/guestCrypto';
 import { buildAndUploadGuestPack } from '@/lib/guestPackBuilder';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import type { ToastType } from '@/hooks/useToast';
 
 type ProtectionTab = 'sync' | 'forensic' | 'guests';
@@ -90,6 +91,8 @@ export function AdminProtectionModal({
     }
   }, [activeTab, loadGuests, open]);
 
+  useBodyScrollLock(open);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -114,53 +117,60 @@ export function AdminProtectionModal({
 
     let successCount = 0;
     let failCount = 0;
+    let authFailed = false;
 
-    for (let i = 0; i < targets.length; i += 1) {
-      if (stopSyncRef.current) break;
-      const target = targets[i];
-      const controller = new AbortController();
-      syncAbortRef.current = controller;
-      setSyncProgress({
-        done: i,
-        total: targets.length,
-        currentTitle: target.title,
-        stepLabel: `Đang tải tệp (${formatBytes(target.file_size)})...`,
-      });
-      try {
-        const { blob } = await fetchBookBlobCached(target, {
-          cacheOnFetch: false,
-          signal: controller.signal,
-        });
+    try {
+      for (let i = 0; i < targets.length; i += 1) {
         if (stopSyncRef.current) break;
+        const target = targets[i];
+        const controller = new AbortController();
+        syncAbortRef.current = controller;
         setSyncProgress({
           done: i,
           total: targets.length,
           currentTitle: target.title,
-          stepLabel: 'Đang nén & tải gói bảo mật...',
+          stepLabel: `Đang tải tệp (${formatBytes(target.file_size)})...`,
         });
-        const res = await buildAndUploadGuestPack(blob, target);
-        if (stopSyncRef.current) break;
-        onBookPackSynced(target.id, res.storage);
-        successCount += 1;
-      } catch (err) {
-        if (stopSyncRef.current) break;
-        if (isAuthError(err)) {
-          stopSyncRef.current = true;
-          syncAbortRef.current = null;
-          setSyncing(false);
-          setSyncProgress(null);
-          onApiError(err, 'Phiên quản trị đã hết hạn.');
-          return;
+        try {
+          const { blob } = await fetchBookBlobCached(target, {
+            cacheOnFetch: false,
+            signal: controller.signal,
+          });
+          if (stopSyncRef.current) break;
+          setSyncProgress({
+            done: i,
+            total: targets.length,
+            currentTitle: target.title,
+            stepLabel: 'Đang nén & tải gói bảo mật...',
+          });
+          const res = await buildAndUploadGuestPack(blob, target);
+          if (stopSyncRef.current) break;
+          onBookPackSynced(target.id, res.storage);
+          successCount += 1;
+        } catch (err) {
+          if (stopSyncRef.current) break;
+          if (isAuthError(err)) {
+            stopSyncRef.current = true;
+            authFailed = true;
+            onApiError(err, 'Phiên quản trị đã hết hạn.');
+            return;
+          }
+          failCount += 1;
+          console.warn(`Lỗi tạo gói khách cho "${target.title}":`, err);
         }
-        failCount += 1;
-        console.warn(`Lỗi tạo gói khách cho "${target.title}":`, err);
       }
+    } finally {
+      syncAbortRef.current = null;
+      setSyncing(false);
+      setSyncProgress(null);
     }
-    syncAbortRef.current = null;
-    if (stopSyncRef.current && successCount === 0 && failCount === 0) return;
 
-    setSyncing(false);
-    setSyncProgress(null);
+    if (authFailed) return;
+    if (stopSyncRef.current && successCount === 0 && failCount === 0) {
+      onNotify('Đã dừng đồng bộ gói bảo mật.', 'info');
+      return;
+    }
+
     if (successCount > 0) {
       onNotify(
         failCount > 0

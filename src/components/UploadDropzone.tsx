@@ -5,15 +5,13 @@ import {
   HARD_LIMIT_BYTES,
   formatBytes,
   groupBooksIntoShelves,
-  isAuthError,
-  updateBookMetadata,
-  uploadBook,
 } from '@/lib/api';
 import { bookDuplicateKey } from '@/lib/bookMetadata';
-import { inferBatchCommonShelf, resolveUploadShelfPlan } from '@/lib/shelfPlacement';
+import { inferBatchCommonShelf } from '@/lib/shelfPlacement';
 import {
   ACCEPTED_UPLOAD_EXTENSIONS,
   createUploadQueueItems,
+  executeSequentialUploadBatch,
   triggerDiscordReleaseAnnouncement,
 } from '@/lib/uploadBatchHelpers';
 import {
@@ -21,6 +19,7 @@ import {
   UploadDiscordReleaseToggle,
 } from '@/components/UploadBatchShelfBar';
 import { UploadQueueList, type UploadQueueItem } from '@/components/UploadQueueList';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import type { ToastType } from '@/hooks/useToast';
 
 interface UploadDropzoneProps {
@@ -57,11 +56,15 @@ export function UploadDropzone({
   const [batchShelfCustomName, setBatchShelfCustomName] = useState<string | null>(null);
   const [lockedUploadShelf, setLockedUploadShelf] = useState<string | null>(null);
   const [announceDiscord, setAnnounceDiscord] = useState(false);
+  const [pendingDiscordIds, setPendingDiscordIds] = useState<string[]>([]);
+  const [announcingManual, setAnnouncingManual] = useState(false);
   const [progressState, setProgressState] = useState<{
     completed: number;
     total: number;
     currentTitle: string;
   } | null>(null);
+
+  useBodyScrollLock(open);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -162,78 +165,25 @@ export function UploadDropzone({
 
     stopRequestedRef.current = false;
     setStopRequested(false);
+    setPendingDiscordIds([]);
     setLockedUploadShelf(batchShelfForRun);
     setUploading(true);
     setProgressState({ completed: 0, total: targets.length, currentTitle: targets[0].title });
 
-    let successCount = 0;
-    let failCount = 0;
-    let authFailed = false;
-    const uploadedBookIds: string[] = [];
     const shouldAnnounceDiscord = announceDiscord;
-    const workingBooks = [...books];
-
-    for (let index = 0; index < targets.length; index += 1) {
-      if (stopRequestedRef.current || !mountedRef.current) break;
-      const current = targets[index];
-
-      setProgressState({ completed: index, total: targets.length, currentTitle: current.title });
-      updateItem(current.id, { status: 'uploading', errorMessage: undefined });
-
-      try {
-        const autoPlan = resolveUploadShelfPlan(
-          { title: current.title, author: current.author },
-          workingBooks,
-        );
-        const plan = batchShelfForRun
-          ? {
-              shelf: batchShelfForRun,
-              booksToRegroup:
-                autoPlan.shelf.toLocaleLowerCase('vi') === batchShelfForRun.toLocaleLowerCase('vi')
-                  ? autoPlan.booksToRegroup
-                  : ([] as Book[]),
-            }
-          : autoPlan;
-        const result = await uploadBook(current.file, {
-          title: current.title,
-          author: current.author,
-          shelf: plan.shelf,
-        });
-        if (!mountedRef.current) break;
-        successCount += 1;
-        uploadedBookIds.push(result.book.id);
-        workingBooks.push(result.book);
-        onBookUploaded(result.book, result.storage);
-
-        for (const peer of plan.booksToRegroup) {
-          try {
-            const moved = await updateBookMetadata(peer.id, { shelf: plan.shelf });
-            const idx = workingBooks.findIndex((b) => b.id === moved.id);
-            if (idx >= 0) workingBooks[idx] = moved;
-            if (mountedRef.current) onBookUpdated(moved);
-          } catch (regroupErr) {
-            if (isAuthError(regroupErr)) throw regroupErr;
-          }
-        }
-
-        updateItem(current.id, { status: 'done', shelf: result.book.shelf, errorMessage: undefined });
-      } catch (err) {
-        if (!mountedRef.current) break;
-        if (isAuthError(err)) {
-          authFailed = true;
-          onApiError(err, 'Phiên đăng nhập đã hết hạn.');
-          break;
-        }
-        failCount += 1;
-        const message =
-          err instanceof Error ? err.message : `Không thể tải "${current.title}" lên kho.`;
-        updateItem(current.id, { status: 'error', errorMessage: message });
-      }
-
-      if (mountedRef.current) {
-        setProgressState({ completed: index + 1, total: targets.length, currentTitle: current.title });
-      }
-    }
+    const { successCount, failCount, authFailed, uploadedBookIds } =
+      await executeSequentialUploadBatch({
+        targets,
+        existingBooks: books,
+        batchShelfForRun,
+        isStopped: () => stopRequestedRef.current,
+        isMounted: () => mountedRef.current,
+        onProgress: setProgressState,
+        onItemPatch: updateItem,
+        onBookUploaded,
+        onBookUpdated,
+        onApiError,
+      });
 
     if (!mountedRef.current) return;
 
@@ -261,7 +211,15 @@ export function UploadDropzone({
     }
 
     if (shouldAnnounceDiscord && uploadedBookIds.length > 0 && mountedRef.current) {
-      await triggerDiscordReleaseAnnouncement(uploadedBookIds, onNotify, onApiError);
+      if (!stopRequestedRef.current && failCount === 0) {
+        await triggerDiscordReleaseAnnouncement(uploadedBookIds, onNotify, onApiError);
+      } else {
+        setPendingDiscordIds(uploadedBookIds);
+        onNotify(
+          'Tạm hoãn tự gửi thông báo Discord do lô dừng giữa chừng hoặc có tệp lỗi. Bạn có thể bấm gửi thủ công ở góc dưới.',
+          'info',
+        );
+      }
     }
 
     if (!mountedRef.current) return;
@@ -412,7 +370,7 @@ export function UploadDropzone({
               <div className="flex items-center justify-between gap-2 text-xs">
                 <span className="truncate font-medium text-ink">
                   {uploading
-                    ? `Đang xử lý (${progressState.completed + 1}/${progressState.total}): ${progressState.currentTitle}`
+                    ? `Đang xử lý (${Math.min(progressState.completed + 1, progressState.total)}/${progressState.total}): ${progressState.currentTitle}`
                     : `Đã xử lý ${progressState.completed}/${progressState.total} tệp`}
                 </span>
                 <span className="shrink-0 font-medium text-accent">{progressPercent}%</span>
@@ -481,6 +439,27 @@ export function UploadDropzone({
                 <RotateCcw className="h-3.5 w-3.5" /> Thử lại {errorCount} tệp lỗi
               </button>
             )}
+            {!uploading && pendingDiscordIds.length > 0 && (
+              <button
+                type="button"
+                disabled={announcingManual}
+                onClick={async () => {
+                  setAnnouncingManual(true);
+                  const sent = await triggerDiscordReleaseAnnouncement(
+                    pendingDiscordIds,
+                    onNotify,
+                    onApiError,
+                  );
+                  if (mountedRef.current) {
+                    if (sent) setPendingDiscordIds([]);
+                    setAnnouncingManual(false);
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-3 py-2 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-500/20 disabled:opacity-50 dark:text-indigo-300"
+              >
+                {announcingManual ? 'Đang báo Discord...' : `Báo Discord (${pendingDiscordIds.length} tập đã lên)`}
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -508,7 +487,7 @@ export function UploadDropzone({
                 </button>
                 <button
                   type="button"
-                  disabled={queuedItems.length === 0}
+                  disabled={queuedItems.length === 0 || exceedsQuota}
                   onClick={() => void handleStartUpload()}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover disabled:opacity-45 dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
                 >

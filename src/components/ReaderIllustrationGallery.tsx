@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpRight, Eye, EyeOff, Image as ImageIcon, Loader2, Lock } from 'lucide-react';
+import { ArrowUpRight, Eye, EyeOff, Image as ImageIcon, Loader2, Lock, RefreshCw } from 'lucide-react';
 import type { Book, Chapter, GuestBookIllustrationItem } from '@/types';
 import {
   fetchGuestBookIllustrations,
@@ -7,6 +7,50 @@ import {
 } from '@/lib/guestCrypto';
 import { paintProtectedThumbnailCanvas } from '@/lib/guestCanvasPaint';
 import type { ReaderThemePalette } from '@/lib/readerConfig';
+
+const MAX_CONCURRENT_THUMB_FETCHES = 3;
+let activeThumbFetches = 0;
+const thumbFetchQueue: Array<() => void> = [];
+
+function scheduleThumbFetch<T>(
+  task: () => Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const run = () => {
+      if (signal.aborted) {
+        reject(new DOMException('Aborted', 'AbortError'));
+        return;
+      }
+      activeThumbFetches += 1;
+      task()
+        .then(resolve, reject)
+        .finally(() => {
+          activeThumbFetches = Math.max(0, activeThumbFetches - 1);
+          const next = thumbFetchQueue.shift();
+          if (next) next();
+        });
+    };
+    if (activeThumbFetches < MAX_CONCURRENT_THUMB_FETCHES) {
+      run();
+    } else {
+      const onAbort = () => {
+        const idx = thumbFetchQueue.indexOf(run);
+        if (idx >= 0) thumbFetchQueue.splice(idx, 1);
+        reject(new DOMException('Aborted', 'AbortError'));
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      thumbFetchQueue.push(() => {
+        signal.removeEventListener('abort', onAbort);
+        run();
+      });
+    }
+  });
+}
 
 interface GalleryItem {
   key: string;
@@ -27,7 +71,7 @@ export interface ReaderIllustrationGalleryProps {
   palette: ReaderThemePalette;
   onSelectChapter: (chapterIndex: number) => void;
   onOpenDomImage?: (src: string, alt: string) => void;
-  onOpenGuestImage?: (bitmap: ImageBitmap, alt: string) => void;
+  onOpenGuestImage?: (bitmap: ImageBitmap, alt: string, ownedBitmap?: boolean) => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
   onCloseDrawer: () => void;
 }
@@ -45,14 +89,17 @@ function GuestWatermarkedThumb({
   watermarkLabel: string;
   alt: string;
   palette: ReaderThemePalette;
-  onOpen: (bitmap: ImageBitmap) => void;
+  onOpen: (bitmap: ImageBitmap, ownedBitmap?: boolean) => void;
 }) {
   const hostRef = useRef<HTMLButtonElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bitmapRef = useRef<ImageBitmap | null>(null);
+  const watermarkRef = useRef(watermarkLabel);
+  watermarkRef.current = watermarkLabel;
   const [visible, setVisible] = useState(false);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     const el = hostRef.current;
@@ -74,8 +121,13 @@ function GuestWatermarkedThumb({
     if (!visible) return;
     const controller = new AbortController();
     let cancelled = false;
+    setFailed(false);
+    setReady(false);
 
-    fetchGuestMediaBitmap(bookId, mediaIndex, controller.signal)
+    scheduleThumbFetch(
+      () => fetchGuestMediaBitmap(bookId, mediaIndex, controller.signal),
+      controller.signal,
+    )
       .then((bmp) => {
         if (cancelled) {
           bmp.close();
@@ -86,7 +138,7 @@ function GuestWatermarkedThumb({
           paintProtectedThumbnailCanvas({
             canvas: canvasRef.current,
             bitmap: bmp,
-            watermarkLabel,
+            watermarkLabel: watermarkRef.current,
           });
         }
         setReady(true);
@@ -101,7 +153,7 @@ function GuestWatermarkedThumb({
       bitmapRef.current?.close();
       bitmapRef.current = null;
     };
-  }, [bookId, mediaIndex, visible, watermarkLabel]);
+  }, [bookId, mediaIndex, retryCount, visible]);
 
   useEffect(() => {
     if (ready && bitmapRef.current && canvasRef.current) {
@@ -118,9 +170,22 @@ function GuestWatermarkedThumb({
       ref={hostRef}
       type="button"
       onClick={() => {
-        if (bitmapRef.current) onOpen(bitmapRef.current);
+        if (failed) {
+          setRetryCount((n) => n + 1);
+          return;
+        }
+        const bmp = bitmapRef.current;
+        if (!bmp || bmp.width <= 0 || bmp.height <= 0) return;
+        // Nhân bản ImageBitmap độc lập để khi đóng ngăn kéo (unmount & close bmp gốc) Lightbox vẫn an toàn
+        void createImageBitmap(bmp)
+          .then((cloned) => onOpen(cloned, true))
+          .catch(() => {
+            if (bitmapRef.current && bitmapRef.current.width > 0) {
+              onOpen(bitmapRef.current, false);
+            }
+          });
       }}
-      aria-label={alt}
+      aria-label={failed ? `Thử tải lại ${alt}` : alt}
       className="relative aspect-[3/4] w-full overflow-hidden bg-black/10 text-left"
     >
       <canvas
@@ -131,9 +196,16 @@ function GuestWatermarkedThumb({
       />
       {!ready && (
         <div
-          className={`absolute inset-0 flex items-center justify-center text-[11px] ${palette.textSecondary}`}
+          className={`absolute inset-0 flex flex-col items-center justify-center gap-1 px-2 text-center text-[11px] ${palette.textSecondary}`}
         >
-          {failed ? 'Lỗi tải ảnh' : <Loader2 className="h-4 w-4 animate-spin opacity-60" />}
+          {failed ? (
+            <>
+              <RefreshCw className="h-3.5 w-3.5 opacity-75" />
+              <span>Chạm để thử lại</span>
+            </>
+          ) : (
+            <Loader2 className="h-4 w-4 animate-spin opacity-60" />
+          )}
         </div>
       )}
     </button>
@@ -280,8 +352,8 @@ export function ReaderIllustrationGallery({
                     >
                       <Lock className="h-4 w-4 text-amber-500" />
                       <span className="text-[11px] font-semibold">Chưa đọc tới</span>
-                      <span className={`line-clamp-2 text-[10px] ${palette.textSecondary}`}>
-                        {item.chapterTitle}
+                      <span className={`line-clamp-1 text-[10px] ${palette.textSecondary}`}>
+                        Phần {item.chapterNumber}
                       </span>
                       <span className="mt-0.5 rounded-md border border-current/20 px-1.5 py-0.5 text-[10px] font-medium">
                         Bấm để hé mở
@@ -307,7 +379,7 @@ export function ReaderIllustrationGallery({
                       watermarkLabel={watermarkLabel}
                       alt={altText}
                       palette={palette}
-                      onOpen={(bmp) => onOpenGuestImage?.(bmp, altText)}
+                      onOpen={(bmp, owned) => onOpenGuestImage?.(bmp, altText, owned)}
                     />
                   ) : null}
 
@@ -317,12 +389,13 @@ export function ReaderIllustrationGallery({
                     </span>
                     <button
                       type="button"
+                      disabled={isLockedSpoiler}
                       onClick={() => {
                         onSelectChapter(item.chapterIndex);
                         onCloseDrawer();
                       }}
-                      title={`Tới ${item.chapterTitle}`}
-                      className={`inline-flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 text-[10.5px] font-semibold text-accent transition ${palette.hover}`}
+                      title={isLockedSpoiler ? 'Hé mở ảnh trước khi nhảy tới chương chưa đọc' : `Tới ${item.chapterTitle}`}
+                      className={`inline-flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 text-[10.5px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${palette.accentText} ${palette.hover}`}
                     >
                       <span>Tới</span>
                       <ArrowUpRight className="h-2.5 w-2.5" />

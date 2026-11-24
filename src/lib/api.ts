@@ -29,6 +29,7 @@ import {
   getCachedBookBlob,
   getCachedCoverBlob,
   getLocalBooks,
+  getLocalProgress,
   putLocalProgress,
   setCachedBookBlob,
   setCachedCoverBlob,
@@ -267,13 +268,38 @@ export async function saveReadingProgress(
     options?.readingDeltaSec && options.readingDeltaSec > 0
       ? Math.min(300, Math.floor(options.readingDeltaSec))
       : 0;
-  const mergedLocal: ReadingProgress =
-    deltaSec > 0
-      ? { ...progress, readingSeconds: (progress.readingSeconds ?? 0) + deltaSec }
-      : progress;
+  const shouldWriteLocal = !isCloudMode || getActiveAuthSession().role === 'owner';
 
-  if (!isCloudMode || getActiveAuthSession().role === 'owner') {
+  const persistLocalPreservingSeconds = async () => {
+    const existing = await getLocalProgress(bookId);
+    const baseSeconds = progress.readingSeconds ?? existing?.readingSeconds ?? 0;
+    const totalSeconds = baseSeconds + deltaSec;
+    const mergedLocal: ReadingProgress =
+      totalSeconds > 0 ? { ...progress, readingSeconds: totalSeconds } : progress;
     await putLocalProgress(bookId, mergedLocal);
+  };
+
+  // Vá H-01: khi pagehide (keepalive), phải khởi tạo fetch() ĐỒNG BỘ trước khi await IndexedDB
+  if (isCloudMode && options?.keepalive) {
+    const cloudPromise = apiFetch(`/api/progress/${bookId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(deltaSec > 0 ? { ...progress, readingDeltaSec: deltaSec } : progress),
+      keepalive: true,
+    });
+    if (shouldWriteLocal) {
+      void persistLocalPreservingSeconds().catch(() => undefined);
+    }
+    const res = await cloudPromise;
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error || 'Không thể đồng bộ tiến độ đọc.');
+    }
+    return;
+  }
+
+  if (shouldWriteLocal) {
+    await persistLocalPreservingSeconds();
   }
   if (!isCloudMode) {
     if (deltaSec > 0) {
@@ -288,7 +314,6 @@ export async function saveReadingProgress(
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(deltaSec > 0 ? { ...progress, readingDeltaSec: deltaSec } : progress),
-    ...(options?.keepalive ? { keepalive: true } : {}),
   });
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string };

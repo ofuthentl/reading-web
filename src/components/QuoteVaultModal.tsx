@@ -10,6 +10,7 @@ import {
   X,
 } from 'lucide-react';
 import type { AuthRole, Book, HighlightColor, LibraryHighlightItem } from '@/types';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import {
   HIGHLIGHT_COLOR_OPTIONS,
   deleteBookHighlight,
@@ -23,6 +24,7 @@ export interface QuoteVaultModalProps {
   sessionRole?: AuthRole;
   onClose: () => void;
   onOpenHighlightBook?: (book: Book, chapterIndex: number, scrollRatio: number) => void;
+  onDeletedHighlight?: (highlightId: string, bookId: string) => void;
 }
 
 export function QuoteVaultModal({
@@ -31,12 +33,14 @@ export function QuoteVaultModal({
   sessionRole = 'owner',
   onClose,
   onOpenHighlightBook,
+  onDeletedHighlight,
 }: QuoteVaultModalProps) {
   const [items, setItems] = useState<LibraryHighlightItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [colorFilter, setColorFilter] = useState<HighlightColor | 'all'>('all');
   const protectCopy = sessionRole === 'guest';
+  useBodyScrollLock(open);
 
   useEffect(() => {
     if (!open) return;
@@ -58,10 +62,13 @@ export function QuoteVaultModal({
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [onClose, open]);
 
   const booksById = useMemo(() => {
@@ -95,19 +102,34 @@ export function QuoteVaultModal({
     try {
       await deleteBookHighlight(hl.id, hl.bookId);
       setItems((prev) => prev.filter((it) => it.id !== hl.id));
+      onDeletedHighlight?.(hl.id, hl.bookId);
     } catch {
       // Ignore transient delete errors
     }
   };
 
   if (!open || typeof document === 'undefined') return null;
+  const allowInputClipboard = (target: EventTarget | null) =>
+    target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 
   return createPortal(
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-3 backdrop-blur-sm sm:p-5"
       onClick={onClose}
-      onCopy={protectCopy ? (e) => e.preventDefault() : undefined}
-      onContextMenu={protectCopy ? (e) => e.preventDefault() : undefined}
+      onCopy={
+        protectCopy
+          ? (e) => {
+              if (!allowInputClipboard(e.target)) e.preventDefault();
+            }
+          : undefined
+      }
+      onContextMenu={
+        protectCopy
+          ? (e) => {
+              if (!allowInputClipboard(e.target)) e.preventDefault();
+            }
+          : undefined
+      }
     >
       <div
         role="dialog"

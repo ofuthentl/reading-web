@@ -338,7 +338,8 @@ export function inferBatchCommonShelf(
     }
   }
 
-  const minRequiredCount = Math.max(2, Math.ceil(validItems.length * 0.5));
+  // Yêu cầu >= 80% lô khớp chung tên kệ (tránh kéo 1 cuốn Bộ B vào kệ Bộ A khi tải lẫn 2A + 1B)
+  const minRequiredCount = Math.max(2, Math.ceil(validItems.length * 0.8));
   let best: { key: string; label: string; count: number } | null = null;
 
   for (const [key, entry] of stats.entries()) {
@@ -365,6 +366,16 @@ export function inferBatchCommonShelf(
   }
 
   if (!best) return null;
+
+  // Nếu có tập trong lô thuộc 1 bộ truyện rõ ràng khác hẳn best.key → không tự bật gom lô
+  for (let idx = 0; idx < validItems.length; idx += 1) {
+    if (itemDirectMaps[idx].has(best.key)) continue;
+    const explicitSeries = extractSeriesName(validItems[idx].title);
+    if (explicitSeries && normalizeKey(explicitSeries) !== best.key) {
+      return null;
+    }
+  }
+
   const resolved = resolveExistingSeriesShelf(best.label, existingBooks);
   return resolved.shelf || existingShelfMap.get(best.key) || cleanShelfLabel(best.label);
 }

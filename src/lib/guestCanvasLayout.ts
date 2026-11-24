@@ -152,11 +152,18 @@ function wrapInlineSpans(
 
       if (currentLine.length > 0) commitLine();
 
-      if (tokenWidth <= limitX - startX) {
+      const availWidth = limitX - cursorX;
+      if (tokenWidth <= availWidth) {
+        pushFragment(token, cursorX, bold, italic);
+        cursorX += tokenWidth;
+      } else if (cursorX > startX && tokenWidth <= limitX - startX) {
+        // Từ đầu dòng quá dài khi thụt lề: bỏ thụt lề tạm cho từ này để không tràn biên phải
+        cursorX = startX;
         pushFragment(token, cursorX, bold, italic);
         cursorX += tokenWidth;
       } else {
-        const chunks = splitWordToFit(token, limitX - startX, fontSpec);
+        const splitBudget = Math.max(40, limitX - cursorX);
+        const chunks = splitWordToFit(token, splitBudget, fontSpec);
         for (let idx = 0; idx < chunks.length; idx += 1) {
           const piece = chunks[idx];
           const w = measureCanvasTextWidth(piece, fontSpec);

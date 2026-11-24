@@ -9,7 +9,7 @@ import type {
   SaveProgressOptions,
 } from '@/types';
 import { findNextBookInShelf } from '@/lib/nextVolume';
-import type { GuestReaderSessionState } from '@/hooks/useBookReader';
+import type { BookOpenJumpTarget, GuestReaderSessionState } from '@/hooks/useBookReader';
 
 const LazyReaderView = lazy(() =>
   import('@/components/ReaderView').then((mod) => ({ default: mod.ReaderView })),
@@ -25,13 +25,14 @@ export interface ActiveReaderHostProps {
   parsedBook: ParsedBook | null;
   guestSession: GuestReaderSessionState | null;
   loadedFromCache: boolean;
+  initialJump?: (BookOpenJumpTarget & { bookId: string }) | null;
   settings: ReaderSettings;
   session: AuthSessionInfo;
   books: Book[];
   progress: Record<string, ReadingProgress>;
   onUpdateSettings: (patch: Partial<ReaderSettings>) => void;
   onSaveProgress: (progress: ReadingProgress, options?: SaveProgressOptions) => void;
-  onOpenBook: (book: Book) => void;
+  onOpenBook: (book: Book, jumpTarget?: BookOpenJumpTarget) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
   onCancelOpening: () => void;
   onClose: () => void;
@@ -43,6 +44,7 @@ export function ActiveReaderHost({
   parsedBook,
   guestSession,
   loadedFromCache,
+  initialJump = null,
   settings,
   session,
   books,
@@ -59,18 +61,41 @@ export function ActiveReaderHost({
     [activeBook, books, session.role],
   );
 
+  const activeInitialProgress = useMemo<ReadingProgress | undefined>(() => {
+    if (!activeBook) return undefined;
+    const saved = progress[activeBook.id];
+    if (initialJump && initialJump.bookId === activeBook.id) {
+      return {
+        chapterId: '',
+        chapterIndex: initialJump.chapterIndex,
+        totalChapters: saved?.totalChapters ?? 1,
+        scrollRatio: initialJump.scrollRatio,
+        scrollTop: 0,
+        completed: Boolean(saved?.completed),
+        updatedAt: Date.now(),
+      };
+    }
+    return saved;
+  }, [activeBook, initialJump, progress]);
+
+  const readerKey = activeBook
+    ? initialJump && initialJump.bookId === activeBook.id
+      ? `${activeBook.id}:${initialJump.chapterIndex}:${initialJump.scrollRatio}`
+      : activeBook.id
+    : 'none';
+
   return (
     <>
       {activeBook && parsedBook && (
         <div className="fixed inset-0 z-40 flex max-h-dvh flex-col overflow-hidden">
           <Suspense fallback={null}>
             <LazyReaderView
-              key={activeBook.id}
+              key={readerKey}
               book={activeBook}
               allBooks={books}
               parsedBook={parsedBook}
               loadedFromCache={loadedFromCache}
-              initialProgress={progress[activeBook.id]}
+              initialProgress={activeInitialProgress}
               nextBook={nextBook}
               settings={settings}
               onUpdateSettings={onUpdateSettings}
@@ -87,14 +112,14 @@ export function ActiveReaderHost({
         <div className="fixed inset-0 z-40 flex max-h-dvh flex-col overflow-hidden">
           <Suspense fallback={null}>
             <LazyGuestCanvasReader
-              key={activeBook.id}
+              key={readerKey}
               book={activeBook}
               allBooks={books}
               tocChapters={guestSession.chapters}
               watermarkLabel={
                 session.watermarkLabel || guestSession.watermarkLabel || 'Guest'
               }
-              initialProgress={progress[activeBook.id]}
+              initialProgress={activeInitialProgress}
               nextBook={nextBook}
               settings={settings}
               onUpdateSettings={onUpdateSettings}
