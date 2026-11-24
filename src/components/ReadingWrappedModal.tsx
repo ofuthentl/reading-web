@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Award, Calendar, Download, Flame, Loader2, Sparkles, X } from 'lucide-react';
 import type { Book, ReadingProgress } from '@/types';
@@ -15,6 +15,7 @@ export interface ReadingWrappedModalProps {
   books: readonly Book[];
   progress: Readonly<Record<string, ReadingProgress>>;
   activity: ReaderActivityReport | null;
+  shelfCovers?: Readonly<Record<string, string>>;
   completedBooks: number;
   readPages: number;
   readerLevel: number;
@@ -32,6 +33,7 @@ export function ReadingWrappedModal({
   books,
   progress,
   activity,
+  shelfCovers,
   completedBooks,
   readPages,
   readerLevel,
@@ -43,6 +45,18 @@ export function ReadingWrappedModal({
 
   useBodyScrollLock(open);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [onClose, open]);
+
   const summary = useMemo(
     () =>
       computeWrappedSummary({
@@ -50,11 +64,12 @@ export function ReadingWrappedModal({
         books,
         progress,
         activity,
+        shelfCovers,
         completedBooks,
         readPages,
         readerLevel,
       }),
-    [activity, books, completedBooks, period, progress, readPages, readerLevel],
+    [activity, books, completedBooks, period, progress, readPages, readerLevel, shelfCovers],
   );
 
   if (!open || typeof document === 'undefined') return null;
@@ -163,11 +178,16 @@ export function ReadingWrappedModal({
             <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
               <p className="inline-flex items-center gap-1 text-[11px] text-slate-400">
                 <Award className="h-3 w-3 text-emerald-400" />
-                Hoàn thành
+                Hoàn thành kỳ
               </p>
               <p className="mt-1 font-display text-lg font-bold text-white">
                 {summary.completedBooks} cuốn
               </p>
+              {summary.totalCompletedBooks > summary.completedBooks && (
+                <p className="mt-0.5 text-[10px] text-slate-400">
+                  Tổng kho: {summary.totalCompletedBooks} cuốn
+                </p>
+              )}
             </div>
           </div>
 
@@ -192,11 +212,14 @@ export function ReadingWrappedModal({
                         {sh.shelfName}
                       </p>
                       <p className="truncate text-xs text-slate-400">
-                        {sh.author} · Hoàn thành {sh.completedCount}/{sh.totalVolumes} tập
+                        {sh.author} · Xong {sh.completedCount}/{sh.totalVolumes} tập kỳ này
                       </p>
                     </div>
-                    <span className="shrink-0 rounded-lg bg-amber-500/15 px-2.5 py-1 text-xs font-semibold tabular-nums text-amber-300">
-                      {formatReadingDuration(sh.readingSeconds, true)}
+                    <span
+                      title="Thời lượng đọc tích luỹ trên các tập hoạt động trong kỳ"
+                      className="shrink-0 rounded-lg bg-amber-500/15 px-2.5 py-1 text-xs font-semibold tabular-nums text-amber-300"
+                    >
+                      tích luỹ {formatReadingDuration(sh.readingSeconds, true)}
                     </span>
                   </li>
                 ))}
@@ -234,7 +257,7 @@ export function ReadingWrappedModal({
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-white/[0.02] px-5 py-3.5">
           <span className="text-xs text-slate-400">
-            Độc giả LV.{summary.readerLevel} · ~{summary.readPages.toLocaleString('vi-VN')} trang đã đọc
+            Tích luỹ toàn kho · LV.{summary.readerLevel} · ~{summary.readPages.toLocaleString('vi-VN')} trang đã đọc
           </span>
           <button
             type="button"

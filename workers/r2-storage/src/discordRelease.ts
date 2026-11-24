@@ -31,6 +31,7 @@ export interface DiscordReleaseAnnounceResult {
   announcedGroups: number;
   announcedBooks: number;
   failedGroups: number;
+  truncatedGroups?: number;
   message: string;
   errors?: string[];
 }
@@ -110,7 +111,11 @@ async function readCoverBytesFromR2(
   if (!coverKey) return null;
   try {
     const obj = await bucket.get(coverKey);
-    if (!obj || obj.size <= 0 || obj.size > MAX_COVER_BYTES) return null;
+    if (!obj) return null;
+    if (obj.size <= 0 || obj.size > MAX_COVER_BYTES) {
+      await obj.body?.cancel().catch(() => undefined);
+      return null;
+    }
     const buffer = await obj.arrayBuffer();
     if (!buffer || buffer.byteLength === 0) return null;
     return new Uint8Array(buffer);
@@ -318,7 +323,9 @@ export async function announceDiscordReleases(
   let failedGroups = 0;
   const errors: string[] = [];
 
-  const groupEntries = Array.from(grouped.entries()).slice(0, MAX_GROUPS_PER_ANNOUNCE);
+  const allGroupEntries = Array.from(grouped.entries());
+  const truncatedGroups = Math.max(0, allGroupEntries.length - MAX_GROUPS_PER_ANNOUNCE);
+  const groupEntries = allGroupEntries.slice(0, MAX_GROUPS_PER_ANNOUNCE);
   let groupIndex = 0;
   for (const [shelfKey, entry] of groupEntries) {
     if (groupIndex >= 4) {
@@ -327,17 +334,20 @@ export async function announceDiscordReleases(
     groupIndex += 1;
     const sortedBooks = sortBooksNaturally(entry.books);
     const pref = prefsMap.get(shelfKey);
-    // PA-1: luôn ưu tiên ảnh bìa đại diện Admin đã chọn cho kệ (shelf_prefs.cover_book_id), fallback tập đầu có bìa
+    // PA-1: luôn ưu tiên ảnh bìa đại diện Admin đã chọn cho kệ (shelf_prefs.cover_book_id),
+    // nếu đọc R2 thất bại / thiếu / > 5 MB thì tự động fallback sang ảnh bìa của tập vừa tải lên.
     const preferredCoverKey = pref?.coverBookId
       ? (sortedBooks.find((b) => b.id === pref.coverBookId && Boolean(b.cover_key))?.cover_key ??
           extraCoverMap.get(pref.coverBookId) ??
           null)
       : null;
     const uploadedCoverKey = sortedBooks.find((b) => Boolean(b.cover_key))?.cover_key ?? null;
-    const coverBytes = await readCoverBytesFromR2(
-      env.BOOKS_BUCKET,
-      preferredCoverKey || uploadedCoverKey,
-    );
+    let coverBytes = preferredCoverKey
+      ? await readCoverBytesFromR2(env.BOOKS_BUCKET, preferredCoverKey)
+      : null;
+    if (!coverBytes && uploadedCoverKey && uploadedCoverKey !== preferredCoverKey) {
+      coverBytes = await readCoverBytesFromR2(env.BOOKS_BUCKET, uploadedCoverKey);
+    }
 
     const groupInput: DiscordReleaseGroupInput = {
       shelfKey,
@@ -382,10 +392,14 @@ export async function announceDiscordReleases(
   }
 
   const ok = announcedGroups > 0 && failedGroups === 0;
+  const truncatedNote =
+    truncatedGroups > 0
+      ? ` (bỏ qua ${truncatedGroups} bộ vượt giới hạn ${MAX_GROUPS_PER_ANNOUNCE} bộ/lô)`
+      : '';
   const message = ok
-    ? `Đã đăng ${announcedGroups} thông báo (${announcedBooks} tập mới) lên kênh Discord.`
+    ? `Đã đăng ${announcedGroups} thông báo (${announcedBooks} tập mới) lên kênh Discord.${truncatedNote}`
     : announcedGroups > 0
-      ? `Đã đăng ${announcedGroups} thông báo lên Discord, ${failedGroups} bộ gặp lỗi.`
+      ? `Đã đăng ${announcedGroups} thông báo lên Discord, ${failedGroups} bộ gặp lỗi.${truncatedNote}`
       : `Không thể gửi thông báo lên Discord (${errors[0] || 'lỗi không xác định'}).`;
 
   return {
@@ -395,6 +409,7 @@ export async function announceDiscordReleases(
     announcedGroups,
     announcedBooks,
     failedGroups,
+    ...(truncatedGroups > 0 ? { truncatedGroups } : {}),
     message,
     ...(errors.length > 0 ? { errors } : {}),
   };

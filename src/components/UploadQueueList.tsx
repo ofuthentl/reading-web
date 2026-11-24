@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import type { Book, BookFileType } from '@/types';
 import { formatBytes } from '@/lib/api';
-import { resolvePreviewShelfName } from '@/lib/shelfPlacement';
+import { resolvePreviewShelfName } from '@/lib/shelfUploadPlanner';
 
 export type QueueItemStatus = 'queued' | 'skipped' | 'uploading' | 'done' | 'error' | 'invalid';
 

@@ -430,7 +430,7 @@ export function drawCanvasLayoutItems(options: {
         const baseW = ctx.measureText(frag.text).width;
         const rtSize = Math.max(9, Math.round(item.fontSize * 0.52));
         ctx.save();
-        ctx.font = buildCanvasFontSpec(font, rtSize, false, false);
+        ctx.font = buildCanvasFontSpec(item.isHeading ? 'serif' : font, rtSize, false, false);
         ctx.fillStyle = palette.inkSecondary;
         ctx.textAlign = 'center';
         ctx.fillText(frag.rt, offsetX + frag.x + baseW / 2, baselineY - Math.round(item.fontSize * 0.92));

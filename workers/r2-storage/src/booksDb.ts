@@ -3,8 +3,8 @@ import {
   ensureCatalogEnhancementsTables,
   loadCatalogEnhancementsSnapshot,
 } from './catalogEnhancementsDb';
-import { loadAllShelfRatingsMap } from './communityDb';
-import { buildDeleteTargetCommentsStatements } from './communityReactionsDb';
+import { ensureCommunityTables, loadAllShelfRatingsMap } from './communityDb';
+import { deleteTargetCommentsSafely } from './communityReactionsDb';
 import {
   type ProgressRow,
   deleteReadingProgress,
@@ -358,7 +358,7 @@ export async function deleteSingleBook(env: Env, bookId: string) {
     env.DB.prepare('DELETE FROM book_highlights WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
     env.DB.prepare('DELETE FROM user_plan_to_read_books WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
     env.DB.prepare("DELETE FROM library_ratings WHERE target_type = 'book' AND target_key = ?").bind(bookId).run().catch(() => undefined),
-    env.DB.batch(buildDeleteTargetCommentsStatements(env.DB, 'book', [bookId])).catch(() => undefined),
+    deleteTargetCommentsSafely(env.DB, 'book', [bookId], ensureCommunityTables),
   ]);
   await cleanupOrphanShelves(env.DB, [toShelfAccessKey(existing.shelf)]);
 
@@ -433,7 +433,7 @@ export async function bulkDeleteBooks(env: Env, rawIds: unknown) {
       env.DB.prepare(`DELETE FROM book_highlights WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       env.DB.prepare(`DELETE FROM user_plan_to_read_books WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       env.DB.prepare(`DELETE FROM library_ratings WHERE target_type = 'book' AND target_key IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
-      env.DB.batch(buildDeleteTargetCommentsStatements(env.DB, 'book', chunk)).catch(() => undefined),
+      deleteTargetCommentsSafely(env.DB, 'book', chunk, ensureCommunityTables),
     ]);
   }
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Book, ShelfGroup } from '@/types';
 import { getBookSortTitle, pickClothCoverColor } from '@/lib/bookMetadata';
 import { extractVolumeNumber } from '@/lib/shelfSummary';
@@ -41,6 +41,9 @@ function FanLayerCover({
   enabled: boolean;
 }) {
   const [imgFailed, setImgFailed] = useState(false);
+  useEffect(() => {
+    setImgFailed(false);
+  }, [book.cover_key]);
   const coverUrl = useCoverUrl(book.cover_key, enabled);
   const showImg = Boolean(coverUrl && !imgFailed);
   const clothColor = pickClothCoverColor(`${book.id}-${book.title}`);

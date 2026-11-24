@@ -16,6 +16,8 @@ export function useMobileLeftEdgeDimGesture(
   const [hudPercent, setHudPercent] = useState<number | null>(null);
   const dimRef = useRef(nightDimPercent);
   dimRef.current = nightDimPercent;
+  const onUpdateDimRef = useRef(onUpdateDim);
+  onUpdateDimRef.current = onUpdateDim;
   const hideTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -57,7 +59,7 @@ export function useMobileLeftEdgeDimGesture(
       const deltaPercent = Math.round(dy / 4.5);
       const next = Math.min(50, Math.max(0, gesture.baseDim + deltaPercent));
       if (next !== dimRef.current) {
-        onUpdateDim(next);
+        onUpdateDimRef.current(next);
       }
       setHudPercent(next);
       if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current);
@@ -82,7 +84,7 @@ export function useMobileLeftEdgeDimGesture(
       window.removeEventListener('touchcancel', finishGesture);
       if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current);
     };
-  }, [onUpdateDim]);
+  }, []);
 
   return hudPercent;
 }
@@ -111,12 +113,33 @@ export function usePullToNextChapter(options: {
     let currentProgress = 0;
     let wheelAccum = 0;
     let bottomSettledAt = 0;
+    let lastWheelAt = 0;
+    let deliberateGestureReady = false;
     let wheelResetTimer: number | null = null;
+    const mountedAt = Date.now();
 
     const isAtBottom = () => el.scrollTop + el.clientHeight >= el.scrollHeight - 6;
+    const isShortChapter = () => el.scrollHeight <= el.clientHeight + 8;
+    const isIgnoredTarget = (target: EventTarget | null) =>
+      Boolean(
+        (target as HTMLElement | null)?.closest(
+          '[data-community-section], button, a, input, select, textarea, [role="dialog"]',
+        ),
+      );
+
+    const resetPullState = () => {
+      startAtBottomY = null;
+      currentProgress = 0;
+      setPullProgress(0);
+    };
 
     const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 1 && isAtBottom()) {
+      if (
+        e.touches.length === 1 &&
+        isAtBottom() &&
+        !isIgnoredTarget(e.target) &&
+        !window.getSelection()?.toString()
+      ) {
         startAtBottomY = e.touches[0].clientY;
         currentProgress = 0;
       } else {
@@ -127,9 +150,7 @@ export function usePullToNextChapter(options: {
     const onTouchMove = (e: TouchEvent) => {
       if (startAtBottomY === null || e.touches.length !== 1) return;
       if (!isAtBottom()) {
-        startAtBottomY = null;
-        currentProgress = 0;
-        setPullProgress(0);
+        resetPullState();
         return;
       }
       const pullDy = startAtBottomY - e.touches[0].clientY;
@@ -138,21 +159,26 @@ export function usePullToNextChapter(options: {
         setPullProgress(0);
         return;
       }
-      currentProgress = Math.min(1, (pullDy - 6) / PULL_THRESHOLD_PX);
+      const threshold = isShortChapter() ? PULL_THRESHOLD_PX + 28 : PULL_THRESHOLD_PX;
+      currentProgress = Math.min(1, (pullDy - 6) / threshold);
       setPullProgress(currentProgress);
     };
 
     const onTouchEnd = () => {
       const triggered = currentProgress >= 1;
-      startAtBottomY = null;
-      currentProgress = 0;
-      setPullProgress(0);
+      resetPullState();
       if (triggered) advanceRef.current();
     };
 
+    const onTouchCancel = () => {
+      resetPullState();
+    };
+
     const onWheel = (e: WheelEvent) => {
+      if (isIgnoredTarget(e.target)) return;
       if (!isAtBottom()) {
         bottomSettledAt = 0;
+        deliberateGestureReady = false;
         wheelAccum = 0;
         if (currentProgress > 0) {
           currentProgress = 0;
@@ -161,20 +187,42 @@ export function usePullToNextChapter(options: {
         return;
       }
       const now = Date.now();
-      if (bottomSettledAt === 0) {
-        bottomSettledAt = now;
-        return;
-      }
-      if (now - bottomSettledAt < 380 || e.deltaY <= 0) {
-        if (e.deltaY < 0) {
-          wheelAccum = 0;
+      if (e.deltaY <= 0) {
+        wheelAccum = 0;
+        if (currentProgress > 0) {
           currentProgress = 0;
           setPullProgress(0);
         }
+        lastWheelAt = now;
         return;
       }
-      wheelAccum += Math.min(48, e.deltaY * 0.45);
-      const prog = Math.min(1, wheelAccum / 135);
+      const shortCh = isShortChapter();
+      if (shortCh && now - mountedAt < 700) {
+        lastWheelAt = now;
+        return;
+      }
+      if (bottomSettledAt === 0) {
+        bottomSettledAt = now;
+        lastWheelAt = now;
+        deliberateGestureReady = false;
+        return;
+      }
+      const gapMs = now - lastWheelAt;
+      lastWheelAt = now;
+      if (gapMs >= 160) {
+        deliberateGestureReady = true;
+      }
+      const settleWaitMs = shortCh ? 620 : 420;
+      if (!deliberateGestureReady && now - bottomSettledAt < settleWaitMs) {
+        return;
+      }
+      // Chặn quán tính trackpad kéo dài liên tục khi vừa chạm đáy mà chưa ngắt nhịp
+      if (!deliberateGestureReady && gapMs < 55 && Math.abs(e.deltaY) < 40) {
+        return;
+      }
+      const targetAccum = shortCh ? 200 : 145;
+      wheelAccum += Math.min(44, e.deltaY * 0.42);
+      const prog = Math.min(1, wheelAccum / targetAccum);
       currentProgress = prog;
       setPullProgress(prog);
 
@@ -182,6 +230,7 @@ export function usePullToNextChapter(options: {
       if (prog >= 1) {
         wheelAccum = 0;
         bottomSettledAt = 0;
+        deliberateGestureReady = false;
         currentProgress = 0;
         setPullProgress(0);
         advanceRef.current();
@@ -197,13 +246,13 @@ export function usePullToNextChapter(options: {
     el.addEventListener('touchstart', onTouchStart, { passive: true });
     el.addEventListener('touchmove', onTouchMove, { passive: true });
     el.addEventListener('touchend', onTouchEnd, { passive: true });
-    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', onTouchCancel, { passive: true });
     el.addEventListener('wheel', onWheel, { passive: true });
     return () => {
       el.removeEventListener('touchstart', onTouchStart);
       el.removeEventListener('touchmove', onTouchMove);
       el.removeEventListener('touchend', onTouchEnd);
-      el.removeEventListener('touchcancel', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchCancel);
       el.removeEventListener('wheel', onWheel);
       if (wheelResetTimer !== null) window.clearTimeout(wheelResetTimer);
     };
@@ -219,13 +268,14 @@ export function useReaderSoundBarModel(
   closeOthers: () => void,
 ): ReaderSoundTopBarModel {
   const {
-    soundOpen, setSoundOpen, preset, setPreset, volume, setVolume,
+    soundOpen, setSoundOpen, preset, setPreset, playbackError, volume, setVolume,
     pageTurnSound, setPageTurnSound, sleepMinutes, setSleepMinutes, sleepRemainingSec,
   } = immersion;
   return useMemo(
     () => ({
       open: soundOpen,
       preset,
+      playbackError,
       volume,
       pageTurnSound,
       sleepMinutes,
@@ -241,7 +291,7 @@ export function useReaderSoundBarModel(
       onSelectSleepMinutes: setSleepMinutes,
     }),
     [
-      closeOthers, pageTurnSound, preset, setPageTurnSound, setPreset,
+      closeOthers, pageTurnSound, playbackError, preset, setPageTurnSound, setPreset,
       setSleepMinutes, setSoundOpen, setVolume, sleepMinutes, sleepRemainingSec, soundOpen, volume,
     ],
   );

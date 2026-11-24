@@ -159,8 +159,8 @@ export async function upsertReadingProgress(
 
   if (auth.role === 'owner') {
     await ensureProgressReadingTimeColumns(env);
-    // Kẹp reading_seconds nguyên tử trực tiếp trong SQL chống bắn song song nhân bội thời gian đọc
-    const row = await env.DB.prepare(
+    // Kẹp reading_seconds nguyên tử trực tiếp trong SQL theo đồng hồ thực (bỏ +3s/+999ms) và đo chính xác chênh lệch qua db.batch
+    const upsertStmt = env.DB.prepare(
       `INSERT INTO reading_progress (book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(book_id) DO UPDATE SET
@@ -171,36 +171,45 @@ export async function upsertReadingProgress(
          scroll_ratio = excluded.scroll_ratio,
          scroll_top = excluded.scroll_top,
          completed = excluded.completed,
-         reading_seconds = COALESCE(reading_progress.reading_seconds, 0) + MIN(
-           ?,
-           CASE
-             WHEN reading_progress.updated_at > 0 THEN MIN(?, MAX(0, CAST((excluded.updated_at - reading_progress.updated_at + 999) / 1000 AS INTEGER)) + 3)
-             ELSE ?
-           END
-         ),
+         reading_seconds = COALESCE(reading_progress.reading_seconds, 0) + CASE
+           WHEN ? <= 0 THEN 0
+           WHEN reading_progress.updated_at > 0 THEN MIN(?, MIN(?, MAX(0, CAST((excluded.updated_at - reading_progress.updated_at) / 1000 AS INTEGER))))
+           ELSE ?
+         END,
          updated_at = MAX(reading_progress.updated_at, excluded.updated_at)
        RETURNING reading_seconds`,
-    )
-      .bind(
-        bookId,
-        chapterId,
-        chapterIndex,
-        chapterTitle,
-        totalChapters,
-        scrollRatio,
-        scrollTop,
-        completed,
-        firstSaveCapped,
-        updatedAt,
-        requestedDelta,
-        MAX_READING_DELTA_SEC,
-        FIRST_BOOK_SAVE_MAX_SEC,
-      )
-      .first<{ reading_seconds: number }>();
-    readingDeltaAccepted = row ? requestedDelta : 0;
+    ).bind(
+      bookId,
+      chapterId,
+      chapterIndex,
+      chapterTitle,
+      totalChapters,
+      scrollRatio,
+      scrollTop,
+      completed,
+      firstSaveCapped,
+      updatedAt,
+      requestedDelta,
+      requestedDelta,
+      MAX_READING_DELTA_SEC,
+      firstSaveCapped,
+    );
+
+    if (requestedDelta > 0) {
+      const [beforeRes, afterRes] = await env.DB.batch<{ reading_seconds: number }>([
+        env.DB.prepare('SELECT reading_seconds FROM reading_progress WHERE book_id = ?').bind(bookId),
+        upsertStmt,
+      ]);
+      const beforeSec = Number(beforeRes.results?.[0]?.reading_seconds ?? 0);
+      const afterSec = Number(afterRes.results?.[0]?.reading_seconds ?? beforeSec);
+      readingDeltaAccepted = Math.max(0, Math.min(requestedDelta, afterSec - beforeSec));
+    } else {
+      await upsertStmt.run();
+      readingDeltaAccepted = 0;
+    }
   } else {
     await ensureGuestProgressTable(env);
-    const row = await env.DB.prepare(
+    const upsertStmt = env.DB.prepare(
       `INSERT INTO guest_reading_progress (discord_user_id, book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(discord_user_id, book_id) DO UPDATE SET
@@ -211,34 +220,45 @@ export async function upsertReadingProgress(
          scroll_ratio = excluded.scroll_ratio,
          scroll_top = excluded.scroll_top,
          completed = excluded.completed,
-         reading_seconds = COALESCE(guest_reading_progress.reading_seconds, 0) + MIN(
-           ?,
-           CASE
-             WHEN guest_reading_progress.updated_at > 0 THEN MIN(?, MAX(0, CAST((excluded.updated_at - guest_reading_progress.updated_at + 999) / 1000 AS INTEGER)) + 3)
-             ELSE ?
-           END
-         ),
+         reading_seconds = COALESCE(guest_reading_progress.reading_seconds, 0) + CASE
+           WHEN ? <= 0 THEN 0
+           WHEN guest_reading_progress.updated_at > 0 THEN MIN(?, MIN(?, MAX(0, CAST((excluded.updated_at - guest_reading_progress.updated_at) / 1000 AS INTEGER))))
+           ELSE ?
+         END,
          updated_at = MAX(guest_reading_progress.updated_at, excluded.updated_at)
        RETURNING reading_seconds`,
-    )
-      .bind(
-        auth.userId,
-        bookId,
-        chapterId,
-        chapterIndex,
-        chapterTitle,
-        totalChapters,
-        scrollRatio,
-        scrollTop,
-        completed,
-        firstSaveCapped,
-        updatedAt,
-        requestedDelta,
-        MAX_READING_DELTA_SEC,
-        FIRST_BOOK_SAVE_MAX_SEC,
-      )
-      .first<{ reading_seconds: number }>();
-    readingDeltaAccepted = row ? requestedDelta : 0;
+    ).bind(
+      auth.userId,
+      bookId,
+      chapterId,
+      chapterIndex,
+      chapterTitle,
+      totalChapters,
+      scrollRatio,
+      scrollTop,
+      completed,
+      firstSaveCapped,
+      updatedAt,
+      requestedDelta,
+      requestedDelta,
+      MAX_READING_DELTA_SEC,
+      firstSaveCapped,
+    );
+
+    if (requestedDelta > 0) {
+      const [beforeRes, afterRes] = await env.DB.batch<{ reading_seconds: number }>([
+        env.DB.prepare(
+          'SELECT reading_seconds FROM guest_reading_progress WHERE discord_user_id = ? AND book_id = ?',
+        ).bind(auth.userId, bookId),
+        upsertStmt,
+      ]);
+      const beforeSec = Number(beforeRes.results?.[0]?.reading_seconds ?? 0);
+      const afterSec = Number(afterRes.results?.[0]?.reading_seconds ?? beforeSec);
+      readingDeltaAccepted = Math.max(0, Math.min(requestedDelta, afterSec - beforeSec));
+    } else {
+      await upsertStmt.run();
+      readingDeltaAccepted = 0;
+    }
   }
 
   return { ok: true, updatedAt, readingDeltaAccepted };

@@ -1,17 +1,28 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, Suspense, lazy } from 'react';
 import {
   ArrowLeft, Bookmark, ChevronsDown, Headphones, Highlighter, Image as ImageIcon, List, Maximize2, Type,
 } from 'lucide-react';
 import type { ReaderSettings } from '@/types';
-import { ReaderSettingsPopover } from '@/components/ReaderSettingsPopover';
-import { ReaderSoundscapePopover } from '@/components/ReaderSoundscapePopover';
 import type { ReaderDrawerTab } from '@/components/ReaderTocDrawer';
 import type { ReaderThemePalette } from '@/lib/readerConfig';
 import type { ReaderSoundscapeId, SleepTimerMinutes } from '@/lib/readerSoundscapes';
 
+const LazyReaderSettingsPopover = lazy(() =>
+  import('@/components/ReaderSettingsPopover').then((mod) => ({
+    default: mod.ReaderSettingsPopover,
+  })),
+);
+
+const LazyReaderSoundscapePopover = lazy(() =>
+  import('@/components/ReaderSoundscapePopover').then((mod) => ({
+    default: mod.ReaderSoundscapePopover,
+  })),
+);
+
 export interface ReaderSoundTopBarModel {
   open: boolean;
   preset: ReaderSoundscapeId;
+  playbackError?: string | null;
   volume: number;
   pageTurnSound: boolean;
   sleepMinutes: SleepTimerMinutes;
@@ -187,28 +198,33 @@ export function ReaderTopBar({
       </div>
 
       {soundModel?.open && (
-        <ReaderSoundscapePopover
-          preset={soundModel.preset}
-          volume={soundModel.volume}
-          pageTurnSound={soundModel.pageTurnSound}
-          sleepMinutes={soundModel.sleepMinutes}
-          sleepRemainingSec={soundModel.sleepRemainingSec}
-          palette={palette}
-          onSelectPreset={soundModel.onSelectPreset}
-          onChangeVolume={soundModel.onChangeVolume}
-          onTogglePageTurnSound={soundModel.onTogglePageTurnSound}
-          onSelectSleepMinutes={soundModel.onSelectSleepMinutes}
-          onClose={soundModel.onClose}
-        />
+        <Suspense fallback={null}>
+          <LazyReaderSoundscapePopover
+            preset={soundModel.preset}
+            playbackError={soundModel.playbackError}
+            volume={soundModel.volume}
+            pageTurnSound={soundModel.pageTurnSound}
+            sleepMinutes={soundModel.sleepMinutes}
+            sleepRemainingSec={soundModel.sleepRemainingSec}
+            palette={palette}
+            onSelectPreset={soundModel.onSelectPreset}
+            onChangeVolume={soundModel.onChangeVolume}
+            onTogglePageTurnSound={soundModel.onTogglePageTurnSound}
+            onSelectSleepMinutes={soundModel.onSelectSleepMinutes}
+            onClose={soundModel.onClose}
+          />
+        </Suspense>
       )}
 
       {settingsOpen && (
-        <ReaderSettingsPopover
-          settings={settings}
-          palette={palette}
-          onUpdateSettings={onUpdateSettings}
-          onClose={onCloseSettings}
-        />
+        <Suspense fallback={null}>
+          <LazyReaderSettingsPopover
+            settings={settings}
+            palette={palette}
+            onUpdateSettings={onUpdateSettings}
+            onClose={onCloseSettings}
+          />
+        </Suspense>
       )}
     </header>
   );

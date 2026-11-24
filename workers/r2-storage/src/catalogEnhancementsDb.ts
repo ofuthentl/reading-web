@@ -49,6 +49,10 @@ export async function ensureCatalogEnhancementsTables(db: D1Database): Promise<v
        ON user_plan_to_read_books(user_scope, created_at DESC)`,
     ),
     db.prepare(
+      `CREATE INDEX IF NOT EXISTS idx_plan_to_read_books_book_id
+       ON user_plan_to_read_books(book_id)`,
+    ),
+    db.prepare(
       `CREATE TABLE IF NOT EXISTS custom_collections (
          id TEXT PRIMARY KEY,
          name TEXT NOT NULL,

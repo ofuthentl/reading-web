@@ -71,6 +71,10 @@ export async function ensureHighlightsTable(db: D1Database): Promise<void> {
       `CREATE INDEX IF NOT EXISTS idx_highlights_user_created
        ON book_highlights(user_scope, created_at DESC)`,
     ),
+    db.prepare(
+      `CREATE INDEX IF NOT EXISTS idx_highlights_book_id
+       ON book_highlights(book_id)`,
+    ),
   ]);
   ensuredHighlightsDbs.add(db);
 }

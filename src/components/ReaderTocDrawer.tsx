@@ -96,6 +96,8 @@ export function ReaderTocDrawer({
         onClick={onClose}
       />
       <aside
+        role="dialog"
+        aria-modal="true"
         aria-label="Mục lục, minh họa, tìm kiếm và trích dẫn"
         className={`slide-in fixed bottom-0 left-0 top-0 z-50 flex max-h-dvh w-[23rem] max-w-[92vw] flex-col border-r shadow-2xl ${palette.panelBg} ${palette.border}`}
       >

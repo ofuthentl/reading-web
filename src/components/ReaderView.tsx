@@ -16,6 +16,7 @@ import { useReaderImmersionTools } from '@/hooks/useReaderImmersionTools';
 import { useReaderSoundBarModel } from '@/hooks/useReaderScrollGestures';
 import { applyChapterDomHighlights, captureOwnerSelectionDraft } from '@/lib/domHighlights';
 import { resolveOwnerFootnoteClick } from '@/lib/epubFootnotes';
+import { buildCanonicalChapterNumbering } from '@/lib/readerChapterNumbers';
 import {
   READER_FONT_CLASS, READER_THEME_STYLES, READER_WIDTH_MAX,
   findClickedReaderImage, handleReaderContentLinkClick,
@@ -87,18 +88,24 @@ export function ReaderView({
   } = ctrl;
 
   const currentChapter = chapters[chapterIndex];
+  const chapterNumbering = useMemo(() => buildCanonicalChapterNumbering(chapters), [chapters]);
 
   const features = useReaderBookFeatures({
     bookId: book.id, chapterIndex, currentChapterId: currentChapter?.id || '',
     currentChapterTitle: currentChapter?.title || '', initialChapterIndex: initialProgress?.chapterIndex ?? 0,
     initialCompleted: Boolean(initialProgress?.completed), totalChapters: chapters.length, onApiError,
   });
+  const currentChapterNumber = chapterNumbering.chapterNumberByIndex[chapterIndex] ?? undefined;
+  const readerMaxChapterNumber = chapterNumbering.resolveReaderMaxChapterNumber(
+    features.highestChapterReached,
+    Boolean(initialProgress?.completed),
+  );
 
   const anyOverlayOpen =
     tocOpen || settingsOpen || Boolean(lightboxTarget) || Boolean(features.activeFootnote) ||
     Boolean(features.selectionDraft) || Boolean(features.editingHighlight);
   const immersion = useReaderImmersionTools({
-    isPaginated, scrollContainerRef, overlayOpen: anyOverlayOpen, chapterId: currentChapter?.id || '',
+    isPaginated, scrollContainerRef, overlayOpen: anyOverlayOpen, immersiveHidden, chapterId: currentChapter?.id || '',
   });
   const closePopoversForSound = useCallback(() => {
     setTocOpen(false);
@@ -341,7 +348,10 @@ export function ReaderView({
     <div
       className={`relative flex h-full min-h-0 flex-1 flex-col overflow-hidden transition-colors duration-200 ${palette.pageBg} ${palette.textPrimary}`}
     >
-      <ReaderNightDimOverlay nightDimPercent={settings.nightDimPercent} settingsOpen={settingsOpen} />
+      <ReaderNightDimOverlay
+        nightDimPercent={settings.nightDimPercent}
+        settingsOpen={settingsOpen || immersion.soundOpen}
+      />
 
       <ReaderTopBar
         bookTitle={book.title}
@@ -369,7 +379,8 @@ export function ReaderView({
             ref={paginatedRef}
             bookId={book.id} bookTitle={book.title} chapter={currentChapter}
             chapterIndex={chapterIndex} totalChapters={chapters.length}
-            initialRatio={paginatedStartRatio} nextBook={nextBook}
+            currentChapterNumber={currentChapterNumber} readerMaxChapterNumber={readerMaxChapterNumber}
+            chapterOptions={chapterNumbering.options} initialRatio={paginatedStartRatio} nextBook={nextBook}
             settings={settings} palette={palette} immersiveHidden={immersiveHidden}
             remainingEstimate={remainingEstimate} searchTarget={searchTarget}
             chapterHighlights={features.chapterHighlights}
@@ -467,16 +478,19 @@ export function ReaderView({
                 {chapterIndex >= chapters.length - 1 ? (
                   <ReaderBookCommunityBlock
                     bookId={book.id} bookTitle={book.title} palette={palette}
-                    currentChapterNumber={chapterIndex + 1} readerMaxChapterNumber={chapters.length}
-                    totalChapters={chapters.length} onApiError={onApiError}
+                    currentChapterNumber={currentChapterNumber}
+                    readerMaxChapterNumber={readerMaxChapterNumber}
+                    totalChapters={chapterNumbering.maxChapterNumber || chapters.length}
+                    chapterOptions={chapterNumbering.options} onApiError={onApiError}
                   />
                 ) : (
                   <div className="mt-4 flex justify-center">
                     <ReaderBookCommunityModalButton
                       bookId={book.id} bookTitle={book.title} palette={palette}
-                      currentChapterNumber={chapterIndex + 1}
-                      readerMaxChapterNumber={Math.max(chapterIndex + 1, (initialProgress?.chapterIndex ?? 0) + 1)}
-                      totalChapters={chapters.length} onApiError={onApiError}
+                      currentChapterNumber={currentChapterNumber}
+                      readerMaxChapterNumber={readerMaxChapterNumber}
+                      totalChapters={chapterNumbering.maxChapterNumber || chapters.length}
+                      chapterOptions={chapterNumbering.options} onApiError={onApiError}
                     />
                   </div>
                 )}
@@ -496,18 +510,11 @@ export function ReaderView({
       )}
 
       <ReaderImmersionChrome
-        immersion={immersion}
-        isPaginated={isPaginated}
-        chapterIndex={chapterIndex}
-        totalChapters={chapters.length}
-        nightDimPercent={settings.nightDimPercent}
-        palette={palette}
-        scrollContainerRef={scrollContainerRef}
-        onUpdateSettings={handleUpdateSettings}
-        onAdvanceChapter={() => {
-          immersion.triggerPageTurnSound();
-          goNextChapter();
-        }}
+        immersion={immersion} isPaginated={isPaginated} chapterIndex={chapterIndex}
+        totalChapters={chapters.length} nextChapterLabel={chapterNumbering.getChapterShortLabel(chapterIndex + 1)}
+        nightDimPercent={settings.nightDimPercent} palette={palette}
+        scrollContainerRef={scrollContainerRef} onUpdateSettings={handleUpdateSettings}
+        onAdvanceChapter={() => { immersion.triggerPageTurnSound(); goNextChapter(); }}
       />
 
       <ReaderOverlaysHost

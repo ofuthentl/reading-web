@@ -1,7 +1,7 @@
 import type { AuthContext } from './auth';
 import type { Env } from './booksDb';
 import { ensureGuestProgressTable, ensureProgressReadingTimeColumns } from './progressDb';
-import { buildDayKeys, ensureUsageTables } from './usageRecorder';
+import { DAY_MS, buildDayKeys, ensureUsageTables, toVietnamDayKey } from './usageRecorder';
 
 const ACTIVITY_WINDOW_DAYS = 90;
 
@@ -136,6 +136,24 @@ export async function getReaderActivityStats(env: Env, auth: AuthContext) {
   });
 
   const { currentStreakDays, longestStreakDays } = computeStreaks(days);
+
+  // Tính chuỗi kỷ lục riêng theo dương lịch UTC+7 cho Tháng này & Năm nay (QĐ-3 = 3A, 0 thêm query D1)
+  const computeRangeLongestStreak = (startKey: string, endKey: string): number => {
+    const startMs = Date.parse(`${startKey}T00:00:00+07:00`);
+    const endMs = Date.parse(`${endKey}T00:00:00+07:00`);
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs > endMs) return 0;
+    const spanDays: Array<{ active: boolean }> = [];
+    for (let cursor = startMs; cursor <= endMs; cursor += DAY_MS) {
+      const k = toVietnamDayKey(cursor);
+      const r = byDay.get(k);
+      const active = Boolean(r && (Number(r.reading_seconds ?? 0) > 0 || Number(r.last_seen_at ?? 0) > 0));
+      spanDays.push({ active });
+    }
+    return computeStreaks(spanDays).longestStreakDays;
+  };
+  const monthLongestStreakDays = computeRangeLongestStreak(`${currentMonth}-01`, todayDayKey);
+  const yearLongestStreakDays = computeRangeLongestStreak(yearStartKey, todayDayKey);
+
   const totalBookSeconds = Math.max(0, Number(progressSumRow?.total_seconds ?? 0));
   const totalDailySeconds = Math.max(0, Number(allDailySumRow?.total_seconds ?? 0));
   const totalReadingSeconds = Math.max(
@@ -160,8 +178,10 @@ export async function getReaderActivityStats(env: Env, auth: AuthContext) {
     activeDays90d,
     monthReadingSeconds,
     monthActiveDays,
+    monthLongestStreakDays,
     yearReadingSeconds,
     yearActiveDays,
+    yearLongestStreakDays,
     monthlyBreakdown,
     currentStreakDays,
     longestStreakDays,

@@ -23,6 +23,7 @@ export interface Library2DDialogsHostProps {
   shelves?: readonly ShelfGroup[];
   authors?: readonly string[];
   collections?: readonly CustomCollection[];
+  shelfCovers?: Readonly<Record<string, string>>;
   shelfAltTitles?: Readonly<Record<string, string[]>>;
   shelfRatings?: Readonly<Record<string, ShelfRatingSummary>>;
   progress: Record<string, ReadingProgress>;
@@ -55,6 +56,7 @@ export function Library2DDialogsHost({
   shelves = [],
   authors = [],
   collections = [],
+  shelfCovers,
   shelfAltTitles,
   shelfRatings,
   progress,
@@ -99,6 +101,7 @@ export function Library2DDialogsHost({
         open={statsOpen}
         books={books}
         progress={progress}
+        shelfCovers={shelfCovers}
         sessionRole={sessionRole}
         dailyGoalMinutes={dailyGoalMinutes}
         onChangeDailyGoalMinutes={onChangeDailyGoalMinutes}

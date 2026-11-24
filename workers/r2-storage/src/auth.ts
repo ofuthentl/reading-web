@@ -1,3 +1,9 @@
+import {
+  DECAYED_STRIKES_SQL,
+  DECAYED_STRIKE_AT_SQL,
+  buildStrikeDecayBindParams,
+} from './rateLimitDb';
+
 export const OWNER_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 export const GUEST_SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 export const DISCORD_KEY_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -92,14 +98,46 @@ export function resolveSigningSecret(env: AuthEnv): string {
   throw new HttpError('Máy chủ chưa cấu hình ACCESS_PASSCODE.', 503);
 }
 
-export function timingSafeEqual(a: string, b: string): boolean {
+let ephemeralCompareKeyPromise: Promise<CryptoKey> | null = null;
+
+function getEphemeralCompareKey(): Promise<CryptoKey> {
+  if (!ephemeralCompareKeyPromise) {
+    const rawKey = new Uint8Array(32);
+    crypto.getRandomValues(rawKey);
+    ephemeralCompareKeyPromise = crypto.subtle.importKey(
+      'raw',
+      rawKey,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+  }
+  return ephemeralCompareKeyPromise;
+}
+
+/**
+ * So sánh hằng thời gian (constant-time) không lộ độ dài chuỗi:
+ * băm 2 giá trị bằng HMAC-SHA-256 (32 byte cố định, khoá ngẫu nhiên theo isolate)
+ * rồi so sánh trực tiếp bằng `crypto.subtle.timingSafeEqual`.
+ */
+export async function timingSafeEqual(a: string, b: string): Promise<boolean> {
   const encoder = new TextEncoder();
-  const bufA = encoder.encode(a);
-  const bufB = encoder.encode(b);
-  const maxLen = Math.max(bufA.length, bufB.length);
-  let diff = bufA.length ^ bufB.length;
-  for (let i = 0; i < maxLen; i += 1) {
-    diff |= (bufA[i] ?? 0) ^ (bufB[i] ?? 0);
+  const key = await getEphemeralCompareKey();
+  const [macA, macB] = await Promise.all([
+    crypto.subtle.sign('HMAC', key, encoder.encode(a)),
+    crypto.subtle.sign('HMAC', key, encoder.encode(b)),
+  ]);
+  const subtleWithTse = crypto.subtle as SubtleCrypto & {
+    timingSafeEqual?: (x: ArrayBufferView | ArrayBuffer, y: ArrayBufferView | ArrayBuffer) => boolean;
+  };
+  if (typeof subtleWithTse.timingSafeEqual === 'function') {
+    return subtleWithTse.timingSafeEqual(macA, macB);
+  }
+  const viewA = new Uint8Array(macA);
+  const viewB = new Uint8Array(macB);
+  let diff = 0;
+  for (let i = 0; i < viewA.length; i += 1) {
+    diff |= viewA[i] ^ viewB[i];
   }
   return diff === 0;
 }
@@ -155,6 +193,7 @@ export async function ensureDiscordAccessTable(db: D1Database): Promise<void> {
          rl_tokens REAL NOT NULL DEFAULT 10,
          rl_updated_at INTEGER NOT NULL DEFAULT 0,
          rl_strikes INTEGER NOT NULL DEFAULT 0,
+         rl_last_strike_at INTEGER NOT NULL DEFAULT 0,
          is_banned INTEGER NOT NULL DEFAULT 0,
          ban_reason TEXT,
          updated_at INTEGER NOT NULL
@@ -190,6 +229,9 @@ export async function ensureDiscordAccessTable(db: D1Database): Promise<void> {
   }
   if (!cols.has('rl_strikes')) {
     alterSqls.push('ALTER TABLE discord_access ADD COLUMN rl_strikes INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.has('rl_last_strike_at')) {
+    alterSqls.push('ALTER TABLE discord_access ADD COLUMN rl_last_strike_at INTEGER NOT NULL DEFAULT 0');
   }
   if (!cols.has('is_banned')) {
     alterSqls.push('ALTER TABLE discord_access ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0');
@@ -257,7 +299,7 @@ export async function authenticatePasscodeOrKey(
   }
 
   // Always check Admin passcode first in constant time
-  if (timingSafeEqual(trimmed, expectedPasscode)) {
+  if (await timingSafeEqual(trimmed, expectedPasscode)) {
     return createAuthToken(env);
   }
 
@@ -302,9 +344,8 @@ export async function authenticatePasscodeOrKey(
   const sessionId = crypto.randomUUID().replace(/-/g, '');
   const sessionExpiresAt = now + GUEST_SESSION_TTL_MS;
   const uaHash = await computeUserAgentHash(userAgent);
-  // QĐ-2 (2A): Không reset đầy rl_tokens / rl_strikes mỗi lần lấy key Discord mới (15s),
-  // chỉ hồi theo đồng hồ thực và tự reset strike nếu đã yên ổn >= 24 giờ.
-  const STRIKE_RESET_IDLE_MS = 24 * 60 * 60 * 1000;
+  // QĐ-1 (1A) + D-038 QĐ-2 (2A): Không reset đầy rl_tokens / rl_strikes khi đổi key Discord mới;
+  // hồi token tuyến tính theo đồng hồ thực, giảm -1 strike / 30p yên ổn và reset 0 sau >= 24 giờ.
   const updateRes = await db
     .prepare(
       `UPDATE discord_access
@@ -315,10 +356,8 @@ export async function authenticatePasscodeOrKey(
            ua_hash = ?,
            rl_tokens = MIN(10, COALESCE(rl_tokens, 10) + MAX(0, ? - CASE WHEN rl_updated_at > 0 THEN rl_updated_at ELSE ? END) * (1.0 / 6000.0)),
            rl_updated_at = ?,
-           rl_strikes = CASE
-             WHEN rl_updated_at > 0 AND (? - rl_updated_at) >= ? THEN 0
-             ELSE COALESCE(rl_strikes, 0)
-           END,
+           rl_strikes = ${DECAYED_STRIKES_SQL},
+           rl_last_strike_at = ${DECAYED_STRIKE_AT_SQL},
            updated_at = ?
        WHERE discord_user_id = ? AND key_hash = ? AND key_expires_at >= ? AND COALESCE(is_banned, 0) = 0`,
     )
@@ -329,8 +368,7 @@ export async function authenticatePasscodeOrKey(
       now,
       now,
       now,
-      now,
-      STRIKE_RESET_IDLE_MS,
+      ...buildStrikeDecayBindParams(now),
       now,
       row.discord_user_id,
       keyHash,
@@ -388,7 +426,7 @@ export async function verifyAuth(
 
   const secret = resolveSigningSecret(env);
   const expectedSig = await signPayload(payload, secret);
-  if (!timingSafeEqual(signature, expectedSig)) {
+  if (!(await timingSafeEqual(signature, expectedSig))) {
     throw new HttpError('Phiên truy cập không hợp lệ.', 401);
   }
 
@@ -460,7 +498,7 @@ export async function verifyAuth(
     if (row?.is_banned === 1) {
       throw new HttpError('Tài khoản Discord của bạn đã bị ngưng quyền truy cập thư viện.', 403);
     }
-    if (!row?.active_session_id || !timingSafeEqual(row.active_session_id, decoded.sid)) {
+    if (!row?.active_session_id || !(await timingSafeEqual(row.active_session_id, decoded.sid))) {
       throw new HttpError(
         'Phiên truy cập này đã đóng do tài khoản Discord của bạn vừa mở cửa ở nơi khác hoặc bị ngắt phiên.',
         401,
@@ -474,7 +512,7 @@ export async function verifyAuth(
     }
     if (row.ua_hash) {
       const currentUaHash = await computeUserAgentHash(request.headers.get('User-Agent') || '');
-      if (!currentUaHash || !timingSafeEqual(row.ua_hash, currentUaHash)) {
+      if (!currentUaHash || !(await timingSafeEqual(row.ua_hash, currentUaHash))) {
         throw new HttpError(
           'Phiên truy cập không khớp trình duyệt đã mở khoá. Hãy lấy chìa khoá mới trên trình duyệt này.',
           401,

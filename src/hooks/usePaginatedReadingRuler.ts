@@ -95,77 +95,88 @@ export function useDomPaginatedReadingRuler(options: {
     [enabled, headerRef, hideIndicator, indicatorRef, pageIndex, stageRef, trackRef],
   );
 
-  const collectVisibleFragments = useCallback(() => {
-    const clip = clipRef.current;
-    const track = trackRef.current;
-    const contentRoot = track?.querySelector<HTMLElement>('.reading-content');
-    if (!enabled || !clip || !contentRoot) {
-      fragmentsRef.current = [];
-      contentRoot?.classList.remove('reader-ruler-active');
-      headerRef.current?.classList.remove('reader-ruler-header-dim');
-      hideIndicator();
-      return;
-    }
-
-    const clipRect = clip.getBoundingClientRect();
-    if (clipRect.width < 40 || clipRect.height < 40) return;
-    const midX = clipRect.left + clipRect.width / 2;
-
-    const blocks = Array.from(contentRoot.querySelectorAll<HTMLElement>(FOCUSABLE_BLOCK_SELECTOR));
-    const col0: DomColumnFragment[] = [];
-    const col1: DomColumnFragment[] = [];
-
-    for (const block of blocks) {
-      if (block.parentElement?.closest(FOCUSABLE_BLOCK_SELECTOR)) {
-        block.classList.remove('reader-ruler-focus');
-        continue;
+  const collectVisibleFragments = useCallback(
+    (commitPageEdge = true) => {
+      const clip = clipRef.current;
+      const track = trackRef.current;
+      const contentRoot = track?.querySelector<HTMLElement>('.reading-content');
+      if (!enabled || !clip || !contentRoot) {
+        fragmentsRef.current = [];
+        contentRoot?.classList.remove('reader-ruler-active');
+        headerRef.current?.classList.remove('reader-ruler-header-dim');
+        hideIndicator();
+        return;
       }
-      const clientRects = Array.from(block.getClientRects());
-      const byCol = new Map<0 | 1, { top: number; bottom: number; left: number }>();
 
-      for (const r of clientRects) {
-        if (r.width < 6 || r.height < 6) continue;
-        if (r.right <= clipRect.left + 12 || r.left >= clipRect.right - 12) continue;
-        if (r.bottom <= clipRect.top + 4 || r.top >= clipRect.bottom - 4) continue;
-        const col: 0 | 1 = columns === 2 && (r.left + r.right) / 2 >= midX ? 1 : 0;
-        const prev = byCol.get(col);
-        if (!prev) {
-          byCol.set(col, { top: r.top, bottom: r.bottom, left: r.left });
-        } else {
-          prev.top = Math.min(prev.top, r.top);
-          prev.bottom = Math.max(prev.bottom, r.bottom);
-          prev.left = Math.min(prev.left, r.left);
+      const clipRect = clip.getBoundingClientRect();
+      if (clipRect.width < 40 || clipRect.height < 40) return;
+      const midX = clipRect.left + clipRect.width / 2;
+
+      const blocks = Array.from(contentRoot.querySelectorAll<HTMLElement>(FOCUSABLE_BLOCK_SELECTOR));
+      const col0: DomColumnFragment[] = [];
+      const col1: DomColumnFragment[] = [];
+
+      for (const block of blocks) {
+        if (block.parentElement?.closest(FOCUSABLE_BLOCK_SELECTOR)) {
+          block.classList.remove('reader-ruler-focus');
+          continue;
+        }
+        const clientRects = Array.from(block.getClientRects());
+        const byCol = new Map<0 | 1, { top: number; bottom: number; left: number }>();
+
+        for (const r of clientRects) {
+          if (r.width < 6 || r.height < 6) continue;
+          if (r.right <= clipRect.left + 6 || r.left >= clipRect.right - 6) continue;
+          if (r.bottom <= clipRect.top + 4 || r.top >= clipRect.bottom - 4) continue;
+          const clampedTop = Math.max(clipRect.top, r.top);
+          const clampedBottom = Math.min(clipRect.bottom, r.bottom);
+          const clampedLeft = Math.max(clipRect.left, r.left);
+          if (clampedBottom - clampedTop < 6) continue;
+          const col: 0 | 1 = columns === 2 && (r.left + r.right) / 2 >= midX ? 1 : 0;
+          const prev = byCol.get(col);
+          if (!prev) {
+            byCol.set(col, { top: clampedTop, bottom: clampedBottom, left: clampedLeft });
+          } else {
+            prev.top = Math.min(prev.top, clampedTop);
+            prev.bottom = Math.max(prev.bottom, clampedBottom);
+            prev.left = Math.min(prev.left, clampedLeft);
+          }
+        }
+
+        for (const [col, box] of byCol.entries()) {
+          const frag: DomColumnFragment = { col, block, ...box };
+          if (col === 0) col0.push(frag);
+          else col1.push(frag);
         }
       }
 
-      for (const [col, box] of byCol.entries()) {
-        const frag: DomColumnFragment = { col, block, ...box };
-        if (col === 0) col0.push(frag);
-        else col1.push(frag);
+      col0.sort((a, b) => a.top - b.top);
+      col1.sort((a, b) => a.top - b.top);
+      const merged = [...col0, ...col1];
+      fragmentsRef.current = merged;
+
+      if (merged.length === 0) {
+        hideIndicator();
+        return;
       }
-    }
 
-    col0.sort((a, b) => a.top - b.top);
-    col1.sort((a, b) => a.top - b.top);
-    const merged = [...col0, ...col1];
-    fragmentsRef.current = merged;
-
-    if (merged.length === 0) {
-      hideIndicator();
-      return;
-    }
-
-    const pageKey = `${chapterId}:${pageIndex}`;
-    let targetIdx = activeIdxRef.current;
-    if (prevPageKeyRef.current !== pageKey) {
-      prevPageKeyRef.current = pageKey;
-      targetIdx = pendingEdgeRef.current === 'last' ? merged.length - 1 : 0;
-      pendingEdgeRef.current = 'first';
-    } else {
-      targetIdx = Math.min(merged.length - 1, Math.max(0, targetIdx));
-    }
-    applyActiveIndex(targetIdx);
-  }, [applyActiveIndex, chapterId, clipRef, columns, enabled, headerRef, hideIndicator, pageIndex, trackRef]);
+      const pageKey = `${chapterId}:${pageIndex}`;
+      let targetIdx = activeIdxRef.current;
+      if (prevPageKeyRef.current !== pageKey) {
+        if (!commitPageEdge) {
+          hideIndicator();
+          return;
+        }
+        prevPageKeyRef.current = pageKey;
+        targetIdx = pendingEdgeRef.current === 'last' ? merged.length - 1 : 0;
+        pendingEdgeRef.current = 'first';
+      } else {
+        targetIdx = Math.min(merged.length - 1, Math.max(0, targetIdx));
+      }
+      applyActiveIndex(targetIdx);
+    },
+    [applyActiveIndex, chapterId, clipRef, columns, enabled, headerRef, hideIndicator, pageIndex, trackRef],
+  );
 
   useEffect(() => {
     const track = trackRef.current;
@@ -180,14 +191,44 @@ export function useDomPaginatedReadingRuler(options: {
       return;
     }
 
-    // Đo ngay frame đầu + sau khi hiệu ứng lật trang 220ms kết thúc để toạ độ getClientRects() chính xác 100%
-    const raf = window.requestAnimationFrame(collectVisibleFragments);
-    const settleTimer = window.setTimeout(collectVisibleFragments, 245);
+    const pageKey = `${chapterId}:${pageIndex}`;
+    const pageChanged = prevPageKeyRef.current !== pageKey;
+    const isTransitioning =
+      pageChanged &&
+      Boolean(track) &&
+      track!.style.transition !== '' &&
+      track!.style.transition !== 'none';
+
+    let settled = false;
+    const commitSettled = () => {
+      if (settled) return;
+      settled = true;
+      collectVisibleFragments(true);
+    };
+
+    const onTransitionEnd = (event: TransitionEvent) => {
+      if (event.target === track && event.propertyName === 'transform') {
+        commitSettled();
+      }
+    };
+
+    if (isTransitioning) {
+      hideIndicator();
+      track?.addEventListener('transitionend', onTransitionEnd);
+    }
+
+    // Nếu không trượt (resize / đổi font / nhảy chương tức thì) đo ngay ở frame đầu;
+    // nếu đang trượt 220ms chỉ chốt prevPageKeyRef & pendingEdgeRef sau khi transitionend hoặc timer 245ms.
+    const raf = window.requestAnimationFrame(() => {
+      if (!isTransitioning) commitSettled();
+    });
+    const settleTimer = window.setTimeout(commitSettled, 245);
     return () => {
       window.cancelAnimationFrame(raf);
       window.clearTimeout(settleTimer);
+      track?.removeEventListener('transitionend', onTransitionEnd);
     };
-  }, [collectVisibleFragments, enabled, headerRef, hideIndicator, layoutDepsKey, trackRef]);
+  }, [chapterId, collectVisibleFragments, enabled, headerRef, hideIndicator, layoutDepsKey, pageIndex, trackRef]);
 
   const updateFromClientPoint = useCallback(
     (clientX: number, clientY: number) => {

@@ -7,8 +7,8 @@ import {
   isValidId,
 } from './booksDb';
 import { mergeCatalogRelationsOnShelfRename } from './catalogEnhancementsDb';
-import { mergeCommunityRelationsOnShelfRename } from './communityDb';
-import { buildDeleteTargetCommentsStatements } from './communityReactionsDb';
+import { ensureCommunityTables, mergeCommunityRelationsOnShelfRename } from './communityDb';
+import { deleteTargetCommentsSafely } from './communityReactionsDb';
 import {
   cleanupOldShelfAccessAfterRename,
   prepareShelfAccessForRename,
@@ -58,7 +58,7 @@ export async function cleanupOrphanShelves(
       db.prepare(`DELETE FROM user_plan_to_read WHERE shelf_key IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       db.prepare(`DELETE FROM collection_shelves WHERE shelf_key IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       db.prepare(`DELETE FROM library_ratings WHERE target_type = 'shelf' AND target_key IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
-      db.batch(buildDeleteTargetCommentsStatements(db, 'shelf', chunk)).catch(() => undefined),
+      deleteTargetCommentsSafely(db, 'shelf', chunk, ensureCommunityTables),
     ]);
   }
 }

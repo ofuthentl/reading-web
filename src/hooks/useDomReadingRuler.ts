@@ -32,7 +32,7 @@ export function useDomReadingRuler(options: {
     const rect = container.getBoundingClientRect();
     const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
     const nearTop = container.scrollTop <= 48;
-    const nearBottom = maxScroll > 0 && container.scrollTop >= maxScroll - 64;
+    const nearBottom = maxScroll <= 0 || container.scrollTop >= maxScroll - 64;
 
     const bandTop = nearTop ? rect.top : rect.top + rect.height * 0.28;
     const bandBottom = nearBottom ? rect.bottom : rect.top + rect.height * 0.62;

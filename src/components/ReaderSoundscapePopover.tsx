@@ -15,6 +15,7 @@ const SLEEP_OPTIONS: ReadonlyArray<{ minutes: SleepTimerMinutes; label: string }
 
 export interface ReaderSoundscapePopoverProps {
   preset: ReaderSoundscapeId;
+  playbackError?: string | null;
   volume: number;
   pageTurnSound: boolean;
   sleepMinutes: SleepTimerMinutes;
@@ -35,6 +36,7 @@ function formatCountdown(sec: number): string {
 
 export function ReaderSoundscapePopover({
   preset,
+  playbackError = null,
   volume,
   pageTurnSound,
   sleepMinutes,
@@ -68,6 +70,15 @@ export function ReaderSoundscapePopover({
           <X className="h-4 w-4" />
         </button>
       </div>
+
+      {playbackError && (
+        <p
+          role="alert"
+          className="mb-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-snug text-amber-600 dark:text-amber-300"
+        >
+          {playbackError}
+        </p>
+      )}
 
       <div className="space-y-1.5">
         {SOUNDSCAPE_OPTIONS.map((opt) => {

@@ -9,6 +9,7 @@ import { apiFetch } from '@/lib/authSession';
 import { guessImageMimeType } from '@/lib/docxXml';
 import { extractChapterFootnotesForGuestPack } from '@/lib/epubFootnotes';
 import { parseBookBlob } from '@/lib/parsers';
+import { extractRubyElementPairs } from '@/lib/rubyText';
 import { type ZipSliceInfo, parseZipEntryOffsets } from '@/lib/zipDirectory';
 
 const GUEST_PACK_MAGIC_BYTES = [0x4f, 0x46, 0x47, 0x50]; // "OFGP"
@@ -173,20 +174,16 @@ function convertChapterToGuestBlocks(
       return;
     }
     if (tag === 'ruby') {
-      let baseText = '';
-      let rtText = '';
-      for (const child of Array.from(el.childNodes)) {
-        if (child.nodeType === Node.TEXT_NODE) {
-          baseText += child.nodeValue || '';
-        } else if (child.nodeType === Node.ELEMENT_NODE) {
-          const cTag = (child as Element).tagName.toLowerCase();
-          if (cTag === 'rt') rtText += (child.textContent || '').trim();
-          else if (cTag !== 'rp') baseText += child.textContent || '';
+      for (const pair of extractRubyElementPairs(el)) {
+        const normalized = pair.base.replace(/[ \t\r\n]+/g, ' ');
+        const cleanRt = pair.rt?.replace(/\s+/g, ' ').trim() || undefined;
+        if (!normalized.trim()) {
+          if (normalized) appendMergedSpan(pendingSpans, normalized, bold, italic);
+          continue;
         }
-      }
-      const cleanBase = baseText.replace(/\s+/g, ' ');
-      if (cleanBase.trim()) {
-        appendMergedSpan(pendingSpans, cleanBase, bold, italic, rtText || undefined);
+        if (/^\s/.test(normalized)) appendMergedSpan(pendingSpans, ' ', bold, italic);
+        appendMergedSpan(pendingSpans, normalized.trim(), bold, italic, cleanRt);
+        if (/\s$/.test(normalized)) appendMergedSpan(pendingSpans, ' ', bold, italic);
       }
       return;
     }

@@ -1,26 +1,11 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
 import type {
-  Book,
-  Chapter,
-  GuestTocItem,
-  ReaderSettings,
-  ReadingProgress,
-  SaveProgressOptions,
+  Book, Chapter, GuestTocItem, ReaderSettings, ReadingProgress, SaveProgressOptions,
 } from '@/types';
 import { GuestCanvasPaginatedView } from '@/components/GuestCanvasPaginatedView';
 import { GuestCanvasScrollStage } from '@/components/GuestCanvasScrollStage';
-import {
-  ReaderFooterStatusBar,
-  ReaderNightDimOverlay,
-} from '@/components/ReaderFooterStatusBar';
+import { ReaderFooterStatusBar, ReaderNightDimOverlay } from '@/components/ReaderFooterStatusBar';
 import { ReaderImmersionChrome } from '@/components/ReaderScrollEnhancements';
 import { ReaderOverlaysHost } from '@/components/ReaderOverlaysHost';
 import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
@@ -33,17 +18,12 @@ import { useReaderChapterProgress } from '@/hooks/useReaderChapterProgress';
 import { useReaderImmersionTools } from '@/hooks/useReaderImmersionTools';
 import { useReaderSoundBarModel } from '@/hooks/useReaderScrollGestures';
 import { buildGuestChapterFootnoteMap } from '@/lib/epubFootnotes';
-import {
-  computeChapterCanvasLayout,
-  getInitialGuestStageBox,
-} from '@/lib/guestCanvasLayout';
+import { computeChapterCanvasLayout, getInitialGuestStageBox } from '@/lib/guestCanvasLayout';
 import { paintGuestViewportCanvas } from '@/lib/guestCanvasPaint';
 import { collectVisibleGuestParagraphOptions } from '@/lib/highlightsApi';
+import { buildCanonicalChapterNumbering } from '@/lib/readerChapterNumbers';
 import { READER_THEME_STYLES } from '@/lib/readerConfig';
-import {
-  countWordsInGuestBlocks,
-  estimateGuestLaterBookWords,
-} from '@/lib/readingEstimate';
+import { countWordsInGuestBlocks, estimateGuestLaterBookWords } from '@/lib/readingEstimate';
 import { findCanvasItemIndexForQuery } from '@/lib/readerSearchJump';
 
 const VIEWPORT_OVERSCAN_PX = 280;
@@ -137,17 +117,23 @@ export function GuestCanvasReader({
   } = ctrl;
 
   const currentTocItem = tocChapters[chapterIndex];
+  const chapterNumbering = useMemo(() => buildCanonicalChapterNumbering(tocChapters), [tocChapters]);
   const features = useReaderBookFeatures({
     bookId: book.id, chapterIndex, currentChapterId: currentTocItem?.id || '',
     currentChapterTitle: currentTocItem?.title || '', initialChapterIndex: initialProgress?.chapterIndex ?? 0,
     initialCompleted: Boolean(initialProgress?.completed), totalChapters: tocChapters.length, onApiError,
   });
+  const currentChapterNumber = chapterNumbering.chapterNumberByIndex[chapterIndex] ?? undefined;
+  const readerMaxChapterNumber = chapterNumbering.resolveReaderMaxChapterNumber(
+    features.highestChapterReached,
+    Boolean(initialProgress?.completed),
+  );
 
   const anyOverlayOpen =
     tocOpen || settingsOpen || Boolean(lightboxTarget) || Boolean(features.activeFootnote) ||
     features.guestPickerOpen || Boolean(features.editingHighlight);
   const immersion = useReaderImmersionTools({
-    isPaginated, scrollContainerRef, overlayOpen: anyOverlayOpen, chapterId: currentTocItem?.id || '',
+    isPaginated, scrollContainerRef, overlayOpen: anyOverlayOpen, immersiveHidden, chapterId: currentTocItem?.id || '',
   });
   const closePopoversForSound = useCallback(() => {
     setTocOpen(false);
@@ -243,7 +229,7 @@ export function GuestCanvasReader({
     const focusBand = settings.readingRuler
       ? {
           minY: vTop <= 48 ? 0 : vTop + vH * 0.28,
-          maxY: maxScroll > 0 && vTop >= maxScroll - 64 ? layout.totalHeight : vTop + vH * 0.62,
+          maxY: maxScroll <= 0 || vTop >= maxScroll - 64 ? layout.totalHeight : vTop + vH * 0.62,
         }
       : null;
 
@@ -266,18 +252,18 @@ export function GuestCanvasReader({
   const handleUpdateSettings = useCallback(
     (patch: Partial<ReaderSettings>) => {
       if (patch.layoutMode && patch.layoutMode !== settings.layoutMode) {
-        if (patch.layoutMode === 'paginated') setPaginatedStartRatio(chapterScrollRatio);
-        else restoreTargetRatioRef.current = chapterScrollRatio;
+        if (patch.layoutMode === 'paginated') setPaginatedStartRatio(chapterScrollRatioRef.current);
+        else restoreTargetRatioRef.current = chapterScrollRatioRef.current;
       } else if (
         !isPaginated &&
         (patch.width || patch.fontSizePx || patch.lineHeight || patch.font ||
           patch.textAlign || patch.paragraphIndent !== undefined || patch.paragraphSpacing)
       ) {
-        restoreTargetRatioRef.current = chapterScrollRatio;
+        restoreTargetRatioRef.current = chapterScrollRatioRef.current;
       }
       onUpdateSettings(patch);
     },
-    [chapterScrollRatio, isPaginated, onUpdateSettings, restoreTargetRatioRef, setPaginatedStartRatio, settings.layoutMode],
+    [isPaginated, onUpdateSettings, restoreTargetRatioRef, setPaginatedStartRatio, settings.layoutMode],
   );
 
   const handleScroll = useCallback(() => {
@@ -403,7 +389,10 @@ export function GuestCanvasReader({
       }}
       onDragStart={(e) => e.preventDefault()}
     >
-      <ReaderNightDimOverlay nightDimPercent={settings.nightDimPercent} settingsOpen={settingsOpen} />
+      <ReaderNightDimOverlay
+        nightDimPercent={settings.nightDimPercent}
+        settingsOpen={settingsOpen || immersion.soundOpen}
+      />
 
       <ReaderTopBar
         bookTitle={book.title}
@@ -450,7 +439,8 @@ export function GuestCanvasReader({
             ref={paginatedRef}
             bookId={book.id} bookTitle={book.title} chapterData={chapterData}
             chapterIndex={chapterIndex} totalChapters={tocChapters.length}
-            initialRatio={paginatedStartRatio} watermarkLabel={effectiveWatermark}
+            currentChapterNumber={currentChapterNumber} readerMaxChapterNumber={readerMaxChapterNumber}
+            chapterOptions={chapterNumbering.options} initialRatio={paginatedStartRatio} watermarkLabel={effectiveWatermark}
             imageSizes={imageSizes} bitmapsRef={bitmapsRef}
             blockHighlightColors={features.blockHighlightColors} footnoteMap={footnoteMap}
             nextBook={nextBook} settings={settings} palette={palette}
@@ -480,7 +470,9 @@ export function GuestCanvasReader({
         <>
           <GuestCanvasScrollStage
             bookId={book.id} bookTitle={book.title} chapterIndex={chapterIndex}
-            totalChapters={tocChapters.length} stageWidth={stageBox.width}
+            totalChapters={tocChapters.length} currentChapterNumber={currentChapterNumber}
+            readerMaxChapterNumber={readerMaxChapterNumber} chapterOptions={chapterNumbering.options}
+            stageWidth={stageBox.width}
             layout={layout} footnoteMap={footnoteMap} bitmapsRef={bitmapsRef}
             nextBook={nextBook} settings={settings} palette={palette}
             settingsOpen={settingsOpen || immersion.soundOpen} immersiveHidden={immersiveHidden}
@@ -509,18 +501,12 @@ export function GuestCanvasReader({
       )}
 
       <ReaderImmersionChrome
-        immersion={immersion}
-        isPaginated={isPaginated}
-        chapterIndex={chapterIndex}
-        totalChapters={tocChapters.length}
-        nightDimPercent={settings.nightDimPercent}
-        palette={palette}
-        scrollContainerRef={scrollContainerRef}
-        onUpdateSettings={handleUpdateSettings}
-        onAdvanceChapter={() => {
-          immersion.triggerPageTurnSound();
-          goNextChapter();
-        }}
+        immersion={immersion} isPaginated={isPaginated} scrollStageReady={showScrollStage}
+        chapterIndex={chapterIndex} totalChapters={tocChapters.length}
+        nextChapterLabel={chapterNumbering.getChapterShortLabel(chapterIndex + 1)}
+        nightDimPercent={settings.nightDimPercent} palette={palette}
+        scrollContainerRef={scrollContainerRef} onUpdateSettings={handleUpdateSettings}
+        onAdvanceChapter={() => { immersion.triggerPageTurnSound(); goNextChapter(); }}
       />
 
       <ReaderOverlaysHost
