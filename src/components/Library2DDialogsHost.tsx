@@ -28,7 +28,6 @@ export interface Library2DDialogsHostProps {
   progress: Record<string, ReadingProgress>;
   planToReadBookIds?: ReadonlySet<string>;
   sessionRole?: AuthRole;
-  canUse3D?: boolean;
   dailyGoalMinutes?: number;
   onChangeDailyGoalMinutes?: (nextMinutes: number) => void;
   onCloseInspect: () => void;
@@ -40,7 +39,6 @@ export interface Library2DDialogsHostProps {
   onSelectAuthor?: (authorName: string) => void;
   onSelectCollection?: (collectionId: string) => void;
   onCycleTheme?: () => void;
-  onSwitchTo3D?: () => void;
   onUploadClick?: () => void;
   onMarkCompleted: (book: Book) => void;
   onResetProgress: (book: Book) => void;
@@ -62,7 +60,6 @@ export function Library2DDialogsHost({
   progress,
   planToReadBookIds,
   sessionRole = 'owner',
-  canUse3D = false,
   dailyGoalMinutes,
   onChangeDailyGoalMinutes,
   onCloseInspect,
@@ -74,7 +71,6 @@ export function Library2DDialogsHost({
   onSelectAuthor,
   onSelectCollection,
   onCycleTheme,
-  onSwitchTo3D,
   onUploadClick,
   onMarkCompleted,
   onResetProgress,
@@ -122,7 +118,6 @@ export function Library2DDialogsHost({
             collections={collections}
             shelfAltTitles={shelfAltTitles}
             shelfRatings={shelfRatings}
-            canUse3D={canUse3D}
             onClose={onClosePalette}
             onJumpToShelf={onJumpToShelf}
             onOpenBook={onOpenBook}
@@ -130,7 +125,6 @@ export function Library2DDialogsHost({
             onSelectCollection={(colId) => onSelectCollection?.(colId)}
             onCycleTheme={() => onCycleTheme?.()}
             onOpenStats={() => onOpenStats?.()}
-            onSwitchTo3D={onSwitchTo3D}
             onOpenCacheManager={onOpenCacheManager}
             onUploadClick={onUploadClick}
           />

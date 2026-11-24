@@ -1,21 +1,19 @@
 # HANDOFF
-Cập nhật: 2026-11-24 17:45 | Nhánh: feat/reader-lofi-soundscapes | Build: 🟢 typecheck / lint / build (85.39 kB gzip) / Worker tsc xanh
-Nhiệm vụ hiện tại: **Đã hoàn tất vá thông báo Discord ưu tiên bìa kệ đã chọn (`PA-1`) + hỗ trợ tag Role `DISCORD_RELEASE_ROLE_ID` & deploy Worker — chờ cấu hình Role ID và mở PR vào `main`**.
-Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/v3-ux-and-community-upgrades.md
+Cập nhật: 2026-11-24 19:40 | Nhánh: refactor/remove-library-3d | Build: 🟢 typecheck / lint / build (83.85 kB gzip) xanh
+Nhiệm vụ hiện tại: **Đã gỡ bỏ hoàn toàn chức năng & tài sản Thư viện 3D (`D-040`) — sẵn sàng mở PR vào `main` và chuyển sang bước vá lỗi 2D/Worker hoặc nâng cấp v4**.
+Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/remove-library-3d.md
 
 ## Đang làm dở
-- Chờ người dùng cung cấp/cấu hình `DISCORD_RELEASE_ROLE_ID` qua `wrangler secret put DISCORD_RELEASE_ROLE_ID` để bật ping Role trên thông báo Discord.
+- Không có việc làm dở trên nhánh `refactor/remove-library-3d`.
 
 ## Xong trong nhánh này
-1. **Backend Worker & Migration `0016_community_v2.sql` (đã apply D1 & deploy Worker):** `shelfRatings` toàn kho (`QĐ-3 = 3B`), đồng bộ `dailyGoalMinutes` & `readingRuler` trong `user_reader_prefs` (`QĐ-2 = 2A`), Bình luận v2 (`parent_id` 1 cấp, `chapter_number`, `PATCH` chính chủ, 5 emoji reaction, xoá dây chuyền sạch sẽ), tổng hợp tháng/năm cho `Wrapped` và deep-link Discord `/?shelf=`.
-2. **Bản vá cắt tên kệ dài (`> 6` từ), `SS/EX/SP Tập X`, ưu tiên bìa kệ & tag Role Discord (`D-037`):** giữ nguyên tên bộ dài tới 24 từ, tách chuẩn nhãn `SS Tập X`, thông báo Discord luôn ưu tiên bìa kệ đại diện đã chọn (`shelf_prefs.cover_book_id`, `PA-1`) và hỗ trợ tag Role qua `DISCORD_RELEASE_ROLE_ID` (`allowed_mentions.roles`).
-3. **Nhóm 1 (Hình ảnh & UX Kho sách):** Ambient Cover Blur + màu nhấn `16×16`, chồng bìa Tập 2 & Tập 3 thật xòe quạt (`PA-A` — `ShelfFanStack.tsx`) + nếp gáy sách, huy hiệu `★` & sắp xếp `rating_desc`, Edge Fades, pháo giấy nạp lười, View Transitions, `useShelfDeepLink`.
-4. **Nhóm 2 (Trình đọc Chuyên sâu & Nhạc nền Đọc sách):** 3 bản nhạc nền Piano/Lofi + tiếng môi trường thật nối vòng lặp mượt tại `public/sounds/*.m4a` (`PA-A`: *Mưa đêm*, *Thư phòng ấm*, *Gió rừng anh đào*; đã bỏ chủ đề củi lửa thừa; `0` CDN, `0 B` R2) + Sleep Timer, bóng gáy 2 cột + trượt trang `220ms`, **Thanh dẫn mắt** chuẩn cho cả Cuộn dọc & **Lật trang 2 cột** (khoá từng đoạn theo cột trái → phải bằng chuột/vuốt dọc/`↑`/`↓`), tự cuộn `1–10`, vuốt mép trái `24px` Mobile chỉnh `nightDimPercent`, kéo đáy sang chương, Furigana `<ruby><rt>`.
-5. **Nhóm 3 (Command Palette, Wrapped & Bình luận v2):** `CommandPaletteModal` mở thuần bằng phím tắt `Ctrl+K` / `⌘K` (không thêm nút rối trên Header), `DailyGoalCard` + `Ofu's Library Wrapped` xuất Poster PNG bằng Canvas 2D thuần, và UI Bình luận v2 (sửa, trả lời 1 cấp, 5 reaction, tự che bình luận vượt chương đang đọc).
+1. **Gỡ mã nguồn & cầu nối 3D (`D-040`):** xoá toàn bộ `src/components/library3d/` (42 tệp), `Library3DHost.tsx`, `ViewModeToggle.tsx`, `useCanUse3D.ts`; dọn sạch props/type/cầu nối 3D tại `App.tsx`, `LibraryHeader.tsx`, `Library2DView.tsx`, `Library2DDialogsHost.tsx`, `CommandPaletteModal.tsx`, `useShelfDeepLink.ts`, `useTheme.ts`, `types.ts` và `public/sw.js`.
+2. **Xoá toàn bộ tài sản 3D & gói npm:** xoá `public/models/` (27 `.glb`, ~`39.4 MB`), `public/textures/` (10 `.webp` PBR, ~`1.36 MB`), thư mục nguồn cục bộ `glb/` (55 tệp, ~`1.43 GB` & bỏ khỏi `.gitignore`), và gỡ `three`, `@react-three/fiber`, `@types/three` (giảm 22 gói npm, bỏ chunk `FantasyLibrary3D` ~`1.1 MB`, giảm entry từ `85.39 kB` xuống `83.85 kB` gzip).
+3. **Bảo toàn 100% tính năng 2D & Kiểm thử:** giữ nguyên `public/sounds/*.m4a`, con trỏ Miku 2D, `readingStats.ts`, Backend Worker và thư mục `docs/`; đã xác nhận `0` tham chiếu 3D qua `git grep`, build sạch 0 cảnh báo và kiểm thử trực quan 2D (Header, 4 theme, `Ctrl+K`, 3 tab, 0 lỗi Console/404).
 
 ## Bước tiếp theo
-1. Cài secret `DISCORD_RELEASE_ROLE_ID` trên Worker và bấm thử *Thông báo Discord* để kiểm tra bìa kệ + ping Role.
-2. Mở Pull Request từ nhánh `feat/reader-lofi-soundscapes` vào `main` để GitHub Actions tự động deploy lên `ofu.lol`.
+1. Push nhánh `refactor/remove-library-3d` và mở Pull Request vào `main` để GitHub Actions deploy bản 2D tinh gọn lên `ofu.lol`.
+2. Nếu người dùng muốn tiếp tục: tạo nhánh `fix/...` vá nhóm lỗi High/Medium tồn đọng của 2D Reader v3 & Worker (chống cào `rl_strikes`, `reading_seconds`, Furigana `justify`/Highlight, kéo đáy Guest, che spoiler Bình luận v2, nhạc nền iOS Safari `'interrupted'`, Wrapped PNG) hoặc lập kế hoạch tính năng v4.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn. Giữ nguyên 3 tệp chưa theo dõi sẵn từ trước ở thư mục gốc ngoài Git.

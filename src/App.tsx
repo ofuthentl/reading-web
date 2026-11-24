@@ -18,31 +18,21 @@ import type { LibraryModalState } from '@/components/AdminModalsHost';
 import { Library2DView } from '@/components/Library2DView';
 import { ToastContainer } from '@/components/ToastContainer';
 import { useBookReader } from '@/hooks/useBookReader';
-import { useCanUse3D } from '@/hooks/useCanUse3D';
 import { useLibraryDataStore } from '@/hooks/useLibraryDataStore';
 import { useLibraryViewState } from '@/hooks/useLibraryViewState';
 import { useShelfDeepLink } from '@/hooks/useShelfDeepLink';
-import { toScene3DTheme, useTheme } from '@/hooks/useTheme';
+import { useTheme } from '@/hooks/useTheme';
 import { useToast } from '@/hooks/useToast';
 
 const LazyAuthGate = lazy(() => import('@/components/AuthGate').then((m) => ({ default: m.AuthGate })));
 const LazyAdminModalsHost = lazy(() => import('@/components/AdminModalsHost').then((m) => ({ default: m.AdminModalsHost })));
 const LazyLibrary2DDialogsHost = lazy(() => import('@/components/Library2DDialogsHost').then((m) => ({ default: m.Library2DDialogsHost })));
 const LazyAdminUsageView = lazy(() => import('@/components/AdminUsageView').then((m) => ({ default: m.AdminUsageView })));
-const LazyLibrary3DHost = lazy(() => import('@/components/Library3DHost').then((m) => ({ default: m.Library3DHost })));
 const LazyActiveReaderHost = lazy(() => import('@/components/ActiveReaderHost').then((m) => ({ default: m.ActiveReaderHost })));
 
 export default function App() {
-  const { theme, cycleTheme, cycle3DTheme } = useTheme();
+  const { theme, cycleTheme } = useTheme();
   const { toasts, addToast, dismissToast } = useToast();
-  const {
-    canUse3D,
-    effectiveMode,
-    prefersReducedMotion,
-    retryKey,
-    setViewMode,
-    mark3DFailed,
-  } = useCanUse3D();
 
   const [authenticated, setAuthenticated] = useState(false);
   const [gateRoute, setGateRoute] = useState<GateRoute>(getCurrentGateRoute);
@@ -69,14 +59,6 @@ export default function App() {
 
   const closeModal = useCallback(() => setModal({ kind: 'none' }), []);
   const authResetCleanupRef = useRef<() => void>(() => undefined);
-
-  const handleFallbackTo2D = useCallback(
-    (reason: string) => {
-      mark3DFailed();
-      addToast(reason, 'warning');
-    },
-    [addToast, mark3DFailed],
-  );
 
   const handleApiError = useCallback(
     (err: unknown, fallbackMessage: string) => {
@@ -261,8 +243,6 @@ export default function App() {
     hasLoadedOnce: store.hasLoadedOnce,
     allShelves: libraryViewState.allShelves,
     sessionRole: session.role,
-    effectiveMode,
-    setViewMode,
     onJumpToShelf: handleJumpToShelf,
     onSwitchToLibraryTab: handleSwitchToLibraryTab,
     addToast,
@@ -311,12 +291,7 @@ export default function App() {
     );
   }
 
-  const effectiveCanUse3D = isOwner && canUse3D;
-  const render3D = isOwner && effectiveMode === '3d';
   const isReaderOpen = Boolean(reader.activeBook && (reader.parsedBook || reader.guestSession));
-  const anyDialogOpen = modal.kind !== 'none' || Boolean(inspectedBook) || statsOpen || paletteOpen;
-  const is3DPaused = Boolean(reader.openingBook || isReaderOpen || anyDialogOpen);
-  const is3DDimmed = Boolean(reader.openingBook || isReaderOpen);
 
   const renamingShelfName = modal.kind === 'rename-shelf' ? modal.shelfName : null;
   const renamingShelfKey = renamingShelfName?.trim().toLocaleLowerCase('vi') ?? null;
@@ -329,104 +304,67 @@ export default function App() {
 
   return (
     <>
-      {render3D ? (
-        <Suspense fallback={<div className="theme-canvas min-h-screen" />}>
-          <LazyLibrary3DHost
-            books={store.books}
-            progress={store.progress}
-            storage={store.storage}
-            loading={store.loading}
-            theme={toScene3DTheme(theme)}
-            viewState={libraryViewState}
-            canUse3D={effectiveCanUse3D}
-            viewMode={effectiveMode}
-            onChangeViewMode={setViewMode}
-            onCycleTheme={cycle3DTheme}
-            onRefresh={() => void loadLibrary()}
-            onLogout={handleLogout}
-            onOpenBook={(book: Book) => void reader.openBook(book)}
-            onUploadClick={() => setModal({ kind: 'upload' })}
-            onEditBook={(book: Book) => setModal({ kind: 'edit', book })}
-            onRenameShelf={(shelfName: string) => setModal({ kind: 'rename-shelf', shelfName })}
-            onMoveSelectedToShelf={(selectedBooks: Book[]) =>
-              setModal({ kind: 'bulk-shelf', books: selectedBooks })
-            }
-            onDeleteSelected={(selectedBooks: Book[]) =>
-              setModal({ kind: 'delete', books: selectedBooks })
-            }
-            retryKey={retryKey}
-            prefersReducedMotion={prefersReducedMotion}
-            paused={is3DPaused}
-            dimmed={is3DDimmed}
-            onFallbackTo2D={handleFallbackTo2D}
-          />
-        </Suspense>
-      ) : (
-        !isReaderOpen && (
-          <Library2DView
-            books={store.books}
-            progress={store.progress}
-            storage={store.storage}
-            loading={store.loading}
-            theme={theme}
-            viewState={libraryViewState}
-            sessionRole={session.role}
-            sessionExpiresAt={session.expiresAt}
-            canUse3D={effectiveCanUse3D}
-            viewMode="2d"
-            onChangeViewMode={isOwner ? setViewMode : undefined}
-            onCycleTheme={cycleTheme}
-            onOpenStats={() => setStatsOpen(true)}
-            onOpenUsage={isOwner ? () => navigateGateRoute('usage') : undefined}
-            onOpenCacheManager={
-              isOwner ? () => setModal({ kind: 'cache-manager' }) : undefined
-            }
-            onRefresh={() => void loadLibrary()}
-            onLogout={handleLogout}
-            onOpenBook={(book: Book) => void reader.openBook(book)}
-            onInspectBook={(book: Book) => setInspectedBookId(book.id)}
-            onDismissContinue={store.handleResetBookProgress}
-            onUploadClick={isOwner ? () => setModal({ kind: 'upload' }) : undefined}
-            onProtectionClick={isOwner ? () => setModal({ kind: 'protection' }) : undefined}
-            unprotectedBookCount={isOwner ? store.unprotectedBookCount : 0}
-            onEditBook={isOwner ? (book: Book) => setModal({ kind: 'edit', book }) : undefined}
-            onBooksUpdated={isOwner ? store.handleBooksBatchUpdated : undefined}
-            onRenameShelf={
-              isOwner ? (shelfName: string) => setModal({ kind: 'rename-shelf', shelfName }) : undefined
-            }
-            onMoveSelectedToShelf={
-              isOwner
-                ? (selectedBooks: Book[]) => setModal({ kind: 'bulk-shelf', books: selectedBooks })
-                : undefined
-            }
-            onDeleteSelected={
-              isOwner
-                ? (selectedBooks: Book[]) => setModal({ kind: 'delete', books: selectedBooks })
-                : undefined
-            }
-            shelfCovers={store.shelfPrefs.covers}
-            shelfAccess={isOwner ? store.shelfPrefs.access : undefined}
-            shelfTags={store.shelfPrefs.tags}
-            shelfAltTitles={store.shelfPrefs.altTitles}
-            shelfRatings={store.shelfRatings}
-            favoriteShelfKeys={store.effectiveFavoriteShelfKeys}
-            planToReadShelfKeys={store.planToReadShelfKeys}
-            planToReadBookIds={store.planToReadBookIds}
-            collections={store.collections}
-            onShelfCoverChanged={isOwner ? store.handleShelfCoverChanged : undefined}
-            onShelfAccessChanged={isOwner ? store.handleShelfAccessChanged : undefined}
-            onShelfTagsChanged={isOwner ? store.handleShelfTagsChanged : undefined}
-            onShelfAltTitlesChanged={isOwner ? store.handleShelfAltTitlesChanged : undefined}
-            onShelfRatingUpdated={store.handleShelfRatingUpdated}
-            onToggleFavoriteShelf={store.handleToggleFavoriteShelf}
-            onTogglePlanToRead={store.handleTogglePlanToRead}
-            onTogglePlanToReadBook={store.handleTogglePlanToReadBook}
-            onCollectionSaved={isOwner ? store.handleCollectionSaved : undefined}
-            onCollectionDeleted={isOwner ? store.handleCollectionDeleted : undefined}
-            onApiError={handleApiError}
-            onNotify={addToast}
-          />
-        )
+      {!isReaderOpen && (
+        <Library2DView
+          books={store.books}
+          progress={store.progress}
+          storage={store.storage}
+          loading={store.loading}
+          theme={theme}
+          viewState={libraryViewState}
+          sessionRole={session.role}
+          sessionExpiresAt={session.expiresAt}
+          onCycleTheme={cycleTheme}
+          onOpenStats={() => setStatsOpen(true)}
+          onOpenUsage={isOwner ? () => navigateGateRoute('usage') : undefined}
+          onOpenCacheManager={
+            isOwner ? () => setModal({ kind: 'cache-manager' }) : undefined
+          }
+          onRefresh={() => void loadLibrary()}
+          onLogout={handleLogout}
+          onOpenBook={(book: Book) => void reader.openBook(book)}
+          onInspectBook={(book: Book) => setInspectedBookId(book.id)}
+          onDismissContinue={store.handleResetBookProgress}
+          onUploadClick={isOwner ? () => setModal({ kind: 'upload' }) : undefined}
+          onProtectionClick={isOwner ? () => setModal({ kind: 'protection' }) : undefined}
+          unprotectedBookCount={isOwner ? store.unprotectedBookCount : 0}
+          onEditBook={isOwner ? (book: Book) => setModal({ kind: 'edit', book }) : undefined}
+          onBooksUpdated={isOwner ? store.handleBooksBatchUpdated : undefined}
+          onRenameShelf={
+            isOwner ? (shelfName: string) => setModal({ kind: 'rename-shelf', shelfName }) : undefined
+          }
+          onMoveSelectedToShelf={
+            isOwner
+              ? (selectedBooks: Book[]) => setModal({ kind: 'bulk-shelf', books: selectedBooks })
+              : undefined
+          }
+          onDeleteSelected={
+            isOwner
+              ? (selectedBooks: Book[]) => setModal({ kind: 'delete', books: selectedBooks })
+              : undefined
+          }
+          shelfCovers={store.shelfPrefs.covers}
+          shelfAccess={isOwner ? store.shelfPrefs.access : undefined}
+          shelfTags={store.shelfPrefs.tags}
+          shelfAltTitles={store.shelfPrefs.altTitles}
+          shelfRatings={store.shelfRatings}
+          favoriteShelfKeys={store.effectiveFavoriteShelfKeys}
+          planToReadShelfKeys={store.planToReadShelfKeys}
+          planToReadBookIds={store.planToReadBookIds}
+          collections={store.collections}
+          onShelfCoverChanged={isOwner ? store.handleShelfCoverChanged : undefined}
+          onShelfAccessChanged={isOwner ? store.handleShelfAccessChanged : undefined}
+          onShelfTagsChanged={isOwner ? store.handleShelfTagsChanged : undefined}
+          onShelfAltTitlesChanged={isOwner ? store.handleShelfAltTitlesChanged : undefined}
+          onShelfRatingUpdated={store.handleShelfRatingUpdated}
+          onToggleFavoriteShelf={store.handleToggleFavoriteShelf}
+          onTogglePlanToRead={store.handleTogglePlanToRead}
+          onTogglePlanToReadBook={store.handleTogglePlanToReadBook}
+          onCollectionSaved={isOwner ? store.handleCollectionSaved : undefined}
+          onCollectionDeleted={isOwner ? store.handleCollectionDeleted : undefined}
+          onApiError={handleApiError}
+          onNotify={addToast}
+        />
       )}
 
       {(reader.activeBook || reader.openingBook) && (
@@ -467,19 +405,17 @@ export default function App() {
             progress={store.progress}
             planToReadBookIds={store.planToReadBookIds}
             sessionRole={session.role}
-            canUse3D={effectiveCanUse3D}
             dailyGoalMinutes={reader.settings.dailyGoalMinutes}
             onChangeDailyGoalMinutes={(mins) => reader.updateSettings({ dailyGoalMinutes: mins })}
             onCloseInspect={() => setInspectedBookId(null)}
             onCloseStats={() => setStatsOpen(false)}
             onClosePalette={() => setPaletteOpen(false)}
-            onOpenStats={() => { closeBook(); setViewMode('2d'); setStatsOpen(true); }}
+            onOpenStats={() => { closeBook(); setStatsOpen(true); }}
             onOpenBook={(book, jumpTarget) => void reader.openBook(book, jumpTarget)}
-            onJumpToShelf={(shelfKey) => { closeBook(); setViewMode('2d'); handleJumpToShelf(shelfKey); }}
-            onSelectAuthor={(author) => { closeBook(); setViewMode('2d'); setActiveTab('home'); libraryViewState.filterByAuthor(author); }}
-            onSelectCollection={(colId) => { closeBook(); setViewMode('2d'); setActiveTab('library'); libraryViewState.closeLibraryShelf(); libraryViewState.setActiveCollectionId(colId); }}
+            onJumpToShelf={(shelfKey) => { closeBook(); handleJumpToShelf(shelfKey); }}
+            onSelectAuthor={(author) => { closeBook(); setActiveTab('home'); libraryViewState.filterByAuthor(author); }}
+            onSelectCollection={(colId) => { closeBook(); setActiveTab('library'); libraryViewState.closeLibraryShelf(); libraryViewState.setActiveCollectionId(colId); }}
             onCycleTheme={cycleTheme}
-            onSwitchTo3D={effectiveCanUse3D ? () => { closeBook(); setViewMode('3d'); } : undefined}
             onUploadClick={isOwner ? () => { closeBook(); setModal({ kind: 'upload' }); } : undefined}
             onMarkCompleted={store.handleMarkBookCompleted}
             onResetProgress={store.handleResetBookProgress}

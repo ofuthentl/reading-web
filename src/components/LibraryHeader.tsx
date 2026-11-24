@@ -14,11 +14,10 @@ import {
   Shield,
   Upload,
 } from 'lucide-react';
-import type { AuthRole, LibraryTab, StorageStats, ViewMode } from '@/types';
+import type { AuthRole, LibraryTab, StorageStats } from '@/types';
 import { HARD_LIMIT_BYTES, formatBytes, isCloudMode } from '@/lib/api';
 import { formatRemainingSessionTime } from '@/lib/authSession';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { ViewModeToggle } from '@/components/ViewModeToggle';
 import type { UiTheme } from '@/hooks/useTheme';
 
 interface LibraryHeaderProps {
@@ -34,9 +33,6 @@ interface LibraryHeaderProps {
   sessionExpiresAt?: number | null;
   activeTab?: LibraryTab;
   onChangeTab?: (tab: LibraryTab) => void;
-  canUse3D?: boolean;
-  viewMode?: ViewMode;
-  onChangeViewMode?: (mode: ViewMode) => void;
   onCycleTheme: (origin?: { x: number; y: number }) => void;
   onOpenStats?: () => void;
   onOpenUsage?: () => void;
@@ -68,9 +64,6 @@ export function LibraryHeader({
   sessionExpiresAt = null,
   activeTab,
   onChangeTab,
-  canUse3D = false,
-  viewMode = '2d',
-  onChangeViewMode,
   onCycleTheme,
   onOpenStats,
   onOpenUsage,
@@ -292,14 +285,6 @@ export function LibraryHeader({
                   : 'Chọn'}
               </span>
             </button>
-          )}
-
-          {isOwner && canUse3D && onChangeViewMode && (
-            <ViewModeToggle
-              canUse3D={canUse3D}
-              viewMode={viewMode}
-              onChange={onChangeViewMode}
-            />
           )}
 
           <ThemeToggle theme={theme} onCycle={onCycleTheme} />

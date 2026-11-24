@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { AuthRole, ShelfGroup, ViewMode } from '@/types';
+import type { AuthRole, ShelfGroup } from '@/types';
 import { toShelfPrefKey } from '@/lib/shelfPrefs';
 import type { ToastType } from '@/hooks/useToast';
 
@@ -8,8 +8,6 @@ interface UseShelfDeepLinkOptions {
   hasLoadedOnce: boolean;
   allShelves: readonly ShelfGroup[];
   sessionRole: AuthRole;
-  effectiveMode: ViewMode;
-  setViewMode: (mode: ViewMode) => void;
   onJumpToShelf: (shelfKey: string) => void;
   onSwitchToLibraryTab: () => void;
   addToast: (message: string, type?: ToastType) => void;
@@ -26,8 +24,6 @@ export function useShelfDeepLink({
   hasLoadedOnce,
   allShelves,
   sessionRole,
-  effectiveMode,
-  setViewMode,
   onJumpToShelf,
   onSwitchToLibraryTab,
   addToast,
@@ -71,19 +67,14 @@ export function useShelfDeepLink({
       return;
     }
 
-    if (effectiveMode === '3d') {
-      setViewMode('2d');
-    }
     onJumpToShelf(matched.key);
   }, [
     addToast,
     allShelves,
     authenticated,
-    effectiveMode,
     hasLoadedOnce,
     onJumpToShelf,
     onSwitchToLibraryTab,
     sessionRole,
-    setViewMode,
   ]);
 }

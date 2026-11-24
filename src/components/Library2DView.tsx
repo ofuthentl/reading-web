@@ -8,7 +8,6 @@ import type {
   ShelfAccessSummary,
   ShelfRatingSummary,
   StorageStats,
-  ViewMode,
 } from '@/types';
 import { isCloudMode } from '@/lib/api';
 import { BookCard } from '@/components/BookCard';
@@ -61,9 +60,6 @@ interface Library2DViewProps {
   viewState: LibraryViewState;
   sessionRole?: AuthRole;
   sessionExpiresAt?: number | null;
-  canUse3D?: boolean;
-  viewMode?: ViewMode;
-  onChangeViewMode?: (mode: ViewMode) => void;
   onCycleTheme: (origin?: { x: number; y: number }) => void;
   onRefresh: () => void;
   onLogout: () => void;
@@ -116,7 +112,7 @@ export function Library2DView({
   books, progress, shelfCovers, shelfAccess, shelfTags, shelfAltTitles, shelfRatings,
   favoriteShelfKeys, planToReadShelfKeys, planToReadBookIds, collections,
   storage, loading, theme, viewState, sessionRole = 'owner', sessionExpiresAt = null,
-  canUse3D = false, viewMode = '2d', onChangeViewMode, onCycleTheme, onRefresh, onLogout,
+  onCycleTheme, onRefresh, onLogout,
   onOpenBook, onInspectBook, onDismissContinue, onOpenStats, onOpenUsage, onOpenCacheManager,
   onUploadClick, onProtectionClick, unprotectedBookCount = 0, onEditBook, onBooksUpdated,
   onRenameShelf, onShelfCoverChanged, onShelfAccessChanged, onShelfTagsChanged,
@@ -208,9 +204,6 @@ export function Library2DView({
         sessionExpiresAt={sessionExpiresAt}
         activeTab={activeTab}
         onChangeTab={setActiveTab}
-        canUse3D={canUse3D}
-        viewMode={viewMode}
-        onChangeViewMode={onChangeViewMode}
         onCycleTheme={onCycleTheme}
         onOpenStats={onOpenStats}
         onOpenUsage={onOpenUsage}
