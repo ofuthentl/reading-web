@@ -22,6 +22,11 @@ export interface GuestReaderSessionState {
   watermarkLabel: string;
 }
 
+export interface BookOpenJumpTarget {
+  chapterIndex: number;
+  scrollRatio: number;
+}
+
 interface UseBookReaderOptions {
   appTheme: UiTheme;
   sessionRole: AuthRole;
@@ -47,6 +52,9 @@ export function useBookReader({
   const [parsedBook, setParsedBook] = useState<ParsedBook | null>(null);
   const [guestSession, setGuestSession] = useState<GuestReaderSessionState | null>(null);
   const [loadedFromCache, setLoadedFromCache] = useState(false);
+  const [initialJump, setInitialJump] = useState<(BookOpenJumpTarget & { bookId: string }) | null>(
+    null,
+  );
 
   const requestIdRef = useRef(0);
   const parsedBookRef = useRef<ParsedBook | null>(null);
@@ -141,10 +149,11 @@ export function useBookReader({
     setParsedBook(null);
     setGuestSession(null);
     setLoadedFromCache(false);
+    setInitialJump(null);
   }, [disposeCurrent]);
 
   const openBook = useCallback(
-    async (book: Book) => {
+    async (book: Book, jumpTarget?: BookOpenJumpTarget) => {
       if (sessionRole === 'guest' && book.guest_locked) {
         onApiError(
           new Error('🔒 Bộ truyện này chỉ mở quyền đọc cho thành viên Discord được chỉ định.'),
@@ -164,7 +173,7 @@ export function useBookReader({
         if (isCloudMode && sessionRole === 'guest') {
           const { fetchGuestBookToc } = await import('@/lib/guestCrypto');
           if (requestId !== requestIdRef.current) return;
-          const toc = await fetchGuestBookToc(book.id);
+          const toc = await fetchGuestBookToc(book.id, controller.signal);
           if (requestId !== requestIdRef.current) return;
 
           disposeCurrent();
@@ -173,6 +182,7 @@ export function useBookReader({
             chapters: toc.chapters,
             watermarkLabel: toc.watermarkLabel,
           });
+          setInitialJump(jumpTarget ? { bookId: book.id, ...jumpTarget } : null);
           setActiveBook(book);
           setLoadedFromCache(false);
           setOpeningBook(null);
@@ -194,6 +204,7 @@ export function useBookReader({
         disposeCurrent();
         parsedBookRef.current = parsed;
         setGuestSession(null);
+        setInitialJump(jumpTarget ? { bookId: book.id, ...jumpTarget } : null);
         setActiveBook(book);
         setParsedBook(parsed);
         setLoadedFromCache(fromCache);
@@ -242,6 +253,7 @@ export function useBookReader({
     parsedBook,
     guestSession,
     loadedFromCache,
+    initialJump,
     updateSettings,
     openBook,
     cancelOpeningBook,

@@ -430,13 +430,14 @@ export default function App() {
             parsedBook={reader.parsedBook}
             guestSession={reader.guestSession}
             loadedFromCache={reader.loadedFromCache}
+            initialJump={reader.initialJump}
             settings={reader.settings}
             session={session}
             books={store.books}
             progress={store.progress}
             onUpdateSettings={reader.updateSettings}
             onSaveProgress={reader.handleSaveProgress}
-            onOpenBook={(book: Book) => void reader.openBook(book)}
+            onOpenBook={(book, jumpTarget) => void reader.openBook(book, jumpTarget)}
             onApiError={handleApiError}
             onCancelOpening={reader.cancelOpeningBook}
             onClose={reader.closeBook}

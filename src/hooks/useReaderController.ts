@@ -131,20 +131,20 @@ export function useReaderController({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        blockCopyShortcuts &&
-        (event.ctrlKey || event.metaKey) &&
-        ['s', 'p', 'c', 'u'].includes(event.key.toLowerCase())
-      ) {
-        event.preventDefault();
-        return;
-      }
-
       const target = event.target as HTMLElement | null;
       const isTyping =
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
         target?.isContentEditable;
+
+      if (blockCopyShortcuts && (event.ctrlKey || event.metaKey)) {
+        const lowerKey = event.key.toLowerCase();
+        // Cho phép khách Copy/Cut bên trong ô nhập bình luận/ghi chú, vẫn chặn Save/Print/ViewSource và Copy ngoài văn bản
+        if (['s', 'p', 'u'].includes(lowerKey) || (!isTyping && ['c', 'x'].includes(lowerKey))) {
+          event.preventDefault();
+          return;
+        }
+      }
 
       if (event.key === 'Escape') {
         if (lightboxTarget) setLightboxTarget(null);
@@ -155,6 +155,10 @@ export function useReaderController({
       }
 
       if (isTyping || lightboxTarget) return;
+      const hasOpenDialog =
+        typeof document !== 'undefined' && Boolean(document.querySelector('[role="dialog"]'));
+      if (hasOpenDialog) return;
+
       if (!event.ctrlKey && !event.metaKey && !event.altKey) {
         const key = event.key.toLowerCase();
         if (key === 'm') {

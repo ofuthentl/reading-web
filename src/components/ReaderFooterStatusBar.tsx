@@ -17,7 +17,7 @@ export function ReaderNightDimOverlay({
     <div
       aria-hidden="true"
       className={`pointer-events-none absolute inset-0 bg-[#080604] transition-opacity duration-150 ${
-        settingsOpen ? 'z-20' : 'z-[35]'
+        settingsOpen ? 'z-20' : 'z-[63]'
       }`}
       style={{ opacity }}
     />

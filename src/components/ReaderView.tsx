@@ -23,6 +23,7 @@ import {
 import { ReaderOverlaysHost } from '@/components/ReaderOverlaysHost';
 import { type PaginatedStageHandle, ReaderPaginatedView } from '@/components/ReaderPaginatedView';
 import { ReaderTopBar } from '@/components/ReaderTopBar';
+import type { BookOpenJumpTarget } from '@/hooks/useBookReader';
 import { useReaderBookFeatures } from '@/hooks/useReaderBookFeatures';
 import { useReaderChapterProgress } from '@/hooks/useReaderChapterProgress';
 import {
@@ -34,6 +35,7 @@ import {
   READER_FONT_CLASS,
   READER_THEME_STYLES,
   READER_WIDTH_MAX,
+  findClickedReaderImage,
   handleReaderContentLinkClick,
 } from '@/lib/readerConfig';
 import {
@@ -55,7 +57,7 @@ type ReaderViewProps = {
   settings: ReaderSettings;
   onUpdateSettings: (next: Partial<ReaderSettings>) => void;
   onSaveProgress: (progress: ReadingProgress, options?: SaveProgressOptions) => void;
-  onOpenNextBook?: (nextBook: Book) => void;
+  onOpenNextBook?: (nextBook: Book, jumpTarget?: BookOpenJumpTarget) => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
   onClose: () => void;
 };
@@ -133,15 +135,25 @@ export function ReaderView({
     applyChapterDomHighlights(scrollContainerRef.current, features.chapterHighlights);
   }, [currentChapter?.content_html, currentChapter?.id, features.chapterHighlights, isPaginated]);
 
+  const chapterScrollRatioRef = useRef(chapterScrollRatio);
+  chapterScrollRatioRef.current = chapterScrollRatio;
+  const handleScrollRef = useRef<() => void>(() => undefined);
+
   const handleUpdateSettings = useCallback(
     (patch: Partial<ReaderSettings>) => {
       if (patch.layoutMode && patch.layoutMode !== settings.layoutMode) {
-        if (patch.layoutMode === 'paginated') setPaginatedStartRatio(chapterScrollRatio);
-        else restoreTargetRatioRef.current = chapterScrollRatio;
+        if (patch.layoutMode === 'paginated') setPaginatedStartRatio(chapterScrollRatioRef.current);
+        else restoreTargetRatioRef.current = chapterScrollRatioRef.current;
+      } else if (
+        !isPaginated &&
+        (patch.width || patch.fontSizePx || patch.lineHeight || patch.font ||
+          patch.textAlign || patch.paragraphIndent !== undefined || patch.paragraphSpacing)
+      ) {
+        restoreTargetRatioRef.current = chapterScrollRatioRef.current;
       }
       onUpdateSettings(patch);
     },
-    [chapterScrollRatio, onUpdateSettings, restoreTargetRatioRef, setPaginatedStartRatio, settings.layoutMode],
+    [isPaginated, onUpdateSettings, restoreTargetRatioRef, setPaginatedStartRatio, settings.layoutMode],
   );
 
   const handleScroll = useCallback(() => {
@@ -177,17 +189,28 @@ export function ReaderView({
     chapterIndex, chapters.length, completedRef, currentChapter, isPaginated,
     queueProgressSave, setChapterScrollRatio, suppressSaveRef, updateImmersiveOnScroll,
   ]);
+  handleScrollRef.current = handleScroll;
+
+  const typographyKey = `${settings.width}:${settings.font}:${settings.fontSizePx}:${settings.lineHeight}:${settings.textAlign}:${settings.paragraphIndent}:${settings.paragraphSpacing}`;
 
   useLayoutEffect(() => {
     if (isPaginated || !currentChapter || !scrollContainerRef.current) return;
-    suppressSaveRef.current = true;
+    if (searchTarget && searchTarget.chapterIndex === chapterIndex && appliedSearchNonceRef.current !== searchTarget.nonce) {
+      restoreTargetRatioRef.current = null;
+      suppressSaveRef.current = false;
+      return;
+    }
     const targetRatio = restoreTargetRatioRef.current ?? 0;
+    suppressSaveRef.current = true;
 
     let frame = 0;
     let tries = 0;
     const apply = () => {
       const el = scrollContainerRef.current;
-      if (!el) return;
+      if (!el) {
+        suppressSaveRef.current = false;
+        return;
+      }
       const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
       el.scrollTop = Math.round(maxScroll * targetRatio);
       lastScrollTopRef.current = el.scrollTop;
@@ -197,12 +220,40 @@ export function ReaderView({
       } else {
         restoreTargetRatioRef.current = null;
         suppressSaveRef.current = false;
-        handleScroll();
+        handleScrollRef.current();
       }
     };
     frame = requestAnimationFrame(apply);
-    return () => cancelAnimationFrame(frame);
-  }, [currentChapter, handleScroll, isPaginated, lastScrollTopRef, restoreTargetRatioRef, suppressSaveRef]);
+    return () => {
+      cancelAnimationFrame(frame);
+      suppressSaveRef.current = false;
+    };
+  }, [chapterIndex, currentChapter, isPaginated, lastScrollTopRef, restoreTargetRatioRef, searchTarget, suppressSaveRef, typographyKey]);
+
+  // Bảo toàn tỷ lệ đọc khi xoay màn hình hoặc đổi kích thước cửa sổ ở chế độ cuộn dọc
+  useEffect(() => {
+    if (isPaginated) return;
+    let lastW = typeof window !== 'undefined' ? window.innerWidth : 0;
+    let raf = 0;
+    const onResize = () => {
+      if (window.innerWidth === lastW) return;
+      lastW = window.innerWidth;
+      const savedRatio = chapterScrollRatioRef.current;
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const el = scrollContainerRef.current;
+        if (!el) return;
+        const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+        el.scrollTop = Math.round(maxScroll * savedRatio);
+        lastScrollTopRef.current = el.scrollTop;
+      });
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [isPaginated, lastScrollTopRef]);
 
   useEffect(() => {
     if (isPaginated || !searchTarget || searchTarget.chapterIndex !== chapterIndex) return;
@@ -372,12 +423,12 @@ export function ReaderView({
               if (handleReaderContentLinkClick(event, scrollContainerRef.current)) return;
               if (window.getSelection()?.toString()) return;
 
-              const target = event.target as HTMLElement | null;
-              const clickedImg = target?.closest('.reading-content img') as HTMLImageElement | null;
-              if (clickedImg?.src) {
-                setLightboxTarget({ kind: 'dom', src: clickedImg.src, alt: clickedImg.alt || book.title });
+              const clickedImg = findClickedReaderImage(event.target, book.title);
+              if (clickedImg) {
+                setLightboxTarget({ kind: 'dom', src: clickedImg.src, alt: clickedImg.alt });
                 return;
               }
+              const target = event.target as HTMLElement | null;
 
               if (target?.closest('button, a, input, select, textarea, [data-community-section]')) {
                 return;
@@ -470,9 +521,9 @@ export function ReaderView({
         onJumpToRatio={goToChapter}
         onJumpToSearchResult={handleJumpToSearchResult}
         onSetLightboxTarget={setLightboxTarget}
-        onOpenOtherBook={(targetBook) => {
+        onOpenOtherBook={(targetBook, jumpTarget) => {
           flushProgress({ forceTimeFlush: true, keepalive: true });
-          onOpenNextBook?.(targetBook);
+          onOpenNextBook?.(targetBook, jumpTarget);
         }}
         onApiError={onApiError}
       />

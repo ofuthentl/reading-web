@@ -161,6 +161,11 @@ export function useReaderBookFeatures({
     [bookId, onApiError],
   );
 
+  const removeHighlightLocal = useCallback((id: string) => {
+    setHighlights((prev) => prev.filter((it) => it.id !== id));
+    setEditingHighlight((prev) => (prev?.highlight.id === id ? null : prev));
+  }, []);
+
   return {
     highlights,
     chapterHighlights,
@@ -180,5 +185,6 @@ export function useReaderBookFeatures({
     createNewHighlight,
     editExistingHighlight,
     removeExistingHighlight,
+    removeHighlightLocal,
   };
 }

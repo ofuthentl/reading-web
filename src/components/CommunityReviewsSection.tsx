@@ -46,6 +46,8 @@ export function CommunityReviewsSection({
   onNotify,
 }: CommunityReviewsSectionProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const activeTargetRef = useRef(`${targetType}:${targetKey}`);
+  activeTargetRef.current = `${targetType}:${targetKey}`;
   const [summary, setSummary] = useState<CommunitySummary | null>(null);
   const [loading, setLoading] = useState(!lockedMessage);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -64,12 +66,15 @@ export function CommunityReviewsSection({
   const isReader = variant === 'reader' && Boolean(palette);
   const borderClass = isReader && palette ? palette.border : 'border-line';
   const mutedTextClass = isReader && palette ? palette.textSecondary : 'text-ink-muted';
-  const cardSurfaceClass = isReader
-    ? `rounded-2xl border ${borderClass} bg-black/[0.03] dark:bg-white/[0.03]`
+  const cardSurfaceClass = isReader && palette
+    ? `rounded-2xl border ${borderClass} ${palette.surfaceSubtle}`
     : 'moonlit-card rounded-2xl border border-line bg-surface shadow-sm dark:border-line-strong/60';
   const inputSurfaceClass = isReader && palette
-    ? `border ${palette.border} bg-transparent ${palette.textPrimary}`
-    : 'border border-line bg-canvas text-ink placeholder:text-ink-faint';
+    ? `border ${palette.border} bg-transparent ${palette.textPrimary} ${palette.focusBorder}`
+    : 'border border-line bg-canvas text-ink placeholder:text-ink-faint focus:border-amber-500/70';
+  const submitButtonClass = isReader && palette
+    ? `${palette.accentBg} ${palette.accentFg}`
+    : 'bg-accent text-accent-foreground hover:bg-accent-hover';
 
   const loadSummary = useCallback(
     async (signal?: AbortSignal) => {
@@ -106,6 +111,7 @@ export function CommunityReviewsSection({
   );
 
   useEffect(() => {
+    setSummary(null);
     setDraft('');
     setSubmitError(null);
     setConfirmDeleteId(null);
@@ -117,10 +123,12 @@ export function CommunityReviewsSection({
   const handleRate = async (star: number) => {
     if (savingRating) return;
     setHoverStar(null);
+    const reqKey = `${targetType}:${targetKey}`;
     const nextRating = summary?.myRating === star ? null : star;
     setSavingRating(true);
     try {
       const updated = await saveCommunityRating(targetType, targetKey, nextRating);
+      if (activeTargetRef.current !== reqKey) return;
       setSummary((prev) =>
         prev
           ? {
@@ -142,6 +150,7 @@ export function CommunityReviewsSection({
         'success',
       );
     } catch (err) {
+      if (activeTargetRef.current !== reqKey) return;
       if (isAuthError(err)) {
         onApiError?.(err, 'Phiên đăng nhập đã hết hạn.');
         return;
@@ -150,7 +159,7 @@ export function CommunityReviewsSection({
       setSubmitError(msg);
       onNotify?.(msg, 'error');
     } finally {
-      setSavingRating(false);
+      if (activeTargetRef.current === reqKey) setSavingRating(false);
     }
   };
 
@@ -163,12 +172,15 @@ export function CommunityReviewsSection({
       start,
       end,
     );
-    setDraft(nextValue.slice(0, MAX_COMMUNITY_COMMENT_LENGTH));
+    const clampedValue = nextValue.slice(0, MAX_COMMUNITY_COMMENT_LENGTH);
+    const safeStart = Math.min(nextSelectionStart, clampedValue.length);
+    const safeEnd = Math.min(nextSelectionEnd, clampedValue.length);
+    setDraft(clampedValue);
     setSubmitError(null);
     window.requestAnimationFrame(() => {
       if (!textareaRef.current) return;
       textareaRef.current.focus();
-      textareaRef.current.setSelectionRange(nextSelectionStart, nextSelectionEnd);
+      textareaRef.current.setSelectionRange(safeStart, safeEnd);
     });
   };
 
@@ -176,10 +188,12 @@ export function CommunityReviewsSection({
     event.preventDefault();
     const trimmed = draft.trim();
     if (!trimmed || submitting) return;
+    const reqKey = `${targetType}:${targetKey}`;
     setSubmitting(true);
     setSubmitError(null);
     try {
       const created: CommunityComment = await postCommunityComment(targetType, targetKey, trimmed);
+      if (activeTargetRef.current !== reqKey) return;
       setDraft('');
       setSummary((prev) =>
         prev
@@ -200,6 +214,7 @@ export function CommunityReviewsSection({
       );
       onNotify?.('Đã đăng bình luận của bạn.', 'success');
     } catch (err) {
+      if (activeTargetRef.current !== reqKey) return;
       if (isAuthError(err)) {
         onApiError?.(err, 'Phiên đăng nhập đã hết hạn.');
         return;
@@ -207,15 +222,17 @@ export function CommunityReviewsSection({
       const msg = err instanceof Error ? err.message : 'Không thể gửi bình luận.';
       setSubmitError(msg);
     } finally {
-      setSubmitting(false);
+      if (activeTargetRef.current === reqKey) setSubmitting(false);
     }
   };
 
   const handleDeleteComment = async (commentId: string) => {
     if (deletingId) return;
+    const reqKey = `${targetType}:${targetKey}`;
     setDeletingId(commentId);
     try {
       await deleteCommunityCommentApi(commentId);
+      if (activeTargetRef.current !== reqKey) return;
       setConfirmDeleteId(null);
       setSummary((prev) =>
         prev
@@ -228,6 +245,7 @@ export function CommunityReviewsSection({
       );
       onNotify?.('Đã xoá bình luận.', 'info');
     } catch (err) {
+      if (activeTargetRef.current !== reqKey) return;
       if (isAuthError(err)) {
         onApiError?.(err, 'Phiên đăng nhập đã hết hạn.');
         return;
@@ -236,7 +254,7 @@ export function CommunityReviewsSection({
       setSubmitError(msg);
       onNotify?.(msg, 'error');
     } finally {
-      setDeletingId(null);
+      if (activeTargetRef.current === reqKey) setDeletingId(null);
     }
   };
 
@@ -355,7 +373,7 @@ export function CommunityReviewsSection({
               }}
               placeholder="Viết cảm nhận của bạn... Dùng ||nội dung ẩn|| để che spoiler."
               aria-label="Nội dung bình luận"
-              className={`w-full resize-y rounded-xl px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-amber-500/70 ${inputSurfaceClass}`}
+              className={`w-full resize-y rounded-xl px-3.5 py-2.5 text-sm outline-none transition-colors ${inputSurfaceClass}`}
             />
 
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -378,7 +396,7 @@ export function CommunityReviewsSection({
               <button
                 type="submit"
                 disabled={submitting || draft.trim().length === 0}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3.5 py-1.5 text-xs font-semibold text-accent-foreground transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-45"
+                className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${submitButtonClass}`}
               >
                 {submitting ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -411,6 +429,7 @@ export function CommunityReviewsSection({
                   key={comment.id}
                   comment={comment}
                   isReader={isReader}
+                  palette={palette}
                   borderClass={borderClass}
                   mutedTextClass={mutedTextClass}
                   confirming={confirmDeleteId === comment.id}

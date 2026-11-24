@@ -139,7 +139,7 @@ export function ReaderSettingsPopover({
           value={settings.nightDimPercent}
           onChange={(event) => onUpdateSettings({ nightDimPercent: Number(event.target.value) })}
           aria-label="Điều chỉnh lớp phủ dịu mắt ban đêm"
-          className="w-full accent-accent"
+          className={`w-full ${palette.sliderAccent}`}
         />
       </div>
 
@@ -210,7 +210,7 @@ export function ReaderSettingsPopover({
           value={settings.lineHeight}
           onChange={(event) => onUpdateSettings({ lineHeight: Number(event.target.value) })}
           aria-label="Điều chỉnh giãn dòng"
-          className="w-full accent-accent"
+          className={`w-full ${palette.sliderAccent}`}
         />
       </div>
 
@@ -265,7 +265,7 @@ export function ReaderSettingsPopover({
           type="checkbox"
           checked={settings.paragraphIndent}
           onChange={(event) => onUpdateSettings({ paragraphIndent: event.target.checked })}
-          className="h-4 w-4 shrink-0 accent-accent"
+          className={`h-4 w-4 shrink-0 ${palette.sliderAccent}`}
         />
       </label>
 
@@ -319,7 +319,7 @@ export function ReaderSettingsPopover({
           type="checkbox"
           checked={settings.sideTapNavigation}
           onChange={(event) => onUpdateSettings({ sideTapNavigation: event.target.checked })}
-          className="h-4 w-4 shrink-0 accent-accent"
+          className={`h-4 w-4 shrink-0 ${palette.sliderAccent}`}
         />
       </label>
     </div>

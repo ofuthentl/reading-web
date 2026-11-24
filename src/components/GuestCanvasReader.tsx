@@ -24,6 +24,7 @@ import {
 import { ReaderOverlaysHost } from '@/components/ReaderOverlaysHost';
 import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
 import { ReaderTopBar } from '@/components/ReaderTopBar';
+import type { BookOpenJumpTarget } from '@/hooks/useBookReader';
 import { useGuestChapterStream } from '@/hooks/useGuestChapterStream';
 import { useReaderBookFeatures } from '@/hooks/useReaderBookFeatures';
 import { useReaderCanvasFontVersion } from '@/hooks/useReaderCanvasFontVersion';
@@ -54,7 +55,7 @@ export interface GuestCanvasReaderProps {
   settings: ReaderSettings;
   onUpdateSettings: (next: Partial<ReaderSettings>) => void;
   onSaveProgress: (progress: ReadingProgress, options?: SaveProgressOptions) => void;
-  onOpenNextBook?: (nextBook: Book) => void;
+  onOpenNextBook?: (nextBook: Book, jumpTarget?: BookOpenJumpTarget) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
   onClose: () => void;
 }
@@ -162,24 +163,30 @@ export function GuestCanvasReader({
   );
 
   const showScrollStage = !loadingChapter && !chapterError && !isPaginated;
+  const chapterScrollRatioRef = useRef(chapterScrollRatio);
+  chapterScrollRatioRef.current = chapterScrollRatio;
 
   useLayoutEffect(() => {
     if (!showScrollStage) return;
     const el = scrollContainerRef.current;
     if (!el) return;
     const measure = () => {
-      const padX = el.clientWidth >= 640 ? 56 : 28;
+      const padX = window.innerWidth >= 640 ? 56 : 28;
       const nextWidth = Math.max(240, el.clientWidth - padX);
       const nextHeight = Math.max(280, el.clientHeight);
-      setStageBox((prev) =>
-        prev.width === nextWidth && prev.height === nextHeight ? prev : { width: nextWidth, height: nextHeight },
-      );
+      setStageBox((prev) => {
+        if (prev.width === nextWidth && prev.height === nextHeight) return prev;
+        if (prev.width !== nextWidth && restoreTargetRatioRef.current === null) {
+          restoreTargetRatioRef.current = chapterScrollRatioRef.current;
+        }
+        return { width: nextWidth, height: nextHeight };
+      });
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [showScrollStage]);
+  }, [restoreTargetRatioRef, showScrollStage]);
 
   useEffect(() => {
     const onVisChange = () => setPageHidden(document.visibilityState === 'hidden');
@@ -362,12 +369,23 @@ export function GuestCanvasReader({
     </span>
   );
 
+  const allowEditableTarget = (target: EventTarget | null) =>
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable);
+
   return (
     <div
       className={`guest-protected-reader relative flex h-full min-h-0 flex-1 select-none flex-col overflow-hidden transition-colors duration-200 ${palette.pageBg} ${palette.textPrimary}`}
-      onContextMenu={(e) => e.preventDefault()}
-      onCopy={(e) => e.preventDefault()}
-      onCut={(e) => e.preventDefault()}
+      onContextMenu={(e) => {
+        if (!allowEditableTarget(e.target)) e.preventDefault();
+      }}
+      onCopy={(e) => {
+        if (!allowEditableTarget(e.target)) e.preventDefault();
+      }}
+      onCut={(e) => {
+        if (!allowEditableTarget(e.target)) e.preventDefault();
+      }}
       onDragStart={(e) => e.preventDefault()}
     >
       <ReaderNightDimOverlay nightDimPercent={settings.nightDimPercent} settingsOpen={settingsOpen} />
@@ -514,9 +532,9 @@ export function GuestCanvasReader({
         onJumpToRatio={goToChapter}
         onJumpToSearchResult={handleJumpToSearchResult}
         onSetLightboxTarget={setLightboxTarget}
-        onOpenOtherBook={(targetBook) => {
+        onOpenOtherBook={(targetBook, jumpTarget) => {
           flushProgress({ forceTimeFlush: true, keepalive: true });
-          onOpenNextBook?.(targetBook);
+          onOpenNextBook?.(targetBook, jumpTarget);
         }}
         onApiError={onApiError}
       />

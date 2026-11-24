@@ -31,14 +31,17 @@ export interface CreateBookmarkInput {
   note?: string | null;
 }
 
-export async function fetchBookBookmarks(bookId: string): Promise<BookBookmark[]> {
+export async function fetchBookBookmarks(
+  bookId: string,
+  signal?: AbortSignal,
+): Promise<BookBookmark[]> {
   assertApiConfigured();
   if (!isCloudMode) {
     const all = readAllLocalBookmarks();
     return all[bookId] ?? [];
   }
 
-  const res = await apiFetch(`/api/books/${encodeURIComponent(bookId)}/bookmarks`);
+  const res = await apiFetch(`/api/books/${encodeURIComponent(bookId)}/bookmarks`, { signal });
   const data = (await res.json().catch(() => ({}))) as {
     bookmarks?: BookBookmark[];
     error?: string;
@@ -116,6 +119,7 @@ export async function removeBookBookmark(bookId: string, bookmarkId: string): Pr
 export async function searchGuestBookChaptersApi(
   bookId: string,
   query: string,
+  signal?: AbortSignal,
 ): Promise<GuestBookSearchMatch[]> {
   assertApiConfigured();
   const q = query.trim();
@@ -123,6 +127,7 @@ export async function searchGuestBookChaptersApi(
 
   const res = await apiFetch(
     `/api/guest/books/${encodeURIComponent(bookId)}/search?q=${encodeURIComponent(q)}`,
+    { signal },
   );
   const data = (await res.json().catch(() => ({}))) as {
     matches?: GuestBookSearchMatch[];

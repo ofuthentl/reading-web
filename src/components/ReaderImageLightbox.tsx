@@ -4,7 +4,13 @@ import { hardenProtectedCanvas } from '@/lib/guestCanvasPaint';
 
 export type ReaderLightboxTarget =
   | { kind: 'dom'; src: string; alt?: string }
-  | { kind: 'guest-bitmap'; bitmap: ImageBitmap; watermarkLabel: string; alt?: string };
+  | {
+      kind: 'guest-bitmap';
+      bitmap: ImageBitmap;
+      watermarkLabel: string;
+      alt?: string;
+      ownedBitmap?: boolean;
+    };
 
 export interface ReaderImageLightboxProps {
   target: ReaderLightboxTarget | null;
@@ -16,6 +22,7 @@ function drawProtectedZoomedBitmap(
   bitmap: ImageBitmap,
   watermarkLabel: string,
 ) {
+  if (bitmap.width <= 0 || bitmap.height <= 0) return;
   const ctx = hardenProtectedCanvas(canvas);
   if (!ctx) return;
 
@@ -34,7 +41,12 @@ function drawProtectedZoomedBitmap(
   ctx.save();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssW, cssH);
-  ctx.drawImage(bitmap, 0, 0, cssW, cssH);
+  try {
+    ctx.drawImage(bitmap, 0, 0, cssW, cssH);
+  } catch {
+    ctx.restore();
+    return;
+  }
 
   // Phủ lưới thuỷ vân định danh Discord lên ảnh phóng to (D-028 / D-029)
   const label = watermarkLabel.trim() || 'Ofu Library';
@@ -76,6 +88,15 @@ export function ReaderImageLightbox({ target, onClose }: ReaderImageLightboxProp
     setZoom(1);
     setPan({ x: 0, y: 0 });
     didDragRef.current = false;
+    return () => {
+      if (target?.kind === 'guest-bitmap' && target.ownedBitmap) {
+        try {
+          target.bitmap.close();
+        } catch {
+          // Ignore already-closed bitmap
+        }
+      }
+    };
   }, [target]);
 
   // Đăng ký wheel listener với { passive: false } để e.preventDefault() hoạt động chuẩn (vá H-09)

@@ -19,10 +19,13 @@ export function ReaderFootnotePopover({
   useEffect(() => {
     if (!footnote) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [footnote, onClose]);
 
   if (!footnote) return null;
@@ -30,6 +33,7 @@ export function ReaderFootnotePopover({
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
   const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
   const isMobile = vw < 640;
+  const mobilePlaceTop = isMobile && footnote.anchorY > vh * 0.5;
 
   const cardWidth = Math.min(380, vw - 24);
   const clampedLeft = Math.max(12, Math.min(vw - cardWidth - 12, footnote.anchorX - cardWidth / 2));
@@ -63,13 +67,15 @@ export function ReaderFootnotePopover({
           protectCopy ? 'select-none' : ''
         } ${
           isMobile
-            ? ' fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] rounded-2xl p-4'
+            ? mobilePlaceTop
+              ? ' fixed inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] rounded-2xl p-4'
+              : ' fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] rounded-2xl p-4'
             : ' fixed rounded-2xl p-3.5'
         }`}
       >
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-accent/15 px-2 py-0.5 text-xs font-bold text-accent">
+            <span className={`inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold ${palette.accentSoftBg} ${palette.accentText}`}>
               <BookOpenText className="h-3.5 w-3.5" />
               <span>Chú thích {footnote.markerLabel}</span>
             </span>

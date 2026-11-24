@@ -61,9 +61,18 @@ function readLocalHighlights(bookId: string): BookHighlight[] {
 
 function writeLocalHighlights(bookId: string, items: BookHighlight[]): void {
   try {
-    localStorage.setItem(`${LOCAL_HIGHLIGHTS_PREFIX}${bookId}`, JSON.stringify(items.slice(0, 100)));
+    const trimmed = items.length > 100 ? items.slice(items.length - 100) : items;
+    localStorage.setItem(`${LOCAL_HIGHLIGHTS_PREFIX}${bookId}`, JSON.stringify(trimmed));
   } catch {
     // Ignore storage quota errors
+  }
+}
+
+export function deleteAllLocalHighlightsForBook(bookId: string): void {
+  try {
+    localStorage.removeItem(`${LOCAL_HIGHLIGHTS_PREFIX}${bookId}`);
+  } catch {
+    // Ignore storage errors
   }
 }
 

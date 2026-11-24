@@ -64,7 +64,10 @@ async function decryptSessionBytes(
   return new Uint8Array(plainBuf);
 }
 
-export async function fetchGuestBookToc(bookId: string): Promise<{
+export async function fetchGuestBookToc(
+  bookId: string,
+  signal?: AbortSignal,
+): Promise<{
   bookId: string;
   watermarkLabel: string;
   chapters: GuestTocItem[];
@@ -72,7 +75,7 @@ export async function fetchGuestBookToc(bookId: string): Promise<{
   if (!isCloudMode) {
     throw new Error('Chế độ khách yêu cầu kết nối Cloudflare Worker.');
   }
-  const res = await apiFetch(`/api/guest/books/${encodeURIComponent(bookId)}/toc`);
+  const res = await apiFetch(`/api/guest/books/${encodeURIComponent(bookId)}/toc`, { signal });
   const body = (await res.json().catch(() => ({}))) as {
     bookId?: string;
     watermarkLabel?: string;

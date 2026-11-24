@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Crown, Eye, Trash2, User } from 'lucide-react';
 import type { CommunityComment } from '@/types';
+import type { ReaderThemePalette } from '@/lib/readerConfig';
 import { parseSpoilerSegments } from '@/lib/spoilerText';
 
 function formatCommentTime(timestampMs: number): string {
@@ -19,7 +20,13 @@ function formatCommentTime(timestampMs: number): string {
   });
 }
 
-function CommentSpoilerContent({ content }: { content: string }) {
+function CommentSpoilerContent({
+  content,
+  palette,
+}: {
+  content: string;
+  palette?: ReaderThemePalette;
+}) {
   const segments = useMemo(() => parseSpoilerSegments(content), [content]);
   const [revealedSet, setRevealedSet] = useState<ReadonlySet<number>>(() => new Set());
 
@@ -31,6 +38,12 @@ function CommentSpoilerContent({ content }: { content: string }) {
       return next;
     });
   };
+
+  const hiddenClass = palette
+    ? palette.isDark
+      ? 'bg-neutral-700 text-neutral-100 hover:bg-neutral-600'
+      : 'bg-[#463829] text-[#fcfbf8] hover:bg-[#352a1e]'
+    : 'bg-neutral-800 text-neutral-200 hover:bg-neutral-700 dark:bg-neutral-700 dark:text-neutral-200';
 
   return (
     <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
@@ -50,7 +63,7 @@ function CommentSpoilerContent({ content }: { content: string }) {
             className={`mx-0.5 inline rounded-md px-1.5 py-0.5 text-left align-baseline transition-colors ${
               revealed
                 ? 'bg-amber-500/15 text-current ring-1 ring-amber-500/35'
-                : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700 dark:bg-neutral-700 dark:text-neutral-200'
+                : hiddenClass
             }`}
           >
             {revealed ? (
@@ -71,6 +84,7 @@ function CommentSpoilerContent({ content }: { content: string }) {
 export interface CommunityCommentItemProps {
   comment: CommunityComment;
   isReader: boolean;
+  palette?: ReaderThemePalette;
   borderClass: string;
   mutedTextClass: string;
   confirming: boolean;
@@ -83,6 +97,7 @@ export interface CommunityCommentItemProps {
 export function CommunityCommentItem({
   comment,
   isReader,
+  palette,
   borderClass,
   mutedTextClass,
   confirming,
@@ -92,21 +107,25 @@ export function CommunityCommentItem({
   onCancelDelete,
 }: CommunityCommentItemProps) {
   const isOwnerComment = comment.authorRole === 'owner';
+  const badgeClass =
+    isReader && palette
+      ? isOwnerComment
+        ? palette.badgeOwner
+        : palette.badgeGuest
+      : isOwnerComment
+        ? 'border border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300'
+        : 'border border-indigo-500/35 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300';
 
   return (
     <li
       className={`rounded-xl border px-3.5 py-3 ${borderClass} ${
-        isReader ? 'bg-black/[0.02] dark:bg-white/[0.02]' : 'bg-canvas/70'
+        isReader && palette ? palette.surfaceSubtle : 'bg-canvas/70'
       }`}
     >
       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <span
-            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-              isOwnerComment
-                ? 'border border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300'
-                : 'border border-indigo-500/35 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
-            }`}
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${badgeClass}`}
           >
             {isOwnerComment ? (
               <Crown className="h-3 w-3 shrink-0" />
@@ -156,7 +175,7 @@ export function CommunityCommentItem({
         )}
       </div>
 
-      <CommentSpoilerContent content={comment.content} />
+      <CommentSpoilerContent content={comment.content} palette={isReader ? palette : undefined} />
     </li>
   );
 }

@@ -317,8 +317,13 @@ export function drawCanvasLayoutItems(options: {
       const bitmap = bitmaps.get(item.mediaIndex);
 
       ctx.save();
-      if (bitmap) {
-        ctx.drawImage(bitmap, imgX, imgY, item.drawWidth, item.drawHeight);
+      if (bitmap && bitmap.width > 0 && bitmap.height > 0) {
+        try {
+          ctx.drawImage(bitmap, imgX, imgY, item.drawWidth, item.drawHeight);
+        } catch {
+          ctx.restore();
+          continue;
+        }
         ctx.beginPath();
         ctx.rect(imgX, imgY, item.drawWidth, item.drawHeight);
         ctx.clip();
@@ -361,21 +366,24 @@ export function drawCanvasLayoutItems(options: {
     }
 
     ctx.save();
+    const accentX = Math.max(2, offsetX - 6);
+    const accentRight = Math.min(canvasCssWidth - 2, offsetX + contentWidth + 6);
+    const accentWidth = Math.max(4, accentRight - accentX);
     if (item.highlightColor) {
       const hlStyle = CANVAS_HIGHLIGHT_STYLES[item.highlightColor];
       ctx.fillStyle = hlStyle.fill;
-      ctx.fillRect(offsetX - 6, localY - 1, contentWidth + 12, item.height + 1);
+      ctx.fillRect(accentX, localY - 1, accentWidth, item.height + 1);
       ctx.fillStyle = hlStyle.bar;
-      ctx.fillRect(offsetX - 6, localY - 1, 3, item.height + 1);
+      ctx.fillRect(accentX, localY - 1, 3, item.height + 1);
     }
     const isFlashed =
       item.flashHighlight === true ||
       (highlightSourceY !== null && Math.abs(item.y - highlightSourceY) <= item.height * 1.15);
     if (isFlashed) {
       ctx.fillStyle = 'rgba(245, 158, 11, 0.32)';
-      ctx.fillRect(offsetX - 6, localY - 2, contentWidth + 12, item.height + 2);
+      ctx.fillRect(accentX, localY - 2, accentWidth, item.height + 2);
       ctx.fillStyle = 'rgba(245, 158, 11, 0.85)';
-      ctx.fillRect(offsetX - 6, localY - 2, 3, item.height + 2);
+      ctx.fillRect(accentX, localY - 2, 3, item.height + 2);
     }
 
     ctx.textAlign = 'left';
@@ -491,6 +499,7 @@ export function paintProtectedThumbnailCanvas(options: {
   watermarkLabel: string;
 }): void {
   const { canvas, bitmap, watermarkLabel } = options;
+  if (bitmap.width <= 0 || bitmap.height <= 0) return;
   const ctx = hardenProtectedCanvas(canvas);
   if (!ctx) return;
 
@@ -508,7 +517,11 @@ export function paintProtectedThumbnailCanvas(options: {
   const dy = (cssH - drawH) / 2;
 
   ctx.clearRect(0, 0, cssW, cssH);
-  ctx.drawImage(bitmap, dx, dy, drawW, drawH);
+  try {
+    ctx.drawImage(bitmap, dx, dy, drawW, drawH);
+  } catch {
+    return;
+  }
   drawWatermarkGrid(ctx, watermarkLabel, cssW, 0, cssH, 'rgba(255, 255, 255, 0.16)', 10);
   drawWatermarkGrid(ctx, watermarkLabel, cssW, 2, cssH, 'rgba(0, 0, 0, 0.14)', 10);
 }

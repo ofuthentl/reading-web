@@ -56,7 +56,7 @@ export function ReaderChapterEndNav({
               type="button"
               onClick={() => onCompleteAndOpenNext(nextBook)}
               title={`Chuyển sang đọc ${getBookSortTitle(nextBook)}`}
-              className="inline-flex w-full min-w-0 max-w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground shadow transition hover:bg-accent-hover sm:w-auto sm:max-w-[19rem]"
+              className={`inline-flex w-full min-w-0 max-w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold shadow transition sm:w-auto sm:max-w-[19rem] ${palette.accentBg} ${palette.accentFg}`}
             >
               <span className="min-w-0 truncate">Đọc tiếp: {getBookSortTitle(nextBook)}</span>
               <ArrowRight className="h-4 w-4 shrink-0" />
