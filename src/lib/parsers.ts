@@ -4,6 +4,7 @@ import { isChunkLoadError, recoverFromChunkError } from '@/lib/chunkReload';
 import { compressCoverBlob } from '@/lib/coverImage';
 import { extractDocxCover, parseDocxZip } from '@/lib/docxParser';
 import { buildEpubChapters, type RawEpubSection } from '@/lib/epubChapters';
+import { extractTextExcludingRubyAnnotations } from '@/lib/rubyText';
 import { sanitizeBookDocument, sanitizeSvgBlob } from '@/lib/sanitizeHtml';
 
 type JSZipStatic = typeof JSZip;
@@ -399,13 +400,15 @@ async function parseEpubBlob(
       }
 
       const bodyHtml = (doc.body?.innerHTML?.trim() || '').normalize('NFC');
-      const plainText = (doc.body?.textContent?.replace(/\s+/g, ' ').trim() || '').normalize('NFC');
+      const plainText = extractTextExcludingRubyAnnotations(doc.body)
+        .replace(/\s+/g, ' ')
+        .trim()
+        .normalize('NFC');
       const hasMedia = doc.querySelectorAll('img, svg image').length > 0;
       if (!plainText && !hasMedia) continue;
 
-      const headingText = doc
-        .querySelector('h1, h2, h3')
-        ?.textContent?.replace(/\s+/g, ' ')
+      const headingText = extractTextExcludingRubyAnnotations(doc.querySelector('h1, h2, h3'))
+        .replace(/\s+/g, ' ')
         .trim()
         .normalize('NFC');
       rawSections.push({

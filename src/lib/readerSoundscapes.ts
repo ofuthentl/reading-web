@@ -100,7 +100,13 @@ export interface ReaderSoundscapeEngine {
   dispose: () => void;
 }
 
-export function createReaderSoundscapeEngine(): ReaderSoundscapeEngine {
+export interface ReaderSoundscapeEngineOptions {
+  onPlaybackError?: (message: string) => void;
+}
+
+export function createReaderSoundscapeEngine(
+  options?: ReaderSoundscapeEngineOptions,
+): ReaderSoundscapeEngine {
   let ctx: AudioContext | null = null;
   let masterGain: GainNode | null = null;
   let currentPreset: ReaderSoundscapeId = 'off';
@@ -131,7 +137,7 @@ export function createReaderSoundscapeEngine(): ReaderSoundscapeEngine {
         return null;
       }
     }
-    if (!isDocHidden && ctx.state === 'suspended') {
+    if (!isDocHidden && ctx.state !== 'running' && ctx.state !== 'closed') {
       void ctx.resume().catch(() => undefined);
     }
     return ctx;
@@ -212,7 +218,21 @@ export function createReaderSoundscapeEngine(): ReaderSoundscapeEngine {
     }
   };
 
-  const fadeInDeck = (deck: TrackDeck) => {
+  const attemptDeckPlay = (deckId: ActiveSoundTrackId, deck: TrackDeck, isResume: boolean) => {
+    void deck.audio.play().catch((err: unknown) => {
+      if (isDisposed || isDocHidden || currentPreset !== deckId) return;
+      const errName = err instanceof Error ? err.name : '';
+      if (errName === 'AbortError') return;
+      currentPreset = 'off';
+      options?.onPlaybackError?.(
+        isResume
+          ? 'Trình duyệt tạm chặn tự phát lại sau khi quay lại tab. Hãy chạm chọn lại âm nền.'
+          : 'Không thể phát âm thanh nền trên trình duyệt này. Vui lòng thử chạm lại.',
+      );
+    });
+  };
+
+  const fadeInDeck = (deckId: ActiveSoundTrackId, deck: TrackDeck) => {
     if (deck.pauseTimer !== null) {
       window.clearTimeout(deck.pauseTimer);
       deck.pauseTimer = null;
@@ -226,7 +246,7 @@ export function createReaderSoundscapeEngine(): ReaderSoundscapeEngine {
       deck.audio.volume = effectiveLinearVolume();
     }
     if (!isDocHidden) {
-      void deck.audio.play().catch(() => undefined);
+      attemptDeckPlay(deckId, deck, false);
     }
   };
 
@@ -238,15 +258,19 @@ export function createReaderSoundscapeEngine(): ReaderSoundscapeEngine {
     if (preset === 'off') return;
     ensureContext();
     const activeDeck = ensureDeck(preset);
-    if (activeDeck) fadeInDeck(activeDeck);
+    if (activeDeck) fadeInDeck(preset, activeDeck);
   };
 
   return {
     setPreset(preset) {
       if (isDisposed) return;
-      fadeMult = 1;
+      if (preset !== 'off') {
+        fadeMult = 1;
+      }
       switchPreset(preset);
-      syncGain();
+      if (preset !== 'off') {
+        syncGain();
+      }
     },
     setVolume(volume) {
       userVolume = Math.min(1, Math.max(0.05, volume));
@@ -294,12 +318,13 @@ export function createReaderSoundscapeEngine(): ReaderSoundscapeEngine {
           void ctx.suspend().catch(() => undefined);
         }
       } else if (currentPreset !== 'off') {
-        if (ctx && ctx.state === 'suspended') {
+        if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') {
           void ctx.resume().catch(() => undefined);
         }
-        const deck = decks.get(currentPreset);
+        const activeId = currentPreset;
+        const deck = decks.get(activeId);
         if (deck) {
-          void deck.audio.play().catch(() => undefined);
+          attemptDeckPlay(activeId, deck, true);
         }
       }
     },

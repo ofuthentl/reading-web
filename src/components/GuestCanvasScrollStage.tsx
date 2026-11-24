@@ -10,6 +10,7 @@ import {
   type ChapterCanvasLayout,
   findCanvasLayoutImageAtPoint,
 } from '@/lib/guestCanvasLayout';
+import type { CanonicalChapterOption } from '@/lib/readerChapterNumbers';
 import type { ReaderThemePalette } from '@/lib/readerConfig';
 
 export interface GuestCanvasScrollStageProps {
@@ -17,6 +18,9 @@ export interface GuestCanvasScrollStageProps {
   bookTitle: string;
   chapterIndex: number;
   totalChapters: number;
+  currentChapterNumber?: number;
+  readerMaxChapterNumber?: number;
+  chapterOptions?: readonly CanonicalChapterOption[];
   stageWidth: number;
   layout: ChapterCanvasLayout | null;
   footnoteMap: ReadonlyMap<string, string>;
@@ -47,6 +51,9 @@ export function GuestCanvasScrollStage({
   bookTitle,
   chapterIndex,
   totalChapters,
+  currentChapterNumber,
+  readerMaxChapterNumber,
+  chapterOptions,
   stageWidth,
   layout,
   footnoteMap,
@@ -156,15 +163,19 @@ export function GuestCanvasScrollStage({
           {chapterIndex >= totalChapters - 1 ? (
             <ReaderBookCommunityBlock
               bookId={bookId} bookTitle={bookTitle} palette={palette}
-              currentChapterNumber={chapterIndex + 1} readerMaxChapterNumber={totalChapters}
-              totalChapters={totalChapters} onApiError={onApiError}
+              currentChapterNumber={currentChapterNumber}
+              readerMaxChapterNumber={readerMaxChapterNumber ?? chapterOptions?.length ?? totalChapters}
+              totalChapters={chapterOptions?.length || totalChapters}
+              chapterOptions={chapterOptions} onApiError={onApiError}
             />
           ) : (
             <div className="mt-4 flex justify-center">
               <ReaderBookCommunityModalButton
                 bookId={bookId} bookTitle={bookTitle} palette={palette}
-                currentChapterNumber={chapterIndex + 1} readerMaxChapterNumber={chapterIndex + 1}
-                totalChapters={totalChapters} onApiError={onApiError}
+                currentChapterNumber={currentChapterNumber}
+                readerMaxChapterNumber={readerMaxChapterNumber ?? currentChapterNumber ?? 0}
+                totalChapters={chapterOptions?.length || totalChapters}
+                chapterOptions={chapterOptions} onApiError={onApiError}
               />
             </div>
           )}

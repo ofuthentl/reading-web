@@ -59,8 +59,12 @@ export function useCommunityReviews({
   const [reactingId, setReactingId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (targetType === 'book' && currentChapterNumber) {
-      setTagChapter(currentChapterNumber);
+    if (targetType === 'book') {
+      setTagChapter(
+        typeof currentChapterNumber === 'number' && currentChapterNumber > 0
+          ? currentChapterNumber
+          : null,
+      );
     }
   }, [currentChapterNumber, targetType]);
 
@@ -102,6 +106,11 @@ export function useCommunityReviews({
     setReplyTarget(null);
     setSubmitError(null);
     setConfirmDeleteId(null);
+    setSavingRating(false);
+    setSubmitting(false);
+    setEditingBusyId(null);
+    setReactingId(null);
+    setDeletingId(null);
     const controller = new AbortController();
     void loadSummary(controller.signal);
     return () => controller.abort();

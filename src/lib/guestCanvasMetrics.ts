@@ -100,12 +100,32 @@ export function justifyLineFragments(
     text: string;
     isSpace: boolean;
     width: number;
+    padLeft: number;
     bold: boolean;
     italic: boolean;
+    rt?: string;
   }> = [];
+  const rtSpec = buildCanvasFontSpec(font, Math.max(9, Math.round(fontSize * 0.52)), false, false);
+
   for (const frag of fragments) {
     const bold = forceBold || frag.bold;
     const spec = buildCanvasFontSpec(font, fontSize, bold, frag.italic);
+    if (frag.rt) {
+      const baseW = measureCanvasTextWidth(frag.text, spec);
+      const rtW = measureCanvasTextWidth(frag.rt, rtSpec);
+      const rubyBoxW = Math.max(baseW, rtW + 2);
+      const padLeft = Math.max(0, (rubyBoxW - baseW) / 2);
+      tokens.push({
+        text: frag.text,
+        isSpace: false,
+        width: rubyBoxW,
+        padLeft,
+        bold: frag.bold,
+        italic: frag.italic,
+        rt: frag.rt,
+      });
+      continue;
+    }
     const parts = frag.text.match(/\S+|\s+/g) || [];
     for (const part of parts) {
       const isSpace = /^\s+$/.test(part);
@@ -113,6 +133,7 @@ export function justifyLineFragments(
         text: isSpace ? ' ' : part,
         isSpace,
         width: measureCanvasTextWidth(isSpace ? ' ' : part, spec),
+        padLeft: 0,
         bold: frag.bold,
         italic: frag.italic,
       });
@@ -136,7 +157,13 @@ export function justifyLineFragments(
     if (tk.isSpace) {
       x += tk.width + extraPerSpace;
     } else {
-      justified.push({ text: tk.text, x, bold: tk.bold, italic: tk.italic });
+      justified.push({
+        text: tk.text,
+        x: x + tk.padLeft,
+        bold: tk.bold,
+        italic: tk.italic,
+        ...(tk.rt ? { rt: tk.rt } : {}),
+      });
       x += tk.width;
     }
   }

@@ -72,6 +72,10 @@ export function useLibraryDataStore({
   const loadRequestIdRef = useRef(0);
   const legacyCoverTimerRef = useRef<number | null>(null);
   const toggleVerRef = useRef<Map<string, number>>(new Map());
+  const booksRef = useRef(books);
+  booksRef.current = books;
+  const progressRef = useRef(progress);
+  progressRef.current = progress;
 
   useEffect(() => {
     return () => {
@@ -201,11 +205,11 @@ export function useLibraryDataStore({
 
   const handleProgressUpdated = useCallback(
     (bookId: string, nextProgress: ReadingProgress, readingDeltaSec = 0) => {
+      const wasCompleted = Boolean(progressRef.current[bookId]?.completed);
+      if (!wasCompleted && nextProgress.completed) {
+        void import('@/lib/confettiBurst').then((m) => m.triggerConfettiBurst()).catch(() => undefined);
+      }
       setProgress((prev) => {
-        const wasCompleted = Boolean(prev[bookId]?.completed);
-        if (!wasCompleted && nextProgress.completed) {
-          void import('@/lib/confettiBurst').then((m) => m.triggerConfettiBurst()).catch(() => undefined);
-        }
         const prevSec = prev[bookId]?.readingSeconds ?? 0;
         const baseSec = Math.max(prevSec, nextProgress.readingSeconds ?? 0);
         const totalSec = baseSec + Math.max(0, Math.floor(readingDeltaSec));
@@ -467,11 +471,9 @@ export function useLibraryDataStore({
 
   const handleBooksDeleted = useCallback((deletedIds: string[], nextStorage: StorageStats) => {
     const idSet = new Set(deletedIds);
-    setBooks((prev) => {
-      const remaining = prev.filter((item) => !idSet.has(item.id));
-      setShelfRatings((prevRatings) => pruneOrphanShelfRatings(prevRatings, remaining));
-      return remaining;
-    });
+    const remaining = booksRef.current.filter((item) => !idSet.has(item.id));
+    setBooks((prev) => prev.filter((item) => !idSet.has(item.id)));
+    setShelfRatings((prevRatings) => pruneOrphanShelfRatings(prevRatings, remaining));
     setProgress((prev) =>
       Object.fromEntries(Object.entries(prev).filter(([id]) => !idSet.has(id))),
     );

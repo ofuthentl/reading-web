@@ -1,4 +1,5 @@
 import type { CanvasLayoutItem } from '@/lib/guestCanvasLayout';
+import { extractTextExcludingRubyAnnotations } from '@/lib/rubyText';
 
 export interface ReaderSearchJumpTarget {
   chapterIndex: number;
@@ -80,7 +81,7 @@ export function findDomBlockForSearchQuery(
     let seen = 0;
     let firstMatchedEl: HTMLElement | null = null;
     for (const el of candidates) {
-      const hits = matcher(el.textContent || '');
+      const hits = matcher(extractTextExcludingRubyAnnotations(el));
       if (hits <= 0) continue;
       if (!firstMatchedEl) firstMatchedEl = el;
       if (seen + hits > occurrenceIndex) return el;

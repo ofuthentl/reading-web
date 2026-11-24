@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { MessageSquare, X } from 'lucide-react';
+import type { CanonicalChapterOption } from '@/lib/readerChapterNumbers';
 import type { ReaderThemePalette } from '@/lib/readerConfig';
 
 const LazyCommunityReviewsSection = lazy(() =>
@@ -16,6 +17,7 @@ interface ReaderBookCommunityBlockProps {
   currentChapterNumber?: number;
   readerMaxChapterNumber?: number;
   totalChapters?: number;
+  chapterOptions?: readonly CanonicalChapterOption[];
   compact?: boolean;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
@@ -27,6 +29,7 @@ export function ReaderBookCommunityBlock({
   currentChapterNumber,
   readerMaxChapterNumber,
   totalChapters,
+  chapterOptions,
   onApiError,
 }: ReaderBookCommunityBlockProps) {
   return (
@@ -48,6 +51,7 @@ export function ReaderBookCommunityBlock({
         currentChapterNumber={currentChapterNumber}
         readerMaxChapterNumber={readerMaxChapterNumber}
         totalChapters={totalChapters}
+        chapterOptions={chapterOptions}
         onApiError={onApiError}
       />
     </Suspense>
@@ -61,6 +65,7 @@ export function ReaderBookCommunityModalButton({
   currentChapterNumber,
   readerMaxChapterNumber,
   totalChapters,
+  chapterOptions,
   compact = false,
   onApiError,
 }: ReaderBookCommunityBlockProps) {
@@ -141,6 +146,7 @@ export function ReaderBookCommunityModalButton({
                   currentChapterNumber={currentChapterNumber}
                   readerMaxChapterNumber={readerMaxChapterNumber}
                   totalChapters={totalChapters}
+                  chapterOptions={chapterOptions}
                   onApiError={onApiError}
                 />
               </Suspense>

@@ -1,4 +1,8 @@
 import type { BookHighlight, HighlightLocator } from '@/types';
+import {
+  extractRangeTextExcludingRuby,
+  isInsideRubyAnnotation,
+} from '@/lib/rubyText';
 
 export interface SelectionHighlightDraft {
   quoteText: string;
@@ -49,7 +53,7 @@ export function captureOwnerSelectionDraft(
     return null;
   }
 
-  const rawText = sel.toString().replace(/\s+/g, ' ').trim();
+  const rawText = extractRangeTextExcludingRuby(range).replace(/\s+/g, ' ').trim();
   if (rawText.length < 2) return null;
   const quoteText = rawText.slice(0, 600);
 
@@ -68,8 +72,10 @@ export function captureOwnerSelectionDraft(
       const preRange = document.createRange();
       preRange.selectNodeContents(hostBlock);
       preRange.setEnd(range.startContainer, range.startOffset);
-      startOffset = preRange.toString().length;
-      endOffset = startOffset + range.toString().length;
+      startOffset = extractRangeTextExcludingRuby(preRange)
+        .replace(/\s+/g, ' ')
+        .trimStart().length;
+      endOffset = startOffset + rawText.length;
     } catch {
       startOffset = undefined;
     }
@@ -125,7 +131,7 @@ function buildNormalizedTextMap(root: Element): {
   while (current) {
     if (current.nodeType === Node.ELEMENT_NODE) {
       const el = current as Element;
-      if (el.tagName === 'BR' && !prevSpace) {
+      if (el.tagName === 'BR' && !prevSpace && !isInsideRubyAnnotation(el, root)) {
         normalized += ' ';
         prevSpace = true;
       }
@@ -134,6 +140,10 @@ function buildNormalizedTextMap(root: Element): {
     }
 
     const textNode = current as Text;
+    if (isInsideRubyAnnotation(textNode, root)) {
+      current = walker.nextNode();
+      continue;
+    }
     const val = textNode.nodeValue || '';
     if (val.length > 0) {
       const block = findEnclosingBlock(textNode, root);

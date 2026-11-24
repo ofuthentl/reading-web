@@ -15,6 +15,7 @@ import { ReaderPaginatedFooter } from '@/components/ReaderPaginatedFooter';
 import { useDomPaginatedReadingRuler } from '@/hooks/usePaginatedReadingRuler';
 import { applyChapterDomHighlights } from '@/lib/domHighlights';
 import type { CanvasLayoutItem } from '@/lib/guestCanvasLayout';
+import type { CanonicalChapterOption } from '@/lib/readerChapterNumbers';
 import {
   READER_FONT_CLASS, type ReaderThemePalette,
   findClickedReaderImage, handleReaderContentLinkClick, resolvePaginatedSpreadWidth,
@@ -35,6 +36,9 @@ interface ReaderPaginatedViewProps {
   chapter: Chapter;
   chapterIndex: number;
   totalChapters: number;
+  currentChapterNumber?: number;
+  readerMaxChapterNumber?: number;
+  chapterOptions?: readonly CanonicalChapterOption[];
   initialRatio: number;
   nextBook?: Book | null;
   settings: ReaderSettings;
@@ -64,6 +68,9 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       chapter,
       chapterIndex,
       totalChapters,
+      currentChapterNumber,
+      readerMaxChapterNumber,
+      chapterOptions,
       initialRatio,
       nextBook,
       settings,
@@ -145,6 +152,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
     const measurePages = useCallback(() => {
       const track = trackRef.current;
       if (!track) return;
+      if (clipRef.current) clipRef.current.scrollLeft = 0;
       const step = geometry.colWidth + geometry.gap;
       if (step <= 0) return;
       const rawCols = Math.max(1, Math.round((track.scrollWidth + geometry.gap) / step));
@@ -238,6 +246,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
 
     const commitPage = useCallback(
       (nextPage: number, animate = true) => {
+        if (clipRef.current) clipRef.current.scrollLeft = 0;
         const clamped = Math.max(0, Math.min(totalPages - 1, nextPage));
         const ratio = totalPages > 1 ? clamped / (totalPages - 1) : 1;
         anchorRatioRef.current = ratio;
@@ -499,22 +508,12 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
         </div>
 
         <ReaderPaginatedFooter
-          bookId={bookId}
-          bookTitle={bookTitle}
-          chapterIndex={chapterIndex}
-          totalChapters={totalChapters}
-          currentPage={safePageIndex + 1}
-          totalPages={totalPages}
-          isFirstSpread={isFirstSpread}
-          isLastChapter={isLastChapter}
-          isLastSpread={isLastSpread}
-          remainingEstimate={remainingEstimate}
-          nextBook={nextBook}
-          palette={palette}
-          onStepPrev={stepPrev}
-          onStepNext={stepNext}
-          onCompleteBook={onCompleteBook}
-          onApiError={onApiError}
+          bookId={bookId} bookTitle={bookTitle} chapterIndex={chapterIndex} totalChapters={totalChapters}
+          currentChapterNumber={currentChapterNumber} readerMaxChapterNumber={readerMaxChapterNumber}
+          chapterOptions={chapterOptions} currentPage={safePageIndex + 1} totalPages={totalPages}
+          isFirstSpread={isFirstSpread} isLastChapter={isLastChapter} isLastSpread={isLastSpread}
+          remainingEstimate={remainingEstimate} nextBook={nextBook} palette={palette}
+          onStepPrev={stepPrev} onStepNext={stepNext} onCompleteBook={onCompleteBook} onApiError={onApiError}
         />
       </div>
     );

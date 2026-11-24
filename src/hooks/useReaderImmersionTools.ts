@@ -38,6 +38,7 @@ interface UseReaderImmersionToolsOptions {
   isPaginated: boolean;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   overlayOpen: boolean;
+  immersiveHidden?: boolean;
   chapterId: string;
 }
 
@@ -45,6 +46,7 @@ export function useReaderImmersionTools({
   isPaginated,
   scrollContainerRef,
   overlayOpen,
+  immersiveHidden = false,
   chapterId,
 }: UseReaderImmersionToolsOptions) {
   const initialSoundPrefs = useRef(loadReaderSoundPrefs());
@@ -53,6 +55,7 @@ export function useReaderImmersionTools({
   // Soundscapes — mặc định TẮT khi mở sách (QĐ-2 = 2A)
   const [soundOpen, setSoundOpen] = useState(false);
   const [preset, setPresetState] = useState<ReaderSoundscapeId>('off');
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [volume, setVolumeState] = useState(initialSoundPrefs.current.volume);
   const [pageTurnSound, setPageTurnSoundState] = useState(initialSoundPrefs.current.pageTurnSound);
   const [sleepMinutes, setSleepMinutesState] = useState<SleepTimerMinutes>(0);
@@ -61,12 +64,21 @@ export function useReaderImmersionTools({
 
   // Auto-scroll — mặc định TẮT khi mở sách (QĐ-2 = 2A)
   const [autoScrollOpen, setAutoScrollOpen] = useState(false);
+  const autoScrollOpenRef = useRef(false);
+  autoScrollOpenRef.current = autoScrollOpen;
   const [autoScrollPlaying, setAutoScrollPlaying] = useState(false);
   const [autoScrollSpeed, setAutoScrollSpeedState] = useState(loadAutoScrollSpeed);
 
   const ensureEngine = useCallback((): ReaderSoundscapeEngine => {
     if (!engineRef.current) {
-      engineRef.current = createReaderSoundscapeEngine();
+      engineRef.current = createReaderSoundscapeEngine({
+        onPlaybackError: (msg) => {
+          setPresetState('off');
+          sleepDeadlineRef.current = null;
+          setSleepRemainingSec(null);
+          setPlaybackError(msg);
+        },
+      });
       engineRef.current.setVolume(volume);
     }
     return engineRef.current;
@@ -89,6 +101,7 @@ export function useReaderImmersionTools({
 
   const setPreset = useCallback(
     (next: ReaderSoundscapeId) => {
+      setPlaybackError(null);
       setPresetState(next);
       const eng = ensureEngine();
       eng.setPreset(next);
@@ -137,6 +150,7 @@ export function useReaderImmersionTools({
       if (remMs <= 0) {
         sleepDeadlineRef.current = null;
         setSleepRemainingSec(null);
+        setSleepMinutesState(0);
         setPresetState('off');
         engineRef.current?.setPreset('off');
         return;
@@ -169,6 +183,27 @@ export function useReaderImmersionTools({
     }
   }, [overlayOpen, soundOpen]);
 
+  // Đóng Popover âm thanh khi Header tự ẩn (Immersive Mode) hoặc bấm Esc
+  useEffect(() => {
+    if (immersiveHidden) {
+      setSoundOpen(false);
+    }
+  }, [immersiveHidden]);
+
+  useEffect(() => {
+    if (!soundOpen) {
+      setPlaybackError(null);
+      return;
+    }
+    const onEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setSoundOpen(false);
+    };
+    window.addEventListener('keydown', onEsc, true);
+    return () => window.removeEventListener('keydown', onEsc, true);
+  }, [soundOpen]);
+
   useEffect(() => {
     setAutoScrollPlaying(false);
   }, [chapterId]);
@@ -181,22 +216,56 @@ export function useReaderImmersionTools({
 
   const toggleAutoScrollBar = useCallback(() => {
     if (isPaginated) return;
-    setAutoScrollOpen((prev) => {
-      const next = !prev;
-      setAutoScrollPlaying(next);
-      return next;
-    });
+    const next = !autoScrollOpenRef.current;
+    autoScrollOpenRef.current = next;
+    setAutoScrollOpen(next);
+    setAutoScrollPlaying(next);
   }, [isPaginated]);
 
   useEffect(() => {
     if (!autoScrollPlaying || isPaginated) return;
+    const targetEl = scrollContainerRef.current;
+    if (!targetEl) {
+      setAutoScrollPlaying(false);
+      return;
+    }
+
     let rafId = 0;
     let lastTs = performance.now();
     let carry = 0;
+    let touchActive = false;
+    let yieldUntil = 0;
+
+    const onTouchStart = () => {
+      touchActive = true;
+      carry = 0;
+    };
+    const onTouchRelease = () => {
+      touchActive = false;
+      yieldUntil = performance.now() + 750;
+      carry = 0;
+    };
+    const onWheel = () => {
+      yieldUntil = performance.now() + 750;
+      carry = 0;
+    };
+
+    targetEl.addEventListener('touchstart', onTouchStart, { passive: true });
+    targetEl.addEventListener('touchend', onTouchRelease, { passive: true });
+    targetEl.addEventListener('touchcancel', onTouchRelease, { passive: true });
+    targetEl.addEventListener('wheel', onWheel, { passive: true });
 
     const tick = (now: number) => {
       const el = scrollContainerRef.current;
-      if (!el) return;
+      if (!el) {
+        setAutoScrollPlaying(false);
+        return;
+      }
+      if (touchActive || now < yieldUntil) {
+        lastTs = now;
+        rafId = window.requestAnimationFrame(tick);
+        return;
+      }
       const dtSec = Math.min(0.08, Math.max(0, (now - lastTs) / 1000));
       lastTs = now;
       const pxPerSec = 10 + autoScrollSpeed * 9.5; // 19.5 px/s .. 105 px/s
@@ -215,7 +284,13 @@ export function useReaderImmersionTools({
     };
 
     rafId = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(rafId);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      targetEl.removeEventListener('touchstart', onTouchStart);
+      targetEl.removeEventListener('touchend', onTouchRelease);
+      targetEl.removeEventListener('touchcancel', onTouchRelease);
+      targetEl.removeEventListener('wheel', onWheel);
+    };
   }, [autoScrollPlaying, autoScrollSpeed, isPaginated, scrollContainerRef]);
 
   // Phím Space tạm dừng / tiếp tục khi thanh Tự cuộn đang mở
@@ -244,6 +319,7 @@ export function useReaderImmersionTools({
     setSoundOpen,
     preset,
     setPreset,
+    playbackError,
     volume,
     setVolume,
     pageTurnSound,

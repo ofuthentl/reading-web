@@ -303,7 +303,10 @@ export function CommunityCommentItem({
           >
             <span className="inline-flex items-center gap-1.5">
               <EyeOff className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-              <span>Bình luận về Chương {comment.chapterNumber} — bấm để xem</span>
+              <span>
+                Bình luận về Chương {comment.chapterNumber}
+                {!isReply && replies.length > 0 ? ` (+${replies.length} phản hồi)` : ''} — bấm để xem
+              </span>
             </span>
             <span className="text-[11px] font-semibold text-amber-500">Hiện</span>
           </button>
@@ -338,7 +341,7 @@ export function CommunityCommentItem({
         )}
       </div>
 
-      {!isReply && replies.length > 0 && (
+      {!isReply && !blurForChapterSpoiler && replies.length > 0 && (
         <ul className={`ml-4 space-y-2 border-l-2 pl-3 sm:ml-6 ${borderClass}`}>
           {replies.map((reply) => (
             <CommunityCommentItem

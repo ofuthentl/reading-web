@@ -21,6 +21,7 @@ import {
   paginateCanvasLayoutItems,
   paintGuestPaginatedCanvas,
 } from '@/lib/guestCanvasPages';
+import type { CanonicalChapterOption } from '@/lib/readerChapterNumbers';
 import {
   type ReaderThemePalette,
   resolvePaginatedSpreadWidth,
@@ -36,6 +37,9 @@ interface GuestCanvasPaginatedViewProps {
   chapterData: GuestChapterPayload;
   chapterIndex: number;
   totalChapters: number;
+  currentChapterNumber?: number;
+  readerMaxChapterNumber?: number;
+  chapterOptions?: readonly CanonicalChapterOption[];
   initialRatio: number;
   watermarkLabel: string;
   imageSizes: ReadonlyMap<number, { width: number; height: number }>;
@@ -69,6 +73,9 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       chapterData,
       chapterIndex,
       totalChapters,
+      currentChapterNumber,
+      readerMaxChapterNumber,
+      chapterOptions,
       initialRatio,
       watermarkLabel,
       imageSizes,
@@ -447,22 +454,12 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
         </div>
 
         <ReaderPaginatedFooter
-          bookId={bookId}
-          bookTitle={bookTitle}
-          chapterIndex={chapterIndex}
-          totalChapters={totalChapters}
-          currentPage={safeSpreadIndex + 1}
-          totalPages={totalSpreads}
-          isFirstSpread={isFirstSpread}
-          isLastChapter={isLastChapter}
-          isLastSpread={isLastSpread}
-          remainingEstimate={remainingEstimate}
-          nextBook={nextBook}
-          palette={palette}
-          onStepPrev={stepPrev}
-          onStepNext={stepNext}
-          onCompleteBook={onCompleteBook}
-          onApiError={onApiError}
+          bookId={bookId} bookTitle={bookTitle} chapterIndex={chapterIndex} totalChapters={totalChapters}
+          currentChapterNumber={currentChapterNumber} readerMaxChapterNumber={readerMaxChapterNumber}
+          chapterOptions={chapterOptions} currentPage={safeSpreadIndex + 1} totalPages={totalSpreads}
+          isFirstSpread={isFirstSpread} isLastChapter={isLastChapter} isLastSpread={isLastSpread}
+          remainingEstimate={remainingEstimate} nextBook={nextBook} palette={palette}
+          onStepPrev={stepPrev} onStepNext={stepNext} onCompleteBook={onCompleteBook} onApiError={onApiError}
         />
       </div>
     );

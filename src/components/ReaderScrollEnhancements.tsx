@@ -101,7 +101,7 @@ export function MobileNightDimHud({
     <div
       role="status"
       aria-live="polite"
-      className={`pointer-events-none fixed left-4 top-1/2 z-40 flex -translate-y-1/2 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold shadow-xl backdrop-blur-md ${palette.panelBg} ${palette.border}`}
+      className={`pointer-events-none fixed left-4 top-1/2 z-[65] flex -translate-y-1/2 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold shadow-xl backdrop-blur-md ${palette.panelBg} ${palette.border}`}
     >
       <SunDim className={`h-4 w-4 ${palette.accentText}`} />
       <span>Dịu mắt: {hudPercent}%</span>
@@ -111,11 +111,11 @@ export function MobileNightDimHud({
 
 export function PullNextChapterIndicator({
   progress,
-  nextChapterNumber,
+  nextChapterLabel,
   palette,
 }: {
   progress: number;
-  nextChapterNumber: number;
+  nextChapterLabel: string;
   palette: ReaderThemePalette;
 }) {
   if (progress <= 0.04) return null;
@@ -134,11 +134,15 @@ export function PullNextChapterIndicator({
         />
         <span>
           {ready
-            ? `Thả để sang Phần ${nextChapterNumber} →`
-            : `Kéo thêm để sang Phần ${nextChapterNumber}...`}
+            ? `Thả để sang ${nextChapterLabel} →`
+            : `Kéo thêm để sang ${nextChapterLabel}...`}
         </span>
       </div>
-      <div className="h-1 w-36 overflow-hidden rounded-full bg-black/15 dark:bg-white/15">
+      <div
+        className={`h-1 w-36 overflow-hidden rounded-full ${
+          palette.isDark ? 'bg-white/15' : 'bg-black/15'
+        }`}
+      >
         <div
           className={`h-full transition-all duration-75 ${palette.progressBar}`}
           style={{ width: `${Math.round(progress * 100)}%` }}
@@ -151,8 +155,10 @@ export function PullNextChapterIndicator({
 export function ReaderImmersionChrome({
   immersion,
   isPaginated,
+  scrollStageReady = true,
   chapterIndex,
   totalChapters,
+  nextChapterLabel,
   nightDimPercent,
   palette,
   scrollContainerRef,
@@ -161,8 +167,10 @@ export function ReaderImmersionChrome({
 }: {
   immersion: ReaderImmersionState;
   isPaginated: boolean;
+  scrollStageReady?: boolean;
   chapterIndex: number;
   totalChapters: number;
+  nextChapterLabel?: string;
   nightDimPercent: number;
   palette: ReaderThemePalette;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
@@ -175,7 +183,7 @@ export function ReaderImmersionChrome({
   );
   const dimHud = useMobileLeftEdgeDimGesture(nightDimPercent, handleDimChange);
   const pullProgress = usePullToNextChapter({
-    enabled: !isPaginated && chapterIndex < totalChapters - 1,
+    enabled: !isPaginated && scrollStageReady && chapterIndex < totalChapters - 1,
     scrollContainerRef,
     onAdvanceChapter,
   });
@@ -199,7 +207,7 @@ export function ReaderImmersionChrome({
           />
           <PullNextChapterIndicator
             progress={pullProgress}
-            nextChapterNumber={chapterIndex + 2}
+            nextChapterLabel={nextChapterLabel || `Phần ${chapterIndex + 2}`}
             palette={palette}
           />
         </>

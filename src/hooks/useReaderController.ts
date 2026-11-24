@@ -69,7 +69,8 @@ export function useReaderController({
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
       }
-      const minSec = opts?.forceTimeFlush || opts?.keepalive ? 1 : 5;
+      const minSec =
+        pendingProgressRef.current || opts?.forceTimeFlush || opts?.keepalive ? 1 : 5;
       const deltaSec = consumeDeltaSec(minSec);
       const target =
         pendingProgressRef.current ??

@@ -207,6 +207,10 @@ function wrapInlineSpans(
   return lines;
 }
 
+function computeRubyHeadroom(fragments: readonly CanvasSpanFragment[], fontSize: number): number {
+  return fragments.some((f) => Boolean(f.rt)) ? Math.round(fontSize * 0.44) : 0;
+}
+
 function wrapPlainTitle(title: string, fontSize: number, maxWidth: number): string[] {
   const wrapped = wrapInlineSpans([{ t: title, b: 1 }], 'serif', fontSize, maxWidth, 0, true);
   return wrapped.map((line) => line.map((f) => f.text).join('').trim()).filter(Boolean);
@@ -308,18 +312,21 @@ export function computeChapterCanvasLayout(options: {
       y += Math.round(baseSize * 0.55);
       const lines = wrapInlineSpans(block.spans, 'serif', hSize, contentWidth, 0, true);
       for (const fragments of lines) {
+        const rubyHeadroom = computeRubyHeadroom(fragments, hSize);
+        const lineH = hLineHeight + rubyHeadroom;
         items.push({
           kind: 'text-line',
           y,
-          height: hLineHeight,
+          height: lineH,
           fontSize: hSize,
           isHeading: true,
           isQuote: false,
           blockIndex: blockIdx,
+          ...(rubyHeadroom > 0 ? { rubyHeadroom } : {}),
           ...(hlColor ? { highlightColor: hlColor } : {}),
           fragments,
         });
-        y += hLineHeight;
+        y += lineH;
       }
       y += Math.round(paragraphGap * 0.72);
       continue;
@@ -337,20 +344,23 @@ export function computeChapterCanvasLayout(options: {
         { justify: doJustify },
       );
       for (let i = 0; i < lines.length; i += 1) {
+        const rubyHeadroom = computeRubyHeadroom(lines[i], baseSize);
+        const lineH = baseLineHeight + rubyHeadroom;
         items.push({
           kind: 'text-line',
           y,
-          height: baseLineHeight,
+          height: lineH,
           fontSize: baseSize,
           isHeading: false,
           isQuote: true,
           quoteBarTop: i === 0,
           quoteBarBottom: i === lines.length - 1,
           blockIndex: blockIdx,
+          ...(rubyHeadroom > 0 ? { rubyHeadroom } : {}),
           ...(hlColor ? { highlightColor: hlColor } : {}),
           fragments: lines[i],
         });
-        y += baseLineHeight;
+        y += lineH;
       }
       y += paragraphGap;
       continue;
@@ -368,19 +378,22 @@ export function computeChapterCanvasLayout(options: {
           listIndent,
         );
         for (let lineIdx = 0; lineIdx < lines.length; lineIdx += 1) {
+          const rubyHeadroom = computeRubyHeadroom(lines[lineIdx], baseSize);
+          const lineH = baseLineHeight + rubyHeadroom;
           items.push({
             kind: 'text-line',
             y,
-            height: baseLineHeight,
+            height: lineH,
             fontSize: baseSize,
             isHeading: false,
             isQuote: false,
             ...(lineIdx === 0 ? { listMarker: marker, markerX: 6 } : {}),
             blockIndex: blockIdx,
+            ...(rubyHeadroom > 0 ? { rubyHeadroom } : {}),
             ...(hlColor ? { highlightColor: hlColor } : {}),
             fragments: lines[lineIdx],
           });
-          y += baseLineHeight;
+          y += lineH;
         }
         y += Math.round(baseSize * 0.42);
       }
@@ -393,8 +406,7 @@ export function computeChapterCanvasLayout(options: {
       justify: doJustify,
     });
     for (const fragments of lines) {
-      const hasRuby = fragments.some((f) => Boolean(f.rt));
-      const rubyHeadroom = hasRuby ? Math.round(baseSize * 0.44) : 0;
+      const rubyHeadroom = computeRubyHeadroom(fragments, baseSize);
       const lineH = baseLineHeight + rubyHeadroom;
       items.push({
         kind: 'text-line',

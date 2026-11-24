@@ -14,6 +14,7 @@ import { CommunityCommentItem } from '@/components/CommunityCommentItem';
 import { useCommunityReviews } from '@/hooks/useCommunityReviews';
 import type { ToastType } from '@/hooks/useToast';
 import { MAX_COMMUNITY_COMMENT_LENGTH } from '@/lib/communityApi';
+import type { CanonicalChapterOption } from '@/lib/readerChapterNumbers';
 import type { ReaderThemePalette } from '@/lib/readerConfig';
 import { insertSpoilerSyntax } from '@/lib/spoilerText';
 
@@ -27,6 +28,7 @@ export interface CommunityReviewsSectionProps {
   currentChapterNumber?: number;
   readerMaxChapterNumber?: number;
   totalChapters?: number;
+  chapterOptions?: readonly CanonicalChapterOption[];
   onRatingUpdated?: (average: number | null, count: number) => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
   onNotify?: (message: string, type?: ToastType) => void;
@@ -44,6 +46,7 @@ export function CommunityReviewsSection({
   currentChapterNumber,
   readerMaxChapterNumber,
   totalChapters,
+  chapterOptions,
   onRatingUpdated,
   onApiError,
   onNotify,
@@ -80,6 +83,23 @@ export function CommunityReviewsSection({
     isReader && palette
       ? `border ${palette.border} bg-transparent ${palette.textPrimary} ${palette.focusBorder}`
       : 'border border-line bg-canvas text-ink placeholder:text-ink-faint focus:border-amber-500/70';
+  const selectSurfaceClass =
+    isReader && palette
+      ? `border ${palette.border} ${palette.panelBg} ${palette.textPrimary} ${palette.focusBorder}`
+      : 'border border-line bg-canvas text-ink focus:border-amber-500/70';
+  const selectOptionClass =
+    isReader && palette ? `${palette.panelBg} ${palette.textPrimary}` : 'bg-canvas text-ink';
+  const selectColorScheme = isReader && palette ? (palette.isDark ? 'dark' : 'light') : undefined;
+  const effectiveChapterOptions: ReadonlyArray<{ number: number; label: string }> =
+    chapterOptions && chapterOptions.length > 0
+      ? chapterOptions.map((opt) => ({
+          number: opt.number,
+          label: `Phần ${opt.number} · ${opt.title.length > 42 ? `${opt.title.slice(0, 41)}…` : opt.title}`,
+        }))
+      : Array.from({ length: Math.max(0, totalChapters ?? 0) }, (_, i) => ({
+          number: i + 1,
+          label: `Chương ${i + 1}`,
+        }));
   const submitButtonClass =
     isReader && palette
       ? `${palette.accentBg} ${palette.accentFg}`
@@ -256,17 +276,20 @@ export function CommunityReviewsSection({
                   <span>||Spoiler||</span>
                 </button>
 
-                {targetType === 'book' && (totalChapters ?? 0) > 1 && (
+                {targetType === 'book' && effectiveChapterOptions.length > 1 && (
                   <select
                     aria-label="Gắn nhãn chương cho bình luận"
                     value={tagChapter ?? ''}
                     onChange={(e) => setTagChapter(e.target.value ? Number(e.target.value) : null)}
-                    className={`rounded-lg border px-2 py-1 text-xs outline-none ${inputSurfaceClass}`}
+                    style={selectColorScheme ? { colorScheme: selectColorScheme } : undefined}
+                    className={`max-w-[14rem] rounded-lg px-2 py-1 text-xs outline-none ${selectSurfaceClass}`}
                   >
-                    <option value="">Chung cả tập</option>
-                    {Array.from({ length: totalChapters ?? 1 }, (_, i) => i + 1).map((ch) => (
-                      <option key={ch} value={ch}>
-                        Chương {ch}
+                    <option value="" className={selectOptionClass}>
+                      Chung cả tập
+                    </option>
+                    {effectiveChapterOptions.map((opt) => (
+                      <option key={opt.number} value={opt.number} className={selectOptionClass}>
+                        {opt.label}
                       </option>
                     ))}
                   </select>

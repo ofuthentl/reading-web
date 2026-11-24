@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   BookHighlight,
   HighlightColor,
@@ -49,9 +49,21 @@ export function useReaderBookFeatures({
   const [highestChapterReached, setHighestChapterReached] = useState(() =>
     initialCompleted ? Math.max(0, totalChapters - 1) : Math.max(0, initialChapterIndex),
   );
+  const prevBookIdRef = useRef(bookId);
 
   useEffect(() => {
-    setHighestChapterReached((prev) => Math.max(prev, chapterIndex));
+    const targetMax = initialCompleted
+      ? Math.max(0, totalChapters - 1)
+      : Math.max(0, initialChapterIndex, chapterIndex);
+    if (prevBookIdRef.current !== bookId) {
+      prevBookIdRef.current = bookId;
+      setHighestChapterReached(targetMax);
+    } else {
+      setHighestChapterReached((prev) => Math.max(prev, targetMax));
+    }
+  }, [bookId, chapterIndex, initialChapterIndex, initialCompleted, totalChapters]);
+
+  useEffect(() => {
     setActiveFootnote(null);
     setSelectionDraft(null);
     setEditingHighlight(null);

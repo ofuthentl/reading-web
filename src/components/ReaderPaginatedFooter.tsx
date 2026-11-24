@@ -2,6 +2,7 @@ import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-reac
 import type { Book } from '@/types';
 import { ReaderBookCommunityModalButton } from '@/components/ReaderBookCommunityBlock';
 import { getBookSortTitle } from '@/lib/bookMetadata';
+import type { CanonicalChapterOption } from '@/lib/readerChapterNumbers';
 import type { ReaderThemePalette } from '@/lib/readerConfig';
 
 export interface ReaderPaginatedFooterProps {
@@ -9,6 +10,9 @@ export interface ReaderPaginatedFooterProps {
   bookTitle: string;
   chapterIndex: number;
   totalChapters: number;
+  currentChapterNumber?: number;
+  readerMaxChapterNumber?: number;
+  chapterOptions?: readonly CanonicalChapterOption[];
   currentPage: number;
   totalPages: number;
   isFirstSpread: boolean;
@@ -28,6 +32,9 @@ export function ReaderPaginatedFooter({
   bookTitle,
   chapterIndex,
   totalChapters,
+  currentChapterNumber,
+  readerMaxChapterNumber,
+  chapterOptions,
   currentPage,
   totalPages,
   isFirstSpread,
@@ -42,6 +49,9 @@ export function ReaderPaginatedFooter({
   onApiError,
 }: ReaderPaginatedFooterProps) {
   const showCompletionActions = isLastChapter && isLastSpread;
+  const effectiveCurrentChapter = currentChapterNumber;
+  const effectiveMaxChapter = readerMaxChapterNumber ?? currentChapterNumber ?? chapterIndex + 1;
+  const effectiveTotalChapters = chapterOptions?.length || totalChapters;
 
   return (
     <footer
@@ -74,9 +84,10 @@ export function ReaderPaginatedFooter({
             bookId={bookId}
             bookTitle={bookTitle}
             palette={palette}
-            currentChapterNumber={chapterIndex + 1}
-            readerMaxChapterNumber={totalChapters}
-            totalChapters={totalChapters}
+            currentChapterNumber={effectiveCurrentChapter}
+            readerMaxChapterNumber={effectiveMaxChapter}
+            totalChapters={effectiveTotalChapters}
+            chapterOptions={chapterOptions}
             onApiError={onApiError}
           />
           {nextBook && (
@@ -116,9 +127,10 @@ export function ReaderPaginatedFooter({
             bookId={bookId}
             bookTitle={bookTitle}
             palette={palette}
-            currentChapterNumber={chapterIndex + 1}
-            readerMaxChapterNumber={chapterIndex + 1}
-            totalChapters={totalChapters}
+            currentChapterNumber={effectiveCurrentChapter}
+            readerMaxChapterNumber={effectiveMaxChapter}
+            totalChapters={effectiveTotalChapters}
+            chapterOptions={chapterOptions}
             onApiError={onApiError}
           />
         </div>
