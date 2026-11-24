@@ -320,6 +320,9 @@ export default function App() {
           onCycleTheme={cycleTheme}
           onOpenStats={() => setStatsOpen(true)}
           onOpenUsage={isOwner ? () => navigateGateRoute('usage') : undefined}
+          onOpenLibraryHealth={
+            isOwner ? () => setModal({ kind: 'library-health' }) : undefined
+          }
           onOpenCacheManager={
             isOwner ? () => setModal({ kind: 'cache-manager' }) : undefined
           }
@@ -332,6 +335,9 @@ export default function App() {
           onProtectionClick={isOwner ? () => setModal({ kind: 'protection' }) : undefined}
           unprotectedBookCount={isOwner ? store.unprotectedBookCount : 0}
           onEditBook={isOwner ? (book: Book) => setModal({ kind: 'edit', book }) : undefined}
+          onManageBookAccess={
+            isOwner ? (book: Book) => setModal({ kind: 'book-access', book }) : undefined
+          }
           onBooksUpdated={isOwner ? store.handleBooksBatchUpdated : undefined}
           onRenameShelf={
             isOwner ? (shelfName: string) => setModal({ kind: 'rename-shelf', shelfName }) : undefined
@@ -351,6 +357,8 @@ export default function App() {
           shelfTags={store.shelfPrefs.tags}
           shelfAltTitles={store.shelfPrefs.altTitles}
           shelfRatings={store.shelfRatings}
+          shelfRelations={store.shelfRelations}
+          bookAccess={isOwner ? store.bookAccess : undefined}
           favoriteShelfKeys={store.effectiveFavoriteShelfKeys}
           planToReadShelfKeys={store.planToReadShelfKeys}
           planToReadBookIds={store.planToReadBookIds}
@@ -360,6 +368,8 @@ export default function App() {
           onShelfTagsChanged={isOwner ? store.handleShelfTagsChanged : undefined}
           onShelfAltTitlesChanged={isOwner ? store.handleShelfAltTitlesChanged : undefined}
           onShelfRatingUpdated={store.handleShelfRatingUpdated}
+          onShelfRelationSaved={isOwner ? store.handleShelfRelationSaved : undefined}
+          onShelfRelationDeleted={isOwner ? store.handleShelfRelationDeleted : undefined}
           onToggleFavoriteShelf={store.handleToggleFavoriteShelf}
           onTogglePlanToRead={store.handleTogglePlanToRead}
           onTogglePlanToReadBook={store.handleTogglePlanToReadBook}
@@ -422,9 +432,16 @@ export default function App() {
             onCycleTheme={cycleTheme}
             onUploadClick={isOwner ? () => { closeBook(); setModal({ kind: 'upload' }); } : undefined}
             onMarkCompleted={store.handleMarkBookCompleted}
+            onStartReread={store.handleStartRereadBook}
             onResetProgress={store.handleResetBookProgress}
             onTogglePlanToReadBook={store.handleTogglePlanToReadBook}
             onEditBook={isOwner ? (book: Book) => setModal({ kind: 'edit', book }) : undefined}
+            onManageBookAccess={
+              isOwner ? (book: Book) => setModal({ kind: 'book-access', book }) : undefined
+            }
+            onOpenLibraryHealth={
+              isOwner ? () => { closeBook(); setModal({ kind: 'library-health' }); } : undefined
+            }
             onOpenCacheManager={
               isOwner ? () => { closeBook(); setModal({ kind: 'cache-manager' }); } : undefined
             }
@@ -437,15 +454,20 @@ export default function App() {
           <LazyAdminModalsHost
             modal={modal}
             books={store.books}
+            shelves={libraryViewState.allShelves}
+            shelfTags={store.shelfPrefs.tags}
             storage={store.storage}
             existingShelves={existingShelves}
             renamingShelfName={renamingShelfName}
             renamingShelfCount={renamingShelfCount}
             onClose={closeModal}
+            onSwitchModal={setModal}
+            onJumpToShelf={handleJumpToShelf}
             onRequestDelete={(book) => setModal({ kind: 'delete', books: [book] })}
             onBookUploaded={store.handleBookUploaded}
             onBookUpdated={store.handleBookUpdated}
             onBookPackSynced={store.handleBookPackSynced}
+            onBookAccessSaved={store.handleBookAccessChanged}
             onShelfRenamed={handleShelfRenamed}
             onBooksShelfMoved={store.handleBooksShelfMoved}
             onBooksDeleted={store.handleBooksDeleted}

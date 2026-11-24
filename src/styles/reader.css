@@ -15,9 +15,15 @@
     width: 100%;
     line-height: 1.9;
     font-size: 1.125rem;
+    font-weight: var(--reader-font-weight, 400);
     margin: 0 auto;
     overflow-wrap: break-word;
     text-align: var(--reader-text-align, justify);
+  }
+
+  .reading-content strong,
+  .reading-content b {
+    font-weight: 700;
   }
 
   .reading-content pre {

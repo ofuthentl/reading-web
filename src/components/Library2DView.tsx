@@ -3,10 +3,12 @@ import { BookOpen, Clock, Upload } from 'lucide-react';
 import type {
   AuthRole,
   Book,
+  BookAccessSummary,
   CustomCollection,
   ReadingProgress,
   ShelfAccessSummary,
   ShelfRatingSummary,
+  ShelfRelation,
   StorageStats,
 } from '@/types';
 import { isCloudMode } from '@/lib/api';
@@ -50,6 +52,8 @@ interface Library2DViewProps {
   shelfTags?: Readonly<Record<string, string[]>>;
   shelfAltTitles?: Readonly<Record<string, string[]>>;
   shelfRatings?: Readonly<Record<string, ShelfRatingSummary>>;
+  shelfRelations?: readonly ShelfRelation[];
+  bookAccess?: Readonly<Record<string, BookAccessSummary>>;
   favoriteShelfKeys?: ReadonlySet<string>;
   planToReadShelfKeys?: ReadonlySet<string>;
   planToReadBookIds?: ReadonlySet<string>;
@@ -68,11 +72,13 @@ interface Library2DViewProps {
   onDismissContinue?: (book: Book) => void;
   onOpenStats?: () => void;
   onOpenUsage?: () => void;
+  onOpenLibraryHealth?: () => void;
   onOpenCacheManager?: () => void;
   onUploadClick?: () => void;
   onProtectionClick?: () => void;
   unprotectedBookCount?: number;
   onEditBook?: (book: Book) => void;
+  onManageBookAccess?: (book: Book) => void;
   onBooksUpdated?: (books: Book[]) => void;
   onRenameShelf?: (shelfName: string) => void;
   onShelfCoverChanged?: (shelfName: string, bookId: string | null) => void;
@@ -80,6 +86,8 @@ interface Library2DViewProps {
   onShelfTagsChanged?: (shelfName: string, tags: string[]) => void;
   onShelfAltTitlesChanged?: (shelfName: string, altTitles: string[]) => void;
   onShelfRatingUpdated?: (shelfKey: string, average: number | null, count: number) => void;
+  onShelfRelationSaved?: (relation: ShelfRelation) => void;
+  onShelfRelationDeleted?: (sourceKey: string, targetKey: string) => void;
   onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
   onTogglePlanToRead?: (shelfName: string, nextPlanToRead: boolean) => void;
   onTogglePlanToReadBook?: (book: Book, nextPlanToRead: boolean) => void;
@@ -110,13 +118,14 @@ function LibraryGridSkeleton() {
 
 export function Library2DView({
   books, progress, shelfCovers, shelfAccess, shelfTags, shelfAltTitles, shelfRatings,
-  favoriteShelfKeys, planToReadShelfKeys, planToReadBookIds, collections,
+  shelfRelations, bookAccess, favoriteShelfKeys, planToReadShelfKeys, planToReadBookIds, collections,
   storage, loading, theme, viewState, sessionRole = 'owner', sessionExpiresAt = null,
   onCycleTheme, onRefresh, onLogout,
-  onOpenBook, onInspectBook, onDismissContinue, onOpenStats, onOpenUsage, onOpenCacheManager,
-  onUploadClick, onProtectionClick, unprotectedBookCount = 0, onEditBook, onBooksUpdated,
+  onOpenBook, onInspectBook, onDismissContinue, onOpenStats, onOpenUsage, onOpenLibraryHealth, onOpenCacheManager,
+  onUploadClick, onProtectionClick, unprotectedBookCount = 0, onEditBook, onManageBookAccess, onBooksUpdated,
   onRenameShelf, onShelfCoverChanged, onShelfAccessChanged, onShelfTagsChanged,
-  onShelfAltTitlesChanged, onShelfRatingUpdated, onToggleFavoriteShelf, onTogglePlanToRead,
+  onShelfAltTitlesChanged, onShelfRatingUpdated, onShelfRelationSaved, onShelfRelationDeleted,
+  onToggleFavoriteShelf, onTogglePlanToRead,
   onTogglePlanToReadBook, onCollectionSaved, onCollectionDeleted, onMoveSelectedToShelf,
   onDeleteSelected, onApiError, onNotify,
 }: Library2DViewProps) {
@@ -207,6 +216,7 @@ export function Library2DView({
         onCycleTheme={onCycleTheme}
         onOpenStats={onOpenStats}
         onOpenUsage={onOpenUsage}
+        onOpenLibraryHealth={onOpenLibraryHealth}
         onOpenCacheManager={onOpenCacheManager}
         onUploadClick={onUploadClick}
         onProtectionClick={onProtectionClick}
@@ -259,6 +269,8 @@ export function Library2DView({
               shelfTags={shelfTags}
               shelfAltTitles={shelfAltTitles}
               shelfRatings={shelfRatings}
+              shelfRelations={shelfRelations}
+              bookAccess={bookAccess}
               favoriteShelfKeys={favoriteShelfKeys}
               planToReadShelfKeys={planToReadShelfKeys}
               planToReadBookIds={planToReadBookIds}
@@ -290,6 +302,7 @@ export function Library2DView({
               onProtectionClick={onProtectionClick}
               unprotectedBookCount={unprotectedBookCount}
               onEditBook={onEditBook}
+              onManageBookAccess={onManageBookAccess}
               onBooksUpdated={onBooksUpdated}
               onRenameShelf={onRenameShelf}
               onShelfCoverChanged={onShelfCoverChanged}
@@ -297,6 +310,8 @@ export function Library2DView({
               onShelfTagsChanged={onShelfTagsChanged}
               onShelfAltTitlesChanged={onShelfAltTitlesChanged}
               onShelfRatingUpdated={onShelfRatingUpdated}
+              onShelfRelationSaved={onShelfRelationSaved}
+              onShelfRelationDeleted={onShelfRelationDeleted}
               onToggleFavoriteShelf={onToggleFavoriteShelf}
               onTogglePlanToRead={onTogglePlanToRead}
               onTogglePlanToReadBook={onTogglePlanToReadBook}
@@ -436,6 +451,7 @@ export function Library2DView({
                 visibleShelves={visibleShelves}
                 totalBooksCount={books.length}
                 progress={progress}
+                bookAccess={bookAccess}
                 favoriteShelfKeys={favoriteShelfKeys}
                 planToReadBookIds={planToReadBookIds}
                 sessionRole={sessionRole}
@@ -446,6 +462,7 @@ export function Library2DView({
                 onInspectBook={onInspectBook}
                 onToggleSelectBook={toggleSelectBook}
                 onEditBook={onEditBook}
+                onManageBookAccess={onManageBookAccess}
                 onRenameShelf={onRenameShelf}
                 onToggleFavoriteShelf={onToggleFavoriteShelf}
                 onTogglePlanToReadBook={onTogglePlanToReadBook}

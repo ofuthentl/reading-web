@@ -1,8 +1,14 @@
 import type { CSSProperties } from 'react';
-import type { GuestBlock, GuestTocItem, ReaderSettings } from '@/types';
+import type { GuestBlock, GuestTocItem, ReaderFontWeight, ReaderSettings } from '@/types';
 import { READER_PARAGRAPH_SPACING_EM } from '@/lib/readerConfig';
 
 export const VIETNAMESE_READING_WPM = 220;
+
+const FONT_WEIGHT_CSS_MAP: Record<ReaderFontWeight, number> = {
+  normal: 400,
+  semibold: 600,
+  bold: 700,
+};
 
 const CJK_CHAR_RE = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g;
 const DEFAULT_WORDS_PER_GZIP_BYTE = 0.38;
@@ -42,12 +48,17 @@ export function formatMinutesCompact(minutes: number): string {
   return remMin > 0 ? `~${hours}g ${remMin}p` : `~${hours}g`;
 }
 
-export function formatRemainingChapterEstimate(totalWords: number, scrollRatio: number): string {
+export function formatRemainingChapterEstimate(
+  totalWords: number,
+  scrollRatio: number,
+  wpm = VIETNAMESE_READING_WPM,
+): string {
   if (!Number.isFinite(totalWords) || totalWords <= 0) return '';
   const clamped = Math.min(1, Math.max(0, Number.isFinite(scrollRatio) ? scrollRatio : 0));
   if (clamped >= 0.96) return 'Sắp hết chương';
+  const effectiveWpm = Number.isFinite(wpm) && wpm >= 60 ? wpm : VIETNAMESE_READING_WPM;
   const remainingWords = Math.max(0, Math.round(totalWords * (1 - clamped)));
-  const minutes = Math.max(1, Math.ceil(remainingWords / VIETNAMESE_READING_WPM));
+  const minutes = Math.max(1, Math.ceil(remainingWords / effectiveWpm));
   return `Còn ~${minutes} phút hết chương`;
 }
 
@@ -56,8 +67,11 @@ export function formatCombinedReadingEstimate(params: {
   laterBookWords: number;
   isLastChapter: boolean;
   scrollRatio: number;
+  wpm?: number;
 }): string {
-  const { chapterWords, laterBookWords, isLastChapter, scrollRatio } = params;
+  const { chapterWords, laterBookWords, isLastChapter, scrollRatio, wpm } = params;
+  const effectiveWpm =
+    typeof wpm === 'number' && Number.isFinite(wpm) && wpm >= 60 ? wpm : VIETNAMESE_READING_WPM;
   const clamped = Math.min(1, Math.max(0, Number.isFinite(scrollRatio) ? scrollRatio : 0));
   const safeChapWords = Math.max(0, Number.isFinite(chapterWords) ? chapterWords : 0);
   const safeLaterWords = Math.max(0, Number.isFinite(laterBookWords) ? laterBookWords : 0);
@@ -69,11 +83,11 @@ export function formatCombinedReadingEstimate(params: {
 
   if (isLastChapter || safeLaterWords <= 0) {
     if (clamped >= 0.96 || totalRemBookWords <= 15) return 'Sắp hết cuốn';
-    const minLeft = Math.max(1, Math.ceil(totalRemBookWords / VIETNAMESE_READING_WPM));
+    const minLeft = Math.max(1, Math.ceil(totalRemBookWords / effectiveWpm));
     return `Còn ${formatMinutesCompact(minLeft)} hết cuốn`;
   }
 
-  const bookMinutes = Math.max(1, Math.ceil(totalRemBookWords / VIETNAMESE_READING_WPM));
+  const bookMinutes = Math.max(1, Math.ceil(totalRemBookWords / effectiveWpm));
   const bookLabel = `${formatMinutesCompact(bookMinutes)} cuốn`;
 
   if (safeChapWords <= 15) {
@@ -83,7 +97,7 @@ export function formatCombinedReadingEstimate(params: {
     return `Sắp hết chương · ${bookLabel}`;
   }
 
-  const chapMinutes = Math.max(1, Math.ceil(remChapWords / VIETNAMESE_READING_WPM));
+  const chapMinutes = Math.max(1, Math.ceil(remChapWords / effectiveWpm));
   return `Còn ${formatMinutesCompact(chapMinutes)} chương · ${bookLabel}`;
 }
 
@@ -119,6 +133,7 @@ export function buildReaderTypographyStyle(settings: ReaderSettings): CSSPropert
   return {
     fontSize: `${settings.fontSizePx}px`,
     lineHeight: settings.lineHeight,
+    ['--reader-font-weight' as string]: FONT_WEIGHT_CSS_MAP[settings.fontWeight ?? 'normal'],
     ['--reader-text-align' as string]: settings.textAlign,
     ['--reader-para-indent' as string]: settings.paragraphIndent ? '1.6em' : '0px',
     ['--reader-para-gap' as string]: `${READER_PARAGRAPH_SPACING_EM[settings.paragraphSpacing]}em`,

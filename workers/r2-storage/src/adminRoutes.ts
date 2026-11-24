@@ -1,5 +1,9 @@
 import { searchAniListLightNovels } from './anilistProxy';
 import { type AuthContext, HttpError, requireOwner } from './auth';
+import {
+  getAdminBookAccessDetail,
+  putAdminBookAccessConfig,
+} from './bookChapterAccessAdminDb';
 import type { Env } from './booksDb';
 import { announceDiscordReleases } from './discordRelease';
 import {
@@ -85,6 +89,17 @@ export async function tryHandleAdminRoutes(
   if (normalizedPath === '/api/admin/shelves/access' && request.method === 'PUT') {
     const body = await request.json().catch(() => null);
     const updated = await putAdminShelfAccessConfig(env.DB, body);
+    return jsonResponse(updated, 200, origin);
+  }
+
+  const adminBookAccessMatch = normalizedPath.match(/^\/api\/admin\/books\/([^/]+)\/access$/);
+  if (adminBookAccessMatch && request.method === 'GET') {
+    const detail = await getAdminBookAccessDetail(env.DB, adminBookAccessMatch[1]);
+    return jsonResponse(detail, 200, origin);
+  }
+  if (adminBookAccessMatch && request.method === 'PUT') {
+    const body = await request.json().catch(() => null);
+    const updated = await putAdminBookAccessConfig(env.DB, adminBookAccessMatch[1], body);
     return jsonResponse(updated, 200, origin);
   }
 

@@ -121,7 +121,11 @@ export function ShelfCoverCard({
           onPointerMove={handleCoverTiltMove}
           onPointerLeave={handleCoverTiltLeave}
           onPointerCancel={handleCoverTiltLeave}
-          className="shelf-fan-main tilt-card relative z-10 aspect-[7/10] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.34)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]"
+          className={`shelf-fan-main tilt-card ${
+            (isFavorite || readingStatus === 'completed') && !isGuestLocked
+              ? 'cover-foil-card '
+              : ''
+          }relative z-10 aspect-[7/10] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.34)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]`}
         >
         {showImage ? (
           <>

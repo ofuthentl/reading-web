@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
-import { Bookmark, Highlighter, Image as ImageIcon, List, Loader2, Search, X } from 'lucide-react';
+import { Bookmark, Highlighter, Image as ImageIcon, List, Loader2, Lock, Search, X } from 'lucide-react';
 import type { Book, BookHighlight, Chapter } from '@/types';
 import { getDisplayAuthor } from '@/lib/bookMetadata';
 import { ReaderHighlightsPanel } from '@/components/ReaderHighlightsPanel';
@@ -313,16 +313,23 @@ export function ReaderTocDrawer({
                     <button
                       type="button"
                       onClick={() => onSelectChapter(idx)}
+                      title={ch.locked ? 'Chương giới hạn thành viên Discord' : ch.title}
                       className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition ${
                         idx === activeIndex
                           ? `border font-semibold ${palette.active}`
                           : `border border-transparent ${palette.hover}`
-                      }`}
+                      } ${ch.locked ? 'opacity-65' : ''}`}
                     >
                       <span className={`w-6 shrink-0 tabular-nums ${palette.textSecondary}`}>
                         {String(ch.chapter_number).padStart(2, '0')}
                       </span>
-                      <span className="truncate">{ch.title}</span>
+                      <span className="min-w-0 flex-1 truncate">{ch.title}</span>
+                      {ch.locked && (
+                        <Lock
+                          aria-label="Chương bị khoá"
+                          className={`h-3.5 w-3.5 shrink-0 ${palette.textSecondary}`}
+                        />
+                      )}
                     </button>
                   </li>
                 ))

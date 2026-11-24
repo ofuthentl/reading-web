@@ -14,6 +14,7 @@ import {
 } from '@/lib/bookMetadata';
 import { useCoverAccentColor } from '@/lib/coverAccentColor';
 import { isKnownAuthor } from '@/lib/shelfPlacement';
+import type { BookOpenJumpTarget } from '@/hooks/useBookReader';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 
 export interface BookInfoModalProps {
@@ -22,13 +23,15 @@ export interface BookInfoModalProps {
   isPlanToRead?: boolean;
   sessionRole?: AuthRole;
   onClose: () => void;
-  onOpenBook: (book: Book) => void;
+  onOpenBook: (book: Book, jumpTarget?: BookOpenJumpTarget) => void;
   onJumpToShelf: (shelfKey: string) => void;
   onSelectAuthor?: (authorName: string) => void;
   onMarkCompleted: (book: Book) => void;
+  onStartReread?: (book: Book) => void;
   onResetProgress: (book: Book) => void;
   onTogglePlanToRead?: (book: Book, nextPlanToRead: boolean) => void;
   onEditBook?: (book: Book) => void;
+  onManageBookAccess?: (book: Book) => void;
 }
 
 export function BookInfoModal({
@@ -41,9 +44,11 @@ export function BookInfoModal({
   onJumpToShelf,
   onSelectAuthor,
   onMarkCompleted,
+  onStartReread,
   onResetProgress,
   onTogglePlanToRead,
   onEditBook,
+  onManageBookAccess,
 }: BookInfoModalProps) {
   useEffect(() => {
     if (!book) return;
@@ -65,6 +70,7 @@ export function BookInfoModal({
   const clothColor = pickClothCoverColor(`${book.id}-${book.title}`);
   const percent = computeBookProgressPercent(book, progress);
   const isCompleted = Boolean(progress?.completed);
+  const rereadCount = Math.max(0, Math.floor(progress?.rereadCount ?? 0));
   const isMemberLocked = sessionRole === 'guest' && Boolean(book.guest_locked);
   const isGuestUnready = sessionRole === 'guest' && !isMemberLocked && book.guest_ready === false;
   const guestLockLabel = getGuestLockLabel(book, sessionRole);
@@ -222,6 +228,7 @@ export function BookInfoModal({
                       {isCompleted
                         ? 'Đã hoàn thành cuốn sách này'
                         : progress.chapterTitle || `Phần ${(progress.chapterIndex ?? 0) + 1}`}
+                      {rereadCount > 0 ? ` · ↻ Đọc lại ×${rereadCount}` : ''}
                     </span>
                     <span className="font-semibold text-accent">{percent ?? 0}%</span>
                   </div>
@@ -309,6 +316,21 @@ export function BookInfoModal({
               </button>
             )}
 
+            {!isMemberLocked && !isGuestUnready && isCompleted && onStartReread && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onStartReread(book);
+                  onOpenBook(book, { chapterIndex: 0, scrollRatio: 0 });
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-xs font-medium text-accent transition-colors hover:bg-accent/20"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Đọc lại từ đầu
+              </button>
+            )}
+
             {progress && (
               <button
                 type="button"
@@ -322,6 +344,20 @@ export function BookInfoModal({
           </div>
 
           <div className="flex items-center gap-2">
+            {sessionRole === 'owner' && onManageBookAccess && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onManageBookAccess(book);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-xs font-medium text-ink transition-colors hover:border-line-strong hover:bg-subtle"
+              >
+                <Lock className="h-3.5 w-3.5 text-crimson-accent" />
+                <span>Khoá Tập/Ch.</span>
+              </button>
+            )}
+
             {onEditBook && (
               <button
                 type="button"

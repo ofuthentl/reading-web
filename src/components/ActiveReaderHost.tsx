@@ -72,6 +72,8 @@ export function ActiveReaderHost({
         scrollRatio: initialJump.scrollRatio,
         scrollTop: 0,
         completed: Boolean(saved?.completed),
+        ...(saved?.readingSeconds ? { readingSeconds: saved.readingSeconds } : {}),
+        ...(saved?.rereadCount ? { rereadCount: saved.rereadCount } : {}),
         updatedAt: Date.now(),
       };
     }

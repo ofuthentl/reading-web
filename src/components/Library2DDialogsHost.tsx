@@ -42,9 +42,12 @@ export interface Library2DDialogsHostProps {
   onCycleTheme?: () => void;
   onUploadClick?: () => void;
   onMarkCompleted: (book: Book) => void;
+  onStartReread?: (book: Book) => void;
   onResetProgress: (book: Book) => void;
   onTogglePlanToReadBook?: (book: Book, nextPlanToRead: boolean) => void;
   onEditBook?: (book: Book) => void;
+  onManageBookAccess?: (book: Book) => void;
+  onOpenLibraryHealth?: () => void;
   onOpenCacheManager?: () => void;
 }
 
@@ -75,9 +78,12 @@ export function Library2DDialogsHost({
   onCycleTheme,
   onUploadClick,
   onMarkCompleted,
+  onStartReread,
   onResetProgress,
   onTogglePlanToReadBook,
   onEditBook,
+  onManageBookAccess,
+  onOpenLibraryHealth,
   onOpenCacheManager,
 }: Library2DDialogsHostProps) {
   return (
@@ -92,9 +98,11 @@ export function Library2DDialogsHost({
         onJumpToShelf={onJumpToShelf}
         onSelectAuthor={onSelectAuthor}
         onMarkCompleted={onMarkCompleted}
+        onStartReread={onStartReread}
         onResetProgress={onResetProgress}
         onTogglePlanToRead={onTogglePlanToReadBook}
         onEditBook={onEditBook}
+        onManageBookAccess={onManageBookAccess}
       />
 
       <ReadingStatsModal
@@ -128,6 +136,7 @@ export function Library2DDialogsHost({
             onSelectCollection={(colId) => onSelectCollection?.(colId)}
             onCycleTheme={() => onCycleTheme?.()}
             onOpenStats={() => onOpenStats?.()}
+            onOpenLibraryHealth={onOpenLibraryHealth}
             onOpenCacheManager={onOpenCacheManager}
             onUploadClick={onUploadClick}
           />

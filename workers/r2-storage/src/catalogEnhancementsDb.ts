@@ -1,4 +1,9 @@
 import { type AuthContext, HttpError, requireOwner } from './auth';
+import {
+  computeGuestLockedShelfKeys,
+  loadBookAccessSnapshot,
+  resolveGuestBookLocked,
+} from './bookChapterAccessDb';
 import { type BookRow, MAX_SHELF_NAME_LENGTH, isValidId } from './booksDb';
 import {
   type CollectionRow,
@@ -11,10 +16,12 @@ import {
 } from './collectionsDb';
 import {
   assertGuestBookAccess,
+  assertGuestShelfAccess,
   loadShelfAccessSnapshot,
   shelfExistsInBooks,
   toShelfAccessKey,
 } from './shelfAccessDb';
+import { deleteShelfRelation, upsertShelfRelation } from './shelfRelationsDb';
 import { upsertShelfAltTitles } from './shelfTagsDb';
 
 export type { CustomCollectionDto };
@@ -82,21 +89,11 @@ export function resolveCatalogUserScope(auth: AuthContext): string {
   return auth.role === 'owner' ? 'owner' : `guest:${auth.userId}`;
 }
 
-function isShelfLockedForGuest(
-  shelfKey: string,
-  restrictedKeys: ReadonlySet<string>,
-  allowedRestrictedKeys: ReadonlySet<string>,
-): boolean {
-  return restrictedKeys.has(shelfKey) && !allowedRestrictedKeys.has(shelfKey);
-}
-
 export async function loadCatalogEnhancementsSnapshot(
   db: D1Database,
   auth: AuthContext,
-  accessSnapshot: {
-    restrictedKeys: Set<string>;
-    allowedRestrictedKeys: Set<string>;
-  },
+  guestLockedShelfKeys: ReadonlySet<string>,
+  guestLockedBookIds: ReadonlySet<string>,
   rawBooks: readonly BookRow[],
 ): Promise<{
   planToReadShelves: string[];
@@ -130,11 +127,10 @@ export async function loadCatalogEnhancementsSnapshot(
   ]);
 
   const existingShelfKeys = new Set<string>();
-  const bookShelfKeyById = new Map<string, string>();
+  const existingBookIds = new Set<string>();
   for (const b of rawBooks) {
-    const sk = toShelfAccessKey(b.shelf);
-    existingShelfKeys.add(sk);
-    if (b.id) bookShelfKeyById.set(b.id, sk);
+    existingShelfKeys.add(toShelfAccessKey(b.shelf));
+    if (b.id) existingBookIds.add(b.id);
   }
 
   const isGuest = auth.role === 'guest';
@@ -142,27 +138,15 @@ export async function loadCatalogEnhancementsSnapshot(
   for (const row of ptrRes.results || []) {
     const key = row.shelf_key ? toShelfAccessKey(row.shelf_key) : '';
     if (!key || !existingShelfKeys.has(key)) continue;
-    if (
-      isGuest &&
-      isShelfLockedForGuest(key, accessSnapshot.restrictedKeys, accessSnapshot.allowedRestrictedKeys)
-    ) {
-      continue;
-    }
+    if (isGuest && guestLockedShelfKeys.has(key)) continue;
     planToReadShelves.push(key);
   }
 
   const planToReadBooks: string[] = [];
   for (const row of ptrBooksRes.results || []) {
     const bookId = row.book_id;
-    if (!bookId) continue;
-    const sk = bookShelfKeyById.get(bookId);
-    if (!sk) continue;
-    if (
-      isGuest &&
-      isShelfLockedForGuest(sk, accessSnapshot.restrictedKeys, accessSnapshot.allowedRestrictedKeys)
-    ) {
-      continue;
-    }
+    if (!bookId || !existingBookIds.has(bookId)) continue;
+    if (isGuest && guestLockedBookIds.has(bookId)) continue;
     planToReadBooks.push(bookId);
   }
 
@@ -171,8 +155,7 @@ export async function loadCatalogEnhancementsSnapshot(
     colShelvesRes.results || [],
     auth,
     existingShelfKeys,
-    accessSnapshot.restrictedKeys,
-    accessSnapshot.allowedRestrictedKeys,
+    guestLockedShelfKeys,
   );
 
   return { planToReadShelves, planToReadBooks, collections };
@@ -242,13 +225,7 @@ export async function upsertUserPlanToRead(
     }
 
     if (auth.role === 'guest') {
-      const access = await loadShelfAccessSnapshot(db, auth);
-      if (isShelfLockedForGuest(shelfKey, access.restrictedKeys, access.allowedRestrictedKeys)) {
-        throw new HttpError(
-          '🔒 Bộ truyện này chỉ mở quyền đọc cho thành viên Discord được chỉ định.',
-          403,
-        );
-      }
+      await assertGuestShelfAccess(db, auth, shelfKey);
       const countRow = await db
         .prepare('SELECT COUNT(*) AS cnt FROM user_plan_to_read WHERE user_scope = ?')
         .bind(scope)
@@ -279,7 +256,7 @@ export async function upsertUserPlanToRead(
 }
 
 async function listCollectionsRoute(db: D1Database, auth: AuthContext) {
-  const [booksRes, accessSnapshot] = await Promise.all([
+  const [booksRes, accessSnapshot, bookAccessSnapshot] = await Promise.all([
     db.prepare('SELECT id, shelf FROM books').all<Pick<BookRow, 'id' | 'shelf'>>(),
     auth.role === 'guest'
       ? loadShelfAccessSnapshot(db, auth).catch(() => {
@@ -293,12 +270,39 @@ async function listCollectionsRoute(db: D1Database, auth: AuthContext) {
           allowedRestrictedKeys: new Set<string>(),
           ownerShelfAccess: {},
         })),
+    auth.role === 'guest'
+      ? loadBookAccessSnapshot(db, auth).catch(() => {
+          throw new HttpError(
+            'Không thể xác minh phân quyền tập sách. Vui lòng thử lại sau giây lát.',
+            503,
+          );
+        })
+      : Promise.resolve({
+          publicOverrideBookIds: new Set<string>(),
+          restrictedBookIds: new Set<string>(),
+          allowedRestrictedBookIds: new Set<string>(),
+          ownerBookAccess: {},
+        }),
   ]);
+  const rawBooks = (booksRes.results || []) as BookRow[];
+  const guestLockedShelfKeys =
+    auth.role === 'guest'
+      ? computeGuestLockedShelfKeys(rawBooks, accessSnapshot, bookAccessSnapshot)
+      : new Set<string>();
+  const guestLockedBookIds = new Set<string>();
+  if (auth.role === 'guest') {
+    for (const b of rawBooks) {
+      if (resolveGuestBookLocked(b.id, toShelfAccessKey(b.shelf), accessSnapshot, bookAccessSnapshot)) {
+        guestLockedBookIds.add(b.id);
+      }
+    }
+  }
   const snapshot = await loadCatalogEnhancementsSnapshot(
     db,
     auth,
-    accessSnapshot,
-    (booksRes.results || []) as BookRow[],
+    guestLockedShelfKeys,
+    guestLockedBookIds,
+    rawBooks,
   );
   return { collections: snapshot.collections };
 }
@@ -331,6 +335,7 @@ export async function mergeCatalogRelationsOnShelfRename(
 export async function tryHandleCatalogRoutes(
   request: Request,
   normalizedPath: string,
+  url: URL,
   db: D1Database,
   auth: AuthContext,
   origin: string | null,
@@ -343,6 +348,20 @@ export async function tryHandleCatalogRoutes(
       altTitles?: unknown;
     } | null;
     const res = await upsertShelfAltTitles(db, body?.shelfName, body?.altTitles);
+    return jsonResponse(res, 200, origin);
+  }
+
+  if (normalizedPath === '/api/shelves/relations' && request.method === 'PUT') {
+    requireOwner(auth);
+    const body = await request.json().catch(() => null);
+    const res = await upsertShelfRelation(db, body);
+    return jsonResponse(res, 200, origin);
+  }
+
+  if (normalizedPath === '/api/shelves/relations' && request.method === 'DELETE') {
+    requireOwner(auth);
+    const body = await request.json().catch(() => null);
+    const res = await deleteShelfRelation(db, url, body);
     return jsonResponse(res, 200, origin);
   }
 

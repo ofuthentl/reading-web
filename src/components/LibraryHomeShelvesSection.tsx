@@ -1,11 +1,12 @@
 import { BookMarked, FolderEdit, Library, Star } from 'lucide-react';
-import type { AuthRole, Book, ReadingProgress, ShelfGroup } from '@/types';
+import type { AuthRole, Book, BookAccessSummary, ReadingProgress, ShelfGroup } from '@/types';
 import { BookCard } from '@/components/BookCard';
 
 export interface LibraryHomeShelvesSectionProps {
   visibleShelves: ShelfGroup[];
   totalBooksCount: number;
   progress: Record<string, ReadingProgress>;
+  bookAccess?: Readonly<Record<string, BookAccessSummary>>;
   favoriteShelfKeys?: ReadonlySet<string>;
   planToReadBookIds?: ReadonlySet<string>;
   sessionRole?: AuthRole;
@@ -16,6 +17,7 @@ export interface LibraryHomeShelvesSectionProps {
   onInspectBook?: (book: Book) => void;
   onToggleSelectBook: (bookId: string) => void;
   onEditBook?: (book: Book) => void;
+  onManageBookAccess?: (book: Book) => void;
   onRenameShelf?: (shelfName: string) => void;
   onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
   onTogglePlanToReadBook?: (book: Book, nextPlanToRead: boolean) => void;
@@ -26,6 +28,7 @@ export function LibraryHomeShelvesSection({
   visibleShelves,
   totalBooksCount,
   progress,
+  bookAccess,
   favoriteShelfKeys,
   planToReadBookIds,
   sessionRole,
@@ -36,6 +39,7 @@ export function LibraryHomeShelvesSection({
   onInspectBook,
   onToggleSelectBook,
   onEditBook,
+  onManageBookAccess,
   onRenameShelf,
   onToggleFavoriteShelf,
   onTogglePlanToReadBook,
@@ -152,6 +156,7 @@ export function LibraryHomeShelvesSection({
                     book={book}
                     staggerIndex={index}
                     progress={progress[book.id]}
+                    bookAccessSummary={bookAccess?.[book.id] ?? null}
                     isPlanToRead={Boolean(planToReadBookIds?.has(book.id))}
                     sessionRole={sessionRole}
                     selectionMode={selectionMode}
@@ -159,6 +164,7 @@ export function LibraryHomeShelvesSection({
                     onOpen={onOpenBook}
                     onToggleSelect={onToggleSelectBook}
                     onEdit={onEditBook}
+                    onManageBookAccess={onManageBookAccess}
                     onInspect={onInspectBook}
                     onTogglePlanToRead={onTogglePlanToReadBook}
                   />

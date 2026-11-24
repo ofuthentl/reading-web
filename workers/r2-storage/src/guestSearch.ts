@@ -1,4 +1,8 @@
 import { type AuthContext, HttpError, ensureDiscordAccessTable } from './auth';
+import {
+  loadGuestLockedChapterKeysForBook,
+  toCanonicalChapterKey,
+} from './bookChapterAccessDb';
 import { type Env, isValidId } from './booksDb';
 import type { WatermarkBlock, WatermarkInlineSpan } from './forensicWatermark';
 import type { GuestBookManifest } from './guestPack';
@@ -98,6 +102,7 @@ export async function searchGuestBookChapters(
     });
   }
 
+  const lockedChapterKeys = await loadGuestLockedChapterKeysForBook(env.DB, auth, bookId);
   const manifest = JSON.parse(row.manifest_json) as GuestBookManifest;
   const obj = await env.BOOKS_BUCKET.get(row.pack_key);
   if (!obj) throw new HttpError('Không tìm thấy gói chương trên kho lưu trữ.', 404);
@@ -120,6 +125,7 @@ export async function searchGuestBookChapters(
 
   for (let i = 0; i < scanLimit; i += 1) {
     const chMeta = manifest.chapters[i];
+    if (lockedChapterKeys.has(toCanonicalChapterKey(chMeta.id))) continue;
     const slice = packBytes.subarray(chMeta.offset, chMeta.offset + chMeta.length);
     const stream = new Blob([slice]).stream().pipeThrough(new DecompressionStream('gzip'));
     const jsonStr = await new Response(stream).text();

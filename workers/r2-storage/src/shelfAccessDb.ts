@@ -1,4 +1,8 @@
 import { type AuthContext, HttpError, ensureDiscordAccessTable } from './auth';
+import {
+  assertGuestBookEffectiveAccess,
+  assertGuestShelfEffectiveAccess,
+} from './bookChapterAccessDb';
 
 export type ShelfAccessMode = 'public' | 'restricted';
 
@@ -154,34 +158,7 @@ export async function assertGuestShelfAccess(
   auth: AuthContext,
   rawShelfName: string,
 ): Promise<void> {
-  if (auth.role === 'owner') return;
-
-  await ensureShelfAccessTables(db);
-  const shelfKey = toShelfAccessKey(rawShelfName);
-  const restrictedRows = await db
-    .prepare("SELECT shelf_key FROM shelf_access_rules WHERE access_mode = 'restricted'")
-    .all<{ shelf_key: string }>();
-
-  const matchedRuleKeys = (restrictedRows.results || [])
-    .map((r) => r.shelf_key)
-    .filter((k) => typeof k === 'string' && toShelfAccessKey(k) === shelfKey);
-
-  if (matchedRuleKeys.length === 0) return;
-
-  const userGrants = await db
-    .prepare('SELECT shelf_key FROM shelf_guest_grants WHERE discord_user_id = ?')
-    .bind(auth.userId)
-    .all<{ shelf_key: string }>();
-  const isGranted = (userGrants.results || []).some(
-    (g) => typeof g.shelf_key === 'string' && toShelfAccessKey(g.shelf_key) === shelfKey,
-  );
-
-  if (!isGranted) {
-    throw new HttpError(
-      '🔒 Bộ truyện này chỉ mở quyền đọc cho thành viên Discord được chỉ định.',
-      403,
-    );
-  }
+  await assertGuestShelfEffectiveAccess(db, auth, rawShelfName);
 }
 
 export async function assertGuestBookAccess(
@@ -189,16 +166,7 @@ export async function assertGuestBookAccess(
   auth: AuthContext,
   bookId: string,
 ): Promise<void> {
-  if (auth.role === 'owner') return;
-
-  await ensureShelfAccessTables(db);
-  const bookRow = await db
-    .prepare('SELECT shelf FROM books WHERE id = ?')
-    .bind(bookId)
-    .first<{ shelf: string }>();
-  if (!bookRow) return;
-
-  await assertGuestShelfAccess(db, auth, bookRow.shelf);
+  await assertGuestBookEffectiveAccess(db, auth, bookId);
 }
 
 export async function getAdminShelfAccessOverview(

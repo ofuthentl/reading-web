@@ -2,11 +2,13 @@ import type {
   AuthRole,
   AuthSessionInfo,
   Book,
+  BookAccessSummary,
   CustomCollection,
   ReadingProgress,
   SaveProgressOptions,
   ShelfAccessSummary,
   ShelfRatingSummary,
+  ShelfRelation,
   StorageStats,
 } from '@/types';
 import {
@@ -100,6 +102,7 @@ function computeLocalWeeklyPopularIds(
 export const LOCAL_PTR_STORAGE_KEY = 'ofu-library-local-ptr-v1';
 export const LOCAL_PTR_BOOKS_STORAGE_KEY = 'ofu-library-local-ptr-books-v1';
 export const LOCAL_COLLECTIONS_STORAGE_KEY = 'ofu-library-local-collections-v1';
+export const LOCAL_SHELF_RELATIONS_STORAGE_KEY = 'ofu-library-local-shelf-relations-v1';
 
 function readLocalArraySafe<T>(storageKey: string): T[] {
   try {
@@ -123,7 +126,7 @@ function readLocalShelfRatingsFallback(): Record<string, ShelfRatingSummary> {
       const shelfKey = bucketKey.slice('shelf:'.length);
       const vals = Object.values(map)
         .map((r) => Number(r?.rating))
-        .filter((n) => Number.isFinite(n) && n >= 1 && n <= 5);
+        .filter((n) => Number.isFinite(n) && n >= 0.5 && n <= 5);
       if (vals.length > 0) {
         const sum = vals.reduce((a, b) => a + b, 0);
         out[shelfKey] = {
@@ -144,6 +147,8 @@ export async function fetchLibraryState(): Promise<{
   weeklyPopularIds: string[];
   shelfPrefs: ShelfPrefsState;
   shelfRatings: Record<string, ShelfRatingSummary>;
+  shelfRelations: ShelfRelation[];
+  bookAccess?: Record<string, BookAccessSummary>;
   planToReadShelves: string[];
   planToReadBooks: string[];
   collections: CustomCollection[];
@@ -162,6 +167,7 @@ export async function fetchLibraryState(): Promise<{
       weeklyPopularIds: computeLocalWeeklyPopularIds(sorted, progress),
       shelfPrefs: localPrefs,
       shelfRatings: readLocalShelfRatingsFallback(),
+      shelfRelations: readLocalArraySafe<ShelfRelation>(LOCAL_SHELF_RELATIONS_STORAGE_KEY),
       planToReadShelves: readLocalArraySafe<string>(LOCAL_PTR_STORAGE_KEY),
       planToReadBooks: readLocalArraySafe<string>(LOCAL_PTR_BOOKS_STORAGE_KEY),
       collections: readLocalArraySafe<CustomCollection>(LOCAL_COLLECTIONS_STORAGE_KEY),
@@ -180,6 +186,8 @@ export async function fetchLibraryState(): Promise<{
     shelfTags?: Record<string, string[]>;
     shelfAltTitles?: Record<string, string[]>;
     shelfRatings?: Record<string, ShelfRatingSummary>;
+    shelfRelations?: ShelfRelation[];
+    bookAccess?: Record<string, BookAccessSummary>;
     planToReadShelves?: string[];
     planToReadBooks?: string[];
     collections?: CustomCollection[];
@@ -230,6 +238,10 @@ export async function fetchLibraryState(): Promise<{
     shelfPrefs: nextPrefs,
     shelfRatings:
       data.shelfRatings && typeof data.shelfRatings === 'object' ? data.shelfRatings : {},
+    shelfRelations: Array.isArray(data.shelfRelations) ? data.shelfRelations : [],
+    ...(data.bookAccess && typeof data.bookAccess === 'object'
+      ? { bookAccess: data.bookAccess }
+      : {}),
     planToReadShelves: Array.isArray(data.planToReadShelves) ? data.planToReadShelves : [],
     planToReadBooks: Array.isArray(data.planToReadBooks) ? data.planToReadBooks : [],
     collections: Array.isArray(data.collections) ? data.collections : [],
@@ -308,8 +320,12 @@ export async function saveReadingProgress(
     const existing = await getLocalProgress(bookId);
     const baseSeconds = progress.readingSeconds ?? existing?.readingSeconds ?? 0;
     const totalSeconds = baseSeconds + deltaSec;
-    const mergedLocal: ReadingProgress =
-      totalSeconds > 0 ? { ...progress, readingSeconds: totalSeconds } : progress;
+    const rereadCount = Math.max(existing?.rereadCount ?? 0, progress.rereadCount ?? 0);
+    const mergedLocal: ReadingProgress = {
+      ...progress,
+      ...(totalSeconds > 0 ? { readingSeconds: totalSeconds } : {}),
+      ...(rereadCount > 0 ? { rereadCount } : {}),
+    };
     await putLocalProgress(bookId, mergedLocal);
   };
 

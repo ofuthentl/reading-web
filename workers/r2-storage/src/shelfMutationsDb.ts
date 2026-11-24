@@ -14,6 +14,7 @@ import {
   prepareShelfAccessForRename,
   toShelfAccessKey,
 } from './shelfAccessDb';
+import { mergeShelfRelationsOnRename } from './shelfRelationsDb';
 import {
   DELETE_EMPTY_SHELF_PREFS_BY_KEY_SQL,
   DELETE_EMPTY_SHELF_PREFS_SQL,
@@ -57,6 +58,7 @@ export async function cleanupOrphanShelves(
       db.prepare(`DELETE FROM shelf_guest_grants WHERE shelf_key IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       db.prepare(`DELETE FROM user_plan_to_read WHERE shelf_key IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       db.prepare(`DELETE FROM collection_shelves WHERE shelf_key IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
+      db.prepare(`DELETE FROM shelf_relations WHERE source_shelf_key IN (${placeholders}) OR target_shelf_key IN (${placeholders})`).bind(...chunk, ...chunk).run().catch(() => undefined),
       db.prepare(`DELETE FROM library_ratings WHERE target_type = 'shelf' AND target_key IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       deleteTargetCommentsSafely(db, 'shelf', chunk, ensureCommunityTables),
     ]);
@@ -221,6 +223,7 @@ export async function renameShelfCaseInsensitive(
 
     await mergeCatalogRelationsOnShelfRename(env.DB, targetKey, newKey);
     await mergeCommunityRelationsOnShelfRename(env.DB, targetKey, newKey);
+    await mergeShelfRelationsOnRename(env.DB, targetKey, newKey);
 
     // Pha 2 (vá H-5): chỉ xoá rule/grants cũ sau khi toàn bộ sách đã đổi sang tên mới
     await cleanupOldShelfAccessAfterRename(env.DB, targetKey, newKey);

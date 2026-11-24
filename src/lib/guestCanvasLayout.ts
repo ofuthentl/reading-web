@@ -3,6 +3,7 @@ import type {
   GuestInlineSpan,
   HighlightColor,
   ReaderFont,
+  ReaderFontWeight,
   ReaderSettings,
   ReaderWidth,
 } from '@/types';
@@ -100,9 +101,10 @@ function wrapInlineSpans(
   maxWidth: number,
   startX: number,
   forceBold = false,
-  wrapOptions?: { firstLineIndent?: number; justify?: boolean },
+  wrapOptions?: { firstLineIndent?: number; justify?: boolean; fontWeight?: ReaderFontWeight },
 ): CanvasSpanFragment[][] {
   const firstIndent = Math.max(0, wrapOptions?.firstLineIndent ?? 0);
+  const fontWeight = wrapOptions?.fontWeight ?? 'normal';
   const lines: CanvasSpanFragment[][] = [];
   let currentLine: CanvasSpanFragment[] = [];
   let cursorX = startX + firstIndent;
@@ -135,7 +137,7 @@ function wrapInlineSpans(
   for (const span of spans) {
     const bold = forceBold || span.b === 1;
     const italic = span.i === 1;
-    const fontSpec = buildCanvasFontSpec(font, fontSize, bold, italic);
+    const fontSpec = buildCanvasFontSpec(font, fontSize, bold, italic, fontWeight);
 
     if (span.rt) {
       const rtSpec = buildCanvasFontSpec(font, Math.max(9, Math.round(fontSize * 0.52)), false, false);
@@ -201,7 +203,15 @@ function wrapInlineSpans(
   if (wrapOptions?.justify && lines.length > 1) {
     for (let i = 0; i < lines.length - 1; i += 1) {
       const lineStart = i === 0 ? startX + firstIndent : startX;
-      lines[i] = justifyLineFragments(lines[i], font, fontSize, lineStart, limitX, forceBold);
+      lines[i] = justifyLineFragments(
+        lines[i],
+        font,
+        fontSize,
+        lineStart,
+        limitX,
+        forceBold,
+        fontWeight,
+      );
     }
   }
   return lines;
@@ -341,7 +351,7 @@ export function computeChapterCanvasLayout(options: {
         contentWidth - quoteIndent - 6,
         quoteIndent,
         false,
-        { justify: doJustify },
+        { justify: doJustify, fontWeight: settings.fontWeight },
       );
       for (let i = 0; i < lines.length; i += 1) {
         const rubyHeadroom = computeRubyHeadroom(lines[i], baseSize);
@@ -376,6 +386,8 @@ export function computeChapterCanvasLayout(options: {
           baseSize,
           contentWidth - listIndent,
           listIndent,
+          false,
+          { fontWeight: settings.fontWeight },
         );
         for (let lineIdx = 0; lineIdx < lines.length; lineIdx += 1) {
           const rubyHeadroom = computeRubyHeadroom(lines[lineIdx], baseSize);
@@ -404,6 +416,7 @@ export function computeChapterCanvasLayout(options: {
     const lines = wrapInlineSpans(block.spans, settings.font, baseSize, contentWidth, 0, false, {
       firstLineIndent,
       justify: doJustify,
+      fontWeight: settings.fontWeight,
     });
     for (const fragments of lines) {
       const rubyHeadroom = computeRubyHeadroom(fragments, baseSize);

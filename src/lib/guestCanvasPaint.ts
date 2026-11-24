@@ -1,4 +1,4 @@
-import type { HighlightColor, ReaderFont, ReaderTheme } from '@/types';
+import type { HighlightColor, ReaderFont, ReaderFontWeight, ReaderTheme } from '@/types';
 import {
   INLINE_FOOTNOTE_TOKEN_RE,
   normalizeFootnoteKey,
@@ -235,6 +235,7 @@ export function drawCanvasLayoutItems(options: {
   canvasCssWidth: number;
   palette: CanvasThemeColors;
   font: ReaderFont;
+  fontWeight?: ReaderFontWeight;
   watermarkLabel: string;
   bitmaps: ReadonlyMap<number, ImageBitmap>;
   highlightSourceY?: number | null;
@@ -245,7 +246,7 @@ export function drawCanvasLayoutItems(options: {
 }) {
   const {
     ctx, items, contentWidth, offsetX, sliceTop, sliceHeight, canvasCssWidth,
-    palette, font, watermarkLabel, bitmaps, highlightSourceY = null, footnoteKeys,
+    palette, font, fontWeight = 'normal', watermarkLabel, bitmaps, highlightSourceY = null, footnoteKeys,
     focusBand = null, focusedBlockSet = null, showFocusAccentBar = false,
   } = options;
 
@@ -413,7 +414,7 @@ export function drawCanvasLayoutItems(options: {
     }
 
     if (item.listMarker && item.markerX !== undefined) {
-      ctx.font = buildCanvasFontSpec(font, item.fontSize, false, false);
+      ctx.font = buildCanvasFontSpec(font, item.fontSize, false, false, fontWeight);
       ctx.fillStyle = palette.inkSecondary;
       ctx.fillText(item.listMarker, offsetX + item.markerX, baselineY);
     }
@@ -422,7 +423,11 @@ export function drawCanvasLayoutItems(options: {
     ctx.fillStyle = normalFill;
     for (const frag of item.fragments) {
       ctx.font = buildCanvasFontSpec(
-        item.isHeading ? 'serif' : font, item.fontSize, item.isHeading || frag.bold, frag.italic,
+        item.isHeading ? 'serif' : font,
+        item.fontSize,
+        item.isHeading || frag.bold,
+        frag.italic,
+        fontWeight,
       );
       ctx.fillText(frag.text, offsetX + frag.x, baselineY);
 
@@ -469,6 +474,7 @@ export function paintGuestViewportCanvas(options: {
   canvasCssWidth: number;
   theme: ReaderTheme;
   font: ReaderFont;
+  fontWeight?: ReaderFontWeight;
   watermarkLabel: string;
   bitmaps: ReadonlyMap<number, ImageBitmap>;
   highlightSourceY?: number | null;
@@ -477,7 +483,7 @@ export function paintGuestViewportCanvas(options: {
 }) {
   const {
     canvas, layout, sliceTop, sliceHeight, canvasCssWidth, theme,
-    font, watermarkLabel, bitmaps, highlightSourceY = null, footnoteKeys, focusBand = null,
+    font, fontWeight = 'normal', watermarkLabel, bitmaps, highlightSourceY = null, footnoteKeys, focusBand = null,
   } = options;
 
   const surface = prepareProtectedCanvasSurface({
@@ -488,7 +494,7 @@ export function paintGuestViewportCanvas(options: {
   const offsetX = Math.max(0, Math.floor((canvasCssWidth - layout.contentWidth) / 2));
   drawCanvasLayoutItems({
     ctx: surface.ctx, items: layout.items, contentWidth: layout.contentWidth, offsetX,
-    sliceTop, sliceHeight, canvasCssWidth, palette: surface.palette, font, watermarkLabel,
+    sliceTop, sliceHeight, canvasCssWidth, palette: surface.palette, font, fontWeight, watermarkLabel,
     bitmaps, highlightSourceY, footnoteKeys, focusBand,
   });
 }

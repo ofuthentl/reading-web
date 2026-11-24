@@ -24,6 +24,7 @@ export type Chapter = {
   content: string;
   content_html?: string;
   chapter_number: number;
+  locked?: boolean;
 };
 
 export type ParsedBook = {
@@ -41,11 +42,13 @@ export type ReadingProgress = {
   scrollTop: number;
   completed: boolean;
   readingSeconds?: number;
+  rereadCount?: number;
   updatedAt: number;
 };
 
 export type SaveProgressOptions = {
   readingDeltaSec?: number;
+  rereadCount?: number;
   keepalive?: boolean;
 };
 
@@ -64,14 +67,17 @@ export type ShelfGroup = {
 
 export type ReaderTheme = 'paper' | 'sepia' | 'dark' | 'midnight';
 export type ReaderFont = 'serif' | 'sans' | 'mono';
+export type ReaderFontWeight = 'normal' | 'semibold' | 'bold';
 export type ReaderWidth = 'narrow' | 'medium' | 'wide';
 export type ReaderLayoutMode = 'scroll' | 'paginated';
 export type ReaderTextAlign = 'justify' | 'left';
 export type ReaderParagraphSpacing = 'compact' | 'normal' | 'relaxed';
+export type ReaderEyeBreakMinutes = 0 | 30 | 45 | 60;
 
 export type ReaderSettings = {
   theme: ReaderTheme;
   font: ReaderFont;
+  fontWeight: ReaderFontWeight;
   fontSizePx: number;
   lineHeight: number;
   width: ReaderWidth;
@@ -83,6 +89,7 @@ export type ReaderSettings = {
   nightDimPercent: number;
   readingRuler: boolean;
   dailyGoalMinutes: number;
+  eyeBreakMinutes: ReaderEyeBreakMinutes;
 };
 
 export type LibraryTab = 'home' | 'library' | 'support';
@@ -156,6 +163,7 @@ export type GuestTocItem = {
   title: string;
   chapterNumber: number;
   compressedBytes?: number;
+  locked?: boolean;
 };
 
 export type GuestChapterPayload = {
@@ -243,6 +251,24 @@ export type ShelfAccessRuleDetail = {
   mode: 'restricted';
   updatedAt: number;
   allowedUsers: ShelfAccessGrantUser[];
+};
+
+export type BookAccessMode = 'inherit' | 'public' | 'restricted';
+
+export type BookAccessSummary = {
+  mode: BookAccessMode;
+  allowedCount: number;
+  lockedChapterCount: number;
+};
+
+export type ShelfRelationType = 'sequel' | 'spinoff' | 'same_universe';
+export type ShelfRelationInputType = ShelfRelationType | 'prequel' | 'main_story';
+
+export type ShelfRelation = {
+  sourceShelfKey: string;
+  targetShelfKey: string;
+  relationType: ShelfRelationType;
+  createdAt: number;
 };
 
 export type CommunityTargetType = 'shelf' | 'book';

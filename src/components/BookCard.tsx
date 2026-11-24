@@ -1,6 +1,6 @@
 import { type CSSProperties, useEffect, useState } from 'react';
-import { Bookmark, Check, CheckCircle2, Info, Lock, Pencil, X } from 'lucide-react';
-import type { AuthRole, Book, ReadingProgress } from '@/types';
+import { Bookmark, Check, CheckCircle2, Globe, Info, Lock, Pencil, RotateCcw, X } from 'lucide-react';
+import type { AuthRole, Book, BookAccessSummary, ReadingProgress } from '@/types';
 import { formatBytes } from '@/lib/api';
 import {
   getBookSortTitle,
@@ -39,6 +39,7 @@ function formatRelativeTime(timestamp: number): string {
 interface BookCardProps {
   book: Book;
   progress?: ReadingProgress;
+  bookAccessSummary?: BookAccessSummary | null;
   isPlanToRead?: boolean;
   selectionMode: boolean;
   selected: boolean;
@@ -48,6 +49,7 @@ interface BookCardProps {
   onOpen: (book: Book) => void;
   onToggleSelect: (bookId: string) => void;
   onEdit?: (book: Book) => void;
+  onManageBookAccess?: (book: Book) => void;
   onInspect?: (book: Book) => void;
   onDismissContinue?: (book: Book) => void;
   onTogglePlanToRead?: (book: Book, nextPlanToRead: boolean) => void;
@@ -56,6 +58,7 @@ interface BookCardProps {
 export function BookCard({
   book,
   progress,
+  bookAccessSummary,
   isPlanToRead = false,
   selectionMode,
   selected,
@@ -65,6 +68,7 @@ export function BookCard({
   onOpen,
   onToggleSelect,
   onEdit,
+  onManageBookAccess,
   onInspect,
   onDismissContinue,
   onTogglePlanToRead,
@@ -85,10 +89,23 @@ export function BookCard({
   const percent = computeBookProgressPercent(book, progress);
   const chapterLabel = getProgressChapterLabel(progress);
   const isCompleted = Boolean(progress?.completed);
+  const rereadCount = Math.max(0, Math.floor(progress?.rereadCount ?? 0));
   const isMemberLocked = sessionRole === 'guest' && Boolean(book.guest_locked);
   const canTogglePtr = Boolean(onTogglePlanToRead && !isMemberLocked);
   const guestLockLabel = getGuestLockLabel(book, sessionRole);
-  const isNew = !guestLockLabel && isRecentBookUpload(book.created_at);
+  const ownerAccessBadge =
+    sessionRole === 'owner' && bookAccessSummary
+      ? bookAccessSummary.mode === 'restricted'
+        ? bookAccessSummary.lockedChapterCount > 0
+          ? `🔒 Tập + ${bookAccessSummary.lockedChapterCount} ch.`
+          : '🔒 Tập'
+        : bookAccessSummary.lockedChapterCount > 0
+          ? `🔒 ${bookAccessSummary.lockedChapterCount} chương`
+          : bookAccessSummary.mode === 'public'
+            ? 'Đọc thử'
+            : null
+      : null;
+  const isNew = !guestLockLabel && !ownerAccessBadge && isRecentBookUpload(book.created_at);
   const staggerDelayMs = (staggerIndex % 4) * 28;
 
   const handleActivate = () => {
@@ -107,7 +124,7 @@ export function BookCard({
       className={`relative aspect-[7/10] overflow-hidden rounded-lg border border-line bg-subtle shadow-sm ${
         compact
           ? 'w-[4.5rem] shrink-0 transition-all duration-300 group-hover:-translate-y-0.5 group-hover:border-line-strong group-hover:shadow-md'
-          : 'tilt-card w-full group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.32)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]'
+          : `tilt-card ${isCompleted && !isMemberLocked ? 'cover-foil-card ' : ''}w-full group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.32)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]`
       } ${selected ? 'ring-2 ring-accent ring-offset-2 ring-offset-canvas' : ''}`}
     >
       {showImage ? (
@@ -187,19 +204,24 @@ export function BookCard({
         </>
       )}
 
-      {/* Nhãn MỚI hoặc trạng thái gói bảo mật / giới hạn khách */}
-      {!compact && (guestLockLabel || isNew) && (
+      {/* Nhãn MỚI hoặc trạng thái gói bảo mật / giới hạn khách / khoá Admin */}
+      {!compact && (guestLockLabel || ownerAccessBadge || isNew) && (
         <span
           className={`pointer-events-none absolute bottom-2 left-1.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9.5px] font-semibold tracking-wide ${
             isMemberLocked
               ? 'border-rose-300/40 bg-[#140b0e]/92 text-rose-100'
-              : guestLockLabel
-                ? 'border-amber-300/35 bg-black/88 text-amber-200'
-                : 'border-[#f5b3b3]/35 bg-[#8f1818]/95 text-white'
+              : ownerAccessBadge
+                ? bookAccessSummary?.mode === 'public' && (bookAccessSummary.lockedChapterCount ?? 0) === 0
+                  ? 'border-emerald-300/40 bg-[#0b1712]/90 text-emerald-200'
+                  : 'border-rose-300/40 bg-[#140b0e]/92 text-rose-100'
+                : guestLockLabel
+                  ? 'border-amber-300/35 bg-black/88 text-amber-200'
+                  : 'border-[#f5b3b3]/35 bg-[#8f1818]/95 text-white'
           }`}
         >
           {isMemberLocked && <Lock className="h-2.5 w-2.5 shrink-0" />}
-          <span>{guestLockLabel || 'MỚI'}</span>
+          {ownerAccessBadge === 'Đọc thử' && <Globe className="h-2.5 w-2.5 shrink-0" />}
+          <span>{guestLockLabel || ownerAccessBadge || 'MỚI'}</span>
         </span>
       )}
 
@@ -207,7 +229,7 @@ export function BookCard({
       {!compact && book.file_size > 0 && (
         <span
           className={`pointer-events-none absolute bottom-2 ${
-            guestLockLabel || isNew ? 'right-1.5' : 'left-1.5'
+            guestLockLabel || ownerAccessBadge || isNew ? 'right-1.5' : 'left-1.5'
           } translate-y-1 rounded border border-white/15 bg-[#111113]/90 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-[#f4f4f5] opacity-0 transition-all duration-200 ease-out group-hover:translate-y-0 group-hover:opacity-100`}
         >
           {formatBytes(book.file_size)}
@@ -228,8 +250,8 @@ export function BookCard({
         </span>
       )}
 
-      {/* Cụm nút Xem giới thiệu, Đọc sau & Chỉnh sửa trên bìa */}
-      {!selectionMode && !compact && (onInspect || onEdit || canTogglePtr) && (
+      {/* Cụm nút Xem giới thiệu, Đọc sau, Phân quyền & Chỉnh sửa trên bìa */}
+      {!selectionMode && !compact && (onInspect || onEdit || onManageBookAccess || canTogglePtr) && (
         <div className="absolute left-1.5 top-1.5 flex items-center gap-1">
           {canTogglePtr && (
             <button
@@ -264,6 +286,20 @@ export function BookCard({
               className="touch-action-visible rounded-md border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] opacity-85 transition-opacity hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0"
             >
               <Info className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {sessionRole === 'owner' && onManageBookAccess && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onManageBookAccess(book);
+              }}
+              aria-label={`Phân quyền tập và chương cho ${book.title}`}
+              title="Khoá / phân quyền tập sách hoặc từng chương"
+              className="touch-action-visible rounded-md border border-[#f3e9d7]/20 bg-[#16120f]/75 p-1.5 text-[#f3e9d7] opacity-85 transition-opacity hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0"
+            >
+              <Lock className="h-3.5 w-3.5" />
             </button>
           )}
           {onEdit && (
@@ -415,8 +451,16 @@ export function BookCard({
         <p className="truncate text-xs text-ink-muted">{displayAuthor}</p>
         {percent !== null ? (
           <div className="flex items-center justify-between gap-1.5 pt-0.5 text-[11px] font-medium text-crimson-accent">
-            <span className="truncate">{isCompleted ? 'Đã đọc xong' : chapterLabel}</span>
+            <span className="truncate">
+              {isCompleted ? 'Đã đọc xong' : chapterLabel}
+              {rereadCount > 0 ? ` · ↻ ×${rereadCount}` : ''}
+            </span>
             <span className="shrink-0">{percent}%</span>
+          </div>
+        ) : rereadCount > 0 ? (
+          <div className="flex items-center gap-1 pt-0.5 text-[11px] font-medium text-accent">
+            <RotateCcw className="h-3 w-3 shrink-0" />
+            <span className="truncate">Đọc lại ×{rereadCount}</span>
           </div>
         ) : (
           isPlanToRead && (

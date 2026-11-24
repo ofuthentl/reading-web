@@ -1,15 +1,20 @@
+import { useEffect, useState } from 'react';
 import {
   AlignJustify,
   AlignLeft,
   BookOpen,
   Cloud,
+  Eye,
   Minus,
   Moon,
   Plus,
+  RotateCcw,
   ScrollText,
   X,
 } from 'lucide-react';
 import type {
+  ReaderEyeBreakMinutes,
+  ReaderFontWeight,
   ReaderLayoutMode,
   ReaderParagraphSpacing,
   ReaderSettings,
@@ -17,6 +22,12 @@ import type {
   ReaderTheme,
 } from '@/types';
 import { READER_THEME_STYLES, type ReaderThemePalette } from '@/lib/readerConfig';
+import {
+  DEFAULT_ADAPTIVE_WPM,
+  readLearnedWpm,
+  resetLearnedWpm,
+  subscribeLearnedWpm,
+} from '@/lib/readingSpeedTracker';
 
 interface ReaderSettingsPopoverProps {
   settings: ReaderSettings;
@@ -30,6 +41,19 @@ const FONT_OPTIONS = [
   ['sans', 'Hiện đại'],
   ['mono', 'Mono'],
 ] as const;
+
+const FONT_WEIGHT_OPTIONS: ReadonlyArray<[ReaderFontWeight, string]> = [
+  ['normal', 'Thường'],
+  ['semibold', 'Vừa'],
+  ['bold', 'Đậm'],
+];
+
+const EYE_BREAK_OPTIONS: ReadonlyArray<[ReaderEyeBreakMinutes, string]> = [
+  [0, 'Tắt'],
+  [30, '30p'],
+  [45, '45p'],
+  [60, '60p'],
+];
 
 const WIDTH_OPTIONS = [
   ['narrow', 'Gọn'],
@@ -67,6 +91,13 @@ export function ReaderSettingsPopover({
   onUpdateSettings,
   onClose,
 }: ReaderSettingsPopoverProps) {
+  const [wpmState, setWpmState] = useState(readLearnedWpm);
+
+  useEffect(() => {
+    return subscribeLearnedWpm(() => {
+      setWpmState(readLearnedWpm());
+    });
+  }, []);
   return (
     <div
       role="dialog"
@@ -154,6 +185,33 @@ export function ReaderSettingsPopover({
               onClick={() => onUpdateSettings({ font: fontKey })}
               className={`rounded-lg border px-2 py-1.5 text-xs font-medium transition ${
                 settings.font === fontKey
+                  ? palette.active
+                  : `${palette.border} ${palette.hover}`
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Độ đậm chữ (C12) */}
+      <div className="mb-3.5">
+        <p className={`mb-2 text-xs font-medium ${palette.textSecondary}`}>Độ đậm chữ</p>
+        <div className="grid grid-cols-3 gap-1.5">
+          {FONT_WEIGHT_OPTIONS.map(([weightKey, label]) => (
+            <button
+              key={weightKey}
+              type="button"
+              onClick={() => onUpdateSettings({ fontWeight: weightKey })}
+              className={`rounded-lg border px-2 py-1.5 text-xs transition ${
+                weightKey === 'bold'
+                  ? 'font-bold'
+                  : weightKey === 'semibold'
+                    ? 'font-semibold'
+                    : 'font-normal'
+              } ${
+                (settings.fontWeight ?? 'normal') === weightKey
                   ? palette.active
                   : `${palette.border} ${palette.hover}`
               }`}
@@ -320,6 +378,54 @@ export function ReaderSettingsPopover({
               {label}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Nhắc nghỉ mắt & Tốc độ đọc cá nhân (C13) */}
+      <div className={`mb-3.5 border-t pt-3 ${palette.border}`}>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className={`inline-flex items-center gap-1 text-xs font-medium ${palette.textSecondary}`}>
+            <Eye className="h-3.5 w-3.5 opacity-80" />
+            <span>Nhắc nghỉ mắt</span>
+          </span>
+          <span className={`text-[11px] ${palette.textSecondary}`}>
+            {settings.eyeBreakMinutes > 0 ? `Mỗi ${settings.eyeBreakMinutes} phút` : 'Đang tắt'}
+          </span>
+        </div>
+        <div className="grid grid-cols-4 gap-1.5">
+          {EYE_BREAK_OPTIONS.map(([mins, label]) => (
+            <button
+              key={mins}
+              type="button"
+              onClick={() => onUpdateSettings({ eyeBreakMinutes: mins })}
+              className={`rounded-lg border px-2 py-1 text-xs font-medium transition ${
+                (settings.eyeBreakMinutes ?? 0) === mins
+                  ? palette.active
+                  : `${palette.border} ${palette.hover}`
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className={`mt-2.5 flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-[11px] ${palette.border} ${palette.surfaceSubtle}`}>
+          <span className={palette.textSecondary}>
+            Tốc độ đọc:{' '}
+            <strong className={`tabular-nums ${palette.textPrimary}`}>
+              ~{wpmState.wpm} từ/phút
+            </strong>
+          </span>
+          <button
+            type="button"
+            disabled={wpmState.wpm === DEFAULT_ADAPTIVE_WPM && wpmState.sampleCount === 0}
+            onClick={() => resetLearnedWpm()}
+            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] font-medium transition disabled:opacity-40 ${palette.hover}`}
+            title="Đặt lại tốc độ đọc mặc định 220 từ/phút"
+          >
+            <RotateCcw className="h-2.5 w-2.5" />
+            <span>Đặt lại 220</span>
+          </button>
         </div>
       </div>
 

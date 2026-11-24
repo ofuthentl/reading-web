@@ -1,5 +1,5 @@
-import { Suspense, lazy } from 'react';
-import type { Book, StorageStats } from '@/types';
+import { Suspense, lazy, useMemo } from 'react';
+import type { Book, BookAccessSummary, ShelfGroup, StorageStats } from '@/types';
 import { BookEditModal } from '@/components/BookEditModal';
 import { BulkShelfModal } from '@/components/BulkShelfModal';
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal';
@@ -22,11 +22,25 @@ const LazyCacheManagerModal = lazy(() =>
   })),
 );
 
+const LazyAdminLibraryHealthModal = lazy(() =>
+  import('@/components/AdminLibraryHealthModal').then((mod) => ({
+    default: mod.AdminLibraryHealthModal,
+  })),
+);
+
+const LazyBookAccessModal = lazy(() =>
+  import('@/components/BookAccessModal').then((mod) => ({
+    default: mod.BookAccessModal,
+  })),
+);
+
 export type LibraryModalState =
   | { kind: 'none' }
   | { kind: 'upload' }
   | { kind: 'protection' }
   | { kind: 'cache-manager' }
+  | { kind: 'library-health' }
+  | { kind: 'book-access'; book: Book }
   | { kind: 'edit'; book: Book }
   | { kind: 'rename-shelf'; shelfName: string }
   | { kind: 'bulk-shelf'; books: Book[] }
@@ -35,15 +49,20 @@ export type LibraryModalState =
 interface AdminModalsHostProps {
   modal: LibraryModalState;
   books: Book[];
+  shelves: readonly ShelfGroup[];
+  shelfTags?: Readonly<Record<string, string[]>>;
   storage: StorageStats | null;
   existingShelves: string[];
   renamingShelfName: string | null;
   renamingShelfCount: number;
   onClose: () => void;
+  onSwitchModal: (nextModal: LibraryModalState) => void;
+  onJumpToShelf: (shelfKey: string) => void;
   onRequestDelete: (book: Book) => void;
   onBookUploaded: (book: Book, storage: StorageStats) => void;
   onBookUpdated: (book: Book, storage?: StorageStats) => void;
   onBookPackSynced: (bookId: string, storage?: StorageStats) => void;
+  onBookAccessSaved: (bookId: string, summary: BookAccessSummary | null) => void;
   onShelfRenamed: (oldName: string, newName: string) => void;
   onBooksShelfMoved: (bookIds: string[], targetShelf: string) => void;
   onBooksDeleted: (deletedIds: string[], nextStorage: StorageStats) => void;
@@ -54,21 +73,31 @@ interface AdminModalsHostProps {
 export function AdminModalsHost({
   modal,
   books,
+  shelves,
+  shelfTags,
   storage,
   existingShelves,
   renamingShelfName,
   renamingShelfCount,
   onClose,
+  onSwitchModal,
+  onJumpToShelf,
   onRequestDelete,
   onBookUploaded,
   onBookUpdated,
   onBookPackSynced,
+  onBookAccessSaved,
   onShelfRenamed,
   onBooksShelfMoved,
   onBooksDeleted,
   onApiError,
   onNotify,
 }: AdminModalsHostProps) {
+  const allShelfNames = useMemo(
+    () => new Map(shelves.map((s) => [s.key, s.name])),
+    [shelves],
+  );
+
   return (
     <>
       {modal.kind === 'upload' && (
@@ -103,6 +132,33 @@ export function AdminModalsHost({
             open
             books={books}
             onClose={onClose}
+            onNotify={onNotify}
+          />
+        </Suspense>
+      )}
+      {modal.kind === 'library-health' && (
+        <Suspense fallback={null}>
+          <LazyAdminLibraryHealthModal
+            open
+            books={books}
+            shelfTags={shelfTags}
+            onClose={onClose}
+            onEditBook={(book) => onSwitchModal({ kind: 'edit', book })}
+            onRenameShelf={(shelfName) => onSwitchModal({ kind: 'rename-shelf', shelfName })}
+            onOpenProtection={() => onSwitchModal({ kind: 'protection' })}
+            onJumpToShelf={onJumpToShelf}
+          />
+        </Suspense>
+      )}
+      {modal.kind === 'book-access' && (
+        <Suspense fallback={null}>
+          <LazyBookAccessModal
+            book={modal.book}
+            allShelfNames={allShelfNames}
+            onClose={onClose}
+            onBookAccessSaved={onBookAccessSaved}
+            onOpenProtection={() => onSwitchModal({ kind: 'protection' })}
+            onApiError={onApiError}
             onNotify={onNotify}
           />
         </Suspense>

@@ -6,6 +6,7 @@ import { registerPwaServiceWorker } from '@/lib/pwaRegister';
 import App from './App.tsx';
 import './fonts.css';
 import './index.css';
+import './styles/effects.css';
 import './styles/reader.css';
 import './styles/cursors.css';
 

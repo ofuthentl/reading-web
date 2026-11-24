@@ -253,9 +253,13 @@ export async function saveCommunityRating(
     if (rating === null || rating === 0) {
       delete store.ratings[bucketKey][id.userScope];
     } else {
+      const half = Math.round(Number(rating) * 2);
+      if (!Number.isFinite(rating) || Math.abs(Number(rating) * 2 - half) > 1e-6 || half < 1 || half > 10) {
+        throw new CommunityApiError('Điểm sao phải từ 0.5 đến 5.0 (bước 0.5 sao).', 400);
+      }
       store.ratings[bucketKey][id.userScope] = {
         authorName: id.authorName,
-        rating,
+        rating: half / 2,
         updatedAt: Date.now(),
       };
     }

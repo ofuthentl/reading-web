@@ -57,11 +57,13 @@ export function useReaderController({
     () => undefined,
   );
 
-  const { consumeDeltaSec } = useActiveReadingTimer({
-    enabled: timerEnabled && !lightboxTarget,
-    onAutoCheckpoint: () => flushRef.current({ forceTimeFlush: true }),
-    onKeepaliveFlush: () => flushRef.current({ forceTimeFlush: true, keepalive: true }),
-  });
+  const { consumeDeltaSec, getTotalActiveSec, eyeBreakDue, acknowledgeEyeBreak } =
+    useActiveReadingTimer({
+      enabled: timerEnabled && !lightboxTarget,
+      eyeBreakMinutes: settings.eyeBreakMinutes,
+      onAutoCheckpoint: () => flushRef.current({ forceTimeFlush: true }),
+      onKeepaliveFlush: () => flushRef.current({ forceTimeFlush: true, keepalive: true }),
+    });
 
   const flushProgress = useCallback(
     (opts?: { forceTimeFlush?: boolean; keepalive?: boolean }) => {
@@ -213,6 +215,9 @@ export function useReaderController({
     setImmersiveHidden,
     lightboxTarget,
     setLightboxTarget,
+    eyeBreakDue,
+    acknowledgeEyeBreak,
+    getTotalActiveSec,
     lastScrollTopRef,
     completedRef,
     flushProgress,

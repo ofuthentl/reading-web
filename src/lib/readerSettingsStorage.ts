@@ -1,5 +1,7 @@
 import type {
+  ReaderEyeBreakMinutes,
   ReaderFont,
+  ReaderFontWeight,
   ReaderLayoutMode,
   ReaderParagraphSpacing,
   ReaderSettings,
@@ -21,6 +23,7 @@ export function appThemeToReaderTheme(appTheme: UiTheme): ReaderTheme {
 export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   theme: 'paper',
   font: 'serif',
+  fontWeight: 'normal',
   fontSizePx: 19,
   lineHeight: 1.8,
   width: 'medium',
@@ -32,6 +35,7 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   nightDimPercent: 0,
   readingRuler: false,
   dailyGoalMinutes: 30,
+  eyeBreakMinutes: 0,
 };
 
 function normalizeDailyGoalMinutes(raw: unknown): number {
@@ -45,10 +49,12 @@ function normalizeDailyGoalMinutes(raw: unknown): number {
 
 const VALID_THEMES = new Set<ReaderTheme>(['paper', 'sepia', 'dark', 'midnight']);
 const VALID_FONTS = new Set<ReaderFont>(['serif', 'sans', 'mono']);
+const VALID_FONT_WEIGHTS = new Set<ReaderFontWeight>(['normal', 'semibold', 'bold']);
 const VALID_WIDTHS = new Set<ReaderWidth>(['narrow', 'medium', 'wide']);
 const VALID_LAYOUTS = new Set<ReaderLayoutMode>(['scroll', 'paginated']);
 const VALID_ALIGNS = new Set<ReaderTextAlign>(['justify', 'left']);
 const VALID_SPACINGS = new Set<ReaderParagraphSpacing>(['compact', 'normal', 'relaxed']);
+const VALID_EYE_BREAK = new Set<ReaderEyeBreakMinutes>([0, 30, 45, 60]);
 
 export function normalizeReaderSettings(
   parsed: Partial<ReaderSettings> | null | undefined,
@@ -61,6 +67,10 @@ export function normalizeReaderSettings(
   return {
     theme: parsed.theme && VALID_THEMES.has(parsed.theme) ? parsed.theme : baseTheme,
     font: parsed.font && VALID_FONTS.has(parsed.font) ? parsed.font : DEFAULT_READER_SETTINGS.font,
+    fontWeight:
+      parsed.fontWeight && VALID_FONT_WEIGHTS.has(parsed.fontWeight)
+        ? parsed.fontWeight
+        : DEFAULT_READER_SETTINGS.fontWeight,
     fontSizePx:
       typeof parsed.fontSizePx === 'number' && Number.isFinite(parsed.fontSizePx)
         ? Math.min(30, Math.max(14, Math.round(parsed.fontSizePx)))
@@ -97,6 +107,11 @@ export function normalizeReaderSettings(
         ? parsed.readingRuler
         : DEFAULT_READER_SETTINGS.readingRuler,
     dailyGoalMinutes: normalizeDailyGoalMinutes(parsed.dailyGoalMinutes),
+    eyeBreakMinutes:
+      typeof parsed.eyeBreakMinutes === 'number' &&
+      VALID_EYE_BREAK.has(parsed.eyeBreakMinutes as ReaderEyeBreakMinutes)
+        ? (parsed.eyeBreakMinutes as ReaderEyeBreakMinutes)
+        : DEFAULT_READER_SETTINGS.eyeBreakMinutes,
   };
 }
 

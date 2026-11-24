@@ -279,6 +279,13 @@ export function ReadingStatsModal({
               Hoàn thành toàn kho:{' '}
               <strong className="text-ink">{insights.completionPercent}%</strong> · Chưa mở:{' '}
               <strong className="text-ink">{insights.unreadBooks}</strong> cuốn
+              {insights.totalRereads > 0 && (
+                <>
+                  {' '}
+                  · Đọc lại:{' '}
+                  <strong className="text-accent">↻ ×{insights.totalRereads}</strong> lượt
+                </>
+              )}
             </span>
             <span className="text-ink-faint">
               EPUB {insights.formatCounts.epub} · DOCX {insights.formatCounts.docx}
@@ -317,6 +324,9 @@ export function ReadingStatsModal({
                           {itemProg.completed
                             ? 'Hoàn thành'
                             : itemProg.chapterTitle || `Phần ${(itemProg.chapterIndex ?? 0) + 1}`}
+                          {(itemProg.rereadCount ?? 0) > 0
+                            ? ` · ↻ ×${itemProg.rereadCount}`
+                            : ''}
                         </p>
                       </div>
                       <div className="shrink-0 text-right">

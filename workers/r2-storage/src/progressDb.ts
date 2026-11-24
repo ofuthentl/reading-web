@@ -15,25 +15,38 @@ export interface ProgressRow {
   scroll_top: number;
   completed: number;
   reading_seconds?: number;
+  reread_count?: number;
   updated_at: number;
 }
 
 const ensuredProgressDbs = new WeakSet<D1Database>();
 const ensuredReadingSecDbs = new WeakSet<D1Database>();
 
-async function ensureReadingSecondsColumn(
+async function ensureProgressExtraColumns(
   db: D1Database,
   table: 'reading_progress' | 'guest_reading_progress',
 ): Promise<void> {
   const cols = await db.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>();
-  if ((cols.results || []).some((c) => c.name === 'reading_seconds')) return;
-  try {
-    await db
-      .prepare(`ALTER TABLE ${table} ADD COLUMN reading_seconds INTEGER NOT NULL DEFAULT 0`)
-      .run();
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!msg.toLowerCase().includes('duplicate column')) throw err;
+  const names = new Set((cols.results || []).map((c) => c.name));
+  if (!names.has('reading_seconds')) {
+    try {
+      await db
+        .prepare(`ALTER TABLE ${table} ADD COLUMN reading_seconds INTEGER NOT NULL DEFAULT 0`)
+        .run();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.toLowerCase().includes('duplicate column')) throw err;
+    }
+  }
+  if (!names.has('reread_count')) {
+    try {
+      await db
+        .prepare(`ALTER TABLE ${table} ADD COLUMN reread_count INTEGER NOT NULL DEFAULT 0`)
+        .run();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.toLowerCase().includes('duplicate column')) throw err;
+    }
   }
 }
 
@@ -52,6 +65,7 @@ export async function ensureGuestProgressTable(env: Env): Promise<void> {
            scroll_top REAL NOT NULL DEFAULT 0,
            completed INTEGER NOT NULL DEFAULT 0,
            reading_seconds INTEGER NOT NULL DEFAULT 0,
+           reread_count INTEGER NOT NULL DEFAULT 0,
            updated_at INTEGER NOT NULL,
            PRIMARY KEY (discord_user_id, book_id)
          )`,
@@ -76,9 +90,9 @@ export async function ensureGuestProgressTable(env: Env): Promise<void> {
 
 export async function ensureProgressReadingTimeColumns(env: Env): Promise<void> {
   if (ensuredReadingSecDbs.has(env.DB)) return;
-  await ensureReadingSecondsColumn(env.DB, 'reading_progress');
+  await ensureProgressExtraColumns(env.DB, 'reading_progress');
   if (ensuredProgressDbs.has(env.DB)) {
-    await ensureReadingSecondsColumn(env.DB, 'guest_reading_progress');
+    await ensureProgressExtraColumns(env.DB, 'guest_reading_progress');
     ensuredReadingSecDbs.add(env.DB);
     return;
   }
@@ -86,7 +100,7 @@ export async function ensureProgressReadingTimeColumns(env: Env): Promise<void> 
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'guest_reading_progress'",
   ).first<{ name: string }>();
   if (guestTbl) {
-    await ensureReadingSecondsColumn(env.DB, 'guest_reading_progress');
+    await ensureProgressExtraColumns(env.DB, 'guest_reading_progress');
     ensuredReadingSecDbs.add(env.DB);
   }
 }
@@ -105,6 +119,7 @@ export async function upsertReadingProgress(
     completed?: unknown;
     updatedAt?: unknown;
     readingDeltaSec?: unknown;
+    rereadCount?: unknown;
   } | null,
 ) {
   if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
@@ -154,6 +169,12 @@ export async function upsertReadingProgress(
       ? Math.min(MAX_READING_DELTA_SEC, Math.floor(rawReadingDelta))
       : 0;
 
+  const rawRereadCount = Number(body.rereadCount ?? 0);
+  const incomingRereadCount =
+    Number.isFinite(rawRereadCount) && rawRereadCount > 0
+      ? Math.min(999, Math.floor(rawRereadCount))
+      : 0;
+
   let readingDeltaAccepted = 0;
   const firstSaveCapped = Math.min(requestedDelta, FIRST_BOOK_SAVE_MAX_SEC);
 
@@ -161,8 +182,8 @@ export async function upsertReadingProgress(
     await ensureProgressReadingTimeColumns(env);
     // Kẹp reading_seconds nguyên tử trực tiếp trong SQL theo đồng hồ thực (bỏ +3s/+999ms) và đo chính xác chênh lệch qua db.batch
     const upsertStmt = env.DB.prepare(
-      `INSERT INTO reading_progress (book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO reading_progress (book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, reread_count, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(book_id) DO UPDATE SET
          chapter_id = excluded.chapter_id,
          chapter_index = excluded.chapter_index,
@@ -176,6 +197,7 @@ export async function upsertReadingProgress(
            WHEN reading_progress.updated_at > 0 THEN MIN(?, MIN(?, MAX(0, CAST((excluded.updated_at - reading_progress.updated_at) / 1000 AS INTEGER))))
            ELSE ?
          END,
+         reread_count = MAX(COALESCE(reading_progress.reread_count, 0), excluded.reread_count),
          updated_at = MAX(reading_progress.updated_at, excluded.updated_at)
        RETURNING reading_seconds`,
     ).bind(
@@ -188,6 +210,7 @@ export async function upsertReadingProgress(
       scrollTop,
       completed,
       firstSaveCapped,
+      incomingRereadCount,
       updatedAt,
       requestedDelta,
       requestedDelta,
@@ -210,8 +233,8 @@ export async function upsertReadingProgress(
   } else {
     await ensureGuestProgressTable(env);
     const upsertStmt = env.DB.prepare(
-      `INSERT INTO guest_reading_progress (discord_user_id, book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO guest_reading_progress (discord_user_id, book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, reread_count, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(discord_user_id, book_id) DO UPDATE SET
          chapter_id = excluded.chapter_id,
          chapter_index = excluded.chapter_index,
@@ -225,6 +248,7 @@ export async function upsertReadingProgress(
            WHEN guest_reading_progress.updated_at > 0 THEN MIN(?, MIN(?, MAX(0, CAST((excluded.updated_at - guest_reading_progress.updated_at) / 1000 AS INTEGER))))
            ELSE ?
          END,
+         reread_count = MAX(COALESCE(guest_reading_progress.reread_count, 0), excluded.reread_count),
          updated_at = MAX(guest_reading_progress.updated_at, excluded.updated_at)
        RETURNING reading_seconds`,
     ).bind(
@@ -238,6 +262,7 @@ export async function upsertReadingProgress(
       scrollTop,
       completed,
       firstSaveCapped,
+      incomingRereadCount,
       updatedAt,
       requestedDelta,
       requestedDelta,

@@ -1,6 +1,11 @@
 import { type AuthContext, HttpError } from './auth';
 import { MAX_SHELF_NAME_LENGTH, isValidId } from './booksDb';
-import { assertGuestShelfAccess, shelfExistsInBooks, toShelfAccessKey } from './shelfAccessDb';
+import {
+  assertGuestBookAccess,
+  assertGuestShelfAccess,
+  shelfExistsInBooks,
+  toShelfAccessKey,
+} from './shelfAccessDb';
 
 export type CommunityTargetType = 'shelf' | 'book';
 
@@ -36,6 +41,7 @@ export async function ensureCommunityTables(db: D1Database): Promise<void> {
          user_scope TEXT NOT NULL,
          author_name TEXT NOT NULL,
          rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+         rating_half INTEGER CHECK (rating_half BETWEEN 1 AND 10),
          updated_at INTEGER NOT NULL,
          PRIMARY KEY (target_type, target_key, user_scope)
        )`,
@@ -66,10 +72,27 @@ export async function ensureCommunityTables(db: D1Database): Promise<void> {
     ),
   ]);
 
-  const cols = await db.prepare('PRAGMA table_info(library_comments)').all<{ name: string }>();
-  const existingCols = new Set((cols.results || []).map((c) => c.name));
+  const [commentCols, ratingCols] = await Promise.all([
+    db.prepare('PRAGMA table_info(library_comments)').all<{ name: string }>(),
+    db.prepare('PRAGMA table_info(library_ratings)').all<{ name: string }>(),
+  ]);
+  const existingCols = new Set((commentCols.results || []).map((c) => c.name));
   await addCommentColumnIfMissing(db, existingCols, 'parent_id', 'TEXT');
   await addCommentColumnIfMissing(db, existingCols, 'chapter_number', 'INTEGER');
+
+  const existingRatingCols = new Set((ratingCols.results || []).map((c) => c.name));
+  if (!existingRatingCols.has('rating_half')) {
+    try {
+      await db
+        .prepare(
+          'ALTER TABLE library_ratings ADD COLUMN rating_half INTEGER CHECK (rating_half BETWEEN 1 AND 10)',
+        )
+        .run();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.toLowerCase().includes('duplicate column')) throw err;
+    }
+  }
 
   await db.batch([
     db.prepare(
@@ -140,7 +163,7 @@ export async function resolveAndAuthorizeCommunityTarget(
   if (!bookRow) {
     throw new HttpError('Không tìm thấy tập sách.', 404);
   }
-  await assertGuestShelfAccess(db, auth, bookRow.shelf);
+  await assertGuestBookAccess(db, auth, bookRow.id);
   return { targetType: 'book', targetKey: bookRow.id };
 }
 
@@ -154,7 +177,7 @@ export async function loadAllShelfRatingsMap(
   await ensureCommunityTables(db);
   const res = await db
     .prepare(
-      `SELECT target_key, COUNT(*) AS cnt, SUM(rating) AS sum_rating
+      `SELECT target_key, COUNT(*) AS cnt, SUM(COALESCE(rating_half / 2.0, rating)) AS sum_rating
        FROM library_ratings
        WHERE target_type = 'shelf'
        GROUP BY target_key`,
@@ -197,7 +220,7 @@ export async function loadRatingSummary(
   const [aggRow, mineRow] = await Promise.all([
     db
       .prepare(
-        `SELECT COUNT(*) AS cnt, AVG(rating) AS avg_rating
+        `SELECT COUNT(*) AS cnt, AVG(COALESCE(rating_half / 2.0, rating)) AS avg_rating
          FROM library_ratings
          WHERE target_type = ? AND target_key = ?`,
       )
@@ -205,12 +228,12 @@ export async function loadRatingSummary(
       .first<{ cnt: number; avg_rating: number | null }>(),
     db
       .prepare(
-        `SELECT rating
+        `SELECT COALESCE(rating_half / 2.0, rating) AS effective_rating
          FROM library_ratings
          WHERE target_type = ? AND target_key = ? AND user_scope = ?`,
       )
       .bind(targetType, targetKey, userScope)
-      .first<{ rating: number }>(),
+      .first<{ effective_rating: number }>(),
   ]);
 
   const ratingCount = Number(aggRow?.cnt ?? 0);
@@ -218,9 +241,10 @@ export async function loadRatingSummary(
     ratingCount > 0 && typeof aggRow?.avg_rating === 'number' && Number.isFinite(aggRow.avg_rating)
       ? Math.round(aggRow.avg_rating * 10) / 10
       : null;
+  const rawMine = mineRow?.effective_rating;
   const myRating =
-    typeof mineRow?.rating === 'number' && mineRow.rating >= 1 && mineRow.rating <= 5
-      ? mineRow.rating
+    typeof rawMine === 'number' && Number.isFinite(rawMine) && rawMine >= 0.5 && rawMine <= 5
+      ? Math.round(rawMine * 10) / 10
       : null;
 
   return { averageRating, ratingCount, myRating };
@@ -241,26 +265,27 @@ export async function upsertTargetRatingRecord(
       )
       .bind(targetType, targetKey, userScope)
       .run();
-  } else if (
-    typeof rawRating === 'number' &&
-    Number.isInteger(rawRating) &&
-    rawRating >= 1 &&
-    rawRating <= 5
-  ) {
+  } else if (typeof rawRating === 'number' && Number.isFinite(rawRating)) {
+    const half = Math.round(rawRating * 2);
+    if (Math.abs(rawRating * 2 - half) > 1e-6 || half < 1 || half > 10) {
+      throw new HttpError('Điểm đánh giá phải từ 0.5 đến 5.0 sao (bước 0.5).', 400);
+    }
+    const compatRating = Math.max(1, Math.min(5, Math.round(half / 2)));
     const now = Date.now();
     await db
       .prepare(
-        `INSERT INTO library_ratings (target_type, target_key, user_scope, author_name, rating, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO library_ratings (target_type, target_key, user_scope, author_name, rating, rating_half, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(target_type, target_key, user_scope) DO UPDATE SET
            author_name = excluded.author_name,
            rating = excluded.rating,
+           rating_half = excluded.rating_half,
            updated_at = excluded.updated_at`,
       )
-      .bind(targetType, targetKey, userScope, authorName, rawRating, now)
+      .bind(targetType, targetKey, userScope, authorName, compatRating, half, now)
       .run();
   } else {
-    throw new HttpError('Điểm đánh giá phải là số nguyên từ 1 đến 5 sao.', 400);
+    throw new HttpError('Điểm đánh giá phải từ 0.5 đến 5.0 sao (bước 0.5).', 400);
   }
 
   const summary = await loadRatingSummary(db, targetType, targetKey, userScope);
@@ -278,14 +303,18 @@ export async function mergeCommunityRelationsOnShelfRename(
   await db.batch([
     db
       .prepare(
-        `INSERT INTO library_ratings (target_type, target_key, user_scope, author_name, rating, updated_at)
-         SELECT 'shelf', ?, user_scope, author_name, rating, updated_at
+        `INSERT INTO library_ratings (target_type, target_key, user_scope, author_name, rating, rating_half, updated_at)
+         SELECT 'shelf', ?, user_scope, author_name, rating, rating_half, updated_at
          FROM library_ratings
          WHERE target_type = 'shelf' AND target_key = ?
          ON CONFLICT(target_type, target_key, user_scope) DO UPDATE SET
            rating = CASE
              WHEN excluded.updated_at > library_ratings.updated_at THEN excluded.rating
              ELSE library_ratings.rating
+           END,
+           rating_half = CASE
+             WHEN excluded.updated_at > library_ratings.updated_at THEN excluded.rating_half
+             ELSE library_ratings.rating_half
            END,
            author_name = CASE
              WHEN excluded.updated_at > library_ratings.updated_at THEN excluded.author_name
