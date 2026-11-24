@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
+import { DailyGoalCard } from '@/components/DailyGoalCard';
 import { ReadingHeatmapSection } from '@/components/ReadingHeatmapSection';
 import type { BookOpenJumpTarget } from '@/hooks/useBookReader';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
@@ -26,12 +27,17 @@ import {
 const LazyQuoteVaultModal = lazy(() =>
   import('@/components/QuoteVaultModal').then((mod) => ({ default: mod.QuoteVaultModal })),
 );
+const LazyReadingWrappedModal = lazy(() =>
+  import('@/components/ReadingWrappedModal').then((mod) => ({ default: mod.ReadingWrappedModal })),
+);
 
 export interface ReadingStatsModalProps {
   open: boolean;
   books: Book[];
   progress: Record<string, ReadingProgress>;
   sessionRole?: AuthRole;
+  dailyGoalMinutes?: number;
+  onChangeDailyGoalMinutes?: (nextMinutes: number) => void;
   onClose: () => void;
   onOpenBook: (book: Book, jumpTarget?: BookOpenJumpTarget) => void;
   onOpenCacheManager?: () => void;
@@ -54,6 +60,8 @@ export function ReadingStatsModal({
   books,
   progress,
   sessionRole,
+  dailyGoalMinutes = 30,
+  onChangeDailyGoalMinutes,
   onClose,
   onOpenBook,
   onOpenCacheManager,
@@ -61,17 +69,18 @@ export function ReadingStatsModal({
   const [activity, setActivity] = useState<ReaderActivityReport | null>(null);
   const [activityLoading, setActivityLoading] = useState(false);
   const [quoteVaultOpen, setQuoteVaultOpen] = useState(false);
+  const [wrappedOpen, setWrappedOpen] = useState(false);
 
   useBodyScrollLock(open);
 
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !quoteVaultOpen) onClose();
+      if (event.key === 'Escape' && !quoteVaultOpen && !wrappedOpen) onClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose, quoteVaultOpen]);
+  }, [open, onClose, quoteVaultOpen, wrappedOpen]);
 
   useEffect(() => {
     if (!open) return;
@@ -195,6 +204,15 @@ export function ReadingStatsModal({
               />
             </div>
           </div>
+
+          {/* Mục tiêu đọc mỗi ngày & Ofu's Library Wrapped (D-039 Mục 12) */}
+          <DailyGoalCard
+            todaySeconds={activity?.days[activity.days.length - 1]?.readingSeconds ?? 0}
+            dailyGoalMinutes={dailyGoalMinutes}
+            currentStreakDays={activity?.currentStreakDays ?? 0}
+            onChangeGoalMinutes={onChangeDailyGoalMinutes}
+            onOpenWrapped={() => setWrappedOpen(true)}
+          />
 
           {/* Thời gian đọc thực tế, Streak & Lịch nhiệt 90 ngày (D-036 Mục 17) */}
           <ReadingHeatmapSection
@@ -332,6 +350,20 @@ export function ReadingStatsModal({
               onClose();
               onOpenBook(targetBook, { chapterIndex: chIdx, scrollRatio: ratio });
             }}
+          />
+        </Suspense>
+      )}
+      {wrappedOpen && (
+        <Suspense fallback={null}>
+          <LazyReadingWrappedModal
+            open={wrappedOpen}
+            books={books}
+            progress={progress}
+            activity={activity}
+            completedBooks={rpg.completedBooks}
+            readPages={rpg.readPages}
+            readerLevel={rpg.level}
+            onClose={() => setWrappedOpen(false)}
           />
         </Suspense>
       )}

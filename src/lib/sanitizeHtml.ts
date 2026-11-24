@@ -34,6 +34,7 @@ export function sanitizeBookDocument(doc: Document): void {
   doc.body.innerHTML = DOMPurify.sanitize(doc.body.innerHTML, {
     FORBID_TAGS: FORBIDDEN_BOOK_TAGS,
     FORBID_ATTR: FORBIDDEN_BOOK_ATTRS,
+    ADD_TAGS: ['ruby', 'rt', 'rp', 'rb'],
     ADD_ATTR: ['epub:type', 'role'],
   });
 }

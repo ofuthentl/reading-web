@@ -258,13 +258,26 @@ export function ReaderSettingsPopover({
         </div>
       </div>
 
-      {/* Thụt đầu dòng */}
-      <label className="mb-3.5 flex cursor-pointer items-center justify-between gap-2 text-xs">
+      {/* Thụt đầu dòng & Thanh dẫn mắt */}
+      <label className="mb-2.5 flex cursor-pointer items-center justify-between gap-2 text-xs">
         <span>Thụt đầu dòng đoạn văn (kiểu sách in)</span>
         <input
           type="checkbox"
           checked={settings.paragraphIndent}
           onChange={(event) => onUpdateSettings({ paragraphIndent: event.target.checked })}
+          className={`h-4 w-4 shrink-0 ${palette.sliderAccent}`}
+        />
+      </label>
+
+      <label
+        className="mb-3.5 flex cursor-pointer items-center justify-between gap-2 text-xs"
+        title="Cuộn dọc: giữ nét đoạn trung tâm. Lật trang 2 cột: khoá từng cột theo chuột hoặc phím ↑/↓"
+      >
+        <span>Thanh dẫn mắt (tập trung đoạn đang đọc)</span>
+        <input
+          type="checkbox"
+          checked={settings.readingRuler}
+          onChange={(event) => onUpdateSettings({ readingRuler: event.target.checked })}
           className={`h-4 w-4 shrink-0 ${palette.sliderAccent}`}
         />
       </label>

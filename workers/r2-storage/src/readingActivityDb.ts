@@ -44,7 +44,12 @@ export async function getReaderActivityStats(env: Env, auth: AuthContext) {
   const now = Date.now();
   const readerScope = auth.role === 'owner' ? 'owner' : `guest:${auth.userId}`;
   const dayKeys = buildDayKeys(ACTIVITY_WINDOW_DAYS, now);
-  const firstDayKey = dayKeys[0];
+  const first90DayKey = dayKeys[0];
+  const todayDayKey = dayKeys[dayKeys.length - 1];
+  const currentYear = todayDayKey.slice(0, 4);
+  const currentMonth = todayDayKey.slice(0, 7);
+  const yearStartKey = `${currentYear}-01-01`;
+  const queryStartKey = yearStartKey < first90DayKey ? yearStartKey : first90DayKey;
 
   await Promise.all([
     ensureUsageTables(env.DB),
@@ -73,7 +78,7 @@ export async function getReaderActivityStats(env: Env, auth: AuthContext) {
        WHERE reader_scope = ? AND day_key >= ?
        ORDER BY day_key ASC`,
     )
-      .bind(readerScope, firstDayKey)
+      .bind(readerScope, queryStartKey)
       .all<ReaderDayRow>()
       .catch(() => ({ results: [] as ReaderDayRow[] })),
     progressSumQuery.catch(() => ({ total_seconds: 0 })),
@@ -88,8 +93,34 @@ export async function getReaderActivityStats(env: Env, auth: AuthContext) {
   ]);
 
   const byDay = new Map<string, ReaderDayRow>();
+  let monthReadingSeconds = 0;
+  let monthActiveDays = 0;
+  let yearReadingSeconds = 0;
+  let yearActiveDays = 0;
+  const monthlyMap = new Map<string, { readingSeconds: number; activeDays: number }>();
+
+  for (let m = 1; m <= 12; m += 1) {
+    const mk = `${currentYear}-${String(m).padStart(2, '0')}`;
+    monthlyMap.set(mk, { readingSeconds: 0, activeDays: 0 });
+  }
+
   for (const row of dailyRowsRes.results || []) {
     byDay.set(row.day_key, row);
+    const sec = Math.max(0, Number(row.reading_seconds ?? 0));
+    const active = sec > 0 || Number(row.last_seen_at ?? 0) > 0;
+    if (row.day_key.startsWith(currentYear)) {
+      yearReadingSeconds += sec;
+      if (active) yearActiveDays += 1;
+      const monthBucket = monthlyMap.get(row.day_key.slice(0, 7));
+      if (monthBucket) {
+        monthBucket.readingSeconds += sec;
+        if (active) monthBucket.activeDays += 1;
+      }
+    }
+    if (row.day_key.startsWith(currentMonth)) {
+      monthReadingSeconds += sec;
+      if (active) monthActiveDays += 1;
+    }
   }
 
   let readingSeconds90d = 0;
@@ -107,7 +138,18 @@ export async function getReaderActivityStats(env: Env, auth: AuthContext) {
   const { currentStreakDays, longestStreakDays } = computeStreaks(days);
   const totalBookSeconds = Math.max(0, Number(progressSumRow?.total_seconds ?? 0));
   const totalDailySeconds = Math.max(0, Number(allDailySumRow?.total_seconds ?? 0));
-  const totalReadingSeconds = Math.max(totalBookSeconds, totalDailySeconds, readingSeconds90d);
+  const totalReadingSeconds = Math.max(
+    totalBookSeconds,
+    totalDailySeconds,
+    readingSeconds90d,
+    yearReadingSeconds,
+  );
+
+  const monthlyBreakdown = Array.from(monthlyMap.entries()).map(([monthKey, val]) => ({
+    monthKey,
+    readingSeconds: val.readingSeconds,
+    activeDays: val.activeDays,
+  }));
 
   return {
     generatedAt: now,
@@ -116,6 +158,11 @@ export async function getReaderActivityStats(env: Env, auth: AuthContext) {
     totalReadingSeconds,
     readingSeconds90d,
     activeDays90d,
+    monthReadingSeconds,
+    monthActiveDays,
+    yearReadingSeconds,
+    yearActiveDays,
+    monthlyBreakdown,
     currentStreakDays,
     longestStreakDays,
     days,

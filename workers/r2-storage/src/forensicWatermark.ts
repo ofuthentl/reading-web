@@ -2,6 +2,7 @@ export interface WatermarkInlineSpan {
   t: string;
   b?: 1;
   i?: 1;
+  rt?: string;
 }
 
 export type WatermarkBlock =

@@ -1,11 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Clock, Flame, Trophy } from 'lucide-react';
 import {
   type ReaderActivityReport,
   type ReadingActivityDay,
   formatReadingDuration,
   getHeatmapIntensityLevel,
+  toVnDayKey,
 } from '@/lib/readingStreak';
+
+const CELEBRATED_STREAK_KEY = 'ofu-celebrated-streak-v1';
+const STREAK_MILESTONES = [30, 14, 7] as const;
 
 export interface ReadingHeatmapSectionProps {
   activity: ReaderActivityReport | null;
@@ -48,6 +52,21 @@ export function ReadingHeatmapSection({
 
   const days = useMemo(() => activity?.days ?? [], [activity?.days]);
   const totalSeconds = Math.max(activity?.totalReadingSeconds ?? 0, liveProgressSeconds);
+
+  useEffect(() => {
+    const streak = activity?.currentStreakDays ?? 0;
+    const matched = STREAK_MILESTONES.find((m) => streak === m);
+    if (!matched) return;
+    try {
+      const todayKey = toVnDayKey(Date.now());
+      const stamp = `${todayKey}:${matched}`;
+      if (localStorage.getItem(CELEBRATED_STREAK_KEY) === stamp) return;
+      localStorage.setItem(CELEBRATED_STREAK_KEY, stamp);
+      void import('@/lib/confettiBurst').then((m) => m.triggerConfettiBurst()).catch(() => undefined);
+    } catch {
+      // Ignore storage quota errors
+    }
+  }, [activity?.currentStreakDays]);
 
   const grid = useMemo(() => {
     if (days.length === 0) return { cells: [], monthLabels: [], colCount: 13 };

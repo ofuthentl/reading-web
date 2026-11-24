@@ -5,6 +5,7 @@ import type {
   LibraryStatusFilter,
   ReadingProgress,
   ShelfGroup,
+  ShelfRatingSummary,
   TagMatchMode,
 } from '@/types';
 import { getDisplayAuthor, isVolumeOrSubtitleSegment } from '@/lib/bookMetadata';
@@ -193,9 +194,23 @@ export function sortShelvesByMode(
   sortMode: LibrarySortMode,
   progress: Readonly<Record<string, ReadingProgress>>,
   favoriteShelfKeys?: ReadonlySet<string>,
+  shelfRatings?: Readonly<Record<string, ShelfRatingSummary>>,
 ): ShelfGroup[] {
   if (sortMode === 'title_asc') {
     return sortShelvesFavoriteFirst(shelves, favoriteShelfKeys);
+  }
+
+  if (sortMode === 'rating_desc') {
+    const byRating = [...shelves].sort((a, b) => {
+      const ra = shelfRatings?.[a.key];
+      const rb = shelfRatings?.[b.key];
+      const avgDiff = (rb?.average ?? 0) - (ra?.average ?? 0);
+      if (avgDiff !== 0) return avgDiff;
+      const cntDiff = (rb?.count ?? 0) - (ra?.count ?? 0);
+      if (cntDiff !== 0) return cntDiff;
+      return a.name.localeCompare(b.name, 'vi', { sensitivity: 'base', numeric: true });
+    });
+    return sortShelvesFavoriteFirst(byRating, favoriteShelfKeys);
   }
 
   const getMetric = (shelf: ShelfGroup): number => {

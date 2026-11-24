@@ -5,6 +5,7 @@ import type {
   CustomCollection,
   ReadingProgress,
   ShelfAccessSummary,
+  ShelfRatingSummary,
   StorageStats,
 } from '@/types';
 import {
@@ -13,6 +14,16 @@ import {
   saveReadingProgress,
   sortBooksByTitle,
 } from '@/lib/api';
+import {
+  type IdleWindow,
+  bumpKeyVersion,
+  canPreloadOnIdle,
+  mergeBookPreservingFlags,
+  mergeShelfRatingsOnRename,
+  pruneOrphanShelfRatings,
+  sortCollectionsList,
+  toggleSetValue,
+} from '@/lib/libraryStoreHelpers';
 import {
   type ShelfPrefsState,
   patchShelfAccessSummary,
@@ -30,33 +41,6 @@ import {
 import { useGuestLocalFavorites } from '@/hooks/useGuestLocalFavorites';
 import type { ToastType } from '@/hooks/useToast';
 
-type IdleWindow = Window & { requestIdleCallback?: (cb: () => void) => number };
-type NetworkNavigator = Navigator & { connection?: { saveData?: boolean } };
-
-function canPreloadOnIdle(): boolean {
-  const nav = typeof navigator !== 'undefined' ? (navigator as NetworkNavigator) : undefined;
-  return nav?.onLine !== false && nav?.connection?.saveData !== true;
-}
-
-function sortCollectionsList(items: CustomCollection[]): CustomCollection[] {
-  return [...items].sort((a, b) =>
-    a.sortOrder !== b.sortOrder ? a.sortOrder - b.sortOrder : a.createdAt - b.createdAt,
-  );
-}
-
-function toggleSetValue(prev: Set<string>, value: string, include: boolean): Set<string> {
-  const next = new Set(prev);
-  if (include) next.add(value);
-  else next.delete(value);
-  return next;
-}
-
-function bumpKeyVersion(map: Map<string, number>, key: string): number {
-  const next = (map.get(key) ?? 0) + 1;
-  map.set(key, next);
-  return next;
-}
-
 interface UseLibraryDataStoreOptions {
   session: AuthSessionInfo;
   setSession: (next: AuthSessionInfo) => void;
@@ -73,10 +57,12 @@ export function useLibraryDataStore({
   addToast,
 }: UseLibraryDataStoreOptions) {
   const [loading, setLoading] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [books, setBooks] = useState<Book[]>([]);
   const [progress, setProgress] = useState<Record<string, ReadingProgress>>({});
   const [weeklyPopularIds, setWeeklyPopularIds] = useState<string[]>([]);
   const [shelfPrefs, setShelfPrefs] = useState<ShelfPrefsState>(readLocalShelfPrefs);
+  const [shelfRatings, setShelfRatings] = useState<Record<string, ShelfRatingSummary>>({});
   const [planToReadShelfKeys, setPlanToReadShelfKeys] = useState<Set<string>>(() => new Set());
   const [planToReadBookIds, setPlanToReadBookIds] = useState<Set<string>>(() => new Set());
   const [collections, setCollections] = useState<CustomCollection[]>([]);
@@ -113,20 +99,6 @@ export function useLibraryDataStore({
     [books],
   );
 
-  const mergeBookPreservingFlags = (prev: Book, updated: Book): Book => ({
-    ...updated,
-    ...(typeof updated.guest_ready === 'boolean'
-      ? {}
-      : typeof prev.guest_ready === 'boolean'
-        ? { guest_ready: prev.guest_ready }
-        : {}),
-    ...(typeof updated.guest_locked === 'boolean'
-      ? {}
-      : typeof prev.guest_locked === 'boolean'
-        ? { guest_locked: prev.guest_locked }
-        : {}),
-  });
-
   const handleBooksBatchUpdated = useCallback(
     (updatedBooks: Book[], nextStorage?: StorageStats) => {
       const byId = new Map(updatedBooks.map((item) => [item.id, item]));
@@ -153,6 +125,7 @@ export function useLibraryDataStore({
       setProgress(state.progress);
       setWeeklyPopularIds(state.weeklyPopularIds);
       setShelfPrefs(state.shelfPrefs);
+      setShelfRatings(state.shelfRatings || {});
       setPlanToReadShelfKeys(
         new Set((state.planToReadShelves || []).map(toShelfPrefKey).filter(Boolean)),
       );
@@ -160,6 +133,7 @@ export function useLibraryDataStore({
       setCollections(sortCollectionsList(state.collections || []));
       setStorage(state.storage);
       setSession(state.session);
+      setHasLoadedOnce(true);
       if (state.session.role !== 'owner') {
         onNonOwnerLoaded();
         setSelectionResetKey((prev) => prev + 1);
@@ -213,10 +187,12 @@ export function useLibraryDataStore({
     }
     toggleVerRef.current.clear();
     setLoading(false);
+    setHasLoadedOnce(false);
     setBooks([]);
     setProgress({});
     setWeeklyPopularIds([]);
     setShelfPrefs({ covers: {}, favorites: [] });
+    setShelfRatings({});
     setPlanToReadShelfKeys(new Set());
     setPlanToReadBookIds(new Set());
     setCollections([]);
@@ -226,6 +202,10 @@ export function useLibraryDataStore({
   const handleProgressUpdated = useCallback(
     (bookId: string, nextProgress: ReadingProgress, readingDeltaSec = 0) => {
       setProgress((prev) => {
+        const wasCompleted = Boolean(prev[bookId]?.completed);
+        if (!wasCompleted && nextProgress.completed) {
+          void import('@/lib/confettiBurst').then((m) => m.triggerConfettiBurst()).catch(() => undefined);
+        }
         const prevSec = prev[bookId]?.readingSeconds ?? 0;
         const baseSec = Math.max(prevSec, nextProgress.readingSeconds ?? 0);
         const totalSec = baseSec + Math.max(0, Math.floor(readingDeltaSec));
@@ -294,9 +274,24 @@ export function useLibraryDataStore({
             return { ...col, shelfKeys: merged };
           }),
         );
+        setShelfRatings((prev) => mergeShelfRatingsOnRename(prev, oldKey, newKey));
       }
     },
     [syncRenamedGuestFavorite],
+  );
+
+  const handleShelfRatingUpdated = useCallback(
+    (shelfNameOrKey: string, average: number | null, count: number) => {
+      const key = toShelfPrefKey(shelfNameOrKey);
+      if (!key) return;
+      setShelfRatings((prev) => {
+        const next = { ...prev };
+        if (average === null || count <= 0) delete next[key];
+        else next[key] = { average, count };
+        return next;
+      });
+    },
+    [],
   );
 
   const handleShelfCoverChanged = useCallback((shelfName: string, bookId: string | null) => {
@@ -425,6 +420,9 @@ export function useLibraryDataStore({
         updatedAt: Date.now(),
       };
       setProgress((prev) => ({ ...prev, [book.id]: nextProgress }));
+      if (!existing?.completed) {
+        void import('@/lib/confettiBurst').then((m) => m.triggerConfettiBurst()).catch(() => undefined);
+      }
       addToast(`Đã đánh dấu hoàn thành "${book.title}".`, 'success');
       void saveReadingProgress(book.id, nextProgress).catch((err) => {
         setProgress((prev) => {
@@ -469,56 +467,31 @@ export function useLibraryDataStore({
 
   const handleBooksDeleted = useCallback((deletedIds: string[], nextStorage: StorageStats) => {
     const idSet = new Set(deletedIds);
-    setBooks((prev) => prev.filter((item) => !idSet.has(item.id)));
+    setBooks((prev) => {
+      const remaining = prev.filter((item) => !idSet.has(item.id));
+      setShelfRatings((prevRatings) => pruneOrphanShelfRatings(prevRatings, remaining));
+      return remaining;
+    });
     setProgress((prev) =>
       Object.fromEntries(Object.entries(prev).filter(([id]) => !idSet.has(id))),
     );
     setShelfPrefs((prev) => pruneDeletedBooksFromPrefs(prev, idSet));
     setPlanToReadBookIds((prev) => {
-      let changed = false;
-      const next = new Set<string>();
-      for (const id of prev) {
-        if (idSet.has(id)) changed = true;
-        else next.add(id);
-      }
-      return changed ? next : prev;
+      const next = new Set(Array.from(prev).filter((id) => !idSet.has(id)));
+      return next.size === prev.size ? prev : next;
     });
     setStorage(nextStorage);
   }, []);
 
   return {
-    loading,
-    books,
-    progress,
-    weeklyPopularIds,
-    shelfPrefs,
-    planToReadShelfKeys,
-    planToReadBookIds,
-    collections,
-    storage,
-    selectionResetKey,
-    effectiveFavoriteShelfKeys,
-    unprotectedBookCount,
-    loadLibrary,
-    clearStoreOnLogout,
-    handleProgressUpdated,
-    handleBookUploaded,
-    handleBookUpdated,
-    handleBooksBatchUpdated,
-    handleBookPackSynced,
-    applyShelfRenamed,
-    handleShelfCoverChanged,
-    handleShelfAccessChanged,
-    handleShelfTagsChanged,
-    handleShelfAltTitlesChanged,
-    handleTogglePlanToRead,
-    handleTogglePlanToReadBook,
-    handleCollectionSaved,
-    handleCollectionDeleted,
-    handleToggleFavoriteShelf,
-    handleMarkBookCompleted,
-    handleResetBookProgress,
-    handleBooksShelfMoved,
-    handleBooksDeleted,
+    loading, hasLoadedOnce, books, progress, weeklyPopularIds, shelfPrefs, shelfRatings,
+    planToReadShelfKeys, planToReadBookIds, collections, storage, selectionResetKey,
+    effectiveFavoriteShelfKeys, unprotectedBookCount, loadLibrary, clearStoreOnLogout,
+    handleProgressUpdated, handleBookUploaded, handleBookUpdated, handleBooksBatchUpdated,
+    handleBookPackSynced, applyShelfRenamed, handleShelfRatingUpdated, handleShelfCoverChanged,
+    handleShelfAccessChanged, handleShelfTagsChanged, handleShelfAltTitlesChanged,
+    handleTogglePlanToRead, handleTogglePlanToReadBook, handleCollectionSaved,
+    handleCollectionDeleted, handleToggleFavoriteShelf, handleMarkBookCompleted,
+    handleResetBookProgress, handleBooksShelfMoved, handleBooksDeleted,
   };
 }

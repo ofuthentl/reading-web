@@ -47,8 +47,10 @@ export function syncGateDocumentTitle(route: GateRoute, authenticated: boolean):
 
 export function replaceGateRoute(route: GateRoute): void {
   if (typeof window === 'undefined') return;
-  const targetHref = buildGateHref(route);
-  if (window.location.pathname !== targetHref) {
+  const targetPath = buildGateHref(route);
+  const preservedSearch = route === 'usage' ? '' : window.location.search;
+  const targetHref = `${targetPath}${preservedSearch}`;
+  if (`${window.location.pathname}${window.location.search}` !== targetHref) {
     window.history.replaceState(null, '', targetHref);
   }
   window.dispatchEvent(new Event(GATE_ROUTE_EVENT));
@@ -56,8 +58,10 @@ export function replaceGateRoute(route: GateRoute): void {
 
 export function navigateGateRoute(route: GateRoute): void {
   if (typeof window === 'undefined') return;
-  const targetHref = buildGateHref(route);
-  if (window.location.pathname !== targetHref) {
+  const targetPath = buildGateHref(route);
+  const preservedSearch = route === 'usage' ? '' : window.location.search;
+  const targetHref = `${targetPath}${preservedSearch}`;
+  if (`${window.location.pathname}${window.location.search}` !== targetHref) {
     window.history.pushState(null, '', targetHref);
   }
   window.dispatchEvent(new Event(GATE_ROUTE_EVENT));

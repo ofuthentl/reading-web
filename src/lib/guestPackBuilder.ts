@@ -49,15 +49,27 @@ const CONTAINER_BLOCK_TAGS = new Set([
 
 const LEAF_BLOCK_TAGS = new Set(['p', 'figcaption', 'pre', 'td', 'th']);
 
-function appendMergedSpan(target: GuestInlineSpan[], text: string, bold: boolean, italic: boolean) {
+function appendMergedSpan(
+  target: GuestInlineSpan[],
+  text: string,
+  bold: boolean,
+  italic: boolean,
+  rt?: string,
+) {
   if (!text) return;
   const b = bold ? (1 as const) : undefined;
   const i = italic ? (1 as const) : undefined;
+  const cleanRt = rt?.trim() || undefined;
   const prev = target[target.length - 1];
-  if (prev && prev.b === b && prev.i === i) {
+  if (prev && !prev.rt && !cleanRt && prev.b === b && prev.i === i) {
     prev.t += text;
   } else {
-    target.push({ t: text, ...(b ? { b } : {}), ...(i ? { i } : {}) });
+    target.push({
+      t: text,
+      ...(b ? { b } : {}),
+      ...(i ? { i } : {}),
+      ...(cleanRt ? { rt: cleanRt } : {}),
+    });
   }
 }
 
@@ -66,7 +78,7 @@ function normalizeParagraphSpans(spans: GuestInlineSpan[]): GuestInlineSpan[] {
   const cleaned: GuestInlineSpan[] = [];
   for (const span of spans) {
     const normalizedText = span.t.replace(/[ \t\r\n]+/g, ' ');
-    appendMergedSpan(cleaned, normalizedText, span.b === 1, span.i === 1);
+    appendMergedSpan(cleaned, normalizedText, span.b === 1, span.i === 1, span.rt);
   }
   if (cleaned.length > 0) {
     cleaned[0] = { ...cleaned[0], t: cleaned[0].t.replace(/^\s+/, '') };
@@ -153,6 +165,28 @@ function convertChapterToGuestBlocks(
       if (mediaIndex !== null) {
         const alt = el.getAttribute('alt')?.trim();
         blocks.push({ kind: 'img', mediaIndex, ...(alt ? { alt: alt.slice(0, 120) } : {}) });
+      }
+      return;
+    }
+
+    if (tag === 'rp') {
+      return;
+    }
+    if (tag === 'ruby') {
+      let baseText = '';
+      let rtText = '';
+      for (const child of Array.from(el.childNodes)) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          baseText += child.nodeValue || '';
+        } else if (child.nodeType === Node.ELEMENT_NODE) {
+          const cTag = (child as Element).tagName.toLowerCase();
+          if (cTag === 'rt') rtText += (child.textContent || '').trim();
+          else if (cTag !== 'rp') baseText += child.textContent || '';
+        }
+      }
+      const cleanBase = baseText.replace(/\s+/g, ' ');
+      if (cleanBase.trim()) {
+        appendMergedSpan(pendingSpans, cleanBase, bold, italic, rtText || undefined);
       }
       return;
     }

@@ -21,40 +21,16 @@ import { useBookReader } from '@/hooks/useBookReader';
 import { useCanUse3D } from '@/hooks/useCanUse3D';
 import { useLibraryDataStore } from '@/hooks/useLibraryDataStore';
 import { useLibraryViewState } from '@/hooks/useLibraryViewState';
+import { useShelfDeepLink } from '@/hooks/useShelfDeepLink';
 import { toScene3DTheme, useTheme } from '@/hooks/useTheme';
 import { useToast } from '@/hooks/useToast';
 
-const LazyAuthGate = lazy(() =>
-  import('@/components/AuthGate').then((mod) => ({ default: mod.AuthGate })),
-);
-
-const LazyAdminModalsHost = lazy(() =>
-  import('@/components/AdminModalsHost').then((mod) => ({ default: mod.AdminModalsHost })),
-);
-
-const LazyLibrary2DDialogsHost = lazy(() =>
-  import('@/components/Library2DDialogsHost').then((mod) => ({
-    default: mod.Library2DDialogsHost,
-  })),
-);
-
-const LazyAdminUsageView = lazy(() =>
-  import('@/components/AdminUsageView').then((mod) => ({
-    default: mod.AdminUsageView,
-  })),
-);
-
-const LazyLibrary3DHost = lazy(() =>
-  import('@/components/Library3DHost').then((mod) => ({
-    default: mod.Library3DHost,
-  })),
-);
-
-const LazyActiveReaderHost = lazy(() =>
-  import('@/components/ActiveReaderHost').then((mod) => ({
-    default: mod.ActiveReaderHost,
-  })),
-);
+const LazyAuthGate = lazy(() => import('@/components/AuthGate').then((m) => ({ default: m.AuthGate })));
+const LazyAdminModalsHost = lazy(() => import('@/components/AdminModalsHost').then((m) => ({ default: m.AdminModalsHost })));
+const LazyLibrary2DDialogsHost = lazy(() => import('@/components/Library2DDialogsHost').then((m) => ({ default: m.Library2DDialogsHost })));
+const LazyAdminUsageView = lazy(() => import('@/components/AdminUsageView').then((m) => ({ default: m.AdminUsageView })));
+const LazyLibrary3DHost = lazy(() => import('@/components/Library3DHost').then((m) => ({ default: m.Library3DHost })));
+const LazyActiveReaderHost = lazy(() => import('@/components/ActiveReaderHost').then((m) => ({ default: m.ActiveReaderHost })));
 
 export default function App() {
   const { theme, cycleTheme, cycle3DTheme } = useTheme();
@@ -75,8 +51,21 @@ export default function App() {
   const [modal, setModal] = useState<LibraryModalState>({ kind: 'none' });
   const [inspectedBookId, setInspectedBookId] = useState<string | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => subscribeGateRoute(() => setGateRoute(getCurrentGateRoute())), []);
+
+  useEffect(() => {
+    if (!authenticated || gateRoute === 'usage') return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [authenticated, gateRoute]);
 
   const closeModal = useCallback(() => setModal({ kind: 'none' }), []);
   const authResetCleanupRef = useRef<() => void>(() => undefined);
@@ -121,15 +110,14 @@ export default function App() {
   const catalogViewOptions = useMemo(
     () => ({
       shelfAltTitles: store.shelfPrefs.altTitles,
+      shelfRatings: store.shelfRatings,
       planToReadShelfKeys: store.planToReadShelfKeys,
       planToReadBookIds: store.planToReadBookIds,
       collections: store.collections,
     }),
     [
-      store.collections,
-      store.planToReadBookIds,
-      store.planToReadShelfKeys,
-      store.shelfPrefs.altTitles,
+      store.collections, store.planToReadBookIds, store.planToReadShelfKeys,
+      store.shelfPrefs.altTitles, store.shelfRatings,
     ],
   );
 
@@ -266,6 +254,19 @@ export default function App() {
     },
     [openLibraryShelf, setActiveTab],
   );
+  const handleSwitchToLibraryTab = useCallback(() => setActiveTab('library'), [setActiveTab]);
+
+  useShelfDeepLink({
+    authenticated,
+    hasLoadedOnce: store.hasLoadedOnce,
+    allShelves: libraryViewState.allShelves,
+    sessionRole: session.role,
+    effectiveMode,
+    setViewMode,
+    onJumpToShelf: handleJumpToShelf,
+    onSwitchToLibraryTab: handleSwitchToLibraryTab,
+    addToast,
+  });
 
   const handleShelfRenamed = useCallback(
     (oldName: string, newName: string) => {
@@ -313,7 +314,7 @@ export default function App() {
   const effectiveCanUse3D = isOwner && canUse3D;
   const render3D = isOwner && effectiveMode === '3d';
   const isReaderOpen = Boolean(reader.activeBook && (reader.parsedBook || reader.guestSession));
-  const anyDialogOpen = modal.kind !== 'none' || Boolean(inspectedBook) || statsOpen;
+  const anyDialogOpen = modal.kind !== 'none' || Boolean(inspectedBook) || statsOpen || paletteOpen;
   const is3DPaused = Boolean(reader.openingBook || isReaderOpen || anyDialogOpen);
   const is3DDimmed = Boolean(reader.openingBook || isReaderOpen);
 
@@ -407,6 +408,7 @@ export default function App() {
             shelfAccess={isOwner ? store.shelfPrefs.access : undefined}
             shelfTags={store.shelfPrefs.tags}
             shelfAltTitles={store.shelfPrefs.altTitles}
+            shelfRatings={store.shelfRatings}
             favoriteShelfKeys={store.effectiveFavoriteShelfKeys}
             planToReadShelfKeys={store.planToReadShelfKeys}
             planToReadBookIds={store.planToReadBookIds}
@@ -415,6 +417,7 @@ export default function App() {
             onShelfAccessChanged={isOwner ? store.handleShelfAccessChanged : undefined}
             onShelfTagsChanged={isOwner ? store.handleShelfTagsChanged : undefined}
             onShelfAltTitlesChanged={isOwner ? store.handleShelfAltTitlesChanged : undefined}
+            onShelfRatingUpdated={store.handleShelfRatingUpdated}
             onToggleFavoriteShelf={store.handleToggleFavoriteShelf}
             onTogglePlanToRead={store.handleTogglePlanToRead}
             onTogglePlanToReadBook={store.handleTogglePlanToReadBook}
@@ -449,26 +452,41 @@ export default function App() {
         </Suspense>
       )}
 
-      {(inspectedBook || statsOpen) && (
+      {(inspectedBook || statsOpen || paletteOpen) && (
         <Suspense fallback={null}>
           <LazyLibrary2DDialogsHost
             inspectedBook={inspectedBook}
             statsOpen={statsOpen}
+            paletteOpen={paletteOpen}
             books={store.books}
+            shelves={libraryViewState.allShelves}
+            authors={libraryViewState.availableAuthors}
+            collections={store.collections}
+            shelfAltTitles={store.shelfPrefs.altTitles}
+            shelfRatings={store.shelfRatings}
             progress={store.progress}
             planToReadBookIds={store.planToReadBookIds}
             sessionRole={session.role}
+            canUse3D={effectiveCanUse3D}
+            dailyGoalMinutes={reader.settings.dailyGoalMinutes}
+            onChangeDailyGoalMinutes={(mins) => reader.updateSettings({ dailyGoalMinutes: mins })}
             onCloseInspect={() => setInspectedBookId(null)}
             onCloseStats={() => setStatsOpen(false)}
+            onClosePalette={() => setPaletteOpen(false)}
+            onOpenStats={() => { closeBook(); setViewMode('2d'); setStatsOpen(true); }}
             onOpenBook={(book, jumpTarget) => void reader.openBook(book, jumpTarget)}
-            onJumpToShelf={handleJumpToShelf}
-            onSelectAuthor={libraryViewState.filterByAuthor}
+            onJumpToShelf={(shelfKey) => { closeBook(); setViewMode('2d'); handleJumpToShelf(shelfKey); }}
+            onSelectAuthor={(author) => { closeBook(); setViewMode('2d'); setActiveTab('home'); libraryViewState.filterByAuthor(author); }}
+            onSelectCollection={(colId) => { closeBook(); setViewMode('2d'); setActiveTab('library'); libraryViewState.closeLibraryShelf(); libraryViewState.setActiveCollectionId(colId); }}
+            onCycleTheme={cycleTheme}
+            onSwitchTo3D={effectiveCanUse3D ? () => { closeBook(); setViewMode('3d'); } : undefined}
+            onUploadClick={isOwner ? () => { closeBook(); setModal({ kind: 'upload' }); } : undefined}
             onMarkCompleted={store.handleMarkBookCompleted}
             onResetProgress={store.handleResetBookProgress}
             onTogglePlanToReadBook={store.handleTogglePlanToReadBook}
             onEditBook={isOwner ? (book: Book) => setModal({ kind: 'edit', book }) : undefined}
             onOpenCacheManager={
-              isOwner ? () => setModal({ kind: 'cache-manager' }) : undefined
+              isOwner ? () => { closeBook(); setModal({ kind: 'cache-manager' }); } : undefined
             }
           />
         </Suspense>

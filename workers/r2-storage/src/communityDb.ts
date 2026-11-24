@@ -1,18 +1,49 @@
 import { type AuthContext, type AuthRole, HttpError } from './auth';
-import { MAX_SHELF_NAME_LENGTH, isValidId } from './booksDb';
-import { assertGuestShelfAccess, shelfExistsInBooks, toShelfAccessKey } from './shelfAccessDb';
+import { isValidId } from './booksDb';
+import {
+  type CommunityTargetType,
+  type ShelfRatingAggregate,
+  ensureCommunityTables,
+  loadAllShelfRatingsMap,
+  loadRatingSummary,
+  mergeCommunityRelationsOnShelfRename,
+  resolveAndAuthorizeCommunityTarget,
+  resolveCommunityAuthorName,
+  resolveCommunityUserScope,
+  upsertTargetRatingRecord,
+} from './communityRatingsDb';
+import {
+  type CommunityReactionCounts,
+  type CommunityReactionEmoji,
+  authorizeExistingCommentAccess,
+  buildDeleteCommentTreeStatements,
+  loadReactionsForComments,
+  toggleCommunityCommentReaction,
+} from './communityReactionsDb';
 
-export type CommunityTargetType = 'shelf' | 'book';
+export {
+  type CommunityTargetType,
+  type ShelfRatingAggregate,
+  ensureCommunityTables,
+  loadAllShelfRatingsMap,
+  mergeCommunityRelationsOnShelfRename,
+};
 
 export interface CommunityCommentItem {
   id: string;
+  parentId: string | null;
+  chapterNumber: number | null;
   authorName: string;
   authorRole: AuthRole;
   content: string;
   createdAt: number;
   updatedAt: number;
+  isEdited: boolean;
   isMine: boolean;
+  canEdit: boolean;
   canDelete: boolean;
+  reactions: CommunityReactionCounts;
+  myReactions: CommunityReactionEmoji[];
 }
 
 export interface CommunitySummaryResponse {
@@ -25,144 +56,58 @@ export interface CommunitySummaryResponse {
   totalComments: number;
 }
 
+interface RawCommentRow {
+  id: string;
+  user_scope: string;
+  author_name: string;
+  author_role: string;
+  content: string;
+  parent_id: string | null;
+  chapter_number: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
 const MAX_COMMENT_LENGTH = 1500;
+const MAX_CHAPTER_NUMBER = 2000;
 const COMMENT_COOLDOWN_MS = 10_000;
 const MAX_COMMENTS_RETURNED = 100;
 
-const ensuredCommunityDbs = new WeakSet<D1Database>();
-
-export async function ensureCommunityTables(db: D1Database): Promise<void> {
-  if (ensuredCommunityDbs.has(db)) return;
-  await db.batch([
-    db.prepare(
-      `CREATE TABLE IF NOT EXISTS library_ratings (
-         target_type TEXT NOT NULL CHECK (target_type IN ('shelf', 'book')),
-         target_key TEXT NOT NULL,
-         user_scope TEXT NOT NULL,
-         author_name TEXT NOT NULL,
-         rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
-         updated_at INTEGER NOT NULL,
-         PRIMARY KEY (target_type, target_key, user_scope)
-       )`,
-    ),
-    db.prepare(
-      `CREATE TABLE IF NOT EXISTS library_comments (
-         id TEXT PRIMARY KEY,
-         target_type TEXT NOT NULL CHECK (target_type IN ('shelf', 'book')),
-         target_key TEXT NOT NULL,
-         user_scope TEXT NOT NULL,
-         author_name TEXT NOT NULL,
-         author_role TEXT NOT NULL,
-         content TEXT NOT NULL,
-         created_at INTEGER NOT NULL,
-         updated_at INTEGER NOT NULL
-       )`,
-    ),
-    db.prepare(
-      `CREATE INDEX IF NOT EXISTS idx_library_comments_target
-       ON library_comments(target_type, target_key, created_at DESC)`,
-    ),
-    db.prepare(
-      `CREATE INDEX IF NOT EXISTS idx_library_comments_user_created
-       ON library_comments(user_scope, created_at DESC)`,
-    ),
-  ]);
-  ensuredCommunityDbs.add(db);
-}
-
-function resolveUserScope(auth: AuthContext): string {
-  return auth.role === 'owner' ? 'owner' : `guest:${auth.userId}`;
-}
-
-function resolveAuthorName(auth: AuthContext): string {
-  if (auth.role === 'owner') return 'Owner';
-  const clean = (auth.discordUsername || '').trim();
-  return (clean || 'Thành viên Discord').slice(0, 80);
-}
-
-function parseTargetType(raw: unknown): CommunityTargetType {
-  if (raw === 'shelf' || raw === 'book') return raw;
-  throw new HttpError('Loại mục tiêu bình luận/đánh giá không hợp lệ (chỉ nhận shelf hoặc book).', 400);
-}
-
-async function resolveAndAuthorizeTarget(
-  db: D1Database,
-  auth: AuthContext,
-  rawType: unknown,
-  rawKey: unknown,
-  requireShelfExists = false,
-): Promise<{ targetType: CommunityTargetType; targetKey: string }> {
-  const targetType = parseTargetType(rawType);
-  const keyText = typeof rawKey === 'string' ? rawKey.normalize('NFC').trim() : '';
-  if (!keyText) {
-    throw new HttpError('Thiếu mã bộ truyện hoặc mã tập sách.', 400);
+function parseChapterNumber(raw: unknown, targetType: CommunityTargetType): number | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  if (targetType !== 'book') {
+    throw new HttpError('Chỉ bình luận cấp tập sách mới gắn được số chương.', 400);
   }
-
-  if (targetType === 'shelf') {
-    if (keyText.length > MAX_SHELF_NAME_LENGTH) {
-      throw new HttpError(`Tên bộ truyện không hợp lệ (tối đa ${MAX_SHELF_NAME_LENGTH} ký tự).`, 400);
-    }
-    const shelfKey = toShelfAccessKey(keyText);
-    await assertGuestShelfAccess(db, auth, shelfKey);
-    if (requireShelfExists) {
-      const exists = await shelfExistsInBooks(db, shelfKey);
-      if (!exists) {
-        throw new HttpError('Không tìm thấy bộ truyện này trong thư viện.', 404);
-      }
-    }
-    return { targetType: 'shelf', targetKey: shelfKey };
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 && raw <= MAX_CHAPTER_NUMBER) {
+    return raw;
   }
-
-  if (!isValidId(keyText)) {
-    throw new HttpError('ID tập sách không hợp lệ.', 400);
-  }
-  const bookRow = await db
-    .prepare('SELECT id, shelf FROM books WHERE id = ?')
-    .bind(keyText)
-    .first<{ id: string; shelf: string }>();
-  if (!bookRow) {
-    throw new HttpError('Không tìm thấy tập sách.', 404);
-  }
-  await assertGuestShelfAccess(db, auth, bookRow.shelf);
-  return { targetType: 'book', targetKey: bookRow.id };
+  throw new HttpError(`Số chương phải là số nguyên từ 1 đến ${MAX_CHAPTER_NUMBER}.`, 400);
 }
 
-async function loadRatingSummary(
-  db: D1Database,
-  targetType: CommunityTargetType,
-  targetKey: string,
+function mapRawRowToCommentItem(
+  row: RawCommentRow,
   userScope: string,
-): Promise<{ averageRating: number | null; ratingCount: number; myRating: number | null }> {
-  const [aggRow, mineRow] = await Promise.all([
-    db
-      .prepare(
-        `SELECT COUNT(*) AS cnt, AVG(rating) AS avg_rating
-         FROM library_ratings
-         WHERE target_type = ? AND target_key = ?`,
-      )
-      .bind(targetType, targetKey)
-      .first<{ cnt: number; avg_rating: number | null }>(),
-    db
-      .prepare(
-        `SELECT rating
-         FROM library_ratings
-         WHERE target_type = ? AND target_key = ? AND user_scope = ?`,
-      )
-      .bind(targetType, targetKey, userScope)
-      .first<{ rating: number }>(),
-  ]);
-
-  const ratingCount = Number(aggRow?.cnt ?? 0);
-  const averageRating =
-    ratingCount > 0 && typeof aggRow?.avg_rating === 'number' && Number.isFinite(aggRow.avg_rating)
-      ? Math.round(aggRow.avg_rating * 10) / 10
-      : null;
-  const myRating =
-    typeof mineRow?.rating === 'number' && mineRow.rating >= 1 && mineRow.rating <= 5
-      ? mineRow.rating
-      : null;
-
-  return { averageRating, ratingCount, myRating };
+  authRole: AuthRole,
+  reactionSnapshot?: { reactions: CommunityReactionCounts; myReactions: CommunityReactionEmoji[] },
+): CommunityCommentItem {
+  const isMine = row.user_scope === userScope;
+  return {
+    id: row.id,
+    parentId: row.parent_id || null,
+    chapterNumber:
+      typeof row.chapter_number === 'number' && row.chapter_number >= 1 ? row.chapter_number : null,
+    authorName: row.author_name,
+    authorRole: row.author_role === 'owner' ? 'owner' : 'guest',
+    content: row.content,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+    isEdited: Number(row.updated_at) > Number(row.created_at),
+    isMine,
+    canEdit: isMine,
+    canDelete: authRole === 'owner' || isMine,
+    reactions: reactionSnapshot?.reactions ?? {},
+    myReactions: reactionSnapshot?.myReactions ?? [],
+  };
 }
 
 export async function getCommunitySummary(
@@ -172,52 +117,56 @@ export async function getCommunitySummary(
   rawKey: string | null,
 ): Promise<CommunitySummaryResponse> {
   await ensureCommunityTables(db);
-  const { targetType, targetKey } = await resolveAndAuthorizeTarget(db, auth, rawType, rawKey);
-  const userScope = resolveUserScope(auth);
+  const { targetType, targetKey } = await resolveAndAuthorizeCommunityTarget(
+    db,
+    auth,
+    rawType,
+    rawKey,
+  );
+  const userScope = resolveCommunityUserScope(auth);
 
-  const [ratingSummary, commentsRes, countRow] = await Promise.all([
+  const [ratingSummary, rootsRes, repliesRes, countRow] = await Promise.all([
     loadRatingSummary(db, targetType, targetKey, userScope),
     db
       .prepare(
-        `SELECT id, user_scope, author_name, author_role, content, created_at, updated_at
+        `SELECT id, user_scope, author_name, author_role, content, parent_id, chapter_number, created_at, updated_at
          FROM library_comments
-         WHERE target_type = ? AND target_key = ?
+         WHERE target_type = ? AND target_key = ? AND parent_id IS NULL
          ORDER BY created_at DESC
          LIMIT ?`,
       )
       .bind(targetType, targetKey, MAX_COMMENTS_RETURNED)
-      .all<{
-        id: string;
-        user_scope: string;
-        author_name: string;
-        author_role: string;
-        content: string;
-        created_at: number;
-        updated_at: number;
-      }>(),
+      .all<RawCommentRow>(),
     db
       .prepare(
-        `SELECT COUNT(*) AS cnt
+        `SELECT id, user_scope, author_name, author_role, content, parent_id, chapter_number, created_at, updated_at
          FROM library_comments
-         WHERE target_type = ? AND target_key = ?`,
+         WHERE target_type = ? AND target_key = ? AND parent_id IS NOT NULL
+         ORDER BY created_at ASC`,
       )
+      .bind(targetType, targetKey)
+      .all<RawCommentRow>(),
+    db
+      .prepare('SELECT COUNT(*) AS cnt FROM library_comments WHERE target_type = ? AND target_key = ?')
       .bind(targetType, targetKey)
       .first<{ cnt: number }>(),
   ]);
 
-  const comments: CommunityCommentItem[] = (commentsRes.results || []).map((row) => {
-    const isMine = row.user_scope === userScope;
-    return {
-      id: row.id,
-      authorName: row.author_name,
-      authorRole: row.author_role === 'owner' ? 'owner' : 'guest',
-      content: row.content,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      isMine,
-      canDelete: auth.role === 'owner' || isMine,
-    };
-  });
+  const rootRows = rootsRes.results || [];
+  const rootIdSet = new Set(rootRows.map((r) => r.id));
+  const replyRows = (repliesRes.results || []).filter(
+    (r) => Boolean(r.parent_id && rootIdSet.has(r.parent_id)),
+  );
+  const combinedRows = [...rootRows, ...replyRows];
+  const reactionMap = await loadReactionsForComments(
+    db,
+    combinedRows.map((r) => r.id),
+    userScope,
+  );
+
+  const comments: CommunityCommentItem[] = combinedRows.map((row) =>
+    mapRawRowToCommentItem(row, userScope, auth.role, reactionMap.get(row.id)),
+  );
 
   return {
     targetType,
@@ -242,52 +191,21 @@ export async function upsertCommunityRating(
   } | null;
 
   await ensureCommunityTables(db);
-  const { targetType, targetKey } = await resolveAndAuthorizeTarget(
+  const { targetType, targetKey } = await resolveAndAuthorizeCommunityTarget(
     db,
     auth,
     body?.targetType,
     body?.targetKey,
     true,
   );
-  const userScope = resolveUserScope(auth);
-
-  const rawRating = body?.rating;
-  if (rawRating === null || rawRating === 0) {
-    await db
-      .prepare(
-        'DELETE FROM library_ratings WHERE target_type = ? AND target_key = ? AND user_scope = ?',
-      )
-      .bind(targetType, targetKey, userScope)
-      .run();
-  } else if (
-    typeof rawRating === 'number' &&
-    Number.isInteger(rawRating) &&
-    rawRating >= 1 &&
-    rawRating <= 5
-  ) {
-    const now = Date.now();
-    await db
-      .prepare(
-        `INSERT INTO library_ratings (target_type, target_key, user_scope, author_name, rating, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(target_type, target_key, user_scope) DO UPDATE SET
-           author_name = excluded.author_name,
-           rating = excluded.rating,
-           updated_at = excluded.updated_at`,
-      )
-      .bind(targetType, targetKey, userScope, resolveAuthorName(auth), rawRating, now)
-      .run();
-  } else {
-    throw new HttpError('Điểm đánh giá phải là số nguyên từ 1 đến 5 sao.', 400);
-  }
-
-  const summary = await loadRatingSummary(db, targetType, targetKey, userScope);
-  return {
-    ok: true,
+  return upsertTargetRatingRecord(
+    db,
     targetType,
     targetKey,
-    ...summary,
-  };
+    resolveCommunityUserScope(auth),
+    resolveCommunityAuthorName(auth),
+    body?.rating,
+  );
 }
 
 export async function createCommunityComment(
@@ -299,10 +217,12 @@ export async function createCommunityComment(
     targetType?: unknown;
     targetKey?: unknown;
     content?: unknown;
+    parentId?: unknown;
+    chapterNumber?: unknown;
   } | null;
 
   await ensureCommunityTables(db);
-  const { targetType, targetKey } = await resolveAndAuthorizeTarget(
+  const { targetType, targetKey } = await resolveAndAuthorizeCommunityTarget(
     db,
     auth,
     body?.targetType,
@@ -313,25 +233,56 @@ export async function createCommunityComment(
   const rawContent = typeof body?.content === 'string' ? body.content : '';
   const content = rawContent.normalize('NFC').replace(/\r\n/g, '\n').trim();
   if (content.length < 1 || content.length > MAX_COMMENT_LENGTH) {
-    throw new HttpError(
-      `Nội dung bình luận phải từ 1 đến ${MAX_COMMENT_LENGTH} ký tự.`,
-      400,
-    );
+    throw new HttpError(`Nội dung bình luận phải từ 1 đến ${MAX_COMMENT_LENGTH} ký tự.`, 400);
   }
 
-  const userScope = resolveUserScope(auth);
+  let parentId: string | null = null;
+  let inheritedChapter: number | null = null;
+  if (body?.parentId !== null && body?.parentId !== undefined && body?.parentId !== '') {
+    if (typeof body.parentId !== 'string' || !isValidId(body.parentId)) {
+      throw new HttpError('ID bình luận gốc không hợp lệ.', 400);
+    }
+    const parentRow = await db
+      .prepare(
+        'SELECT id, target_type, target_key, parent_id, chapter_number FROM library_comments WHERE id = ?',
+      )
+      .bind(body.parentId)
+      .first<{
+        id: string;
+        target_type: CommunityTargetType;
+        target_key: string;
+        parent_id: string | null;
+        chapter_number: number | null;
+      }>();
+
+    if (!parentRow) throw new HttpError('Không tìm thấy bình luận gốc để trả lời.', 404);
+    if (parentRow.target_type !== targetType || parentRow.target_key !== targetKey) {
+      throw new HttpError('Phản hồi không khớp với mục tiêu bình luận gốc.', 400);
+    }
+    if (parentRow.parent_id !== null) {
+      throw new HttpError('Chỉ hỗ trợ trả lời bình luận tối đa 1 cấp.', 400);
+    }
+    parentId = parentRow.id;
+    inheritedChapter = parentRow.chapter_number;
+  }
+
+  const explicitChapter = parseChapterNumber(body?.chapterNumber, targetType);
+  const chapterNumber =
+    targetType === 'book' ? (explicitChapter ?? inheritedChapter ?? null) : null;
+
+  const userScope = resolveCommunityUserScope(auth);
   const now = Date.now();
   const id = crypto.randomUUID().replace(/-/g, '');
-  const authorName = resolveAuthorName(auth);
+  const authorName = resolveCommunityAuthorName(auth);
   const authorRole: AuthRole = auth.role;
 
-  // Chống spam bình luận song song bằng INSERT có điều kiện nguyên tử trực tiếp trong SQLite
   const insertRes = await db
     .prepare(
       `INSERT INTO library_comments (
-         id, target_type, target_key, user_scope, author_name, author_role, content, created_at, updated_at
+         id, target_type, target_key, user_scope, author_name, author_role,
+         content, parent_id, chapter_number, created_at, updated_at
        )
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
        WHERE NOT EXISTS (
          SELECT 1 FROM library_comments
          WHERE user_scope = ? AND created_at > ?
@@ -345,6 +296,8 @@ export async function createCommunityComment(
       authorName,
       authorRole,
       content,
+      parentId,
+      chapterNumber,
       now,
       now,
       userScope,
@@ -355,11 +308,7 @@ export async function createCommunityComment(
   if ((insertRes.meta?.changes ?? 0) !== 1) {
     const recentRow = await db
       .prepare(
-        `SELECT created_at
-         FROM library_comments
-         WHERE user_scope = ?
-         ORDER BY created_at DESC
-         LIMIT 1`,
+        'SELECT created_at FROM library_comments WHERE user_scope = ? ORDER BY created_at DESC LIMIT 1',
       )
       .bind(userScope)
       .first<{ created_at: number }>();
@@ -375,16 +324,83 @@ export async function createCommunityComment(
 
   const comment: CommunityCommentItem = {
     id,
+    parentId,
+    chapterNumber,
     authorName,
     authorRole,
     content,
     createdAt: now,
     updatedAt: now,
+    isEdited: false,
     isMine: true,
+    canEdit: true,
     canDelete: true,
+    reactions: {},
+    myReactions: [],
   };
 
   return { ok: true, comment };
+}
+
+export async function updateCommunityComment(
+  db: D1Database,
+  auth: AuthContext,
+  commentId: string,
+  rawBody: unknown,
+) {
+  if (!isValidId(commentId)) throw new HttpError('ID bình luận không hợp lệ.', 400);
+  const body = (rawBody && typeof rawBody === 'object' ? rawBody : null) as {
+    content?: unknown;
+    chapterNumber?: unknown;
+  } | null;
+
+  await ensureCommunityTables(db);
+  const existing = await db
+    .prepare(
+      `SELECT id, target_type, target_key, user_scope, author_name, author_role,
+              content, parent_id, chapter_number, created_at, updated_at
+       FROM library_comments WHERE id = ?`,
+    )
+    .bind(commentId)
+    .first<RawCommentRow & { target_type: CommunityTargetType; target_key: string }>();
+
+  if (!existing) throw new HttpError('Không tìm thấy bình luận.', 404);
+  await authorizeExistingCommentAccess(db, auth, existing.target_type, existing.target_key);
+
+  const userScope = resolveCommunityUserScope(auth);
+  if (existing.user_scope !== userScope) {
+    throw new HttpError('Chỉ chính chủ mới có thể chỉnh sửa bình luận này.', 403);
+  }
+
+  const rawContent = typeof body?.content === 'string' ? body.content : '';
+  const content = rawContent.normalize('NFC').replace(/\r\n/g, '\n').trim();
+  if (content.length < 1 || content.length > MAX_COMMENT_LENGTH) {
+    throw new HttpError(`Nội dung bình luận phải từ 1 đến ${MAX_COMMENT_LENGTH} ký tự.`, 400);
+  }
+
+  const nextChapterNumber =
+    body && 'chapterNumber' in body
+      ? parseChapterNumber(body.chapterNumber, existing.target_type)
+      : existing.chapter_number;
+
+  const updatedAt = Math.max(Date.now(), Number(existing.created_at) + 1);
+  await db
+    .prepare('UPDATE library_comments SET content = ?, chapter_number = ?, updated_at = ? WHERE id = ?')
+    .bind(content, nextChapterNumber, updatedAt, commentId)
+    .run();
+
+  const reactionMap = await loadReactionsForComments(db, [commentId], userScope);
+  const updatedRow: RawCommentRow = {
+    ...existing,
+    content,
+    chapter_number: nextChapterNumber,
+    updated_at: updatedAt,
+  };
+
+  return {
+    ok: true,
+    comment: mapRawRowToCommentItem(updatedRow, userScope, auth.role, reactionMap.get(commentId)),
+  };
 }
 
 export async function deleteCommunityComment(
@@ -392,15 +408,10 @@ export async function deleteCommunityComment(
   auth: AuthContext,
   commentId: string,
 ) {
-  if (!isValidId(commentId)) {
-    throw new HttpError('ID bình luận không hợp lệ.', 400);
-  }
-
+  if (!isValidId(commentId)) throw new HttpError('ID bình luận không hợp lệ.', 400);
   await ensureCommunityTables(db);
   const existing = await db
-    .prepare(
-      'SELECT id, target_type, target_key, user_scope FROM library_comments WHERE id = ?',
-    )
+    .prepare('SELECT id, target_type, target_key, user_scope FROM library_comments WHERE id = ?')
     .bind(commentId)
     .first<{
       id: string;
@@ -409,69 +420,24 @@ export async function deleteCommunityComment(
       user_scope: string;
     }>();
 
-  if (!existing) {
-    throw new HttpError('Không tìm thấy bình luận.', 404);
+  if (!existing) throw new HttpError('Không tìm thấy bình luận.', 404);
+  await authorizeExistingCommentAccess(db, auth, existing.target_type, existing.target_key);
+
+  if (auth.role !== 'owner' && existing.user_scope !== resolveCommunityUserScope(auth)) {
+    throw new HttpError('Bạn chỉ có thể xoá bình luận của chính mình.', 403);
   }
 
-  if (auth.role !== 'owner') {
-    // Bảo vệ chặt D-030 trước cả kiểm tra chủ sở hữu
-    if (existing.target_type === 'shelf') {
-      await assertGuestShelfAccess(db, auth, existing.target_key);
-    } else {
-      const bookRow = await db
-        .prepare('SELECT shelf FROM books WHERE id = ?')
-        .bind(existing.target_key)
-        .first<{ shelf: string }>();
-      if (bookRow) {
-        await assertGuestShelfAccess(db, auth, bookRow.shelf);
-      }
-    }
+  const replyCountRow = await db
+    .prepare('SELECT COUNT(*) AS cnt FROM library_comments WHERE parent_id = ?')
+    .bind(commentId)
+    .first<{ cnt: number }>();
 
-    if (existing.user_scope !== resolveUserScope(auth)) {
-      throw new HttpError('Bạn chỉ có thể xoá bình luận của chính mình.', 403);
-    }
-  }
-
-  await db.prepare('DELETE FROM library_comments WHERE id = ?').bind(commentId).run();
-  return { ok: true, deletedId: commentId };
-}
-
-export async function mergeCommunityRelationsOnShelfRename(
-  db: D1Database,
-  oldKey: string,
-  newKey: string,
-): Promise<void> {
-  if (!oldKey || !newKey || oldKey === newKey) return;
-  await ensureCommunityTables(db);
-
-  await db.batch([
-    db
-      .prepare(
-        `INSERT INTO library_ratings (target_type, target_key, user_scope, author_name, rating, updated_at)
-         SELECT 'shelf', ?, user_scope, author_name, rating, updated_at
-         FROM library_ratings
-         WHERE target_type = 'shelf' AND target_key = ?
-         ON CONFLICT(target_type, target_key, user_scope) DO UPDATE SET
-           rating = CASE
-             WHEN excluded.updated_at > library_ratings.updated_at THEN excluded.rating
-             ELSE library_ratings.rating
-           END,
-           author_name = CASE
-             WHEN excluded.updated_at > library_ratings.updated_at THEN excluded.author_name
-             ELSE library_ratings.author_name
-           END,
-           updated_at = MAX(library_ratings.updated_at, excluded.updated_at)`,
-      )
-      .bind(newKey, oldKey),
-    db
-      .prepare("DELETE FROM library_ratings WHERE target_type = 'shelf' AND target_key = ?")
-      .bind(oldKey),
-    db
-      .prepare(
-        "UPDATE library_comments SET target_key = ? WHERE target_type = 'shelf' AND target_key = ?",
-      )
-      .bind(newKey, oldKey),
-  ]);
+  await db.batch(buildDeleteCommentTreeStatements(db, commentId));
+  return {
+    ok: true,
+    deletedId: commentId,
+    deletedCount: 1 + Number(replyCountRow?.cnt ?? 0),
+  };
 }
 
 export async function tryHandleCommunityRoutes(
@@ -500,20 +466,36 @@ export async function tryHandleCommunityRoutes(
 
   if (normalizedPath === '/api/community/rating' && request.method === 'PUT') {
     const body = await request.json().catch(() => null);
-    const res = await upsertCommunityRating(db, auth, body);
-    return jsonResponse(res, 200, origin);
+    return jsonResponse(await upsertCommunityRating(db, auth, body), 200, origin);
   }
 
   if (normalizedPath === '/api/community/comments' && request.method === 'POST') {
     const body = await request.json().catch(() => null);
-    const res = await createCommunityComment(db, auth, body);
-    return jsonResponse(res, 201, origin);
+    return jsonResponse(await createCommunityComment(db, auth, body), 201, origin);
   }
 
-  const deleteMatch = normalizedPath.match(/^\/api\/community\/comments\/([^/]+)$/);
-  if (deleteMatch && request.method === 'DELETE') {
-    const res = await deleteCommunityComment(db, auth, deleteMatch[1]);
+  const reactionMatch = normalizedPath.match(/^\/api\/community\/comments\/([^/]+)\/reaction$/);
+  if (reactionMatch && request.method === 'PUT') {
+    const body = await request.json().catch(() => null);
+    const res = await toggleCommunityCommentReaction(
+      db,
+      auth,
+      reactionMatch[1],
+      resolveCommunityUserScope(auth),
+      body,
+      ensureCommunityTables,
+    );
     return jsonResponse(res, 200, origin);
+  }
+
+  const itemMatch = normalizedPath.match(/^\/api\/community\/comments\/([^/]+)$/);
+  if (itemMatch && request.method === 'PATCH') {
+    const body = await request.json().catch(() => null);
+    return jsonResponse(await updateCommunityComment(db, auth, itemMatch[1], body), 200, origin);
+  }
+
+  if (itemMatch && request.method === 'DELETE') {
+    return jsonResponse(await deleteCommunityComment(db, auth, itemMatch[1]), 200, origin);
   }
 
   return null;

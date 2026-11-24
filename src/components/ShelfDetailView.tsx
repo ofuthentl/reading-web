@@ -35,6 +35,9 @@ interface ShelfDetailViewProps {
   onChangeShelfCover?: (summary: ShelfSummary) => void;
   onOpenBatchNotes?: () => void;
   onManageAccess?: () => void;
+  onAnnounceDiscord?: () => Promise<void> | void;
+  announcingDiscord?: boolean;
+  onShelfRatingUpdated?: (shelfKey: string, average: number | null, count: number) => void;
   onToggleFavorite?: (shelfName: string, nextFavorite: boolean) => void;
   onTogglePlanToRead?: (shelfName: string, nextPlanToRead: boolean) => void;
   onTogglePlanToReadBook?: (book: Book, nextPlanToRead: boolean) => void;
@@ -66,6 +69,9 @@ export function ShelfDetailView({
   onChangeShelfCover,
   onOpenBatchNotes,
   onManageAccess,
+  onAnnounceDiscord,
+  announcingDiscord,
+  onShelfRatingUpdated,
   onToggleFavorite,
   onTogglePlanToRead,
   onTogglePlanToReadBook,
@@ -143,6 +149,8 @@ export function ShelfDetailView({
         onChangeShelfCover={onChangeShelfCover}
         onOpenBatchNotes={onOpenBatchNotes}
         onManageAccess={onManageAccess}
+        onAnnounceDiscord={onAnnounceDiscord}
+        announcingDiscord={announcingDiscord}
         onToggleFavorite={onToggleFavorite}
         onTogglePlanToRead={onTogglePlanToRead}
       />
@@ -306,6 +314,11 @@ export function ShelfDetailView({
             summary.isGuestLocked
               ? '🔒 Bộ truyện này chỉ mở quyền đọc, chấm sao và bình luận cho thành viên Discord được chỉ định.'
               : null
+          }
+          onRatingUpdated={
+            onShelfRatingUpdated
+              ? (avg, cnt) => onShelfRatingUpdated(shelf.key, avg, cnt)
+              : undefined
           }
           onApiError={onApiError}
           onNotify={onNotify}

@@ -1,4 +1,11 @@
-import type { AuthRole, Book, ReadingProgress, ShelfAccessSummary, ShelfGroup } from '@/types';
+import type {
+  AuthRole,
+  Book,
+  ReadingProgress,
+  ShelfAccessSummary,
+  ShelfGroup,
+  ShelfRatingSummary,
+} from '@/types';
 import {
   TITLE_ENDS_WITH_BARE_VOL_RE,
   computeBookProgressPercent,
@@ -76,9 +83,9 @@ const TECHNICAL_SHORT_TOKENS = new Set([
 const PRIMARY_VOLUME_KEYWORD_RE =
   /(?:^|[\s\-_:|([/])(?:vol(?:ume)?|tập|tap|quyển|quyen|book|v|#)\.?\s*0*(\d{1,3}(?:\.\d+)?)(?:\s*[-–~]\s*\d{1,3})?(?=$|[\s\-_:|)\]/.,–~])/gi;
 
-// 1B: Từ khoá số tập phụ
+// 1B: Từ khoá số tập phụ & ngoại truyện
 const SECONDARY_VOLUME_KEYWORD_RE =
-  /(?:^|[\s\-_:|([/])(?:phần|phan|part|ep(?:isode)?)\.?\s*0*(\d{1,3}(?:\.\d+)?)(?:\s*[-–~]\s*\d{1,3})?(?=$|[\s\-_:|)\]/.,–~])/gi;
+  /(?:^|[\s\-_:|([/])(?:phần|phan|part|ep(?:isode)?|ss|ex|sp|ova|oad|bonus|extra|special|ngoại\s+truyện|ngoai\s+truyen|side\s+stor(?:y|ies)|short\s+stor(?:y|ies))\.?\s*0*(\d{1,3}(?:\.\d+)?)(?:\s*[-–~]\s*\d{1,3})?(?=$|[\s\-_:|)\]/.,–~])/gi;
 
 // 2: Số đặt trong ngoặc tròn hoặc ngoặc vuông ở cuối (`SAO (01)`, `SAO [1]`, `SAO (1-3)`)
 const TRAILING_BRACKET_NUM_RE =
@@ -130,6 +137,8 @@ export interface ShelfSummary {
   latestReadAt: number | null;
   isGuestLocked: boolean;
   accessSummary: ShelfAccessSummary | null;
+  ratingAverage: number | null;
+  ratingCount: number;
 }
 
 function normalizeKey(value: string): string {
@@ -399,6 +408,7 @@ export function summarizeShelf(
   sessionRole?: AuthRole,
   shelfAltTitles?: Readonly<Record<string, string[]>>,
   planToReadShelfKeys?: ReadonlySet<string>,
+  shelfRatings?: Readonly<Record<string, ShelfRatingSummary>>,
 ): ShelfSummary {
   const rawPreferredId = shelfCovers?.[shelf.key] ?? null;
   const validCustomBook = rawPreferredId
@@ -453,6 +463,10 @@ export function summarizeShelf(
   const tags = shelfTags?.[shelf.key] ?? [];
   const altTitles = shelfAltTitles?.[shelf.key] ?? [];
   const isPlanToRead = Boolean(planToReadShelfKeys?.has(shelf.key));
+  const ratingEntry = shelfRatings?.[shelf.key];
+  const ratingCount = ratingEntry && ratingEntry.count > 0 ? ratingEntry.count : 0;
+  const ratingAverage =
+    ratingCount > 0 && typeof ratingEntry?.average === 'number' ? ratingEntry.average : null;
 
   return {
     shelf,
@@ -475,5 +489,7 @@ export function summarizeShelf(
     latestReadAt,
     isGuestLocked,
     accessSummary: accessSummary ?? null,
+    ratingAverage,
+    ratingCount,
   };
 }

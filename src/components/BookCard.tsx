@@ -71,6 +71,7 @@ export function BookCard({
 }: BookCardProps) {
   const { cardRef, isNearViewport, isRevealed } = useCardReveal<HTMLDivElement>();
   const [imgFailed, setImgFailed] = useState(false);
+  const [ptrPop, setPtrPop] = useState(false);
 
   useEffect(() => {
     setImgFailed(false);
@@ -110,14 +111,20 @@ export function BookCard({
       } ${selected ? 'ring-2 ring-accent ring-offset-2 ring-offset-canvas' : ''}`}
     >
       {showImage ? (
-        <img
-          src={coverUrl!}
-          alt={book.title}
-          loading="lazy"
-          decoding="async"
-          onError={() => setImgFailed(true)}
-          className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.03]"
-        />
+        <>
+          <img
+            src={coverUrl!}
+            alt={book.title}
+            loading="lazy"
+            decoding="async"
+            onError={() => setImgFailed(true)}
+            className="h-full w-full object-cover transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.03]"
+          />
+          <span
+            aria-hidden="true"
+            className="book-spine-crease pointer-events-none absolute inset-y-0 left-0 w-3.5"
+          />
+        </>
       ) : (
         <div
           style={{ backgroundColor: clothColor }}
@@ -229,12 +236,14 @@ export function BookCard({
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
+                setPtrPop(true);
                 onTogglePlanToRead!(book, !isPlanToRead);
               }}
+              onAnimationEnd={() => setPtrPop(false)}
               aria-label={isPlanToRead ? `Bỏ Đọc sau ${book.title}` : `Lưu Đọc sau ${book.title}`}
               aria-pressed={isPlanToRead}
               title={isPlanToRead ? 'Gỡ tập này khỏi Đọc sau' : 'Lưu tập này vào Đọc sau'}
-              className={`rounded-md border p-1.5 transition-all ${
+              className={`rounded-md border p-1.5 transition-all ${ptrPop ? 'micro-pop' : ''} ${
                 isPlanToRead
                   ? 'border-sky-400/55 bg-[#16120f]/88 text-sky-300 opacity-100 shadow-sm hover:bg-[#16120f]'
                   : 'touch-action-visible border-[#f3e9d7]/20 bg-[#16120f]/75 text-[#f3e9d7] opacity-85 hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0'

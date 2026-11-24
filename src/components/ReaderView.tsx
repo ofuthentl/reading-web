@@ -1,51 +1,27 @@
-import {
-  type MouseEvent as ReactMouseEvent,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-} from 'react';
+import { type MouseEvent as ReactMouseEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { HardDrive, Sparkles } from 'lucide-react';
-import type {
-  Book,
-  ParsedBook,
-  ReaderSettings,
-  ReadingProgress,
-  SaveProgressOptions,
-} from '@/types';
-import { ReaderBookCommunityBlock } from '@/components/ReaderBookCommunityBlock';
+import type { Book, ParsedBook, ReaderSettings, ReadingProgress, SaveProgressOptions } from '@/types';
+import { ReaderBookCommunityBlock, ReaderBookCommunityModalButton } from '@/components/ReaderBookCommunityBlock';
 import { ReaderChapterEndNav } from '@/components/ReaderChapterEndNav';
-import {
-  ReaderFooterStatusBar,
-  ReaderNightDimOverlay,
-} from '@/components/ReaderFooterStatusBar';
+import { ReaderFooterStatusBar, ReaderNightDimOverlay } from '@/components/ReaderFooterStatusBar';
 import { ReaderOverlaysHost } from '@/components/ReaderOverlaysHost';
+import { ReaderImmersionChrome } from '@/components/ReaderScrollEnhancements';
 import { type PaginatedStageHandle, ReaderPaginatedView } from '@/components/ReaderPaginatedView';
 import { ReaderTopBar } from '@/components/ReaderTopBar';
 import type { BookOpenJumpTarget } from '@/hooks/useBookReader';
+import { useDomReadingRuler } from '@/hooks/useDomReadingRuler';
 import { useReaderBookFeatures } from '@/hooks/useReaderBookFeatures';
 import { useReaderChapterProgress } from '@/hooks/useReaderChapterProgress';
-import {
-  applyChapterDomHighlights,
-  captureOwnerSelectionDraft,
-} from '@/lib/domHighlights';
+import { useReaderImmersionTools } from '@/hooks/useReaderImmersionTools';
+import { useReaderSoundBarModel } from '@/hooks/useReaderScrollGestures';
+import { applyChapterDomHighlights, captureOwnerSelectionDraft } from '@/lib/domHighlights';
 import { resolveOwnerFootnoteClick } from '@/lib/epubFootnotes';
 import {
-  READER_FONT_CLASS,
-  READER_THEME_STYLES,
-  READER_WIDTH_MAX,
-  findClickedReaderImage,
-  handleReaderContentLinkClick,
+  READER_FONT_CLASS, READER_THEME_STYLES, READER_WIDTH_MAX,
+  findClickedReaderImage, handleReaderContentLinkClick,
 } from '@/lib/readerConfig';
-import {
-  buildReaderTypographyStyle,
-  countWordsInPlainText,
-} from '@/lib/readingEstimate';
-import {
-  findDomBlockForSearchQuery,
-  flashDomSearchElement,
-} from '@/lib/readerSearchJump';
+import { buildReaderTypographyStyle, countWordsInPlainText } from '@/lib/readingEstimate';
+import { findDomBlockForSearchQuery, flashDomSearchElement } from '@/lib/readerSearchJump';
 
 type ReaderViewProps = {
   book: Book;
@@ -113,14 +89,24 @@ export function ReaderView({
   const currentChapter = chapters[chapterIndex];
 
   const features = useReaderBookFeatures({
-    bookId: book.id,
-    chapterIndex,
-    currentChapterId: currentChapter?.id || '',
-    currentChapterTitle: currentChapter?.title || '',
-    initialChapterIndex: initialProgress?.chapterIndex ?? 0,
-    initialCompleted: Boolean(initialProgress?.completed),
-    totalChapters: chapters.length,
-    onApiError,
+    bookId: book.id, chapterIndex, currentChapterId: currentChapter?.id || '',
+    currentChapterTitle: currentChapter?.title || '', initialChapterIndex: initialProgress?.chapterIndex ?? 0,
+    initialCompleted: Boolean(initialProgress?.completed), totalChapters: chapters.length, onApiError,
+  });
+
+  const anyOverlayOpen =
+    tocOpen || settingsOpen || Boolean(lightboxTarget) || Boolean(features.activeFootnote) ||
+    Boolean(features.selectionDraft) || Boolean(features.editingHighlight);
+  const immersion = useReaderImmersionTools({
+    isPaginated, scrollContainerRef, overlayOpen: anyOverlayOpen, chapterId: currentChapter?.id || '',
+  });
+  const closePopoversForSound = useCallback(() => {
+    setTocOpen(false);
+    setSettingsOpen(false);
+  }, [setSettingsOpen, setTocOpen]);
+  const soundBarModel = useReaderSoundBarModel(immersion, closePopoversForSound);
+  useDomReadingRuler({
+    enabled: settings.readingRuler, isPaginated, scrollContainerRef, chapterId: currentChapter?.id,
   });
 
   useEffect(() => {
@@ -366,10 +352,13 @@ export function ReaderView({
         settings={settings}
         palette={palette}
         statusBadge={cacheBadge}
+        soundModel={soundBarModel}
+        autoScrollActive={immersion.autoScrollOpen}
+        onToggleAutoScroll={immersion.toggleAutoScrollBar}
         onBack={() => { flushProgress({ forceTimeFlush: true, keepalive: true }); onClose(); }}
-        onOpenDrawerTab={openDrawerTab}
-        onHideToolbar={() => { setSettingsOpen(false); setImmersiveHidden(true); }}
-        onToggleSettings={() => { setTocOpen(false); setSettingsOpen((v) => !v); }}
+        onOpenDrawerTab={(tab) => { immersion.setSoundOpen(false); openDrawerTab(tab); }}
+        onHideToolbar={() => { setSettingsOpen(false); immersion.setSoundOpen(false); setImmersiveHidden(true); }}
+        onToggleSettings={() => { setTocOpen(false); immersion.setSoundOpen(false); setSettingsOpen((v) => !v); }}
         onCloseSettings={() => setSettingsOpen(false)}
         onUpdateSettings={handleUpdateSettings}
       />
@@ -378,32 +367,25 @@ export function ReaderView({
         <>
           <ReaderPaginatedView
             ref={paginatedRef}
-            bookId={book.id}
-            bookTitle={book.title}
-            chapter={currentChapter}
-            chapterIndex={chapterIndex}
-            totalChapters={chapters.length}
-            initialRatio={paginatedStartRatio}
-            nextBook={nextBook}
-            settings={settings}
-            palette={palette}
-            immersiveHidden={immersiveHidden}
-            remainingEstimate={remainingEstimate}
-            searchTarget={searchTarget}
+            bookId={book.id} bookTitle={book.title} chapter={currentChapter}
+            chapterIndex={chapterIndex} totalChapters={chapters.length}
+            initialRatio={paginatedStartRatio} nextBook={nextBook}
+            settings={settings} palette={palette} immersiveHidden={immersiveHidden}
+            remainingEstimate={remainingEstimate} searchTarget={searchTarget}
             chapterHighlights={features.chapterHighlights}
             onContentInteractionClick={handleContentInteractionClick}
             onSelectionEnd={handleContentSelectionEnd}
             onToggleImmersive={() => setImmersiveHidden((prev) => !prev)}
             onCloseSettings={() => {
-              if (!settingsOpen) return false;
-              setSettingsOpen(false);
-              return true;
+              if (!settingsOpen && !immersion.soundOpen) return false;
+              setSettingsOpen(false); immersion.setSoundOpen(false); return true;
             }}
             onRatioChange={handlePaginatedRatioChange}
             onPrevChapterEnd={() => { if (chapterIndex > 0) goToChapter(chapterIndex - 1, 1); }}
             onNextChapterStart={() => { if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1, 0); }}
             onCompleteBook={completeBook}
             onOpenImage={(src, alt) => setLightboxTarget({ kind: 'dom', src, alt })}
+            onPageTurn={immersion.triggerPageTurnSound}
             onApiError={onApiError}
           />
           <div className="h-1 w-full shrink-0 bg-black/10">
@@ -418,7 +400,7 @@ export function ReaderView({
             onMouseUp={() => handleContentSelectionEnd(scrollContainerRef.current)}
             onTouchEnd={() => handleContentSelectionEnd(scrollContainerRef.current)}
             onClick={(event) => {
-              if (settingsOpen) { setSettingsOpen(false); return; }
+              if (settingsOpen || immersion.soundOpen) { setSettingsOpen(false); immersion.setSoundOpen(false); return; }
               if (handleContentInteractionClick(event, scrollContainerRef.current)) return;
               if (handleReaderContentLinkClick(event, scrollContainerRef.current)) return;
               if (window.getSelection()?.toString()) return;
@@ -433,10 +415,14 @@ export function ReaderView({
               if (target?.closest('button, a, input, select, textarea, [data-community-section]')) {
                 return;
               }
+              if (immersion.autoScrollOpen) {
+                immersion.setAutoScrollPlaying((v) => !v);
+                return;
+              }
               const rect = event.currentTarget.getBoundingClientRect();
               const ratio = (event.clientX - rect.left) / rect.width;
-              if (settings.sideTapNavigation && ratio < 0.16) goPrevChapter();
-              else if (settings.sideTapNavigation && ratio > 0.84) goNextChapter();
+              if (settings.sideTapNavigation && ratio < 0.16) { immersion.triggerPageTurnSound(); goPrevChapter(); }
+              else if (settings.sideTapNavigation && ratio > 0.84) { immersion.triggerPageTurnSound(); goNextChapter(); }
               else if (immersiveHidden && ratio >= 0.22 && ratio <= 0.78) setImmersiveHidden(false);
             }}
             className="scrollbar-thin min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-4 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-[4.75rem] sm:px-8 sm:pb-[calc(3rem+env(safe-area-inset-bottom))] sm:pt-20"
@@ -478,13 +464,21 @@ export function ReaderView({
                   onCompleteAndOpenNext={(nb) => completeBook(nb)}
                 />
 
-                {chapterIndex >= chapters.length - 1 && (
+                {chapterIndex >= chapters.length - 1 ? (
                   <ReaderBookCommunityBlock
-                    bookId={book.id}
-                    bookTitle={book.title}
-                    palette={palette}
-                    onApiError={onApiError}
+                    bookId={book.id} bookTitle={book.title} palette={palette}
+                    currentChapterNumber={chapterIndex + 1} readerMaxChapterNumber={chapters.length}
+                    totalChapters={chapters.length} onApiError={onApiError}
                   />
+                ) : (
+                  <div className="mt-4 flex justify-center">
+                    <ReaderBookCommunityModalButton
+                      bookId={book.id} bookTitle={book.title} palette={palette}
+                      currentChapterNumber={chapterIndex + 1}
+                      readerMaxChapterNumber={Math.max(chapterIndex + 1, (initialProgress?.chapterIndex ?? 0) + 1)}
+                      totalChapters={chapters.length} onApiError={onApiError}
+                    />
+                  </div>
                 )}
               </article>
             )}
@@ -501,26 +495,30 @@ export function ReaderView({
         </>
       )}
 
+      <ReaderImmersionChrome
+        immersion={immersion}
+        isPaginated={isPaginated}
+        chapterIndex={chapterIndex}
+        totalChapters={chapters.length}
+        nightDimPercent={settings.nightDimPercent}
+        palette={palette}
+        scrollContainerRef={scrollContainerRef}
+        onUpdateSettings={handleUpdateSettings}
+        onAdvanceChapter={() => {
+          immersion.triggerPageTurnSound();
+          goNextChapter();
+        }}
+      />
+
       <ReaderOverlaysHost
         role="owner"
-        book={book}
-        allBooks={allBooks}
-        chapters={chapters}
-        parsedChapters={chapters}
-        chapterIndex={chapterIndex}
-        currentChapterId={currentChapter?.id || ''}
-        currentChapterTitle={currentChapter?.title || ''}
-        chapterScrollRatio={chapterScrollRatio}
-        tocOpen={tocOpen}
-        drawerTab={drawerTab}
-        palette={palette}
-        features={features}
-        lightboxTarget={lightboxTarget}
-        onCloseToc={() => setTocOpen(false)}
-        onSelectChapter={(idx) => goToChapter(idx, 0)}
-        onJumpToRatio={goToChapter}
-        onJumpToSearchResult={handleJumpToSearchResult}
-        onSetLightboxTarget={setLightboxTarget}
+        book={book} allBooks={allBooks} chapters={chapters} parsedChapters={chapters}
+        chapterIndex={chapterIndex} currentChapterId={currentChapter?.id || ''}
+        currentChapterTitle={currentChapter?.title || ''} chapterScrollRatio={chapterScrollRatio}
+        tocOpen={tocOpen} drawerTab={drawerTab} palette={palette} features={features}
+        lightboxTarget={lightboxTarget} onCloseToc={() => setTocOpen(false)}
+        onSelectChapter={(idx) => goToChapter(idx, 0)} onJumpToRatio={goToChapter}
+        onJumpToSearchResult={handleJumpToSearchResult} onSetLightboxTarget={setLightboxTarget}
         onOpenOtherBook={(targetBook, jumpTarget) => {
           flushProgress({ forceTimeFlush: true, keepalive: true });
           onOpenNextBook?.(targetBook, jumpTarget);

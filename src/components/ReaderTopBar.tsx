@@ -1,9 +1,28 @@
 import type { ReactNode } from 'react';
-import { ArrowLeft, Bookmark, Highlighter, Image as ImageIcon, List, Maximize2, Type } from 'lucide-react';
+import {
+  ArrowLeft, Bookmark, ChevronsDown, Headphones, Highlighter, Image as ImageIcon, List, Maximize2, Type,
+} from 'lucide-react';
 import type { ReaderSettings } from '@/types';
 import { ReaderSettingsPopover } from '@/components/ReaderSettingsPopover';
+import { ReaderSoundscapePopover } from '@/components/ReaderSoundscapePopover';
 import type { ReaderDrawerTab } from '@/components/ReaderTocDrawer';
 import type { ReaderThemePalette } from '@/lib/readerConfig';
+import type { ReaderSoundscapeId, SleepTimerMinutes } from '@/lib/readerSoundscapes';
+
+export interface ReaderSoundTopBarModel {
+  open: boolean;
+  preset: ReaderSoundscapeId;
+  volume: number;
+  pageTurnSound: boolean;
+  sleepMinutes: SleepTimerMinutes;
+  sleepRemainingSec: number | null;
+  onToggleOpen: () => void;
+  onClose: () => void;
+  onSelectPreset: (preset: ReaderSoundscapeId) => void;
+  onChangeVolume: (volume: number) => void;
+  onTogglePageTurnSound: (enabled: boolean) => void;
+  onSelectSleepMinutes: (minutes: SleepTimerMinutes) => void;
+}
 
 export interface ReaderTopBarProps {
   bookTitle: string;
@@ -14,6 +33,9 @@ export interface ReaderTopBarProps {
   settings: ReaderSettings;
   palette: ReaderThemePalette;
   statusBadge?: ReactNode;
+  soundModel?: ReaderSoundTopBarModel;
+  autoScrollActive?: boolean;
+  onToggleAutoScroll?: () => void;
   onBack: () => void;
   onOpenDrawerTab: (tab: ReaderDrawerTab) => void;
   onQuickGuestHighlight?: () => void;
@@ -32,6 +54,9 @@ export function ReaderTopBar({
   settings,
   palette,
   statusBadge,
+  soundModel,
+  autoScrollActive = false,
+  onToggleAutoScroll,
   onBack,
   onOpenDrawerTab,
   onQuickGuestHighlight,
@@ -110,6 +135,36 @@ export function ReaderTopBar({
       <div className="flex shrink-0 items-center gap-1">
         {statusBadge}
 
+        {onToggleAutoScroll && settings.layoutMode === 'scroll' && (
+          <button
+            type="button"
+            onClick={onToggleAutoScroll}
+            aria-pressed={autoScrollActive}
+            className={`rounded-lg p-2 transition ${autoScrollActive ? palette.active : palette.hover}`}
+            aria-label="Tự động cuộn trang"
+            title="Tự động cuộn rảnh tay"
+          >
+            <ChevronsDown className={`h-4 w-4 ${autoScrollActive ? palette.accentText : ''}`} />
+          </button>
+        )}
+
+        {soundModel && (
+          <button
+            type="button"
+            onClick={soundModel.onToggleOpen}
+            aria-pressed={soundModel.open || soundModel.preset !== 'off'}
+            className={`rounded-lg p-2 transition ${
+              soundModel.open || soundModel.preset !== 'off' ? palette.active : palette.hover
+            }`}
+            aria-label="Âm thanh môi trường đọc sách"
+            title="Âm thanh môi trường & Hẹn giờ tắt"
+          >
+            <Headphones
+              className={`h-4 w-4 ${soundModel.preset !== 'off' ? palette.accentText : ''}`}
+            />
+          </button>
+        )}
+
         <button
           type="button"
           onClick={onHideToolbar}
@@ -130,6 +185,22 @@ export function ReaderTopBar({
           <Type className="h-4 w-4" />
         </button>
       </div>
+
+      {soundModel?.open && (
+        <ReaderSoundscapePopover
+          preset={soundModel.preset}
+          volume={soundModel.volume}
+          pageTurnSound={soundModel.pageTurnSound}
+          sleepMinutes={soundModel.sleepMinutes}
+          sleepRemainingSec={soundModel.sleepRemainingSec}
+          palette={palette}
+          onSelectPreset={soundModel.onSelectPreset}
+          onChangeVolume={soundModel.onChangeVolume}
+          onTogglePageTurnSound={soundModel.onTogglePageTurnSound}
+          onSelectSleepMinutes={soundModel.onSelectSleepMinutes}
+          onClose={soundModel.onClose}
+        />
+      )}
 
       {settingsOpen && (
         <ReaderSettingsPopover

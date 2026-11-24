@@ -13,6 +13,10 @@ interface ReaderBookCommunityBlockProps {
   bookId: string;
   bookTitle: string;
   palette: ReaderThemePalette;
+  currentChapterNumber?: number;
+  readerMaxChapterNumber?: number;
+  totalChapters?: number;
+  compact?: boolean;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
 
@@ -20,6 +24,9 @@ export function ReaderBookCommunityBlock({
   bookId,
   bookTitle,
   palette,
+  currentChapterNumber,
+  readerMaxChapterNumber,
+  totalChapters,
   onApiError,
 }: ReaderBookCommunityBlockProps) {
   return (
@@ -38,6 +45,9 @@ export function ReaderBookCommunityBlock({
         targetLabel={bookTitle}
         variant="reader"
         palette={palette}
+        currentChapterNumber={currentChapterNumber}
+        readerMaxChapterNumber={readerMaxChapterNumber}
+        totalChapters={totalChapters}
         onApiError={onApiError}
       />
     </Suspense>
@@ -48,6 +58,10 @@ export function ReaderBookCommunityModalButton({
   bookId,
   bookTitle,
   palette,
+  currentChapterNumber,
+  readerMaxChapterNumber,
+  totalChapters,
+  compact = false,
   onApiError,
 }: ReaderBookCommunityBlockProps) {
   const [open, setOpen] = useState(false);
@@ -71,10 +85,14 @@ export function ReaderBookCommunityModalButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 font-medium transition ${palette.border} ${palette.hover}`}
+        aria-label="Mở bình luận tập này"
+        title="Mở bình luận tập này"
+        className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border font-medium transition ${
+          compact ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-xs'
+        } ${palette.border} ${palette.hover}`}
       >
         <MessageSquare className="h-3.5 w-3.5 text-amber-500" />
-        <span>Bình luận</span>
+        <span className={compact ? 'hidden md:inline' : ''}>Bình luận</span>
       </button>
 
       {open &&
@@ -120,6 +138,9 @@ export function ReaderBookCommunityModalButton({
                   targetLabel={bookTitle}
                   variant="reader"
                   palette={palette}
+                  currentChapterNumber={currentChapterNumber}
+                  readerMaxChapterNumber={readerMaxChapterNumber}
+                  totalChapters={totalChapters}
                   onApiError={onApiError}
                 />
               </Suspense>

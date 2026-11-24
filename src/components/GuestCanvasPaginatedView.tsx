@@ -11,6 +11,7 @@ import {
 import type { Book, GuestChapterPayload, HighlightColor, ReaderSettings } from '@/types';
 import { ReaderPaginatedFooter } from '@/components/ReaderPaginatedFooter';
 import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
+import { useCanvasPaginatedReadingRuler } from '@/hooks/usePaginatedReadingRuler';
 import { useReaderCanvasFontVersion } from '@/hooks/useReaderCanvasFontVersion';
 import type { ResolvedFootnoteItem } from '@/lib/epubFootnotes';
 import { computeChapterCanvasLayout } from '@/lib/guestCanvasLayout';
@@ -56,6 +57,7 @@ interface GuestCanvasPaginatedViewProps {
   onCompleteBook: (nextBook?: Book) => void;
   onOpenGuestImage: (bitmap: ImageBitmap, alt: string) => void;
   onOpenFootnote?: (footnote: ResolvedFootnoteItem) => void;
+  onPageTurn?: () => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
 
@@ -88,6 +90,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       onCompleteBook,
       onOpenGuestImage,
       onOpenFootnote,
+      onPageTurn,
       onApiError,
     },
     ref,
@@ -198,45 +201,6 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       setSpreadIndex(target);
     }, [chapterData.id, totalSpreads]);
 
-    useLayoutEffect(() => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const leftIdx = safeSpreadIndex * geometry.columns;
-      const leftPage = columnPages[leftIdx] ?? null;
-      const rightPage = geometry.columns === 2 ? columnPages[leftIdx + 1] ?? null : null;
-
-      hitRectsRef.current = paintGuestPaginatedCanvas({
-        canvas,
-        leftPage,
-        rightPage,
-        columnWidth: geometry.columnWidth,
-        columnGap: geometry.columnGap,
-        pageHeight: geometry.pageHeight,
-        columns: geometry.columns,
-        theme: settings.theme,
-        font: settings.font,
-        watermarkLabel,
-        bitmaps: bitmapsRef.current,
-        highlightSourceY: flashSourceY,
-        footnoteKeys,
-        footnoteHitRectsOut: footnoteRectsRef.current,
-      });
-    }, [
-      bitmapsRef,
-      columnPages,
-      flashSourceY,
-      footnoteKeys,
-      geometry.columnGap,
-      geometry.columnWidth,
-      geometry.columns,
-      geometry.pageHeight,
-      imageSizes,
-      safeSpreadIndex,
-      settings.font,
-      settings.theme,
-      watermarkLabel,
-    ]);
-
     const commitSpread = useCallback(
       (nextSpread: number) => {
         const clamped = Math.max(0, Math.min(totalSpreads - 1, nextSpread));
@@ -248,15 +212,58 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       [onRatioChange, totalSpreads],
     );
 
+    const animateCanvasSlide = useCallback((direction: -1 | 1) => {
+      const canvas = canvasRef.current;
+      if (!canvas || typeof canvas.animate !== 'function') return;
+      if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+      canvas.animate(
+        [
+          { opacity: 0.72, transform: `translate3d(${direction * 22}px, 0, 0)` },
+          { opacity: 1, transform: 'translate3d(0, 0, 0)' },
+        ],
+        { duration: 220, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+      );
+    }, []);
+
     const stepPrev = useCallback(() => {
-      if (safeSpreadIndex > 0) commitSpread(safeSpreadIndex - 1);
-      else if (chapterIndex > 0) onPrevChapterEnd();
-    }, [chapterIndex, commitSpread, onPrevChapterEnd, safeSpreadIndex]);
+      if (safeSpreadIndex > 0) {
+        onPageTurn?.(); commitSpread(safeSpreadIndex - 1); animateCanvasSlide(-1);
+      } else if (chapterIndex > 0) {
+        onPageTurn?.(); onPrevChapterEnd();
+      }
+    }, [animateCanvasSlide, chapterIndex, commitSpread, onPageTurn, onPrevChapterEnd, safeSpreadIndex]);
 
     const stepNext = useCallback(() => {
-      if (safeSpreadIndex < totalSpreads - 1) commitSpread(safeSpreadIndex + 1);
-      else if (chapterIndex < totalChapters - 1) onNextChapterStart();
-    }, [chapterIndex, commitSpread, onNextChapterStart, safeSpreadIndex, totalChapters, totalSpreads]);
+      if (safeSpreadIndex < totalSpreads - 1) {
+        onPageTurn?.(); commitSpread(safeSpreadIndex + 1); animateCanvasSlide(1);
+      } else if (chapterIndex < totalChapters - 1) {
+        onPageTurn?.(); onNextChapterStart();
+      }
+    }, [animateCanvasSlide, chapterIndex, commitSpread, onNextChapterStart, onPageTurn, safeSpreadIndex, totalChapters, totalSpreads]);
+
+    const leftIdx = safeSpreadIndex * geometry.columns;
+    const leftPage = columnPages[leftIdx] ?? null;
+    const rightPage = geometry.columns === 2 ? columnPages[leftIdx + 1] ?? null : null;
+    const { focusedTarget, updateFromClientPoint } = useCanvasPaginatedReadingRuler({
+      enabled: settings.readingRuler, columns: geometry.columns, spreadIndex: safeSpreadIndex,
+      chapterId: chapterData.id, leftPage, rightPage, canvasRef,
+      onStepPrevSpread: stepPrev, onStepNextSpread: stepNext,
+    });
+
+    useLayoutEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      hitRectsRef.current = paintGuestPaginatedCanvas({
+        canvas, leftPage, rightPage, columnWidth: geometry.columnWidth, columnGap: geometry.columnGap,
+        pageHeight: geometry.pageHeight, columns: geometry.columns, theme: settings.theme, font: settings.font,
+        watermarkLabel, bitmaps: bitmapsRef.current, highlightSourceY: flashSourceY, footnoteKeys,
+        footnoteHitRectsOut: footnoteRectsRef.current, focusedTarget,
+      });
+    }, [
+      bitmapsRef, flashSourceY, focusedTarget, footnoteKeys, geometry.columnGap, geometry.columnWidth,
+      geometry.columns, geometry.pageHeight, imageSizes, leftPage, rightPage,
+      settings.font, settings.theme, watermarkLabel,
+    ]);
 
     const jumpToRatio = useCallback(
       (ratio: number) => {
@@ -324,6 +331,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       <div className={`flex min-h-0 flex-1 flex-col overflow-hidden transition-all ${pageHidden ? 'blur-lg' : ''}`}>
         <div
           className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-3.5 pb-2 pt-[3.75rem] sm:px-7 sm:pt-[4rem]"
+          onMouseMove={(event) => updateFromClientPoint(event.clientX, event.clientY)}
           onClick={(event) => {
             if (onCloseSettings()) return;
             const target = event.target as HTMLElement | null;
@@ -385,7 +393,17 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
             if (touch) touchStartRef.current = { x: touch.clientX, y: touch.clientY };
           }}
           onTouchMove={(event) => {
-            if (event.touches.length > 1) touchStartRef.current = null;
+            if (event.touches.length > 1) {
+              touchStartRef.current = null;
+              return;
+            }
+            const touch = event.touches[0];
+            const start = touchStartRef.current;
+            if (settings.readingRuler && touch && start && touch.clientX > 28) {
+              const dx = Math.abs(touch.clientX - start.x);
+              const dy = Math.abs(touch.clientY - start.y);
+              if (dy > 10 && dy > dx * 1.2) updateFromClientPoint(touch.clientX, touch.clientY);
+            }
           }}
           onTouchEnd={(event) => {
             const start = touchStartRef.current;
@@ -413,7 +431,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
           {geometry.columns === 2 && (
             <span
               aria-hidden="true"
-              className={`pointer-events-none absolute bottom-0 left-1/2 z-10 border-l transition-[top] duration-200 ${palette.border} ${
+              className={`reader-spine-gutter pointer-events-none absolute bottom-0 left-1/2 z-10 w-10 -translate-x-1/2 transition-[top] duration-200 ${
                 immersiveHidden ? 'top-0' : 'top-[3.25rem]'
               }`}
             />

@@ -30,7 +30,18 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   paragraphIndent: false,
   paragraphSpacing: 'normal',
   nightDimPercent: 0,
+  readingRuler: false,
+  dailyGoalMinutes: 30,
 };
+
+function normalizeDailyGoalMinutes(raw: unknown): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+    return DEFAULT_READER_SETTINGS.dailyGoalMinutes;
+  }
+  const rounded = Math.round(raw);
+  if (rounded <= 0) return 0;
+  return Math.min(240, Math.max(10, rounded));
+}
 
 const VALID_THEMES = new Set<ReaderTheme>(['paper', 'sepia', 'dark', 'midnight']);
 const VALID_FONTS = new Set<ReaderFont>(['serif', 'sans', 'mono']);
@@ -81,6 +92,11 @@ export function normalizeReaderSettings(
       typeof parsed.nightDimPercent === 'number' && Number.isFinite(parsed.nightDimPercent)
         ? Math.min(50, Math.max(0, Math.round(parsed.nightDimPercent)))
         : DEFAULT_READER_SETTINGS.nightDimPercent,
+    readingRuler:
+      typeof parsed.readingRuler === 'boolean'
+        ? parsed.readingRuler
+        : DEFAULT_READER_SETTINGS.readingRuler,
+    dailyGoalMinutes: normalizeDailyGoalMinutes(parsed.dailyGoalMinutes),
   };
 }
 

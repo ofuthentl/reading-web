@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import type { Book, ReaderSettings } from '@/types';
-import { ReaderBookCommunityBlock } from '@/components/ReaderBookCommunityBlock';
+import { ReaderBookCommunityBlock, ReaderBookCommunityModalButton } from '@/components/ReaderBookCommunityBlock';
 import { ReaderChapterEndNav } from '@/components/ReaderChapterEndNav';
 import {
   type ResolvedFootnoteItem,
@@ -27,10 +27,12 @@ export interface GuestCanvasScrollStageProps {
   settingsOpen: boolean;
   immersiveHidden: boolean;
   pageHidden: boolean;
+  autoScrollOpen?: boolean;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   canvasRef: React.RefObject<HTMLCanvasElement>;
   onScroll: () => void;
   onCloseSettings: () => void;
+  onToggleAutoScrollPlay?: () => void;
   onRevealToolbar: () => void;
   onPrevChapter: () => void;
   onNextChapter: () => void;
@@ -55,10 +57,12 @@ export function GuestCanvasScrollStage({
   settingsOpen,
   immersiveHidden,
   pageHidden,
+  autoScrollOpen = false,
   scrollContainerRef,
   canvasRef,
   onScroll,
   onCloseSettings,
+  onToggleAutoScrollPlay,
   onRevealToolbar,
   onPrevChapter,
   onNextChapter,
@@ -112,6 +116,10 @@ export function GuestCanvasScrollStage({
           }
         }
 
+        if (autoScrollOpen && onToggleAutoScrollPlay) {
+          onToggleAutoScrollPlay();
+          return;
+        }
         const rect = event.currentTarget.getBoundingClientRect();
         const ratio = (event.clientX - rect.left) / rect.width;
         if (settings.sideTapNavigation && ratio < 0.16) onPrevChapter();
@@ -145,13 +153,20 @@ export function GuestCanvasScrollStage({
             onCompleteAndClose={() => onCompleteBook()}
             onCompleteAndOpenNext={(nb) => onCompleteBook(nb)}
           />
-          {chapterIndex >= totalChapters - 1 && (
+          {chapterIndex >= totalChapters - 1 ? (
             <ReaderBookCommunityBlock
-              bookId={bookId}
-              bookTitle={bookTitle}
-              palette={palette}
-              onApiError={onApiError}
+              bookId={bookId} bookTitle={bookTitle} palette={palette}
+              currentChapterNumber={chapterIndex + 1} readerMaxChapterNumber={totalChapters}
+              totalChapters={totalChapters} onApiError={onApiError}
             />
+          ) : (
+            <div className="mt-4 flex justify-center">
+              <ReaderBookCommunityModalButton
+                bookId={bookId} bookTitle={bookTitle} palette={palette}
+                currentChapterNumber={chapterIndex + 1} readerMaxChapterNumber={chapterIndex + 1}
+                totalChapters={totalChapters} onApiError={onApiError}
+              />
+            </div>
           )}
         </div>
       )}

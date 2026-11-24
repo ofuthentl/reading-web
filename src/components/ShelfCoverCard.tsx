@@ -2,6 +2,7 @@ import { type CSSProperties, useEffect, useState } from 'react';
 import { Bookmark, FolderEdit, Image, Lock, Star } from 'lucide-react';
 import { pickClothCoverColor } from '@/lib/bookMetadata';
 import type { ShelfSummary } from '@/lib/shelfSummary';
+import { ShelfFanStack } from '@/components/ShelfFanStack';
 import {
   handleCoverTiltLeave,
   handleCoverTiltMove,
@@ -42,10 +43,13 @@ export function ShelfCoverCard({
     progressPercent,
     isGuestLocked,
     accessSummary,
+    ratingAverage,
+    ratingCount,
   } = summary;
 
   const { cardRef, isNearViewport, isRevealed } = useCardReveal<HTMLDivElement>();
   const [imgFailed, setImgFailed] = useState(false);
+  const [popKind, setPopKind] = useState<'fav' | 'ptr' | null>(null);
 
   const coverKey = coverBook?.cover_key ?? null;
   const staggerDelayMs = (staggerIndex % 4) * 28;
@@ -107,16 +111,18 @@ export function ShelfCoverCard({
         }
       }}
       style={{ ['--stagger-delay' as string]: `${staggerDelayMs}ms` } as CSSProperties}
-      className={`card-scroll-reveal group flex cursor-pointer flex-col rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas ${
+      className={`card-scroll-reveal shelf-fan-card group relative flex cursor-pointer flex-col rounded-xl text-left hover:z-20 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas ${
         isRevealed ? 'is-revealed' : ''
       }`}
     >
-      <div
-        onPointerMove={handleCoverTiltMove}
-        onPointerLeave={handleCoverTiltLeave}
-        onPointerCancel={handleCoverTiltLeave}
-        className="tilt-card relative aspect-[7/10] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.32)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]"
-      >
+      <div className="relative w-full">
+        <ShelfFanStack shelf={shelf} coverBook={coverBook} isNearViewport={isNearViewport} />
+        <div
+          onPointerMove={handleCoverTiltMove}
+          onPointerLeave={handleCoverTiltLeave}
+          onPointerCancel={handleCoverTiltLeave}
+          className="shelf-fan-main tilt-card relative z-10 aspect-[7/10] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.34)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]"
+        >
         {showImage ? (
           <>
             <img
@@ -211,7 +217,11 @@ export function ShelfCoverCard({
                 type="button"
                 onClick={(event) => {
                   event.stopPropagation();
+                  setPopKind('ptr');
                   onTogglePlanToRead!(shelf.name, !isPlanToRead);
+                }}
+                onAnimationEnd={() => {
+                  if (popKind === 'ptr') setPopKind(null);
                 }}
                 aria-label={
                   isPlanToRead
@@ -221,6 +231,8 @@ export function ShelfCoverCard({
                 aria-pressed={isPlanToRead}
                 title={isPlanToRead ? 'Gỡ khỏi danh sách Đọc sau' : 'Để dành đọc sau'}
                 className={`rounded-lg border p-1.5 transition-all ${
+                  popKind === 'ptr' ? 'micro-pop' : ''
+                } ${
                   isPlanToRead
                     ? 'border-sky-400/55 bg-[#16120f]/88 text-sky-300 opacity-100 shadow-sm hover:bg-[#16120f]'
                     : 'touch-action-visible border-[#f3e9d7]/20 bg-[#16120f]/75 text-[#f3e9d7] opacity-85 hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0'
@@ -235,12 +247,18 @@ export function ShelfCoverCard({
                 type="button"
                 onClick={(event) => {
                   event.stopPropagation();
+                  setPopKind('fav');
                   onToggleFavorite(shelf.name, !isFavorite);
+                }}
+                onAnimationEnd={() => {
+                  if (popKind === 'fav') setPopKind(null);
                 }}
                 aria-label={isFavorite ? `Bỏ yêu thích kệ ${shelf.name}` : `Yêu thích kệ ${shelf.name}`}
                 aria-pressed={isFavorite}
                 title={isFavorite ? 'Bỏ yêu thích kệ' : 'Ghim kệ yêu thích lên đầu'}
                 className={`rounded-lg border p-1.5 transition-all ${
+                  popKind === 'fav' ? 'micro-pop' : ''
+                } ${
                   isFavorite
                     ? 'border-amber-400/50 bg-[#16120f]/85 text-amber-400 opacity-100 shadow-sm hover:bg-[#16120f]'
                     : 'touch-action-visible border-[#f3e9d7]/20 bg-[#16120f]/75 text-[#f3e9d7] opacity-85 hover:bg-[#16120f] focus:opacity-100 group-hover:opacity-100 sm:opacity-0'
@@ -283,10 +301,29 @@ export function ShelfCoverCard({
           </span>
         )}
 
+        {/* Huy hiệu điểm đánh giá trung bình ★ (QĐ-3 = 3B) */}
+        {ratingCount > 0 && ratingAverage !== null && (
+          <span
+            aria-label={`Đánh giá ${ratingAverage.toFixed(1)} sao (${ratingCount} lượt)`}
+            className={`pointer-events-none absolute left-2 ${
+              isGuestLocked || accessSummary?.mode === 'restricted' ? 'bottom-8' : 'bottom-2'
+            } inline-flex items-center gap-0.5 rounded-md border border-amber-300/35 bg-[#16120f]/88 px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums text-amber-300 backdrop-blur-sm`}
+          >
+            <span aria-hidden="true">★</span>
+            <span>{ratingAverage.toFixed(1)}</span>
+          </span>
+        )}
+
         {/* Badge số tập góc dưới-phải */}
         <span className="pointer-events-none absolute bottom-2 right-2 rounded-md border border-white/15 bg-[#111113]/85 px-2 py-0.5 text-[11px] font-semibold tracking-tight text-[#f4f4f5] backdrop-blur-sm">
           {bookCount} tập
         </span>
+
+        {/* Nếp gấp gáy sách mép trái */}
+        <span
+          aria-hidden="true"
+          className="book-spine-crease pointer-events-none absolute inset-y-0 left-0 w-2.5"
+        />
 
         {/* Thanh tiến độ đọc toàn kệ */}
         {progressPercent !== null && (
@@ -299,6 +336,7 @@ export function ShelfCoverCard({
             />
           </div>
         )}
+        </div>
       </div>
 
       <div className="mt-2.5 space-y-0.5 px-0.5">
