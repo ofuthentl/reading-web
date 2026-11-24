@@ -3,7 +3,7 @@ import { updateBookMetadata, uploadBook } from '@/lib/api';
 import { announceDiscordReleasesApi } from '@/lib/apiAdminMutations';
 import { isAuthError } from '@/lib/authSession';
 import { bookDuplicateKey, parseFileMetadata } from '@/lib/bookMetadata';
-import { resolveUploadShelfPlan } from '@/lib/shelfPlacement';
+import { resolveUploadShelfPlan } from '@/lib/shelfUploadPlanner';
 import type { UploadQueueItem } from '@/components/UploadQueueList';
 import type { ToastType } from '@/hooks/useToast';
 

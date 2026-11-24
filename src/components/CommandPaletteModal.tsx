@@ -92,18 +92,18 @@ export function CommandPaletteModal({
     setQuery('');
     setActiveIndex(0);
     const focusRaf = window.requestAnimationFrame(() => inputRef.current?.focus());
+    return () => window.cancelAnimationFrame(focusRaf);
+  }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
     const controller = new AbortController();
     void fetchAllLibraryHighlights(books, controller.signal)
       .then((items) => {
         if (!controller.signal.aborted) setHighlights(items);
       })
       .catch(() => undefined);
-
-    return () => {
-      window.cancelAnimationFrame(focusRaf);
-      controller.abort();
-    };
+    return () => controller.abort();
   }, [books, open]);
 
   const actions = useMemo<PaletteActionSpec[]>(() => {

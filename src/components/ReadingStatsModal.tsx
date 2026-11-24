@@ -35,6 +35,7 @@ export interface ReadingStatsModalProps {
   open: boolean;
   books: Book[];
   progress: Record<string, ReadingProgress>;
+  shelfCovers?: Readonly<Record<string, string>>;
   sessionRole?: AuthRole;
   dailyGoalMinutes?: number;
   onChangeDailyGoalMinutes?: (nextMinutes: number) => void;
@@ -59,6 +60,7 @@ export function ReadingStatsModal({
   open,
   books,
   progress,
+  shelfCovers,
   sessionRole,
   dailyGoalMinutes = 30,
   onChangeDailyGoalMinutes,
@@ -360,6 +362,7 @@ export function ReadingStatsModal({
             books={books}
             progress={progress}
             activity={activity}
+            shelfCovers={shelfCovers}
             completedBooks={rpg.completedBooks}
             readPages={rpg.readPages}
             readerLevel={rpg.level}

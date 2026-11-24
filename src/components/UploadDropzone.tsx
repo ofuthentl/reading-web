@@ -7,7 +7,7 @@ import {
   groupBooksIntoShelves,
 } from '@/lib/api';
 import { bookDuplicateKey } from '@/lib/bookMetadata';
-import { inferBatchCommonShelf } from '@/lib/shelfPlacement';
+import { inferBatchCommonShelf } from '@/lib/shelfUploadPlanner';
 import {
   ACCEPTED_UPLOAD_EXTENSIONS,
   createUploadQueueItems,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /** 4 chế độ nền của ứng dụng & trình đọc (D-034) */
 export type UiTheme = 'light' | 'noon' | 'dim' | 'midnight';
@@ -64,6 +64,7 @@ export function getNextTheme(current: UiTheme): UiTheme {
 
 export function useTheme() {
   const [theme, setThemeState] = useState<UiTheme>(readInitialTheme);
+  const transitionSeqRef = useRef(0);
 
   useEffect(() => {
     applyThemeToDocument(theme);
@@ -100,6 +101,7 @@ export function useTheme() {
       }
 
       const root = document.documentElement;
+      const seq = ++transitionSeqRef.current;
       const maxRadius = Math.hypot(
         Math.max(origin.x, window.innerWidth - origin.x),
         Math.max(origin.y, window.innerHeight - origin.y),
@@ -113,9 +115,13 @@ export function useTheme() {
         applyThemeToDocument(next);
         setThemeState(next);
       });
-      transition.finished.finally(() => {
-        delete root.dataset.themeSwitch;
-      });
+      void transition.finished
+        .catch(() => undefined)
+        .finally(() => {
+          if (seq === transitionSeqRef.current) {
+            delete root.dataset.themeSwitch;
+          }
+        });
     },
     [],
   );

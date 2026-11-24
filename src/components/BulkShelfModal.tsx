@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { FolderInput, Loader2, X } from 'lucide-react';
 import type { Book } from '@/types';
 import { MAX_SHELF_NAME_LENGTH, bulkUpdateBooksShelf } from '@/lib/api';
-import { inferBatchCommonShelf } from '@/lib/shelfPlacement';
+import { inferBatchCommonShelf } from '@/lib/shelfUploadPlanner';
 import type { ToastType } from '@/hooks/useToast';
 
 interface BulkShelfModalProps {

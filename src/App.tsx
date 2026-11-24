@@ -68,6 +68,7 @@ export default function App() {
         setModal({ kind: 'none' });
         setInspectedBookId(null);
         setStatsOpen(false);
+        setPaletteOpen(false);
         authResetCleanupRef.current();
         replaceGateRoute('locked');
         setAuthenticated(false);
@@ -180,6 +181,7 @@ export default function App() {
       setModal({ kind: 'none' });
       setInspectedBookId(null);
       setStatsOpen(false);
+      setPaletteOpen(false);
       replaceGateRoute('locked');
       setAuthenticated(false);
       setSession(isCloudMode ? DEFAULT_GUEST_SESSION : DEFAULT_OWNER_SESSION);
@@ -221,6 +223,7 @@ export default function App() {
     setModal({ kind: 'none' });
     setInspectedBookId(null);
     setStatsOpen(false);
+    setPaletteOpen(false);
     replaceGateRoute('locked');
     setAuthenticated(false);
     setSession(isCloudMode ? DEFAULT_GUEST_SESSION : DEFAULT_OWNER_SESSION);
@@ -400,6 +403,7 @@ export default function App() {
             shelves={libraryViewState.allShelves}
             authors={libraryViewState.availableAuthors}
             collections={store.collections}
+            shelfCovers={store.shelfPrefs.covers}
             shelfAltTitles={store.shelfPrefs.altTitles}
             shelfRatings={store.shelfRatings}
             progress={store.progress}

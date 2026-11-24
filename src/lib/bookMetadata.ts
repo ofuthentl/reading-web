@@ -7,6 +7,7 @@ import {
   inferSingleBookShelf,
   isLikelyVolumeSubtitle,
   isVolumeOrSubtitleSegment,
+  titleEndsWithBareVolume,
 } from '@/lib/shelfPlacement';
 
 export {
@@ -15,6 +16,7 @@ export {
   VOLUME_WITH_SUBTITLE_RE,
   isLikelyVolumeSubtitle,
   isVolumeOrSubtitleSegment,
+  titleEndsWithBareVolume,
 };
 
 const UNKNOWN_AUTHOR = 'Không rõ tác giả';
@@ -79,7 +81,7 @@ export function splitMisplacedTitleAndAuthor(
 
   // 2. Nếu vừa nhặt nhãn tập trơn (hoặc `title` vốn kết thúc bằng nhãn tập trơn) và còn vế sau là tiêu đề phụ
   const prevEnd = moved.length > 0 ? moved[moved.length - 1] : cleanTitle;
-  const afterBareVol = Boolean(prevEnd && TITLE_ENDS_WITH_BARE_VOL_RE.test(prevEnd));
+  const afterBareVol = Boolean(prevEnd && titleEndsWithBareVolume(prevEnd));
   if (parts.length > 0 && afterBareVol && (parts.length > 1 || isLikelyVolumeSubtitle(parts[0]))) {
     moved.push(parts.shift()!);
   } else if (moved.length === 0 && parts.length > 0 && isLikelyVolumeSubtitle(parts[0])) {
@@ -169,7 +171,7 @@ export function parseFileMetadata(fileName: string): {
   const lastTitlePart = titleParts[titleParts.length - 1] || '';
   if (
     authorIndex < segments.length &&
-    ((TITLE_ENDS_WITH_BARE_VOL_RE.test(lastTitlePart) &&
+    ((titleEndsWithBareVolume(lastTitlePart) &&
       (authorIndex < segments.length - 1 || isLikelyVolumeSubtitle(segments[authorIndex]))) ||
       isLikelyVolumeSubtitle(segments[authorIndex]))
   ) {
@@ -243,7 +245,7 @@ export function sortBooksByTitle(books: Book[]): Book[] {
 export function groupBooksIntoShelves(books: Book[]): ShelfGroup[] {
   const map = new Map<string, ShelfGroup>();
   for (const book of sortBooksByTitle(books)) {
-    const shelfName = (book.shelf || 'Kho chưa phân loại').trim();
+    const shelfName = (book.shelf || 'Kho chưa phân loại').normalize('NFC').trim() || 'Kho chưa phân loại';
     const key = shelfName.toLocaleLowerCase('vi');
     const existing = map.get(key);
     if (existing) {

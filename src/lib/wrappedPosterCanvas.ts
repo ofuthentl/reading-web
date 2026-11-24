@@ -1,9 +1,18 @@
 import type { Book, ReadingProgress } from '@/types';
 import { fetchCoverBlobCached } from '@/lib/api';
 import { getDisplayAuthor } from '@/lib/bookMetadata';
-import { type ReaderActivityReport, formatReadingDuration } from '@/lib/readingStreak';
+import {
+  type ReaderActivityReport,
+  computeStreakFromDays,
+  formatReadingDuration,
+} from '@/lib/readingStreak';
+import { toShelfPrefKey } from '@/lib/shelfPrefs';
+import { pickShelfCoverBook } from '@/lib/shelfSummary';
 
 export type WrappedPeriod = 'month' | 'quarter' | 'year';
+
+const VN_OFFSET_MS = 7 * 3600_000;
+const DAY_MS = 86_400_000;
 
 export interface WrappedTopShelfSummary {
   shelfName: string;
@@ -22,10 +31,46 @@ export interface WrappedComputedSummary {
   longestStreakDays: number;
   currentStreakDays: number;
   completedBooks: number;
+  totalCompletedBooks: number;
   readPages: number;
   readerLevel: number;
   topShelves: WrappedTopShelfSummary[];
   monthlyHours: Array<{ label: string; hours: number }>;
+}
+
+function resolveVnPeriodMeta(
+  period: WrappedPeriod,
+  nowMs: number,
+): { periodLabel: string; cutoffMs: number; currentMonthPrefix: string; currentYearPrefix: string } {
+  const vnDate = new Date(nowMs + VN_OFFSET_MS);
+  const year = vnDate.getUTCFullYear();
+  const month = vnDate.getUTCMonth() + 1;
+  const day = vnDate.getUTCDate();
+  const currentMonthPrefix = `${year}-${String(month).padStart(2, '0')}`;
+  const currentYearPrefix = String(year);
+
+  if (period === 'month') {
+    return {
+      periodLabel: `Tháng ${String(month).padStart(2, '0')}/${year}`,
+      cutoffMs: Date.UTC(year, month - 1, 1) - VN_OFFSET_MS,
+      currentMonthPrefix,
+      currentYearPrefix,
+    };
+  }
+  if (period === 'quarter') {
+    return {
+      periodLabel: '90 ngày gần nhất',
+      cutoffMs: Date.UTC(year, month - 1, day) - 89 * DAY_MS - VN_OFFSET_MS,
+      currentMonthPrefix,
+      currentYearPrefix,
+    };
+  }
+  return {
+    periodLabel: `Năm ${year}`,
+    cutoffMs: Date.UTC(year, 0, 1) - VN_OFFSET_MS,
+    currentMonthPrefix,
+    currentYearPrefix,
+  };
 }
 
 export function computeWrappedSummary(options: {
@@ -33,21 +78,28 @@ export function computeWrappedSummary(options: {
   books: readonly Book[];
   progress: Readonly<Record<string, ReadingProgress>>;
   activity: ReaderActivityReport | null;
+  shelfCovers?: Readonly<Record<string, string>>;
   completedBooks: number;
   readPages: number;
   readerLevel: number;
+  nowMs?: number;
 }): WrappedComputedSummary {
-  const { period, books, progress, activity, completedBooks, readPages, readerLevel } = options;
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
+  const {
+    period,
+    books,
+    progress,
+    activity,
+    shelfCovers,
+    completedBooks: totalCompletedBooks,
+    readPages,
+    readerLevel,
+    nowMs = Date.now(),
+  } = options;
 
-  const periodLabel =
-    period === 'month'
-      ? `Tháng ${String(month).padStart(2, '0')}/${year}`
-      : period === 'quarter'
-        ? '90 ngày gần nhất'
-        : `Năm ${year}`;
+  const { periodLabel, cutoffMs, currentMonthPrefix, currentYearPrefix } = resolveVnPeriodMeta(
+    period,
+    nowMs,
+  );
 
   const readingSeconds =
     period === 'month'
@@ -63,43 +115,83 @@ export function computeWrappedSummary(options: {
         ? (activity?.activeDays90d ?? 0)
         : (activity?.yearActiveDays ?? activity?.activeDays90d ?? 0);
 
-  const cutoffMs =
-    period === 'month'
-      ? Date.now() - 31 * 86_400_000
-      : period === 'quarter'
-        ? Date.now() - 90 * 86_400_000
-        : Date.now() - 366 * 86_400_000;
+  const fallbackMonthStreak = activity
+    ? computeStreakFromDays(activity.days.filter((d) => d.dayKey.startsWith(currentMonthPrefix)))
+        .longestStreakDays
+    : 0;
+  const fallbackYearStreak = activity
+    ? computeStreakFromDays(activity.days.filter((d) => d.dayKey.startsWith(currentYearPrefix)))
+        .longestStreakDays
+    : 0;
 
-  const shelfBuckets = new Map<string, WrappedTopShelfSummary>();
+  const longestStreakDays =
+    period === 'month'
+      ? (activity?.monthLongestStreakDays ?? fallbackMonthStreak)
+      : period === 'quarter'
+        ? (activity?.longestStreakDays ?? 0)
+        : (activity?.yearLongestStreakDays ??
+          Math.max(activity?.longestStreakDays ?? 0, fallbackYearStreak));
+
+  let periodCompletedBooks = 0;
+  const shelfBuckets = new Map<
+    string,
+    {
+      shelfName: string;
+      shelfKey: string;
+      author: string;
+      readingSeconds: number;
+      completedCount: number;
+      books: Book[];
+    }
+  >();
+
   for (const book of books) {
-    const shelfName = (book.shelf || 'Kho chưa phân loại').trim() || 'Kho chưa phân loại';
-    const key = shelfName.toLocaleLowerCase('vi');
+    const shelfName =
+      (book.shelf || 'Kho chưa phân loại').normalize('NFC').trim() || 'Kho chưa phân loại';
+    const key = toShelfPrefKey(shelfName);
     let bucket = shelfBuckets.get(key);
     if (!bucket) {
       bucket = {
         shelfName,
+        shelfKey: key,
         author: getDisplayAuthor(book.author, book.title),
         readingSeconds: 0,
         completedCount: 0,
-        totalVolumes: 0,
-        coverBook: book.cover_key ? book : null,
+        books: [],
       };
       shelfBuckets.set(key, bucket);
     }
-    bucket.totalVolumes += 1;
-    if (!bucket.coverBook && book.cover_key) bucket.coverBook = book;
+    bucket.books.push(book);
 
     const prog = progress[book.id];
     if (prog && prog.updatedAt >= cutoffMs) {
       bucket.readingSeconds += Math.max(0, Math.floor(prog.readingSeconds ?? 0));
-      if (prog.completed) bucket.completedCount += 1;
+      if (prog.completed) {
+        bucket.completedCount += 1;
+        periodCompletedBooks += 1;
+      }
     }
   }
 
-  const topShelves = Array.from(shelfBuckets.values())
+  const topShelves: WrappedTopShelfSummary[] = Array.from(shelfBuckets.values())
     .filter((s) => s.readingSeconds > 0 || s.completedCount > 0)
     .sort((a, b) => b.readingSeconds - a.readingSeconds || b.completedCount - a.completedCount)
-    .slice(0, 3);
+    .slice(0, 3)
+    .map((bucket) => {
+      const preferredId = shelfCovers?.[bucket.shelfKey] ?? null;
+      const coverBook = pickShelfCoverBook(
+        { key: bucket.shelfKey, name: bucket.shelfName, books: bucket.books },
+        preferredId,
+      );
+      return {
+        shelfName: bucket.shelfName,
+        author: bucket.author,
+        readingSeconds: bucket.readingSeconds,
+        completedCount: bucket.completedCount,
+        totalVolumes: bucket.books.length,
+        coverBook: coverBook?.cover_key ? coverBook : null,
+      };
+    });
 
   const monthlyHours = (activity?.monthlyBreakdown ?? []).map((pt, idx) => ({
     label: `T${idx + 1}`,
@@ -111,9 +203,10 @@ export function computeWrappedSummary(options: {
     periodLabel,
     readingSeconds,
     activeDays,
-    longestStreakDays: activity?.longestStreakDays ?? 0,
+    longestStreakDays,
     currentStreakDays: activity?.currentStreakDays ?? 0,
-    completedBooks,
+    completedBooks: periodCompletedBooks,
+    totalCompletedBooks,
     readPages,
     readerLevel,
     topShelves,
@@ -138,6 +231,30 @@ function drawRoundedRect(
   ctx.closePath();
 }
 
+function drawCoverImageCropped(
+  ctx: CanvasRenderingContext2D,
+  bitmap: ImageBitmap,
+  dx: number,
+  dy: number,
+  dw: number,
+  dh: number,
+) {
+  const srcRatio = bitmap.width / Math.max(1, bitmap.height);
+  const dstRatio = dw / Math.max(1, dh);
+  let sx = 0;
+  let sy = 0;
+  let sw = bitmap.width;
+  let sh = bitmap.height;
+  if (srcRatio > dstRatio) {
+    sw = bitmap.height * dstRatio;
+    sx = (bitmap.width - sw) / 2;
+  } else {
+    sh = bitmap.width / dstRatio;
+    sy = (bitmap.height - sh) / 2;
+  }
+  ctx.drawImage(bitmap, sx, sy, sw, sh, dx, dy, dw, dh);
+}
+
 function truncateCanvasLine(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
   if (ctx.measureText(text).width <= maxW) return text;
   let out = text;
@@ -147,14 +264,25 @@ function truncateCanvasLine(ctx: CanvasRenderingContext2D, text: string, maxW: n
   return `${out}…`;
 }
 
+async function ensureWrappedFontsLoaded(): Promise<void> {
+  if (typeof document === 'undefined' || !('fonts' in document)) return;
+  const sample = 'Việt Nam Tổng kết Hành trình Đọc ệữởắồỷ 0123456789';
+  await Promise.allSettled([
+    document.fonts.load('400 24px "Be Vietnam Pro"', sample),
+    document.fonts.load('600 24px "Be Vietnam Pro"', sample),
+    document.fonts.load('600 24px "Literata"', sample),
+    document.fonts.load('700 46px "Literata"', sample),
+  ]);
+  await document.fonts.ready.catch(() => undefined);
+}
+
 /**
  * Kết xuất thẻ poster `Ofu's Library Wrapped` (`1080×1350` PNG) bằng Canvas 2D thuần (0 CDN),
- * tự giải phóng `ImageBitmap` và thu hồi `URL.revokeObjectURL` sau khi tải xuống.
+ * chủ động tải đúng font weight `400/600/700`, vẽ bìa `object-cover` không méo tỉ lệ,
+ * tự giải phóng `ImageBitmap` và giữ ObjectURL đủ lâu (`45s`) cho Safari iOS tải ổn định.
  */
 export async function exportWrappedPosterPng(summary: WrappedComputedSummary): Promise<void> {
-  if (typeof document !== 'undefined' && document.fonts?.ready) {
-    await document.fonts.ready.catch(() => undefined);
-  }
+  await ensureWrappedFontsLoaded();
 
   const width = 1080;
   const height = 1350;
@@ -206,15 +334,15 @@ export async function exportWrappedPosterPng(summary: WrappedComputedSummary): P
     ctx.fillText('Tổng kết Hành trình Đọc', 92, 196);
 
     ctx.fillStyle = '#94a3b8';
-    ctx.font = '500 28px "Be Vietnam Pro", sans-serif';
+    ctx.font = '400 28px "Be Vietnam Pro", sans-serif';
     ctx.fillText(`${summary.periodLabel}  ·  Độc giả LV.${summary.readerLevel}`, 92, 246);
 
-    // 3. 4 ô chỉ số lớn
+    // 3. 4 ô chỉ số lớn theo kỳ
     const stats = [
       { label: 'THỜI LƯỢNG ĐỌC', value: formatReadingDuration(summary.readingSeconds, true) },
       { label: 'NGÀY ĐỌC TÍCH CỰC', value: `${summary.activeDays} ngày` },
-      { label: 'CHUỖI KỶ LỤC', value: `${summary.longestStreakDays} ngày` },
-      { label: 'TẬP HOÀN THÀNH', value: `${summary.completedBooks} cuốn` },
+      { label: 'CHUỖI KỶ LỤC KỲ', value: `${summary.longestStreakDays} ngày` },
+      { label: 'HOÀN THÀNH TRONG KỲ', value: `${summary.completedBooks} cuốn` },
     ];
     stats.forEach((st, idx) => {
       const col = idx % 2;
@@ -237,7 +365,7 @@ export async function exportWrappedPosterPng(summary: WrappedComputedSummary): P
       ctx.fillText(st.value, bx + 28, by + 114);
     });
 
-    // 4. Bộ truyện gắn bó nhất
+    // 4. Bộ truyện gắn bó nhất (hoạt động trong kỳ, hiển thị rõ thời lượng tích luỹ)
     drawRoundedRect(ctx, 92, 676, width - 184, 430, 28);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
     ctx.fill();
@@ -257,14 +385,14 @@ export async function exportWrappedPosterPng(summary: WrappedComputedSummary): P
       ctx.save();
       drawRoundedRect(ctx, cx, cy, cw, ch, 16);
       ctx.clip();
-      ctx.drawImage(coverBitmap, cx, cy, cw, ch);
+      drawCoverImageCropped(ctx, coverBitmap, cx, cy, cw, ch);
       ctx.restore();
       textStartX = 344;
     }
 
     if (summary.topShelves.length === 0) {
       ctx.fillStyle = '#cbd5e1';
-      ctx.font = '500 28px "Be Vietnam Pro", sans-serif';
+      ctx.font = '400 28px "Be Vietnam Pro", sans-serif';
       ctx.fillText('Chưa có dữ liệu bộ truyện trong kỳ này.', textStartX, 830);
     } else {
       summary.topShelves.forEach((sh, idx) => {
@@ -275,17 +403,17 @@ export async function exportWrappedPosterPng(summary: WrappedComputedSummary): P
         ctx.fillText(truncateCanvasLine(ctx, `#${idx + 1}  ${sh.shelfName}`, maxW), textStartX, ry);
 
         ctx.fillStyle = '#94a3b8';
-        ctx.font = '500 21px "Be Vietnam Pro", sans-serif';
-        const sub = `${sh.author}  ·  ${formatReadingDuration(sh.readingSeconds, true)}  ·  ${sh.completedCount}/${sh.totalVolumes} tập xong`;
+        ctx.font = '400 21px "Be Vietnam Pro", sans-serif';
+        const sub = `${sh.author}  ·  tích luỹ ${formatReadingDuration(sh.readingSeconds, true)}  ·  ${sh.completedCount}/${sh.totalVolumes} tập kỳ này`;
         ctx.fillText(truncateCanvasLine(ctx, sub, maxW), textStartX, ry + 34);
       });
     }
 
-    // 5. Chân trang
+    // 5. Chân trang — minh bạch số liệu tích luỹ toàn kho
     ctx.fillStyle = '#94a3b8';
-    ctx.font = '500 23px "Be Vietnam Pro", sans-serif';
+    ctx.font = '400 22px "Be Vietnam Pro", sans-serif';
     ctx.fillText(
-      `Tổng cộng ~${summary.readPages.toLocaleString('vi-VN')} trang sách đã lật qua`,
+      `Tích luỹ toàn kho: ~${summary.readPages.toLocaleString('vi-VN')} trang đã đọc  ·  ${summary.totalCompletedBooks} cuốn hoàn thành`,
       92,
       1188,
     );
@@ -308,6 +436,6 @@ export async function exportWrappedPosterPng(summary: WrappedComputedSummary): P
     a.click();
     a.remove();
   } finally {
-    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    window.setTimeout(() => URL.revokeObjectURL(url), 45_000);
   }
 }
