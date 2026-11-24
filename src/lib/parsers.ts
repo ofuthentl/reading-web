@@ -4,7 +4,7 @@ import { isChunkLoadError, recoverFromChunkError } from '@/lib/chunkReload';
 import { compressCoverBlob } from '@/lib/coverImage';
 import { extractDocxCover, parseDocxZip } from '@/lib/docxParser';
 import { buildEpubChapters, type RawEpubSection } from '@/lib/epubChapters';
-import { sanitizeBookDocument } from '@/lib/sanitizeHtml';
+import { sanitizeBookDocument, sanitizeSvgBlob } from '@/lib/sanitizeHtml';
 
 type JSZipStatic = typeof JSZip;
 
@@ -30,7 +30,8 @@ export async function preloadCoreReaders(): Promise<void> {
 }
 
 function resolveZipPath(basePath: string, relativePath: string): string {
-  const parts = `${basePath}/${relativePath}`.split('/');
+  const raw = relativePath.startsWith('/') ? relativePath.slice(1) : `${basePath}/${relativePath}`;
+  const parts = raw.split('/');
   const resolved: string[] = [];
   for (const part of parts) {
     if (!part || part === '.') continue;
@@ -38,6 +39,28 @@ function resolveZipPath(basePath: string, relativePath: string): string {
     else resolved.push(part);
   }
   return resolved.join('/');
+}
+
+function parseEpubXhtmlDocument(source: string): Document {
+  // Chuẩn hoá thẻ tự đóng kiểu XHTML hay làm vỡ HTML5 parser (vd `<title/>`, `<a id="fn1"/>`)
+  try {
+    const xmlDoc = new DOMParser().parseFromString(source, 'application/xhtml+xml');
+    if (!xmlDoc.querySelector('parsererror') && xmlDoc.body) {
+      const htmlDoc = document.implementation.createHTMLDocument('');
+      const serialized = new XMLSerializer().serializeToString(xmlDoc.body);
+      const parsed = new DOMParser().parseFromString(serialized, 'text/html');
+      if (parsed.body && htmlDoc.body) {
+        htmlDoc.body.innerHTML = parsed.body.innerHTML;
+        return htmlDoc;
+      }
+    }
+  } catch {
+    // Fallback to HTML5 parser below
+  }
+  const normalized = source
+    .replace(/<title\s*\/>/gi, '<title></title>')
+    .replace(/<(a|span|div|p|h[1-6])\b([^>]*?)\/>/gi, '<$1$2></$1>');
+  return new DOMParser().parseFromString(normalized, 'text/html');
 }
 
 function safeDecodeUri(value: string): string {
@@ -81,41 +104,52 @@ export async function extractCoverAtUpload(file: File, fileType: BookFileType): 
     if (fileType === 'epub') {
       const JSZip = await loadJSZip();
       const zip = await JSZip.loadAsync(await file.arrayBuffer());
-      const containerXml = await zip.file('META-INF/container.xml')?.async('string');
+      const zipLowerLookup = buildCaseInsensitiveZipLookup(zip);
+      const containerPath = resolveZipFilePath(zip, zipLowerLookup, ['META-INF/container.xml']);
+      const containerXml = containerPath ? await zip.file(containerPath)?.async('string') : null;
       if (!containerXml) return null;
       const container = new DOMParser().parseFromString(containerXml, 'application/xml');
       const rootFile = container.querySelector('rootfile')?.getAttribute('full-path');
       if (!rootFile) return null;
-      const packageXml = await zip.file(rootFile)?.async('string');
-      if (!packageXml) return null;
+      const resolvedRoot = resolveZipFilePath(zip, zipLowerLookup, [rootFile, safeDecodeUri(rootFile)]);
+      const packageXml = resolvedRoot ? await zip.file(resolvedRoot)?.async('string') : null;
+      if (!packageXml || !resolvedRoot) return null;
 
       const pkg = new DOMParser().parseFromString(packageXml, 'application/xml');
-      const pkgDir = rootFile.includes('/') ? rootFile.slice(0, rootFile.lastIndexOf('/')) : '';
+      const pkgDir = resolvedRoot.includes('/') ? resolvedRoot.slice(0, resolvedRoot.lastIndexOf('/')) : '';
 
       const coverMetaId = pkg.querySelector('metadata meta[name="cover"]')?.getAttribute('content');
-      const candidates: string[] = [];
+      const candidates: Array<{ href: string; mediaType: string }> = [];
       pkg.querySelectorAll('manifest item').forEach((item) => {
         const id = item.getAttribute('id') || '';
         const props = item.getAttribute('properties') || '';
         const mediaType = item.getAttribute('media-type') || '';
         const href = item.getAttribute('href');
         if (!href || !mediaType.startsWith('image/')) return;
+        const entry = { href, mediaType };
         if (props.split(/\s+/).includes('cover-image') || (coverMetaId && id === coverMetaId)) {
-          candidates.unshift(href);
+          candidates.unshift(entry);
         } else if (/cover/i.test(id) || /cover/i.test(href)) {
-          candidates.splice(Math.min(1, candidates.length), 0, href);
+          candidates.splice(Math.min(1, candidates.length), 0, entry);
         } else {
-          candidates.push(href);
+          candidates.push(entry);
         }
       });
 
-      const zipLowerLookup = buildCaseInsensitiveZipLookup(zip);
-      for (const href of candidates) {
-        const imagePath = resolveZipPath(pkgDir, safeDecodeUri(href.split('#')[0]));
-        const matched = resolveZipFilePath(zip, zipLowerLookup, [imagePath]);
+      for (const { href, mediaType } of candidates) {
+        if (mediaType === 'image/svg+xml' || /\.svg$/i.test(href.split('#')[0])) continue;
+        const rawHref = href.split('#')[0];
+        const matched = resolveZipFilePath(zip, zipLowerLookup, [
+          resolveZipPath(pkgDir, safeDecodeUri(rawHref)),
+          resolveZipPath(pkgDir, rawHref),
+        ]);
         const entry = matched ? zip.file(matched) : null;
-        if (entry) {
-          return await compressCoverBlob(await entry.async('blob'));
+        if (!entry) continue;
+        try {
+          const rawBlob = await entry.async('blob');
+          return await compressCoverBlob(new Blob([rawBlob], { type: mediaType || rawBlob.type || 'image/jpeg' }));
+        } catch {
+          // Bỏ qua ứng viên bìa hỏng/không decode được để thử ứng viên tiếp theo
         }
       }
       return null;
@@ -169,18 +203,21 @@ async function parseEpubBlob(
   try {
     const JSZip = await loadJSZip();
     const zip = await JSZip.loadAsync(options?.arrayBuffer ?? (await blob.arrayBuffer()));
-    const containerXml = await zip.file('META-INF/container.xml')?.async('string');
+    const zipLowerLookup = buildCaseInsensitiveZipLookup(zip);
+    const containerPath = resolveZipFilePath(zip, zipLowerLookup, ['META-INF/container.xml']);
+    const containerXml = containerPath ? await zip.file(containerPath)?.async('string') : null;
     if (!containerXml) throw new Error('EPUB không có tệp container.');
 
     const container = new DOMParser().parseFromString(containerXml, 'application/xml');
     const rootFile = container.querySelector('rootfile')?.getAttribute('full-path');
     if (!rootFile) throw new Error('EPUB không có tệp package.');
 
-    const packageXml = await zip.file(rootFile)?.async('string');
-    if (!packageXml) throw new Error('EPUB bị thiếu tệp package.');
+    const resolvedRoot = resolveZipFilePath(zip, zipLowerLookup, [rootFile, safeDecodeUri(rootFile)]);
+    const packageXml = resolvedRoot ? await zip.file(resolvedRoot)?.async('string') : null;
+    if (!packageXml || !resolvedRoot) throw new Error('EPUB bị thiếu tệp package.');
 
     const pkgDoc = new DOMParser().parseFromString(packageXml, 'application/xml');
-    const pkgDir = rootFile.includes('/') ? rootFile.slice(0, rootFile.lastIndexOf('/')) : '';
+    const pkgDir = resolvedRoot.includes('/') ? resolvedRoot.slice(0, resolvedRoot.lastIndexOf('/')) : '';
 
     const manifest = new Map<string, { href: string; mediaType: string; properties: string }>();
     const manifestByPath = new Map<string, { mediaType: string }>();
@@ -192,7 +229,8 @@ async function parseEpubBlob(
       if (id && href && mediaType) {
         const entry = { href, mediaType, properties: item.getAttribute('properties') || '' };
         manifest.set(id, entry);
-        manifestByPath.set(resolveZipPath(pkgDir, safeDecodeUri(href.split('#')[0])), { mediaType });
+        const decoded = resolveZipPath(pkgDir, safeDecodeUri(href.split('#')[0]));
+        manifestByPath.set(decoded.toLowerCase(), { mediaType });
       }
     });
 
@@ -201,16 +239,22 @@ async function parseEpubBlob(
       item.properties.split(/\s+/).includes('nav'),
     );
     if (navItem) {
-      const navPath = resolveZipPath(pkgDir, safeDecodeUri(navItem.href.split('#')[0]));
-      const navXml = await zip.file(navPath)?.async('string');
-      if (navXml) {
+      const rawNavHref = navItem.href.split('#')[0];
+      const navPath = resolveZipFilePath(zip, zipLowerLookup, [
+        resolveZipPath(pkgDir, safeDecodeUri(rawNavHref)),
+        resolveZipPath(pkgDir, rawNavHref),
+      ]);
+      const navXml = navPath ? await zip.file(navPath)?.async('string') : null;
+      if (navXml && navPath) {
         const navDir = navPath.includes('/') ? navPath.slice(0, navPath.lastIndexOf('/')) : '';
         const navDoc = new DOMParser().parseFromString(navXml, 'text/html');
-        navDoc.querySelectorAll('nav a[href]').forEach((link) => {
+        const tocLinks = navDoc.querySelectorAll('nav[epub\\:type~="toc"] a[href], nav[role="doc-toc"] a[href]');
+        const activeLinks = tocLinks.length > 0 ? tocLinks : navDoc.querySelectorAll('nav a[href]');
+        activeLinks.forEach((link) => {
           const href = link.getAttribute('href') || '';
           const label = link.textContent?.replace(/\s+/g, ' ').trim().normalize('NFC');
           if (href && label) {
-            const targetPath = resolveZipPath(navDir, safeDecodeUri(href.split('#')[0]));
+            const targetPath = resolveZipPath(navDir, safeDecodeUri(href.split('#')[0])).toLowerCase();
             if (!tocTitlesByPath.has(targetPath)) tocTitlesByPath.set(targetPath, label);
           }
         });
@@ -221,9 +265,13 @@ async function parseEpubBlob(
         (item) => item.mediaType === 'application/x-dtbncx+xml' || item.href.endsWith('.ncx'),
       );
       if (ncxItem) {
-        const ncxPath = resolveZipPath(pkgDir, safeDecodeUri(ncxItem.href.split('#')[0]));
-        const ncxXml = await zip.file(ncxPath)?.async('string');
-        if (ncxXml) {
+        const rawNcxHref = ncxItem.href.split('#')[0];
+        const ncxPath = resolveZipFilePath(zip, zipLowerLookup, [
+          resolveZipPath(pkgDir, safeDecodeUri(rawNcxHref)),
+          resolveZipPath(pkgDir, rawNcxHref),
+        ]);
+        const ncxXml = ncxPath ? await zip.file(ncxPath)?.async('string') : null;
+        if (ncxXml && ncxPath) {
           const ncxDir = ncxPath.includes('/') ? ncxPath.slice(0, ncxPath.lastIndexOf('/')) : '';
           const ncxDoc = new DOMParser().parseFromString(ncxXml, 'application/xml');
           ncxDoc.querySelectorAll('navPoint').forEach((point) => {
@@ -234,7 +282,7 @@ async function parseEpubBlob(
               .normalize('NFC');
             const src = point.querySelector('content')?.getAttribute('src') || '';
             if (label && src) {
-              const targetPath = resolveZipPath(ncxDir, safeDecodeUri(src.split('#')[0]));
+              const targetPath = resolveZipPath(ncxDir, safeDecodeUri(src.split('#')[0])).toLowerCase();
               if (!tocTitlesByPath.has(targetPath)) tocTitlesByPath.set(targetPath, label);
             }
           });
@@ -247,26 +295,40 @@ async function parseEpubBlob(
         const item = manifest.get(itemRef.getAttribute('idref') || '');
         if (!item) return null;
         if (!item.mediaType.includes('html') && !item.mediaType.includes('xml')) return null;
+        const rawHref = item.href.split('#')[0];
+        const resolved = resolveZipFilePath(zip, zipLowerLookup, [
+          resolveZipPath(pkgDir, safeDecodeUri(rawHref)),
+          resolveZipPath(pkgDir, rawHref),
+        ]);
+        if (!resolved) return null;
         return {
           item,
-          path: resolveZipPath(pkgDir, safeDecodeUri(item.href.split('#')[0])),
+          path: resolved,
+          tocKey: resolveZipPath(pkgDir, safeDecodeUri(rawHref)).toLowerCase(),
         };
       })
-      .filter((entry): entry is { item: { href: string; mediaType: string; properties: string }; path: string } =>
-        Boolean(entry),
+      .filter(
+        (
+          entry,
+        ): entry is {
+          item: { href: string; mediaType: string; properties: string };
+          path: string;
+          tocKey: string;
+        } => Boolean(entry),
       );
 
     const imageUrlByZipPath = new Map<string, string>();
-    const zipLowerLookup = buildCaseInsensitiveZipLookup(zip);
 
     async function getZipImageEntry(
       docPath: string,
       rawSrc: string,
     ): Promise<{ url: string; zipPath: string } | null> {
-      const cleanSrc = safeDecodeUri(rawSrc.split('#')[0].split('?')[0]);
+      const rawNoQuery = rawSrc.split('#')[0].split('?')[0];
+      const cleanSrc = safeDecodeUri(rawNoQuery);
       const docDir = docPath.includes('/') ? docPath.slice(0, docPath.lastIndexOf('/')) : '';
       const candidates = [
         resolveZipPath(docDir, cleanSrc),
+        resolveZipPath(docDir, rawNoQuery),
         `${docDir}/${cleanSrc}`.replace(/^\/+/, ''),
         cleanSrc.replace(/^(\.\.\/)+/, ''),
       ];
@@ -283,8 +345,13 @@ async function parseEpubBlob(
       const zipFile = zip.file(matchedPath);
       if (!zipFile) return null;
       const imgBlob = await zipFile.async('blob');
-      const mediaType = manifestByPath.get(matchedPath)?.mediaType || imgBlob.type || 'image/jpeg';
-      const url = URL.createObjectURL(new Blob([imgBlob], { type: mediaType }));
+      const mediaType =
+        manifestByPath.get(matchedPath.toLowerCase())?.mediaType || imgBlob.type || 'image/jpeg';
+      const isSvg = mediaType === 'image/svg+xml' || /\.svg$/i.test(matchedPath);
+      const safeBlob = isSvg
+        ? await sanitizeSvgBlob(imgBlob)
+        : new Blob([imgBlob], { type: mediaType });
+      const url = URL.createObjectURL(safeBlob);
       createdUrls.push(url);
       imageUrlByZipPath.set(matchedPath, url);
       return { url, zipPath: matchedPath };
@@ -292,11 +359,11 @@ async function parseEpubBlob(
 
     const rawSections: RawEpubSection[] = [];
 
-    for (const { path } of spineItems) {
+    for (const { path, tocKey } of spineItems) {
       const source = await zip.file(path)?.async('string');
       if (!source) continue;
 
-      const doc = new DOMParser().parseFromString(source, 'text/html');
+      const doc = parseEpubXhtmlDocument(source);
       // Must sanitize BEFORE replacing image paths with blob: URLs (DOMPurify strips blob: by default)
       sanitizeBookDocument(doc);
 
@@ -342,7 +409,7 @@ async function parseEpubBlob(
         .trim()
         .normalize('NFC');
       rawSections.push({
-        tocTitle: tocTitlesByPath.get(path) ?? null,
+        tocTitle: tocTitlesByPath.get(tocKey) ?? tocTitlesByPath.get(path.toLowerCase()) ?? null,
         filenameTitle: getFilenameChapterTitle(path),
         headingTitle: headingText && headingText.length <= 90 ? headingText : null,
         bodyHtml,

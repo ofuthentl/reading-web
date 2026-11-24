@@ -1,6 +1,7 @@
 import type JSZip from 'jszip';
-import type { Book, Chapter, ParsedBook } from '@/types';
+import type { Book, ParsedBook } from '@/types';
 import { compressCoverBlob } from '@/lib/coverImage';
+import { type DocxBlock, buildDocxChapters } from '@/lib/docxChapters';
 import {
   type DocxRel,
   type StyleMeta,
@@ -12,35 +13,23 @@ import {
   getAttr,
   guessImageMimeType,
   isToggleFlagEnabled,
+  parseDocxNotes,
   parseNumberingKinds,
   parseRelationships,
   parseStyles,
   resolveDocxPath,
   resolveHeadingFromStyle,
 } from '@/lib/docxXml';
-import { sanitizeBookDocument } from '@/lib/sanitizeHtml';
-
-const CHAPTER_HEADING_TEXT_RE =
-  /^(?:chương|hồi|phần|quyển|tập|mở\s+đầu|lời\s+mở\s+đầu|lời\s+nói\s+đầu|khúc\s+dạo\s+đầu|ngoại\s+truyện|phụ\s+lục|lời\s+kết|vĩ\s+thanh|chapter|prologue|epilogue|interlude|part|act|extra)\b/i;
-
-const AUTO_SPLIT_CHAR_THRESHOLD = 18_000;
-const AUTO_SPLIT_CHUNK_CHARS = 15_000;
-
-interface DocxBlock {
-  html: string;
-  text: string;
-  headingLevel: number | null;
-  isTitle: boolean;
-  hasMedia: boolean;
-  listKind: 'ul' | 'ol' | null;
-}
+import { sanitizeSvgBlob } from '@/lib/sanitizeHtml';
 
 interface DocxRenderContext {
   zip: JSZip;
   rels: Map<string, DocxRel>;
   styles: Map<string, StyleMeta>;
   numberingKinds: Map<string, 'ul' | 'ol'>;
-  imageUrlByZipPath: Map<string, string>;
+  footnotes: Map<string, string>;
+  endnotes: Map<string, string>;
+  imageCacheByKey: Map<string, { blobUrl: string; zipPath: string }>;
   placeholderToImage: Map<string, { blobUrl: string; zipPath: string }>;
   createdUrls: string[];
   placeholderSeq: number;
@@ -53,37 +42,43 @@ async function resolveImagePlaceholder(ctx: DocxRenderContext, relId: string): P
   const zipPath = resolveDocxPath('word', rel.target);
   if (!RENDERABLE_IMAGE_EXT_RE.test(zipPath)) return null;
 
-  let resolvedZipPath = zipPath;
-  let blobUrl = ctx.imageUrlByZipPath.get(zipPath);
-  if (!blobUrl) {
+  const cacheKey = zipPath.toLowerCase();
+  let cached = ctx.imageCacheByKey.get(cacheKey);
+  if (!cached) {
+    let resolvedZipPath = zipPath;
     let entry = ctx.zip.file(zipPath);
     if (!entry) {
-      const targetLower = zipPath.toLowerCase();
-      const ciKey = Object.keys(ctx.zip.files).find((k) => k.toLowerCase() === targetLower);
+      const ciKey = Object.keys(ctx.zip.files).find((k) => k.toLowerCase() === cacheKey);
       if (ciKey) {
         entry = ctx.zip.file(ciKey);
         resolvedZipPath = ciKey;
       }
     }
     if (!entry) return null;
+    let blobUrl: string;
     if (ctx.skipMediaBlobs) {
       blobUrl = 'data:,';
     } else {
       const rawBlob = await entry.async('blob');
-      blobUrl = URL.createObjectURL(new Blob([rawBlob], { type: guessImageMimeType(resolvedZipPath) }));
+      const mime = guessImageMimeType(resolvedZipPath);
+      const safeBlob =
+        mime === 'image/svg+xml' ? await sanitizeSvgBlob(rawBlob) : new Blob([rawBlob], { type: mime });
+      blobUrl = URL.createObjectURL(safeBlob);
       ctx.createdUrls.push(blobUrl);
     }
-    ctx.imageUrlByZipPath.set(zipPath, blobUrl);
+    cached = { blobUrl, zipPath: resolvedZipPath };
+    ctx.imageCacheByKey.set(cacheKey, cached);
   }
 
   const token = `__docx-img__/${ctx.placeholderSeq++}`;
-  ctx.placeholderToImage.set(token, { blobUrl, zipPath: resolvedZipPath });
+  ctx.placeholderToImage.set(token, cached);
   return token;
 }
 
 async function renderRunElement(
   runEl: Element,
   ctx: DocxRenderContext,
+  noteRefs: Array<{ key: string; label: string; text: string }>,
 ): Promise<{ html: string; text: string; hasMedia: boolean }> {
   const rPr = findDirectChild(runEl, 'rPr');
   let html = '';
@@ -107,6 +102,19 @@ async function renderRunElement(
         html += '<br />';
         text += '\n';
         break;
+      case 'footnoteReference':
+      case 'endnoteReference': {
+        const id = getAttr(child, 'id');
+        const isEnd = child.localName === 'endnoteReference';
+        const noteText = id ? (isEnd ? ctx.endnotes.get(id) : ctx.footnotes.get(id)) : undefined;
+        if (id && noteText) {
+          const key = `docx-${isEnd ? 'en' : 'fn'}-${id}`;
+          noteRefs.push({ key, label: `[${id}]`, text: noteText });
+          html += `<sup><a href="#${escapeHtml(key)}" role="doc-noteref">[${escapeHtml(id)}]</a></sup>`;
+          text += `[${id}]`;
+        }
+        break;
+      }
       case 'drawing':
       case 'pict': {
         for (const relId of findImageRelIds(child)) {
@@ -114,6 +122,18 @@ async function renderRunElement(
           if (token) {
             html += `<img src="${token}" alt="Minh họa" />`;
             hasMedia = true;
+          }
+        }
+        for (const txbx of Array.from(child.getElementsByTagName('*'))) {
+          if (txbx.localName !== 'txbxContent') continue;
+          for (const p of Array.from(txbx.children)) {
+            if (p.localName !== 'p') continue;
+            const inner = await renderParagraphContent(p, ctx, noteRefs);
+            if (inner.html) {
+              html += `<br />${inner.html}`;
+              text += inner.text ? ` ${inner.text}` : '';
+              if (inner.hasMedia) hasMedia = true;
+            }
           }
         }
         break;
@@ -155,6 +175,7 @@ async function renderRunElement(
 async function renderParagraphContent(
   pEl: Element,
   ctx: DocxRenderContext,
+  noteRefs: Array<{ key: string; label: string; text: string }> = [],
 ): Promise<{ html: string; text: string; hasMedia: boolean }> {
   let html = '';
   let text = '';
@@ -163,7 +184,7 @@ async function renderParagraphContent(
   const walkNode = async (node: Element): Promise<void> => {
     switch (node.localName) {
       case 'r': {
-        const rendered = await renderRunElement(node, ctx);
+        const rendered = await renderRunElement(node, ctx, noteRefs);
         html += rendered.html;
         text += rendered.text;
         if (rendered.hasMedia) hasMedia = true;
@@ -174,7 +195,7 @@ async function renderParagraphContent(
         let linkText = '';
         for (const child of Array.from(node.children)) {
           if (child.localName === 'r') {
-            const rendered = await renderRunElement(child, ctx);
+            const rendered = await renderRunElement(child, ctx, noteRefs);
             linkHtml += rendered.html;
             linkText += rendered.text;
             if (rendered.hasMedia) hasMedia = true;
@@ -221,7 +242,8 @@ async function renderParagraphContent(
 }
 
 async function renderParagraphBlock(pEl: Element, ctx: DocxRenderContext): Promise<DocxBlock | null> {
-  const { html, text, hasMedia } = await renderParagraphContent(pEl, ctx);
+  const noteRefs: Array<{ key: string; label: string; text: string }> = [];
+  const { html, text, hasMedia } = await renderParagraphContent(pEl, ctx, noteRefs);
   if (!text && !hasMedia) return null;
 
   const pPr = findDirectChild(pEl, 'pPr');
@@ -245,14 +267,15 @@ async function renderParagraphBlock(pEl: Element, ctx: DocxRenderContext): Promi
     if (numId && numId !== '0') listKind = ctx.numberingKinds.get(numId) ?? 'ul';
   }
 
+  const notesProp = noteRefs.length > 0 ? { noteRefs } : {};
   if (headingLevel !== null) {
     const tag = `h${Math.min(4, Math.max(1, headingLevel))}`;
-    return { html: `<${tag}>${html}</${tag}>`, text, headingLevel, isTitle, hasMedia, listKind: null };
+    return { html: `<${tag}>${html}</${tag}>`, text, headingLevel, isTitle, hasMedia, listKind: null, ...notesProp };
   }
   if (listKind) {
-    return { html: `<li>${html}</li>`, text, headingLevel: null, isTitle: false, hasMedia, listKind };
+    return { html: `<li>${html}</li>`, text, headingLevel: null, isTitle: false, hasMedia, listKind, ...notesProp };
   }
-  return { html: `<p>${html}</p>`, text, headingLevel: null, isTitle, hasMedia, listKind: null };
+  return { html: `<p>${html}</p>`, text, headingLevel: null, isTitle, hasMedia, listKind: null, ...notesProp };
 }
 
 async function renderTableBlock(tblEl: Element, ctx: DocxRenderContext): Promise<DocxBlock | null> {
@@ -265,6 +288,9 @@ async function renderTableBlock(tblEl: Element, ctx: DocxRenderContext): Promise
     const cellHtmls: string[] = [];
     for (const tc of Array.from(tr.children)) {
       if (tc.localName !== 'tc') continue;
+      const tcPr = findDirectChild(tc, 'tcPr');
+      const gridSpanEl = tcPr ? findDirectChild(tcPr, 'gridSpan') : null;
+      const colSpan = Math.max(1, Number(gridSpanEl ? getAttr(gridSpanEl, 'val') : 1) || 1);
       const cellParts: string[] = [];
       for (const child of Array.from(tc.children)) {
         if (child.localName === 'p') {
@@ -272,9 +298,17 @@ async function renderTableBlock(tblEl: Element, ctx: DocxRenderContext): Promise
           if (rendered.html) cellParts.push(rendered.html);
           if (rendered.text) textParts.push(rendered.text);
           if (rendered.hasMedia) hasMedia = true;
+        } else if (child.localName === 'tbl') {
+          const nested = await renderTableBlock(child, ctx);
+          if (nested) {
+            cellParts.push(nested.html);
+            if (nested.text) textParts.push(nested.text);
+            if (nested.hasMedia) hasMedia = true;
+          }
         }
       }
-      cellHtmls.push(`<td>${cellParts.join('<br />')}</td>`);
+      const spanAttr = colSpan > 1 ? ` colspan="${colSpan}"` : '';
+      cellHtmls.push(`<td${spanAttr}>${cellParts.join('<br />')}</td>`);
     }
     if (cellHtmls.length > 0) rowHtmls.push(`<tr>${cellHtmls.join('')}</tr>`);
   }
@@ -289,146 +323,6 @@ async function renderTableBlock(tblEl: Element, ctx: DocxRenderContext): Promise
     hasMedia,
     listKind: null,
   };
-}
-
-function assembleBlocksHtml(blocks: DocxBlock[]): string {
-  const parts: string[] = [];
-  let openList: 'ul' | 'ol' | null = null;
-  for (const block of blocks) {
-    if (block.listKind !== openList) {
-      if (openList) parts.push(`</${openList}>`);
-      if (block.listKind) parts.push(`<${block.listKind}>`);
-      openList = block.listKind;
-    }
-    parts.push(block.html);
-  }
-  if (openList) parts.push(`</${openList}>`);
-  return parts.join('');
-}
-
-function sanitizeAndRestoreImages(
-  rawHtml: string,
-  placeholderToImage: Map<string, { blobUrl: string; zipPath: string }>,
-): string {
-  const doc = new DOMParser().parseFromString(rawHtml, 'text/html');
-  // Must sanitize BEFORE replacing placeholder src with blob: URLs (DOMPurify strips blob: by default)
-  sanitizeBookDocument(doc);
-  for (const img of Array.from(doc.querySelectorAll<HTMLImageElement>('img[src]'))) {
-    const src = img.getAttribute('src') || '';
-    const resolved = placeholderToImage.get(src);
-    if (resolved) {
-      img.src = resolved.blobUrl;
-      img.loading = 'lazy';
-      img.setAttribute('data-zip-path', resolved.zipPath);
-    } else {
-      img.remove();
-    }
-  }
-  return doc.body?.innerHTML?.trim() || '';
-}
-
-function buildDocxChapters(
-  blocks: DocxBlock[],
-  book: Book,
-  placeholderToImage: Map<string, { blobUrl: string; zipPath: string }>,
-): Chapter[] {
-  const h1Count = blocks.filter((b) => b.headingLevel === 1 && b.text).length;
-  const h2Count = blocks.filter((b) => b.headingLevel === 2 && b.text).length;
-  const textHeadingCount = blocks.filter(
-    (b) =>
-      b.headingLevel === null &&
-      !b.listKind &&
-      b.text.length > 0 &&
-      b.text.length <= 120 &&
-      CHAPTER_HEADING_TEXT_RE.test(b.text),
-  ).length;
-
-  let splitMode: 'h1' | 'h2' | 'text-heading' | 'chunk' = 'chunk';
-  if (h1Count >= 2) splitMode = 'h1';
-  else if (h2Count >= 2) splitMode = 'h2';
-  else if (textHeadingCount >= 2) splitMode = 'text-heading';
-
-  const isSplitBoundary = (block: DocxBlock): boolean => {
-    if (!block.text) return false;
-    if (splitMode === 'h1') return block.headingLevel === 1;
-    if (splitMode === 'h2') return block.headingLevel === 2;
-    if (splitMode === 'text-heading') {
-      return !block.listKind && block.text.length <= 120 && CHAPTER_HEADING_TEXT_RE.test(block.text);
-    }
-    return false;
-  };
-
-  const groups: { title: string; blocks: DocxBlock[] }[] = [];
-
-  if (splitMode !== 'chunk') {
-    let currentTitle: string | null = null;
-    let currentBlocks: DocxBlock[] = [];
-    const flush = () => {
-      if (currentBlocks.length === 0) return;
-      const hasAnyText = currentBlocks.some((b) => b.text.length > 0);
-      const fallbackTitle = !hasAnyText
-        ? 'Minh họa'
-        : groups.length === 0
-          ? currentBlocks.find((b) => b.isTitle || b.headingLevel === 1)?.text || 'Mở đầu'
-          : `Phần ${groups.length + 1}`;
-      groups.push({ title: currentTitle || fallbackTitle, blocks: currentBlocks });
-      currentBlocks = [];
-    };
-
-    for (const block of blocks) {
-      if (isSplitBoundary(block)) {
-        flush();
-        currentTitle = block.text.slice(0, 140);
-      } else {
-        currentBlocks.push(block);
-      }
-    }
-    flush();
-  }
-
-  if (groups.length === 0) {
-    const totalChars = blocks.reduce((sum, b) => sum + b.text.length, 0);
-    if (totalChars <= AUTO_SPLIT_CHAR_THRESHOLD) {
-      groups.push({ title: book.title, blocks });
-    } else {
-      let currentBlocks: DocxBlock[] = [];
-      let currentChars = 0;
-      for (const block of blocks) {
-        if (currentBlocks.length > 0 && currentChars + block.text.length > AUTO_SPLIT_CHUNK_CHARS) {
-          groups.push({ title: `Phần ${groups.length + 1}`, blocks: currentBlocks });
-          currentBlocks = [];
-          currentChars = 0;
-        }
-        currentBlocks.push(block);
-        currentChars += block.text.length;
-      }
-      if (currentBlocks.length > 0) {
-        groups.push({ title: `Phần ${groups.length + 1}`, blocks: currentBlocks });
-      }
-    }
-  }
-
-  const chapters: Chapter[] = [];
-  for (const group of groups) {
-    const rawHtml = assembleBlocksHtml(group.blocks);
-    const contentHtml = sanitizeAndRestoreImages(rawHtml, placeholderToImage);
-    const plainText = group.blocks
-      .map((b) => b.text)
-      .filter(Boolean)
-      .join('\n\n')
-      .trim();
-    if (!contentHtml && !plainText) continue;
-    const index = chapters.length;
-    chapters.push({
-      id: `${book.id}-docx-${index}`,
-      book_id: book.id,
-      title: group.title,
-      content: plainText,
-      content_html: contentHtml,
-      chapter_number: index + 1,
-    });
-  }
-  return chapters;
 }
 
 export async function extractDocxCover(zip: JSZip): Promise<Blob | null> {
@@ -462,10 +356,12 @@ export async function parseDocxZip(
     const documentXml = await zip.file('word/document.xml')?.async('string');
     if (!documentXml) throw new Error('Tệp DOCX không hợp lệ hoặc bị thiếu word/document.xml.');
 
-    const [rels, styles, numberingKinds] = await Promise.all([
+    const [rels, styles, numberingKinds, footnotes, endnotes] = await Promise.all([
       parseRelationships(zip, 'word/_rels/document.xml.rels'),
       parseStyles(zip),
       parseNumberingKinds(zip),
+      parseDocxNotes(zip, 'word/footnotes.xml', 'footnote'),
+      parseDocxNotes(zip, 'word/endnotes.xml', 'endnote'),
     ]);
 
     const doc = new DOMParser().parseFromString(documentXml, 'application/xml');
@@ -477,7 +373,9 @@ export async function parseDocxZip(
       rels,
       styles,
       numberingKinds,
-      imageUrlByZipPath: new Map(),
+      footnotes,
+      endnotes,
+      imageCacheByKey: new Map(),
       placeholderToImage: new Map(),
       createdUrls,
       placeholderSeq: 0,

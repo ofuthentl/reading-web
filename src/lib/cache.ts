@@ -43,7 +43,21 @@ function openDb(): Promise<IDBDatabase> {
         db.createObjectStore(STORE_LOCAL_PROGRESS);
       }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onclose = () => {
+        dbPromise = null;
+      };
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = null;
+      };
+      resolve(db);
+    };
+    request.onblocked = () => {
+      dbPromise = null;
+      reject(new Error('Bộ nhớ đệm IndexedDB đang bị tab khác khoá.'));
+    };
     request.onerror = () => {
       dbPromise = null;
       reject(request.error || new Error('Không thể mở bộ nhớ đệm IndexedDB.'));
@@ -59,6 +73,14 @@ function idbRequest<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
+function waitForTransaction(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('Lỗi ghi giao dịch IndexedDB.'));
+    tx.onabort = () => reject(tx.error || new Error('Giao dịch IndexedDB bị huỷ (có thể đầy bộ nhớ).'));
+  });
+}
+
 async function getFromStore<T>(storeName: string, key: string): Promise<T | null> {
   try {
     const db = await openDb();
@@ -70,14 +92,31 @@ async function getFromStore<T>(storeName: string, key: string): Promise<T | null
   }
 }
 
-async function putInStore<T>(storeName: string, value: T, key?: string): Promise<void> {
+async function putInStore<T>(
+  storeName: string,
+  value: T,
+  key?: string,
+  throwOnError = false,
+): Promise<void> {
   try {
     const db = await openDb();
     const tx = db.transaction(storeName, 'readwrite');
     const store = tx.objectStore(storeName);
-    await idbRequest(key !== undefined ? store.put(value, key) : store.put(value));
-  } catch {
-    // Ignore storage quota errors in private browsing
+    const done = waitForTransaction(tx);
+    if (key !== undefined) store.put(value, key);
+    else store.put(value);
+    await done;
+  } catch (err) {
+    if (throwOnError) {
+      const isQuota =
+        err instanceof DOMException &&
+        (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+      if (isQuota) {
+        throw new Error('Bộ nhớ thiết bị (IndexedDB) đã đầy. Hãy dọn bớt cache rồi thử lại.');
+      }
+      throw err instanceof Error ? err : new Error('Không thể ghi dữ liệu vào bộ nhớ thiết bị.');
+    }
+    // Ignore optional cache quota errors in private browsing
   }
 }
 
@@ -135,8 +174,12 @@ export async function getCachedBookBlob(fileKey: string): Promise<Blob | null> {
   return getFromStore<Blob>(STORE_BOOK_BLOBS, fileKey);
 }
 
-export async function setCachedBookBlob(fileKey: string, blob: Blob): Promise<void> {
-  await putInStore(STORE_BOOK_BLOBS, blob, fileKey);
+export async function setCachedBookBlob(
+  fileKey: string,
+  blob: Blob,
+  strict = false,
+): Promise<void> {
+  await putInStore(STORE_BOOK_BLOBS, blob, fileKey, strict);
 }
 
 export async function deleteCachedBookBlob(fileKey: string): Promise<void> {
@@ -224,7 +267,11 @@ export async function getLocalBooks(): Promise<Book[]> {
 }
 
 export async function putLocalBook(book: Book): Promise<void> {
-  await putInStore(STORE_LOCAL_BOOKS, book);
+  await putInStore(STORE_LOCAL_BOOKS, book, undefined, true);
+}
+
+export async function getLocalProgress(bookId: string): Promise<ReadingProgress | null> {
+  return getFromStore<ReadingProgress>(STORE_LOCAL_PROGRESS, bookId);
 }
 
 export async function deleteLocalBook(bookId: string): Promise<void> {

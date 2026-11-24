@@ -76,7 +76,7 @@ export async function uploadBook(
     const fileKey = `books/${bookId}.${fileType}`;
     const coverKey = coverBlob ? `covers/${bookId}-v2.jpg` : null;
 
-    await setCachedBookBlob(fileKey, file);
+    await setCachedBookBlob(fileKey, file, true);
     if (coverKey && coverBlob) {
       await setCachedCoverBlob(coverKey, coverBlob);
     }
