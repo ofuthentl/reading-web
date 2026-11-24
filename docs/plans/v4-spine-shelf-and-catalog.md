@@ -132,8 +132,8 @@ Hiện tại bảng `library_ratings` có `rating INTEGER NOT NULL CHECK (rating
 
 ## 4. Checklist kiểm thử bắt buộc (`AGENTS.md` §7)
 
-- [ ] **Tĩnh & Build:** `npm run typecheck`, `npm run lint` (0/0, mọi file `<= 500` dòng hiệu dụng), `cd workers/r2-storage && npx tsc --noEmit`, `npm run build` (`dist/assets/index-*.js <= 86.04 kB` gzip).
-- [ ] **Worker + D1 cục bộ (migration `0018`):**
+- [x] **Tĩnh & Build:** `npm run typecheck`, `npm run lint` (0/0, mọi file `<= 500` dòng hiệu dụng), `cd workers/r2-storage && npx tsc --noEmit`, `npm run build` (`dist/assets/index-*.js <= 86.04 kB` gzip — đạt `84.79 kB` gzip).
+- [x] **Worker + D1 cục bộ (migration `0018`):**
   - Chấm nửa sao `0.5`, `3.5`, `4.5`, `5.0`, xoá điểm & tương thích ngược dòng sao cũ.
   - `PUT /api/progress/:bookId` lưu & giữ nguyên `readingSeconds` khi tăng `rereadCount`.
   - **Khoá 3 tầng (`D19`):**
@@ -143,6 +143,6 @@ Hiện tại bảng `library_ratings` có `rating INTEGER NOT NULL CHECK (rating
     - Xoá sách tự dọn sạch `book_access_rules`, `book_guest_grants`, `chapter_access_rules`, `chapter_guest_grants`.
   - `PUT / DELETE /api/shelves/relations` (Owner OK, Guest `403`), Guest không thấy liên kết đụng bộ bị khoá, đổi tên/xoá kệ tự gộp/dọn.
   - `PUT / GET /api/reader-settings` đồng bộ `fontWeight` & `eyeBreakMinutes`.
-- [ ] **Trình duyệt thật (Desktop `1280×800` & Mobile `390×844`, 0 lỗi Console/Page):**
+- [x] **Trình duyệt thật (Desktop `1280×800` & Mobile `390×844`, 0 lỗi Console/Page):**
   - Kiểm thử đủ 8 hạng mục: A1 (4 nền + mobile), A2, C12 (DOM + Canvas), C13 (WPM + Nhắc nghỉ mắt), D15 (nửa sao + Đọc lại, xác nhận không còn `Tạm ngưng`), D16, D18 (Markdown Owner-only + Sức khoẻ kho sách), D19 (Modal khoá tập/chương của Admin + ổ khoá trên bìa & Mục lục Guest).
-- [ ] **Tài liệu & Bàn giao:** Cập nhật `docs/DECISIONS.md` (`D-042`), `docs/ARCHITECTURE.md` và `HANDOFF.md` (`< 60` dòng, không ghi hash commit) trong cùng commit.
+- [x] **Tài liệu & Bàn giao:** Cập nhật `docs/DECISIONS.md` (`D-042`), `docs/ARCHITECTURE.md` và `HANDOFF.md` (`< 60` dòng, không ghi hash commit) trong cùng commit.
