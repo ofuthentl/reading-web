@@ -3,6 +3,7 @@ import type { BookRow } from './booksDb';
 const RELEASE_EMBED_COLOR = 0xc89b62;
 const MAX_INLINE_LABELS_PER_EMBED = 6;
 const MAX_TAGS_PER_EMBED = 8;
+const DISCORD_ROLE_SNOWFLAKE_RE = /^\d{5,32}$/;
 
 const VOL_CORE_WORD =
   '(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|màn|man|hồi|hoi|book|part|act|arc|ep(?:isode)?)';
@@ -257,7 +258,12 @@ export function formatReleaseVolumeSummary(
 
 export function buildDiscordReleaseMessagePayload(
   group: DiscordReleaseGroupInput,
-  options: { appUrl: string; keyChannelUrl: string; includeComponents?: boolean },
+  options: {
+    appUrl: string;
+    keyChannelUrl: string;
+    includeComponents?: boolean;
+    mentionRoleIds?: readonly string[];
+  },
 ) {
   const sortedBooks = sortBooksNaturally(group.books);
   const volumePrefix = formatReleaseVolumeSummary(sortedBooks, group.shelfName);
@@ -293,9 +299,18 @@ export function buildDiscordReleaseMessagePayload(
     embed.image = { url: 'attachment://cover.jpg' };
   }
 
+  const validRoleIds = Array.from(
+    new Set(
+      (options.mentionRoleIds || [])
+        .map((id) => id.trim())
+        .filter((id) => DISCORD_ROLE_SNOWFLAKE_RE.test(id)),
+    ),
+  ).slice(0, 5);
+
   const payload: Record<string, unknown> = {
+    ...(validRoleIds.length > 0 ? { content: validRoleIds.map((id) => `<@&${id}>`).join(' ') } : {}),
     embeds: [embed],
-    allowed_mentions: { parse: [] },
+    allowed_mentions: validRoleIds.length > 0 ? { parse: [], roles: validRoleIds } : { parse: [] },
   };
 
   if (options.includeComponents !== false) {

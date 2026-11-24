@@ -60,6 +60,21 @@ export function resolveKeyChannelUrl(
   return `${resolvePublicAppUrl(env)}/entrance`;
 }
 
+export function resolveReleaseRoleIds(env: Pick<Env, 'DISCORD_RELEASE_ROLE_ID'>): string[] {
+  const raw = cleanConfig(env.DISCORD_RELEASE_ROLE_ID);
+  if (!raw) return [];
+  const seen = new Set<string>();
+  const roleIds: string[] = [];
+  for (const token of raw.split(/[\s,]+/)) {
+    const cleaned = token.replace(/^<@&(\d+)>$/, '$1').trim();
+    if (!DISCORD_SNOWFLAKE_RE.test(cleaned) || seen.has(cleaned)) continue;
+    seen.add(cleaned);
+    roleIds.push(cleaned);
+    if (roleIds.length >= 5) break;
+  }
+  return roleIds;
+}
+
 export function resolveReleaseDeliveryTarget(
   env: Pick<Env, 'DISCORD_BOT_TOKEN' | 'DISCORD_RELEASE_CHANNEL_ID' | 'DISCORD_RELEASE_WEBHOOK_URL'>,
 ): DiscordReleaseDeliveryTarget | null {
@@ -270,7 +285,8 @@ export async function announceDiscordReleases(
   const prefsMap = new Map<string, { coverBookId: string | null; tags: string[] }>();
   const extraCoverBookIds: string[] = [];
   for (const row of prefsRes.results || []) {
-    prefsMap.set(row.shelf_key, {
+    const normalizedKey = toShelfAccessKey(row.shelf_key);
+    prefsMap.set(normalizedKey, {
       coverBookId: row.cover_book_id || null,
       tags: parseShelfTagsJson(row.tags_json),
     });
@@ -295,6 +311,7 @@ export async function announceDiscordReleases(
 
   const appUrl = resolvePublicAppUrl(env);
   const keyChannelUrl = resolveKeyChannelUrl(env);
+  const mentionRoleIds = resolveReleaseRoleIds(env);
 
   let announcedGroups = 0;
   let announcedBooks = 0;
@@ -310,11 +327,16 @@ export async function announceDiscordReleases(
     groupIndex += 1;
     const sortedBooks = sortBooksNaturally(entry.books);
     const pref = prefsMap.get(shelfKey);
+    // PA-1: luôn ưu tiên ảnh bìa đại diện Admin đã chọn cho kệ (shelf_prefs.cover_book_id), fallback tập đầu có bìa
+    const preferredCoverKey = pref?.coverBookId
+      ? (sortedBooks.find((b) => b.id === pref.coverBookId && Boolean(b.cover_key))?.cover_key ??
+          extraCoverMap.get(pref.coverBookId) ??
+          null)
+      : null;
     const uploadedCoverKey = sortedBooks.find((b) => Boolean(b.cover_key))?.cover_key ?? null;
-    const fallbackCoverKey = pref?.coverBookId ? extraCoverMap.get(pref.coverBookId) ?? null : null;
     const coverBytes = await readCoverBytesFromR2(
       env.BOOKS_BUCKET,
-      uploadedCoverKey || fallbackCoverKey,
+      preferredCoverKey || uploadedCoverKey,
     );
 
     const groupInput: DiscordReleaseGroupInput = {
@@ -329,6 +351,7 @@ export async function announceDiscordReleases(
       appUrl,
       keyChannelUrl,
       includeComponents: true,
+      mentionRoleIds,
     });
 
     let sendRes = await postSingleDiscordRelease(target, payload, coverBytes);
@@ -344,6 +367,7 @@ export async function announceDiscordReleases(
         appUrl,
         keyChannelUrl,
         includeComponents: false,
+        mentionRoleIds,
       });
       sendRes = await postSingleDiscordRelease(target, fallbackPayload, coverBytes);
     }
