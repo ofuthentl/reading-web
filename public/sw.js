@@ -14,8 +14,8 @@ const STATIC_ROOT_FILES = new Set([
 
 const HASHED_ASSET_EXT_RE = /\.(?:js|css|woff2|png|webp|svg)$/i;
 const FORBIDDEN_ROUTE_RE =
-  /(?:^|\/)(?:api|usage|locked|entrance|books|guest-packs|models|textures|sounds)(?:\/|$)/i;
-const FORBIDDEN_FILE_EXT_RE = /\.(?:epub|docx|pack|pdf|glb|m4a|mp3|ogg|opus|wav)$/i;
+  /(?:^|\/)(?:api|usage|locked|entrance|books|guest-packs|sounds)(?:\/|$)/i;
+const FORBIDDEN_FILE_EXT_RE = /\.(?:epub|docx|pack|pdf|m4a|mp3|ogg|opus|wav)$/i;
 
 function resolveRelativePath(pathname) {
   const scopePathname = new URL(self.registration.scope).pathname.replace(/\/+$/, '');

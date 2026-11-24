@@ -40,7 +40,6 @@ export interface CommandPaletteModalProps {
   collections: readonly CustomCollection[];
   shelfAltTitles?: Readonly<Record<string, string[]>>;
   shelfRatings?: Readonly<Record<string, ShelfRatingSummary>>;
-  canUse3D?: boolean;
   onClose: () => void;
   onJumpToShelf: (shelfKey: string) => void;
   onOpenBook: (book: Book, jumpTarget?: BookOpenJumpTarget) => void;
@@ -48,7 +47,6 @@ export interface CommandPaletteModalProps {
   onSelectCollection: (collectionId: string) => void;
   onCycleTheme: () => void;
   onOpenStats: () => void;
-  onSwitchTo3D?: () => void;
   onOpenCacheManager?: () => void;
   onUploadClick?: () => void;
 }
@@ -71,7 +69,6 @@ export function CommandPaletteModal({
   collections,
   shelfAltTitles,
   shelfRatings,
-  canUse3D = false,
   onClose,
   onJumpToShelf,
   onOpenBook,
@@ -79,7 +76,6 @@ export function CommandPaletteModal({
   onSelectCollection,
   onCycleTheme,
   onOpenStats,
-  onSwitchTo3D,
   onOpenCacheManager,
   onUploadClick,
 }: CommandPaletteModalProps) {
@@ -133,19 +129,6 @@ export function CommandPaletteModal({
         },
       },
     ];
-    if (canUse3D && onSwitchTo3D) {
-      list.push({
-        id: 'enter-3d',
-        title: 'Bước vào Thư viện 3D (Aincrad Tower)',
-        subtitle: 'Chuyển sang không gian đọc 3D tương tác',
-        keywords: '3d aincrad tower khong gian',
-        ownerOnly: true,
-        onTrigger: () => {
-          onClose();
-          onSwitchTo3D();
-        },
-      });
-    }
     if (onOpenCacheManager) {
       list.push({
         id: 'cache-manager',
@@ -173,7 +156,7 @@ export function CommandPaletteModal({
       });
     }
     return list;
-  }, [canUse3D, onClose, onCycleTheme, onOpenCacheManager, onOpenStats, onSwitchTo3D, onUploadClick]);
+  }, [onClose, onCycleTheme, onOpenCacheManager, onOpenStats, onUploadClick]);
 
   const results = useMemo(
     () =>

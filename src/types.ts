@@ -85,7 +85,6 @@ export type ReaderSettings = {
   dailyGoalMinutes: number;
 };
 
-export type ViewMode = '3d' | '2d';
 export type LibraryTab = 'home' | 'library' | 'support';
 export type LibraryStatusFilter = 'all' | 'reading' | 'unread' | 'plan_to_read' | 'completed';
 export type LibrarySortMode =

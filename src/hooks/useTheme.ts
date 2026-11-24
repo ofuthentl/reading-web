@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
-/** 3 khung giờ ánh sáng của không gian 3D (giữ nguyên 100%, không sửa library3d/) */
-export type AppTheme = 'light' | 'dim' | 'midnight';
-
-/** 4 chế độ nền của App 2D & Trình đọc (Cách 1, D-034) */
-export type UiTheme = AppTheme | 'noon';
+/** 4 chế độ nền của ứng dụng & trình đọc (D-034) */
+export type UiTheme = 'light' | 'noon' | 'dim' | 'midnight';
 
 export const THEME_ORDER: readonly UiTheme[] = ['light', 'noon', 'dim', 'midnight'];
 
@@ -26,10 +23,6 @@ const THEME_META_COLORS: Record<UiTheme, string> = {
 
 export function isDarkTheme(theme: UiTheme): boolean {
   return theme === 'dim' || theme === 'midnight';
-}
-
-export function toScene3DTheme(theme: UiTheme): AppTheme {
-  return theme === 'noon' ? 'light' : theme;
 }
 
 function parseStoredTheme(value: string | null): UiTheme | null {
@@ -67,12 +60,6 @@ function applyThemeToDocument(theme: UiTheme) {
 export function getNextTheme(current: UiTheme): UiTheme {
   const index = THEME_ORDER.indexOf(current);
   return THEME_ORDER[(index + 1) % THEME_ORDER.length];
-}
-
-function getNext3DTheme(current: UiTheme): AppTheme {
-  if (current === 'light' || current === 'noon') return 'dim';
-  if (current === 'dim') return 'midnight';
-  return 'light';
 }
 
 export function useTheme() {
@@ -140,18 +127,10 @@ export function useTheme() {
     [theme, transitionToTheme],
   );
 
-  const cycle3DTheme = useCallback(
-    (origin?: { x: number; y: number }) => {
-      transitionToTheme(getNext3DTheme(theme), origin);
-    },
-    [theme, transitionToTheme],
-  );
-
   return {
     theme,
     isDark: isDarkTheme(theme),
     setTheme,
     cycleTheme,
-    cycle3DTheme,
   };
 }
