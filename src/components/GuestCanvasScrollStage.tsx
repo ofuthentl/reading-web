@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import type { Book, ReaderSettings } from '@/types';
-import { ReaderBookCommunityBlock } from '@/components/ReaderBookCommunityBlock';
+import { ReaderBookCommunityBlock, ReaderBookCommunityModalButton } from '@/components/ReaderBookCommunityBlock';
 import { ReaderChapterEndNav } from '@/components/ReaderChapterEndNav';
 import {
   type ResolvedFootnoteItem,
@@ -153,13 +153,20 @@ export function GuestCanvasScrollStage({
             onCompleteAndClose={() => onCompleteBook()}
             onCompleteAndOpenNext={(nb) => onCompleteBook(nb)}
           />
-          {chapterIndex >= totalChapters - 1 && (
+          {chapterIndex >= totalChapters - 1 ? (
             <ReaderBookCommunityBlock
-              bookId={bookId}
-              bookTitle={bookTitle}
-              palette={palette}
-              onApiError={onApiError}
+              bookId={bookId} bookTitle={bookTitle} palette={palette}
+              currentChapterNumber={chapterIndex + 1} readerMaxChapterNumber={totalChapters}
+              totalChapters={totalChapters} onApiError={onApiError}
             />
+          ) : (
+            <div className="mt-4 flex justify-center">
+              <ReaderBookCommunityModalButton
+                bookId={bookId} bookTitle={bookTitle} palette={palette}
+                currentChapterNumber={chapterIndex + 1} readerMaxChapterNumber={chapterIndex + 1}
+                totalChapters={totalChapters} onApiError={onApiError}
+              />
+            </div>
           )}
         </div>
       )}

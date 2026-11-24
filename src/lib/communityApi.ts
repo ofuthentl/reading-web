@@ -1,5 +1,6 @@
 import type {
   CommunityComment,
+  CommunityReactionEmoji,
   CommunitySummary,
   CommunityTargetType,
 } from '@/types';
@@ -25,20 +26,22 @@ export class CommunityApiError extends Error {
   }
 }
 
+interface LocalStoredComment {
+  id: string;
+  userScope: string;
+  authorName: string;
+  authorRole: 'owner' | 'guest';
+  content: string;
+  parentId?: string | null;
+  chapterNumber?: number | null;
+  reactions?: Record<string, string[]>;
+  createdAt: number;
+  updatedAt: number;
+}
+
 interface LocalCommunityStore {
   ratings: Record<string, Record<string, { authorName: string; rating: number; updatedAt: number }>>;
-  comments: Record<
-    string,
-    Array<{
-      id: string;
-      userScope: string;
-      authorName: string;
-      authorRole: 'owner' | 'guest';
-      content: string;
-      createdAt: number;
-      updatedAt: number;
-    }>
-  >;
+  comments: Record<string, LocalStoredComment[]>;
 }
 
 function normalizeTargetKey(targetType: CommunityTargetType, rawKey: string): string {
@@ -96,6 +99,38 @@ function getLocalIdentity() {
     role: session.role,
     userScope: isOwner ? 'owner' : 'guest:local',
     authorName: isOwner ? 'Owner' : session.watermarkLabel || 'Thành viên Discord',
+  };
+}
+
+function mapLocalComment(
+  item: LocalStoredComment,
+  userScope: string,
+  role: 'owner' | 'guest',
+): CommunityComment {
+  const isMine = item.userScope === userScope;
+  const reactions: Partial<Record<CommunityReactionEmoji, number>> = {};
+  const myReactions: CommunityReactionEmoji[] = [];
+  for (const [emoji, scopes] of Object.entries(item.reactions || {})) {
+    if (Array.isArray(scopes) && scopes.length > 0) {
+      reactions[emoji as CommunityReactionEmoji] = scopes.length;
+      if (scopes.includes(userScope)) myReactions.push(emoji as CommunityReactionEmoji);
+    }
+  }
+  return {
+    id: item.id,
+    authorName: item.authorName,
+    authorRole: item.authorRole,
+    content: item.content,
+    parentId: item.parentId ?? null,
+    chapterNumber: item.chapterNumber ?? null,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    isEdited: item.updatedAt > item.createdAt,
+    isMine,
+    canEdit: isMine,
+    canDelete: role === 'owner' || isMine,
+    reactions,
+    myReactions,
   };
 }
 
@@ -170,19 +205,7 @@ export async function fetchCommunitySummary(
     const list = (store.comments[bucketKey] || [])
       .slice()
       .sort((a, b) => b.createdAt - a.createdAt);
-    const comments: CommunityComment[] = list.map((item) => {
-      const isMine = item.userScope === id.userScope;
-      return {
-        id: item.id,
-        authorName: item.authorName,
-        authorRole: item.authorRole,
-        content: item.content,
-        createdAt: item.createdAt,
-        updatedAt: item.updatedAt,
-        isMine,
-        canDelete: id.role === 'owner' || isMine,
-      };
-    });
+    const comments = list.map((item) => mapLocalComment(item, id.userScope, id.role));
     return {
       targetType,
       targetKey,
@@ -265,6 +288,7 @@ export async function postCommunityComment(
   targetType: CommunityTargetType,
   rawKey: string,
   content: string,
+  options?: { parentId?: string | null; chapterNumber?: number | null },
 ): Promise<CommunityComment> {
   assertApiConfigured();
   const targetKey = normalizeTargetKey(targetType, rawKey);
@@ -276,11 +300,23 @@ export async function postCommunityComment(
     );
   }
 
+  const parentId = options?.parentId || null;
+  const chapterNumber =
+    targetType === 'book' && options?.chapterNumber && options.chapterNumber > 0
+      ? Math.floor(options.chapterNumber)
+      : null;
+
   if (!isCloudMode) {
     const store = readLocalStore();
     const id = getLocalIdentity();
     const bucketKey = makeBucketKey(targetType, targetKey);
     const now = Date.now();
+    const bucketList = store.comments[bucketKey] || [];
+    if (parentId) {
+      const parent = bucketList.find((c) => c.id === parentId);
+      if (!parent) throw new CommunityApiError('Không tìm thấy bình luận gốc để trả lời.', 404);
+      if (parent.parentId) throw new CommunityApiError('Chỉ hỗ trợ trả lời tối đa 1 cấp.', 400);
+    }
     const allMine = Object.values(store.comments)
       .flat()
       .filter((c) => c.userScope === id.userScope);
@@ -292,33 +328,27 @@ export async function postCommunityComment(
         429,
       );
     }
-    const created = {
+    const created: LocalStoredComment = {
       id: crypto.randomUUID().replace(/-/g, ''),
       userScope: id.userScope,
       authorName: id.authorName,
       authorRole: id.role,
       content: trimmed,
+      parentId,
+      chapterNumber,
+      reactions: {},
       createdAt: now,
       updatedAt: now,
     };
-    store.comments[bucketKey] = [created, ...(store.comments[bucketKey] || [])];
+    store.comments[bucketKey] = [created, ...bucketList];
     writeLocalStore(store);
-    return {
-      id: created.id,
-      authorName: created.authorName,
-      authorRole: created.authorRole,
-      content: created.content,
-      createdAt: created.createdAt,
-      updatedAt: created.updatedAt,
-      isMine: true,
-      canDelete: true,
-    };
+    return mapLocalComment(created, id.userScope, id.role);
   }
 
   const res = await apiFetch('/api/community/comments', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ targetType, targetKey, content: trimmed }),
+    body: JSON.stringify({ targetType, targetKey, content: trimmed, parentId, chapterNumber }),
   });
   const data = (await res.json().catch(() => ({}))) as {
     comment?: CommunityComment;
@@ -330,12 +360,106 @@ export async function postCommunityComment(
   return data.comment;
 }
 
+export async function editCommunityCommentApi(
+  commentId: string,
+  content: string,
+): Promise<CommunityComment> {
+  assertApiConfigured();
+  const trimmed = content.replace(/\r\n/g, '\n').trim();
+  if (trimmed.length < 1 || trimmed.length > MAX_COMMUNITY_COMMENT_LENGTH) {
+    throw new CommunityApiError(
+      `Bình luận phải từ 1 đến ${MAX_COMMUNITY_COMMENT_LENGTH} ký tự.`,
+      400,
+    );
+  }
+
+  if (!isCloudMode) {
+    const store = readLocalStore();
+    const id = getLocalIdentity();
+    for (const bucketKey of Object.keys(store.comments)) {
+      const target = store.comments[bucketKey]?.find((c) => c.id === commentId);
+      if (target) {
+        if (target.userScope !== id.userScope) {
+          throw new CommunityApiError('Chỉ chính chủ mới có thể sửa bình luận này.', 403);
+        }
+        target.content = trimmed;
+        target.updatedAt = Math.max(Date.now(), target.createdAt + 1);
+        writeLocalStore(store);
+        return mapLocalComment(target, id.userScope, id.role);
+      }
+    }
+    throw new CommunityApiError('Không tìm thấy bình luận.', 404);
+  }
+
+  const res = await apiFetch(`/api/community/comments/${commentId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: trimmed }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    comment?: CommunityComment;
+    error?: string;
+  };
+  if (!res.ok || !data.comment) {
+    throw new CommunityApiError(data.error || 'Không thể cập nhật bình luận.', res.status);
+  }
+  return data.comment;
+}
+
+export async function toggleCommunityReactionApi(
+  commentId: string,
+  emoji: CommunityReactionEmoji,
+): Promise<{
+  reactions: Partial<Record<CommunityReactionEmoji, number>>;
+  myReactions: CommunityReactionEmoji[];
+}> {
+  assertApiConfigured();
+  if (!isCloudMode) {
+    const store = readLocalStore();
+    const id = getLocalIdentity();
+    for (const bucketKey of Object.keys(store.comments)) {
+      const target = store.comments[bucketKey]?.find((c) => c.id === commentId);
+      if (target) {
+        if (!target.reactions) target.reactions = {};
+        const prev = target.reactions[emoji] || [];
+        target.reactions[emoji] = prev.includes(id.userScope)
+          ? prev.filter((s) => s !== id.userScope)
+          : [...prev, id.userScope];
+        writeLocalStore(store);
+        const mapped = mapLocalComment(target, id.userScope, id.role);
+        return { reactions: mapped.reactions ?? {}, myReactions: mapped.myReactions ?? [] };
+      }
+    }
+    throw new CommunityApiError('Không tìm thấy bình luận.', 404);
+  }
+
+  const res = await apiFetch(`/api/community/comments/${commentId}/reaction`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ emoji }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    reactions?: Partial<Record<CommunityReactionEmoji, number>>;
+    myReactions?: CommunityReactionEmoji[];
+    error?: string;
+  };
+  if (!res.ok) {
+    throw new CommunityApiError(data.error || 'Không thể thả biểu cảm.', res.status);
+  }
+  return {
+    reactions: data.reactions ?? {},
+    myReactions: Array.isArray(data.myReactions) ? data.myReactions : [],
+  };
+}
+
 export async function deleteCommunityCommentApi(commentId: string): Promise<void> {
   assertApiConfigured();
   if (!isCloudMode) {
     const store = readLocalStore();
     for (const key of Object.keys(store.comments)) {
-      store.comments[key] = store.comments[key].filter((c) => c.id !== commentId);
+      store.comments[key] = store.comments[key].filter(
+        (c) => c.id !== commentId && c.parentId !== commentId,
+      );
     }
     writeLocalStore(store);
     return;

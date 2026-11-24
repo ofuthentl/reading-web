@@ -1,7 +1,7 @@
 import { type MouseEvent as ReactMouseEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { HardDrive, Sparkles } from 'lucide-react';
 import type { Book, ParsedBook, ReaderSettings, ReadingProgress, SaveProgressOptions } from '@/types';
-import { ReaderBookCommunityBlock } from '@/components/ReaderBookCommunityBlock';
+import { ReaderBookCommunityBlock, ReaderBookCommunityModalButton } from '@/components/ReaderBookCommunityBlock';
 import { ReaderChapterEndNav } from '@/components/ReaderChapterEndNav';
 import { ReaderFooterStatusBar, ReaderNightDimOverlay } from '@/components/ReaderFooterStatusBar';
 import { ReaderOverlaysHost } from '@/components/ReaderOverlaysHost';
@@ -464,13 +464,21 @@ export function ReaderView({
                   onCompleteAndOpenNext={(nb) => completeBook(nb)}
                 />
 
-                {chapterIndex >= chapters.length - 1 && (
+                {chapterIndex >= chapters.length - 1 ? (
                   <ReaderBookCommunityBlock
-                    bookId={book.id}
-                    bookTitle={book.title}
-                    palette={palette}
-                    onApiError={onApiError}
+                    bookId={book.id} bookTitle={book.title} palette={palette}
+                    currentChapterNumber={chapterIndex + 1} readerMaxChapterNumber={chapters.length}
+                    totalChapters={chapters.length} onApiError={onApiError}
                   />
+                ) : (
+                  <div className="mt-4 flex justify-center">
+                    <ReaderBookCommunityModalButton
+                      bookId={book.id} bookTitle={book.title} palette={palette}
+                      currentChapterNumber={chapterIndex + 1}
+                      readerMaxChapterNumber={Math.max(chapterIndex + 1, (initialProgress?.chapterIndex ?? 0) + 1)}
+                      totalChapters={chapters.length} onApiError={onApiError}
+                    />
+                  </div>
                 )}
               </article>
             )}

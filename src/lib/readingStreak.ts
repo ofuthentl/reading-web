@@ -12,6 +12,12 @@ export interface ReadingActivityDay {
   active: boolean;
 }
 
+export interface MonthlyReadingPoint {
+  monthKey: string;
+  readingSeconds: number;
+  activeDays: number;
+}
+
 export interface ReaderActivityReport {
   generatedAt: number;
   timezone: string;
@@ -19,6 +25,11 @@ export interface ReaderActivityReport {
   totalReadingSeconds: number;
   readingSeconds90d: number;
   activeDays90d: number;
+  monthReadingSeconds?: number;
+  monthActiveDays?: number;
+  yearReadingSeconds?: number;
+  yearActiveDays?: number;
+  monthlyBreakdown?: MonthlyReadingPoint[];
   currentStreakDays: number;
   longestStreakDays: number;
   days: ReadingActivityDay[];
@@ -134,6 +145,28 @@ export function buildLocalReaderActivityFallback(
   }
 
   const { currentStreakDays, longestStreakDays } = computeStreakFromDays(days);
+  const currentMonth = toVnDayKey(now).slice(0, 7);
+  const currentYear = currentMonth.slice(0, 4);
+  let monthReadingSeconds = 0;
+  let monthActiveDays = 0;
+  for (const d of days) {
+    if (d.dayKey.startsWith(currentMonth)) {
+      monthReadingSeconds += d.readingSeconds;
+      if (d.active) monthActiveDays += 1;
+    }
+  }
+  const monthlyBreakdown: MonthlyReadingPoint[] = Array.from({ length: 12 }, (_, i) => {
+    const mk = `${currentYear}-${String(i + 1).padStart(2, '0')}`;
+    let sec = 0;
+    let act = 0;
+    for (const d of days) {
+      if (d.dayKey.startsWith(mk)) {
+        sec += d.readingSeconds;
+        if (d.active) act += 1;
+      }
+    }
+    return { monthKey: mk, readingSeconds: sec, activeDays: act };
+  });
 
   return {
     generatedAt: now,
@@ -142,6 +175,11 @@ export function buildLocalReaderActivityFallback(
     totalReadingSeconds: Math.max(totalProgressSeconds, readingSeconds90d),
     readingSeconds90d,
     activeDays90d,
+    monthReadingSeconds,
+    monthActiveDays,
+    yearReadingSeconds: readingSeconds90d,
+    yearActiveDays: activeDays90d,
+    monthlyBreakdown,
     currentStreakDays,
     longestStreakDays,
     days,

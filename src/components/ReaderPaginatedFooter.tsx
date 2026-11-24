@@ -74,6 +74,9 @@ export function ReaderPaginatedFooter({
             bookId={bookId}
             bookTitle={bookTitle}
             palette={palette}
+            currentChapterNumber={chapterIndex + 1}
+            readerMaxChapterNumber={totalChapters}
+            totalChapters={totalChapters}
             onApiError={onApiError}
           />
           {nextBook && (
@@ -108,6 +111,16 @@ export function ReaderPaginatedFooter({
               <span className="hidden sm:inline">{remainingEstimate}</span>
             </>
           )}
+          <ReaderBookCommunityModalButton
+            compact
+            bookId={bookId}
+            bookTitle={bookTitle}
+            palette={palette}
+            currentChapterNumber={chapterIndex + 1}
+            readerMaxChapterNumber={chapterIndex + 1}
+            totalChapters={totalChapters}
+            onApiError={onApiError}
+          />
         </div>
       )}
 

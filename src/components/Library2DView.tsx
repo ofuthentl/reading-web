@@ -180,8 +180,7 @@ export function Library2DView({
         target instanceof HTMLSelectElement ||
         target?.isContentEditable;
 
-      const isModK = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k';
-      if (isModK || (!isTyping && event.key === '/')) {
+      if (!isTyping && event.key === '/') {
         const input = document.querySelector<HTMLInputElement>('[data-library-search-input="true"]');
         if (input) {
           event.preventDefault();
