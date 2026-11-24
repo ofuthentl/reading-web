@@ -7,7 +7,7 @@ import {
 } from '@/lib/readerSoundscapes';
 
 const SLEEP_OPTIONS: ReadonlyArray<{ minutes: SleepTimerMinutes; label: string }> = [
-  { minutes: 0, label: 'Tắt' },
+  { minutes: 0, label: 'Không' },
   { minutes: 15, label: '15p' },
   { minutes: 30, label: '30p' },
   { minutes: 60, label: '60p' },
@@ -118,7 +118,7 @@ export function ReaderSoundscapePopover({
         <div className="mb-2 flex items-center justify-between text-xs">
           <span className={`inline-flex items-center gap-1.5 font-medium ${palette.textSecondary}`}>
             <Timer className="h-3.5 w-3.5" />
-            <span>Hẹn giờ tắt êm</span>
+            <span>Hẹn giờ tắt nhạc</span>
           </span>
           {sleepRemainingSec !== null && preset !== 'off' && (
             <span className={`text-[11px] font-semibold tabular-nums ${palette.accentText}`}>
