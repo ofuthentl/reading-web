@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
-import { BookMarked } from 'lucide-react';
+import { BookMarked, LayoutGrid, Library } from 'lucide-react';
 import type {
   AuthRole,
   Book,
@@ -31,6 +31,23 @@ const LazyCollectionManagerModal = lazy(() =>
     default: mod.CollectionManagerModal,
   })),
 );
+
+const LazySpineBookshelfView = lazy(() =>
+  import('@/components/SpineBookshelfView').then((mod) => ({
+    default: mod.SpineBookshelfView,
+  })),
+);
+
+type CatalogDisplayMode = 'grid' | 'spine';
+const CATALOG_DISPLAY_MODE_KEY = 'ofu-library-catalog-mode';
+
+function readInitialCatalogDisplayMode(): CatalogDisplayMode {
+  try {
+    return window.localStorage.getItem(CATALOG_DISPLAY_MODE_KEY) === 'spine' ? 'spine' : 'grid';
+  } catch {
+    return 'grid';
+  }
+}
 
 export interface LibraryCatalogViewProps {
   allShelves: ShelfGroup[];
@@ -155,6 +172,16 @@ export function LibraryCatalogView({
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
   const [collectionManagerOpen, setCollectionManagerOpen] = useState(false);
   const [announcingDiscord, setAnnouncingDiscord] = useState(false);
+  const [displayMode, setDisplayMode] = useState<CatalogDisplayMode>(readInitialCatalogDisplayMode);
+
+  const handleChangeDisplayMode = (nextMode: CatalogDisplayMode) => {
+    setDisplayMode(nextMode);
+    try {
+      window.localStorage.setItem(CATALOG_DISPLAY_MODE_KEY, nextMode);
+    } catch {
+      // Ignore storage quota errors
+    }
+  };
 
   useEffect(() => {
     if (!openedLibraryShelf) {
@@ -288,11 +315,45 @@ export function LibraryCatalogView({
                 <span className="italic text-crimson-accent">bộ truyện</span>
               </h2>
             </div>
-            <span className="rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink-muted">
-              {isFiltering
-                ? `${librarySummaries.length} / ${allShelvesCount} kệ`
-                : `${allShelvesCount} kệ`}
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <div
+                role="group"
+                aria-label="Chế độ hiển thị thư viện"
+                className="inline-flex items-center rounded-xl border border-line bg-surface p-0.5 text-xs shadow-sm"
+              >
+                <button
+                  type="button"
+                  aria-pressed={displayMode === 'grid'}
+                  onClick={() => handleChangeDisplayMode('grid')}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-medium transition-colors ${
+                    displayMode === 'grid'
+                      ? 'bg-accent text-accent-foreground shadow-sm'
+                      : 'text-ink-muted hover:text-ink'
+                  }`}
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                  <span>Lưới Bìa</span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={displayMode === 'spine'}
+                  onClick={() => handleChangeDisplayMode('spine')}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-medium transition-colors ${
+                    displayMode === 'spine'
+                      ? 'bg-accent text-accent-foreground shadow-sm'
+                      : 'text-ink-muted hover:text-ink'
+                  }`}
+                >
+                  <Library className="h-3.5 w-3.5" />
+                  <span>Tủ Gáy Sách</span>
+                </button>
+              </div>
+              <span className="rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink-muted">
+                {isFiltering
+                  ? `${librarySummaries.length} / ${allShelvesCount} kệ`
+                  : `${allShelvesCount} kệ`}
+              </span>
+            </div>
           </div>
 
           <CollectionFilterStrip
@@ -343,6 +404,16 @@ export function LibraryCatalogView({
                 Hiển thị tất cả kệ
               </button>
             </div>
+          ) : displayMode === 'spine' ? (
+            <Suspense
+              fallback={
+                <div className="rounded-2xl border border-line bg-surface px-6 py-14 text-center text-xs text-ink-muted">
+                  Đang dựng tủ gáy sách...
+                </div>
+              }
+            >
+              <LazySpineBookshelfView summaries={librarySummaries} onOpenShelf={onOpenShelf} />
+            </Suspense>
           ) : (
             <div className="grid grid-cols-2 gap-x-6 gap-y-6 pr-3 sm:grid-cols-3 sm:gap-x-8 sm:gap-y-7 sm:pr-4 md:grid-cols-4 lg:grid-cols-5 lg:gap-x-9 xl:grid-cols-6">
               {librarySummaries.map((summary, index) => (

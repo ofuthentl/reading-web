@@ -107,7 +107,7 @@ export function BookCard({
       className={`relative aspect-[7/10] overflow-hidden rounded-lg border border-line bg-subtle shadow-sm ${
         compact
           ? 'w-[4.5rem] shrink-0 transition-all duration-300 group-hover:-translate-y-0.5 group-hover:border-line-strong group-hover:shadow-md'
-          : 'tilt-card w-full group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.32)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]'
+          : `tilt-card ${isCompleted && !isMemberLocked ? 'cover-foil-card ' : ''}w-full group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.32)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]`
       } ${selected ? 'ring-2 ring-accent ring-offset-2 ring-offset-canvas' : ''}`}
     >
       {showImage ? (
