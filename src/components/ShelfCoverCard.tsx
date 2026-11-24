@@ -2,6 +2,7 @@ import { type CSSProperties, useEffect, useState } from 'react';
 import { Bookmark, FolderEdit, Image, Lock, Star } from 'lucide-react';
 import { pickClothCoverColor } from '@/lib/bookMetadata';
 import type { ShelfSummary } from '@/lib/shelfSummary';
+import { ShelfFanStack } from '@/components/ShelfFanStack';
 import {
   handleCoverTiltLeave,
   handleCoverTiltMove,
@@ -110,16 +111,18 @@ export function ShelfCoverCard({
         }
       }}
       style={{ ['--stagger-delay' as string]: `${staggerDelayMs}ms` } as CSSProperties}
-      className={`card-scroll-reveal group flex cursor-pointer flex-col rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas ${
+      className={`card-scroll-reveal shelf-fan-card group relative flex cursor-pointer flex-col rounded-xl text-left hover:z-20 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas ${
         isRevealed ? 'is-revealed' : ''
       }`}
     >
-      <div
-        onPointerMove={handleCoverTiltMove}
-        onPointerLeave={handleCoverTiltLeave}
-        onPointerCancel={handleCoverTiltLeave}
-        className="tilt-card relative aspect-[7/10] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.32)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]"
-      >
+      <div className="relative w-full">
+        <ShelfFanStack shelf={shelf} coverBook={coverBook} isNearViewport={isNearViewport} />
+        <div
+          onPointerMove={handleCoverTiltMove}
+          onPointerLeave={handleCoverTiltLeave}
+          onPointerCancel={handleCoverTiltLeave}
+          className="shelf-fan-main tilt-card relative z-10 aspect-[7/10] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.34)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]"
+        >
         {showImage ? (
           <>
             <img
@@ -316,6 +319,12 @@ export function ShelfCoverCard({
           {bookCount} tập
         </span>
 
+        {/* Nếp gấp gáy sách mép trái */}
+        <span
+          aria-hidden="true"
+          className="book-spine-crease pointer-events-none absolute inset-y-0 left-0 w-2.5"
+        />
+
         {/* Thanh tiến độ đọc toàn kệ */}
         {progressPercent !== null && (
           <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1 bg-black/40">
@@ -327,6 +336,7 @@ export function ShelfCoverCard({
             />
           </div>
         )}
+        </div>
       </div>
 
       <div className="mt-2.5 space-y-0.5 px-0.5">

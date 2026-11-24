@@ -344,7 +344,7 @@ export function LibraryCatalogView({
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-6 pr-3 sm:grid-cols-3 sm:gap-x-8 sm:gap-y-7 sm:pr-4 md:grid-cols-4 lg:grid-cols-5 lg:gap-x-9 xl:grid-cols-6">
               {librarySummaries.map((summary, index) => (
                 <ShelfCoverCard
                   key={summary.shelf.key}
