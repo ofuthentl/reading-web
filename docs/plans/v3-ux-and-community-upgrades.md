@@ -38,17 +38,17 @@
 
 ### Phase 4 — Nhóm 3: Command Palette (`Ctrl+K`), Mục tiêu & Wrapped, Bình luận v2
 - **Phạm vi:**
-  - `src/components/CommandPaletteModal.tsx` + `src/lib/commandPaletteSearch.ts` (`React.lazy`, `0 B` entry): mở bằng `Ctrl+K` / `⌘K` hoặc kính lúp trên `LibraryHeader`; tìm không dấu + `alt_titles` gom 6 nhóm (**Bộ truyện**, **Tập sách**, **Tác giả**, **Tuyển tập**, **Trích dẫn đã lưu**, **Thao tác nhanh**); ẩn lệnh Admin & giữ khoá `D-030` cho `guest`; điều hướng `↑ / ↓ / Enter / Esc` + `useBodyScrollLock`.
-  - Mục tiêu đọc mỗi ngày (`dailyGoalMinutes`, vòng tròn tiến độ SVG hôm nay trong `ReadingStatsModal`) + `src/components/ReadingWrappedView.tsx` (Tháng hiện tại / 90 ngày / Năm) + xuất PNG bằng Canvas 2D thuần (`src/lib/wrappedPosterCanvas.ts`, dùng font `Literata` & `Be Vietnam Pro`, thu hồi sạch `ObjectURL` & `ImageBitmap`).
-  - Bình luận v2 (`communityApi.ts`, `CommunityReactionBar.tsx`, `CommunityCommentItem.tsx`, `CommunityReviewsSection.tsx`, `ReaderBookCommunityBlock.tsx`): sửa bình luận chính chủ (`(đã sửa)`), trả lời 1 cấp, gắn `chapterNumber` + tự che spoiler `Bình luận về Chương X — bấm để xem` khi `chapterNumber > chương đang đọc` theo `ReaderThemePalette`, và toggle 5 emoji (`🔥 😭 😂 ❤️ 🤯`).
+  - `src/components/CommandPaletteModal.tsx` + `src/lib/commandPaletteSearch.ts` (`React.lazy`, `0 B` entry): mở thuần bằng phím tắt `Ctrl+K` / `⌘K` (không gắn thêm nút ngoài Header theo yêu cầu người dùng); tìm không dấu + `alt_titles` gom 6 nhóm (**Bộ truyện**, **Tập sách**, **Tác giả**, **Tuyển tập**, **Trích dẫn đã lưu**, **Thao tác nhanh**); ẩn lệnh Admin & giữ khoá `D-030` cho `guest`; điều hướng `↑ / ↓ / Enter / Esc` + `useBodyScrollLock`.
+  - Mục tiêu đọc mỗi ngày (`dailyGoalMinutes`, vòng tròn tiến độ SVG hôm nay trong `ReadingStatsModal` qua `DailyGoalCard.tsx`) + `src/components/ReadingWrappedModal.tsx` (Tháng hiện tại / 90 ngày / Năm) + xuất PNG bằng Canvas 2D thuần (`src/lib/wrappedPosterCanvas.ts`, dùng font `Literata` & `Be Vietnam Pro`, thu hồi sạch `ObjectURL` & `ImageBitmap`).
+  - Bình luận v2 (`communityApi.ts`, `useCommunityReviews.ts`, `CommunityReactionBar.tsx`, `CommunityCommentItem.tsx`, `CommunityReviewsSection.tsx`, `ReaderBookCommunityBlock.tsx`): sửa bình luận chính chủ (`(đã sửa)`), trả lời 1 cấp, gắn `chapterNumber` + tự che spoiler `Bình luận về Chương X — bấm để xem` khi `chapterNumber > chương đang đọc` theo `ReaderThemePalette`, và toggle 5 emoji (`🔥 😭 😂 ❤️ 🤯`).
 - **Rủi ro:** Lộ nội dung kệ `restricted` trong Command Palette hoặc sai tương phản chéo theme trong Reader.
 - **Giảm thiểu & Hoàn tác:** Chặn mở kệ/tập `guest_locked` ở Command Palette và dùng `ReaderThemePalette` xuyên suốt mọi nút/nhãn trong Reader. Hoàn tác bằng `git revert` commit Phase 4.
 
 ## 3. Checklist kiểm thử bắt buộc trước khi kết thúc (`AGENTS.md` §7)
-- [ ] `npm run typecheck` sạch 0 lỗi.
-- [ ] `npm run lint` sạch 0 lỗi / 0 cảnh báo, toàn bộ file `.ts`/`.tsx`/`.css` `<= 500` dòng hiệu dụng.
-- [ ] `npm run build` sạch lỗi, `dist/assets/index-*.js <= 86.04 kB` gzip, `0 B` `three` ở entry, `0` CDN ngoài.
-- [ ] `cd workers/r2-storage && npx tsc --noEmit` sạch 0 lỗi.
-- [ ] Kiểm thử `wrangler dev` + D1 local với migration `0016_community_v2.sql`: xác nhận `GET /api/books` trả `shelfRatings` (`QĐ-3 = 3B`), `GET/PUT /api/reader-settings` lưu `dailyGoalMinutes` & `readingRuler` (`QĐ-2 = 2A`), `POST/PATCH/DELETE` bình luận + trả lời 1 cấp (chặn cấp 2 `400`) + `PUT` reaction 5 emoji + dọn sạch reaction khi xoá bình luận/sách/kệ mồ côi + chặn `403` `D-030` + payload Discord `/?shelf=`.
-- [ ] Kiểm thử trình duyệt thật ở cả **Desktop (`1280×800`)** và **Mobile (`390×844`)**: kiểm tra trực quan 12 nhóm tính năng, `Ctrl+K`, Ambient Blur, Stacked Deck, Soundscapes, Reading Ruler, Auto-Scroll, vuốt mép trái chỉnh tối, Furigana, Wrapped PNG export, Bình luận v2, `0` lỗi Console/Page.
-- [ ] Đã cập nhật đầy đủ `docs/DECISIONS.md` (`D-039`), `docs/ARCHITECTURE.md` và `HANDOFF.md` (`< 60` dòng, không ghi hash commit).
+- [x] `npm run typecheck` sạch 0 lỗi.
+- [x] `npm run lint` sạch 0 lỗi / 0 cảnh báo, toàn bộ file `.ts`/`.tsx`/`.css` `<= 500` dòng hiệu dụng.
+- [x] `npm run build` sạch lỗi, `dist/assets/index-*.js <= 86.04 kB` gzip (`85.39 kB` gzip), `0 B` `three` ở entry, `0` CDN ngoài.
+- [x] `cd workers/r2-storage && npx tsc --noEmit` sạch 0 lỗi.
+- [x] Kiểm thử `wrangler dev` + D1 local với migration `0016_community_v2.sql`: xác nhận `GET /api/books` trả `shelfRatings` (`QĐ-3 = 3B`), `GET/PUT /api/reader-settings` lưu `dailyGoalMinutes` & `readingRuler` (`QĐ-2 = 2A`), `POST/PATCH/DELETE` bình luận + trả lời 1 cấp (chặn cấp 2 `400`) + `PUT` reaction 5 emoji + dọn sạch reaction khi xoá bình luận/sách/kệ mồ côi + chặn `403` `D-030` + payload Discord `/?shelf=`.
+- [x] Kiểm thử trình duyệt thật ở cả **Desktop (`1280×800`)** và **Mobile (`390×844`)**: kiểm tra trực quan 12 nhóm tính năng, `Ctrl+K` (không nút ngoài Header), Ambient Blur, Stacked Deck, Soundscapes, Thanh dẫn mắt đọc đơn & đọc đôi 2 cột, Auto-Scroll, vuốt mép trái chỉnh tối, Furigana, Wrapped PNG export (`1,434,689 B`), Bình luận v2, `0` lỗi Console/Page.
+- [x] Đã cập nhật đầy đủ `docs/DECISIONS.md` (`D-039`), `docs/ARCHITECTURE.md` và `HANDOFF.md` (`< 60` dòng, không ghi hash commit).
