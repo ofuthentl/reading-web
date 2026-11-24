@@ -1,23 +1,23 @@
 # HANDOFF
-Cập nhật: 2026-11-24 11:36 | Nhánh: fix/post-wave4-core-and-mobile | Build: 🟢 typecheck / lint / build (84.58 kB gzip) / Worker tsc xanh
-Nhiệm vụ hiện tại: Triển khai **PR 1** của kế hoạch `docs/plans/post-wave4-audit-fixes.md` (vá toàn bộ lỗi Backend + Trình đọc + Mobile iOS + 2D/PWA, tách riêng 3D sang PR 2; đã chốt `1A / 2A / 3A / 4A`, giữ nguyên `weeklyPopular` tính cả bộ `restricted`).
+Cập nhật: 2026-11-24 12:04 | Nhánh: fix/post-wave4-core-and-mobile | Build: 🟢 typecheck / lint / build (84.58 kB gzip) / Worker tsc xanh
+Nhiệm vụ hiện tại: **Hoàn tất PR 1** của kế hoạch `docs/plans/post-wave4-audit-fixes.md` (`D-038`: chốt `1A / 2A / 3A / 4A`, giữ nguyên `weeklyPopular` tính cả bộ `restricted`).
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md
 
 ## Đang làm dở
-- Đã hoàn tất & commit đủ cả **4 Phase code của PR 1** (Phase 1 Worker, Phase 2 Reader/Parser, Phase 3 Reader UX/Mobile iOS, Phase 4 2D/Admin/Sync/PWA/CSS).
-- Còn lại: Kiểm định chạy thử thực tế (migration `0015` local + test API Worker `wrangler dev` + test trình duyệt PC `1280×800` & Mobile `390×844`) → cập nhật `docs/DECISIONS.md` (`D-038`) & `docs/ARCHITECTURE.md`.
+- Không còn hạng mục code hay kiểm thử dang dở cho PR 1. Nhánh `fix/post-wave4-core-and-mobile` sẵn sàng đẩy lên remote và tạo Pull Request (sau khi PR Wave 4 `feat/discord-releases-and-comments` merge vào `main`).
 
 ## Bước tiếp theo
-1. Chạy `wrangler d1 execute --local` áp migration `0015` + test thực tế các endpoint Backend (`D-030` NFC, `D-028` token/media `0.2`, `weeklyPopular` giữ restricted, `cleanupOrphanShelves`, `discordRelease`).
-2. Chạy `vite` + kiểm thử trình duyệt thật PC & iPhone (`390×844`): xác nhận tương phản chéo theme (`Tới ↗`, bình luận, popover), hộp bôi màu tự lật lên đỉnh, chân trang Lật trang 1 hàng, modal stacking & toast `z-[90]`.
-3. Ghi quyết định `D-038` vào `docs/DECISIONS.md`, cập nhật `docs/ARCHITECTURE.md`, commit tài liệu + `HANDOFF.md` cuối cùng và báo cáo kết quả cho người dùng.
+1. Đẩy nhánh `fix/post-wave4-core-and-mobile` & mở Pull Request merge vào `main` sau khi CI xanh.
+2. Khi deploy production cho Worker (`workers/r2-storage/`): chạy `npx wrangler d1 execute library-db --remote --file=./migrations/0015_audit_indexes_and_cleanup.sql` rồi `npx wrangler deploy`.
+3. Khi người dùng sẵn sàng, tạo nhánh riêng `fix/library3d-audit-and-visuals` để triển khai **PR 2** (Phase 5 & 6 — các lỗi 3D Aincrad trong `src/components/library3d/`).
 
 ## Lỗi / chặn
 - Không có lỗi/chặn. Lưu ý 3 tệp chưa theo dõi sẵn từ trước ở thư mục gốc (`Gemini_Generated_Image_u8tpmdu8tpmdu8tp.png`, `IMG_4018.JPG`, `hatsune-miku_b0bf919137_VSTHEMES-ORG/`) — tuyệt đối không dùng `git add .`.
 
 ## Xong gần nhất
-- **Phase 4 (`fix/post-wave4-core-and-mobile`):**
-  - Modal & Toast: vá `AdminProtectionModal` (`finally` không khoá nút khi dừng ở cuốn đầu), `ToastContainer` portal `z-[90]`, tách `LazyQuoteVaultModal` khỏi backdrop `ReadingStatsModal` + nối nhảy thẳng tới vị trí trích dẫn `(chapterIndex, scrollRatio)`, thêm hook `useBodyScrollLock`.
-  - Routing & Local Dev: redirect ngược `/locked`/`/entrance` khi đã đăng nhập (`App.tsx`), khôi phục phiên hoạt động và không xoá token Admin khi `/usage` gặp lỗi mạng/5xx (`AuthGate.tsx`); khoá xoá sách gốc nhầm trên `CacheManagerModal` khi chạy Local Dev.
-  - Upload Wave 4 & State Sync: siết `inferBatchCommonShelf` (`>=80%` & không kéo chéo bộ khác), tách `executeSequentialUploadBatch`, chia chunk Discord `<=50` IDs, tạm hoãn tự gửi Discord khi dừng/lỗi + nút gửi thủ công, kẹp bộ đếm tiến độ & khoá nút khi `exceedsQuota`; bảo toàn `access` + NFC trong `shelfPrefs`, dọn bìa cũ khi đổi kệ, đồng bộ Local Dev `ptr`/`collections`/`community`/`highlights`, chống race toggle *Đọc sau*/*Yêu thích*, vá `legacyCoverSync` không hồi sinh sách đã xoá & đẩy `ApiAuthError`.
-  - `/usage`, 2D, PWA & CSS: `AbortController` cho Refresh `/usage`, reset `activeIndex`, trục Y gọn `k`/`M`, tách `AdminStorageSecurityPanel`, sửa chọn tất cả theo `filteredBooks` trên `Library2DView`, `sw.js` timeout 1.5s & không ép `skipWaiting` khi đã có controller, sửa 3 class Tailwind v4, ưu tiên cursor `text` trước `pointer` & hồi phục từ `disabled`, tách `src/styles/reader.css`, `src/styles/cursors.css` & `readerSettingsStorage.ts` (giảm `index-*.js` xuống `84.58 kB` gzip <= `86.04 kB`).
+- **PR 1 (`fix/post-wave4-core-and-mobile`, `D-038`) — Đã hoàn tất 100% 4 Phase + Kiểm định thực tế + Sổ sách:**
+  - **Phase 1–4:** Vá Backend Worker + migration `0015`, Reader Core & EPUB/DOCX parsers, tương phản chéo 16 cặp theme (`ReaderThemePalette`), 3 lỗi thực tế Mobile iOS (`Tới ↗` Sepia, hộp bôi màu tự lật lên đỉnh, chân trang Lật trang 1 hàng), 2D UI/Modals/Upload Wave 4/PWA/CSS.
+  - **Kiểm định tĩnh:** `typecheck` (0 lỗi), `lint` (0 lỗi/0 cảnh báo, mọi file `<= 500` dòng), `build` (`index-*.js = 84.58 kB` gzip `<= 86.04 kB`, 0 Rollup warnings, 0 B 3D ở entry), Worker `tsc --noEmit` (0 lỗi).
+  - **Kiểm định Backend local (`wrangler dev` + D1 local):** 9/9 kiểm tra xanh (`D-030` NFD/NFC, `D-028` giữ token/strike khi đổi key & reset sau 24h, `/media/:idx` `0.2` token/ảnh + 60 burst `429` có `Retry-After` với `0` strike, `/illustrations` & `/search` tăng strike, `weeklyPopular` giữ `restricted`, `cleanupOrphanShelves` + `book_highlights`, gộp kệ Đ/đ ở `/usage`, thoát Markdown & ranh giới prefix ở `discordRelease`).
+  - **Kiểm định Trình duyệt thật (`1280×800` & `390×844`):** 0 lỗi console/page; xác nhận tương phản Sepia × Đêm khuya (`Tới ↗` & chú thích), hộp bôi màu tự lật lên đỉnh trên `390×844`, chân trang Lật trang 1 hàng trên `390×844`, nhảy `#sec-anchor`, `Escape` modal stacking & Quote Vault nhảy thẳng tới Chương 2.
+  - **Tài liệu:** Đã ghi `D-038` vào `docs/DECISIONS.md` và cập nhật đầy đủ `docs/ARCHITECTURE.md`.
