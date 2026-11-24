@@ -114,19 +114,12 @@ export function ShelfCoverCard({
         isRevealed ? 'is-revealed' : ''
       }`}
     >
-      <div className="relative w-full">
-        {bookCount >= 2 && (
-          <>
-            <span aria-hidden="true" className="stacked-deck-2" />
-            <span aria-hidden="true" className="stacked-deck-1" />
-          </>
-        )}
-        <div
-          onPointerMove={handleCoverTiltMove}
-          onPointerLeave={handleCoverTiltLeave}
-          onPointerCancel={handleCoverTiltLeave}
-          className="tilt-card relative z-10 aspect-[7/10] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.32)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]"
-        >
+      <div
+        onPointerMove={handleCoverTiltMove}
+        onPointerLeave={handleCoverTiltLeave}
+        onPointerCancel={handleCoverTiltLeave}
+        className="tilt-card relative aspect-[7/10] w-full overflow-hidden rounded-xl border border-line bg-subtle shadow-sm group-hover:border-line-strong group-hover:shadow-[0_16px_32px_-10px_rgba(43,36,29,0.32)] dark:group-hover:border-line-strong dark:group-hover:shadow-[0_20px_38px_-12px_rgba(0,0,0,0.94),0_0_0_1px_rgba(244,244,245,0.16)]"
+      >
         {showImage ? (
           <>
             <img
@@ -334,7 +327,6 @@ export function ShelfCoverCard({
             />
           </div>
         )}
-        </div>
       </div>
 
       <div className="mt-2.5 space-y-0.5 px-0.5">

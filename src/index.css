@@ -342,12 +342,6 @@
       display: none;
     }
 
-    .stacked-deck-1,
-    .stacked-deck-2 {
-      transform: none !important;
-      transition: none !important;
-    }
-
     .micro-pop {
       animation: none !important;
     }
@@ -362,39 +356,6 @@
       rgba(255, 255, 255, 0.09) 72%,
       transparent 100%
     );
-  }
-
-  .stacked-deck-1,
-  .stacked-deck-2 {
-    pointer-events: none;
-    position: absolute;
-    inset: 0;
-    border-radius: 0.75rem;
-    border: 1px solid rgb(var(--color-line-strong) / 0.85);
-    background-color: rgb(var(--color-surface));
-    transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .stacked-deck-1 {
-    z-index: 2;
-    transform: translate3d(3px, -3px, 0) scale(0.985);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
-  }
-
-  .stacked-deck-2 {
-    z-index: 1;
-    transform: translate3d(6px, -6px, 0) scale(0.97);
-    opacity: 0.85;
-  }
-
-  @media (hover: hover) and (pointer: fine) {
-    .group:hover .stacked-deck-1 {
-      transform: translate3d(5.5px, -5.5px, 0) scale(0.988) rotate(0.8deg);
-    }
-
-    .group:hover .stacked-deck-2 {
-      transform: translate3d(10px, -9.5px, 0) scale(0.974) rotate(1.6deg);
-    }
   }
 
   .edge-fade-right {
