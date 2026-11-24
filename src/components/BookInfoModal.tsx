@@ -14,6 +14,7 @@ import {
 } from '@/lib/bookMetadata';
 import { useCoverAccentColor } from '@/lib/coverAccentColor';
 import { isKnownAuthor } from '@/lib/shelfPlacement';
+import type { BookOpenJumpTarget } from '@/hooks/useBookReader';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 
 export interface BookInfoModalProps {
@@ -22,7 +23,7 @@ export interface BookInfoModalProps {
   isPlanToRead?: boolean;
   sessionRole?: AuthRole;
   onClose: () => void;
-  onOpenBook: (book: Book) => void;
+  onOpenBook: (book: Book, jumpTarget?: BookOpenJumpTarget) => void;
   onJumpToShelf: (shelfKey: string) => void;
   onSelectAuthor?: (authorName: string) => void;
   onMarkCompleted: (book: Book) => void;
@@ -321,7 +322,7 @@ export function BookInfoModal({
                 onClick={() => {
                   onClose();
                   onStartReread(book);
-                  onOpenBook(book);
+                  onOpenBook(book, { chapterIndex: 0, scrollRatio: 0 });
                 }}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-xs font-medium text-accent transition-colors hover:bg-accent/20"
               >

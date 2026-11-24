@@ -178,7 +178,7 @@ export function useLibraryUserActions({
       const existing = progress[book.id];
       const nextRereadCount = Math.min(999, (existing?.rereadCount ?? 0) + 1);
       const nextProgress: ReadingProgress = {
-        chapterId: '',
+        chapterId: 'reread-start',
         chapterIndex: 0,
         ...(existing?.totalChapters ? { totalChapters: existing.totalChapters } : {}),
         scrollRatio: 0,

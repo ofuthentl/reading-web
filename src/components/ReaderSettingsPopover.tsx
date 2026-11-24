@@ -416,17 +416,16 @@ export function ReaderSettingsPopover({
               ~{wpmState.wpm} từ/phút
             </strong>
           </span>
-          {(wpmState.wpm !== DEFAULT_ADAPTIVE_WPM || wpmState.sampleCount > 0) && (
-            <button
-              type="button"
-              onClick={() => resetLearnedWpm()}
-              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] font-medium transition ${palette.hover}`}
-              title="Đặt lại tốc độ đọc mặc định 220 từ/phút"
-            >
-              <RotateCcw className="h-2.5 w-2.5" />
-              <span>Đặt lại 220</span>
-            </button>
-          )}
+          <button
+            type="button"
+            disabled={wpmState.wpm === DEFAULT_ADAPTIVE_WPM && wpmState.sampleCount === 0}
+            onClick={() => resetLearnedWpm()}
+            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] font-medium transition disabled:opacity-40 ${palette.hover}`}
+            title="Đặt lại tốc độ đọc mặc định 220 từ/phút"
+          >
+            <RotateCcw className="h-2.5 w-2.5" />
+            <span>Đặt lại 220</span>
+          </button>
         </div>
       </div>
 
