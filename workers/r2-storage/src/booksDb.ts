@@ -3,6 +3,8 @@ import {
   ensureCatalogEnhancementsTables,
   loadCatalogEnhancementsSnapshot,
 } from './catalogEnhancementsDb';
+import { loadAllShelfRatingsMap } from './communityDb';
+import { buildDeleteTargetCommentsStatements } from './communityReactionsDb';
 import {
   type ProgressRow,
   deleteReadingProgress,
@@ -278,13 +280,14 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
       ...(isGuestLocked ? { guest_locked: true } : {}),
     };
   });
-  const [weeklyPopular, catalogSnapshot] = await Promise.all([
+  const [weeklyPopular, catalogSnapshot, shelfRatings] = await Promise.all([
     computeWeeklyPopularBookIds(env.DB, rawBooks, 10),
     loadCatalogEnhancementsSnapshot(env.DB, auth, accessSnapshot, rawBooks).catch(() => ({
       planToReadShelves: [] as string[],
       planToReadBooks: [] as string[],
       collections: [],
     })),
+    loadAllShelfRatingsMap(env.DB).catch(() => ({})),
   ]);
 
   const effectiveStorage = storage ?? {
@@ -302,6 +305,7 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     favoriteShelves,
     shelfTags,
     shelfAltTitles,
+    shelfRatings,
     planToReadShelves: catalogSnapshot.planToReadShelves,
     planToReadBooks: catalogSnapshot.planToReadBooks,
     collections: catalogSnapshot.collections,
@@ -353,7 +357,7 @@ export async function deleteSingleBook(env: Env, bookId: string) {
     env.DB.prepare('DELETE FROM book_highlights WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
     env.DB.prepare('DELETE FROM user_plan_to_read_books WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
     env.DB.prepare("DELETE FROM library_ratings WHERE target_type = 'book' AND target_key = ?").bind(bookId).run().catch(() => undefined),
-    env.DB.prepare("DELETE FROM library_comments WHERE target_type = 'book' AND target_key = ?").bind(bookId).run().catch(() => undefined),
+    env.DB.batch(buildDeleteTargetCommentsStatements(env.DB, 'book', [bookId])).catch(() => undefined),
   ]);
   await cleanupOrphanShelves(env.DB, [toShelfAccessKey(existing.shelf)]);
 
@@ -428,7 +432,7 @@ export async function bulkDeleteBooks(env: Env, rawIds: unknown) {
       env.DB.prepare(`DELETE FROM book_highlights WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       env.DB.prepare(`DELETE FROM user_plan_to_read_books WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       env.DB.prepare(`DELETE FROM library_ratings WHERE target_type = 'book' AND target_key IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
-      env.DB.prepare(`DELETE FROM library_comments WHERE target_type = 'book' AND target_key IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
+      env.DB.batch(buildDeleteTargetCommentsStatements(env.DB, 'book', chunk)).catch(() => undefined),
     ]);
   }
 

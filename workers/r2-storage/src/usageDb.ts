@@ -22,7 +22,7 @@ import {
 
 export { ensureUsageTables, recordUsageEvent, scheduleUsageEvent, toVietnamDayKey };
 
-const READER_RETENTION_DAYS = 92;
+const READER_RETENTION_DAYS = 400;
 
 function resolveWindowDays(raw: string | null): 7 | 14 | 30 {
   if (raw === '7') return 7;
@@ -50,7 +50,7 @@ export async function getAdminUsageReport(env: Env, rawDays: string | null) {
     ensureShelfTagsSchema(env.DB).catch(() => undefined),
   ]);
 
-  // Dọn nhẹ dữ liệu reader cũ quá 92 ngày chỉ khi Admin mở /usage (giữ trọn lịch nhiệt 90 ngày)
+  // Dọn nhẹ dữ liệu reader cũ quá 400 ngày chỉ khi Admin mở /usage (bảo toàn lịch nhiệt 90 ngày & Wrapped năm)
   await env.DB.prepare('DELETE FROM usage_daily_readers WHERE day_key < ?')
     .bind(pruneCutoffDayKey)
     .run()

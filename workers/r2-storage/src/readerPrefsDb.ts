@@ -12,6 +12,8 @@ export interface StoredReaderSettings {
   paragraphIndent: boolean;
   paragraphSpacing: 'compact' | 'normal' | 'relaxed';
   nightDimPercent: number;
+  readingRuler: boolean;
+  dailyGoalMinutes: number;
 }
 
 const VALID_THEMES = new Set<StoredReaderSettings['theme']>(['paper', 'sepia', 'dark', 'midnight']);
@@ -91,6 +93,15 @@ export function sanitizeReaderSettingsPayload(raw: unknown): StoredReaderSetting
     ? Math.min(50, Math.max(0, Math.round(rawDim)))
     : 0;
 
+  const readingRuler = Boolean(obj.readingRuler);
+  const rawGoal = obj.dailyGoalMinutes;
+  let dailyGoalMinutes = 30;
+  if (rawGoal === 0) {
+    dailyGoalMinutes = 0;
+  } else if (typeof rawGoal === 'number' && Number.isFinite(rawGoal) && rawGoal > 0) {
+    dailyGoalMinutes = Math.min(240, Math.max(10, Math.round(rawGoal)));
+  }
+
   return {
     theme,
     font,
@@ -103,6 +114,8 @@ export function sanitizeReaderSettingsPayload(raw: unknown): StoredReaderSetting
     paragraphIndent,
     paragraphSpacing,
     nightDimPercent,
+    readingRuler,
+    dailyGoalMinutes,
   };
 }
 

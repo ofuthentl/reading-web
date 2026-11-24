@@ -203,8 +203,18 @@ CREATE TABLE IF NOT EXISTS library_comments (
   author_name TEXT NOT NULL,
   author_role TEXT NOT NULL,
   content TEXT NOT NULL,
+  parent_id TEXT,
+  chapter_number INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS library_comment_reactions (
+  comment_id TEXT NOT NULL,
+  user_scope TEXT NOT NULL,
+  emoji TEXT NOT NULL CHECK (emoji IN ('fire', 'cry', 'laugh', 'heart', 'mindblown')),
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (comment_id, user_scope, emoji)
 );
 
 CREATE INDEX IF NOT EXISTS idx_books_shelf ON books(shelf);
@@ -228,3 +238,5 @@ CREATE INDEX IF NOT EXISTS idx_plan_to_read_books_book_id ON user_plan_to_read_b
 CREATE INDEX IF NOT EXISTS idx_collection_shelves_shelf ON collection_shelves(shelf_key);
 CREATE INDEX IF NOT EXISTS idx_library_comments_target ON library_comments(target_type, target_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_library_comments_user_created ON library_comments(user_scope, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_library_comments_parent ON library_comments(parent_id) WHERE parent_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_comment_reactions_comment ON library_comment_reactions(comment_id);

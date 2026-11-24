@@ -228,6 +228,9 @@ export function buildDiscordReleaseMessagePayload(
   };
 
   if (options.includeComponents !== false) {
+    const cleanAppUrl = options.appUrl.replace(/\/+$/, '');
+    const candidateDeepLink = `${cleanAppUrl}/?shelf=${encodeURIComponent(group.shelfName.trim())}`;
+    const openLibraryUrl = candidateDeepLink.length <= 512 ? candidateDeepLink : cleanAppUrl;
     payload.components = [
       {
         type: 1,
@@ -237,7 +240,7 @@ export function buildDiscordReleaseMessagePayload(
             style: 5,
             label: 'Mở thư viện',
             emoji: { name: '🌐' },
-            url: options.appUrl,
+            url: openLibraryUrl,
           },
           {
             type: 2,
