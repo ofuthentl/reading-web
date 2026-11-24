@@ -4,12 +4,12 @@ Nhiệm vụ hiện tại: **Hoàn tất PR 1** của kế hoạch `docs/plans/p
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md
 
 ## Đang làm dở
-- Không còn hạng mục code hay kiểm thử dang dở cho PR 1. Nhánh `fix/post-wave4-core-and-mobile` sẵn sàng đẩy lên remote và tạo Pull Request (sau khi PR Wave 4 `feat/discord-releases-and-comments` merge vào `main`).
+- Đã hoàn tất 100% code + kiểm thử PR 1, đã áp migration `0015` lên D1 production (`library-db`) và đã deploy Cloudflare Worker `arcane-library-api`.
+- Đang chờ mở & merge Pull Request từ nhánh `fix/post-wave4-core-and-mobile` vào `main` (khi CI xanh, GitHub Actions sẽ tự deploy Frontend lên `ofu.lol`).
 
 ## Bước tiếp theo
-1. Đẩy nhánh `fix/post-wave4-core-and-mobile` & mở Pull Request merge vào `main` sau khi CI xanh.
-2. Khi deploy production cho Worker (`workers/r2-storage/`): chạy `npx wrangler d1 execute library-db --remote --file=./migrations/0015_audit_indexes_and_cleanup.sql` rồi `npx wrangler deploy`.
-3. Khi người dùng sẵn sàng, tạo nhánh riêng `fix/library3d-audit-and-visuals` để triển khai **PR 2** (Phase 5 & 6 — các lỗi 3D Aincrad trong `src/components/library3d/`).
+1. Mở Pull Request `fix/post-wave4-core-and-mobile` → `main` trên GitHub và merge khi CI xanh để cập nhật Frontend lên `ofu.lol`.
+2. Khi người dùng sẵn sàng, tạo nhánh riêng `fix/library3d-audit-and-visuals` để triển khai **PR 2** (Phase 5 & 6 — các lỗi 3D Aincrad trong `src/components/library3d/`).
 
 ## Lỗi / chặn
 - Không có lỗi/chặn. Lưu ý 3 tệp chưa theo dõi sẵn từ trước ở thư mục gốc (`Gemini_Generated_Image_u8tpmdu8tpmdu8tp.png`, `IMG_4018.JPG`, `hatsune-miku_b0bf919137_VSTHEMES-ORG/`) — tuyệt đối không dùng `git add .`.
