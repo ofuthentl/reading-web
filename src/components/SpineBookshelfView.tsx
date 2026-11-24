@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, Lock } from 'lucide-react';
 import { pickClothCoverColor } from '@/lib/bookMetadata';
 import type { ShelfSummary } from '@/lib/shelfSummary';
@@ -6,12 +6,20 @@ import { SpineBookshelfSlot } from '@/components/SpineBookshelfSlot';
 import '@/styles/bookshelf.css';
 
 const HOVER_INTENT_MS = 40;
-const ROW_HORIZONTAL_PADDING = 28;
-const OPEN_BOOK_RESERVE_PX = 128;
-const SPINE_GAP_PX = 4;
+const COMPACT_BREAKPOINT_PX = 588;
 
-function computeSpineWidth(bookCount: number): number {
-  return Math.max(30, Math.min(44, Math.round(26 + bookCount * 0.42)));
+function computeSpineWidth(bookCount: number, compact: boolean): number {
+  if (compact) {
+    return Math.max(38, Math.min(50, Math.round(35 + Math.sqrt(bookCount) * 2.4)));
+  }
+  return Math.max(54, Math.min(76, Math.round(50 + Math.sqrt(bookCount) * 4.0)));
+}
+
+function resolveMaxItemsPerRow(containerWidth: number): number {
+  if (containerWidth >= 1020) return 12;
+  if (containerWidth >= 800) return 9;
+  if (containerWidth >= COMPACT_BREAKPOINT_PX) return 6;
+  return 4;
 }
 
 function packSummariesIntoRows(
@@ -19,15 +27,23 @@ function packSummariesIntoRows(
   containerWidth: number,
 ): ShelfSummary[][] {
   if (summaries.length === 0) return [];
-  const budget = Math.max(84, containerWidth - ROW_HORIZONTAL_PADDING - OPEN_BOOK_RESERVE_PX);
+  const compact = containerWidth < COMPACT_BREAKPOINT_PX;
+  const horizontalPadding = compact ? 32 : 56;
+  const openBookReserve = compact ? 108 : 132;
+  const spineGap = compact ? 5 : 9;
+  const budget = Math.max(110, containerWidth - horizontalPadding - openBookReserve);
+  const maxPerRow = resolveMaxItemsPerRow(containerWidth);
   const rows: ShelfSummary[][] = [];
   let currentRow: ShelfSummary[] = [];
   let usedPx = 0;
 
   for (const item of summaries) {
-    const w = computeSpineWidth(item.bookCount);
-    const needed = currentRow.length === 0 ? w : w + SPINE_GAP_PX;
-    if (currentRow.length > 0 && usedPx + needed > budget) {
+    const w = computeSpineWidth(item.bookCount, compact);
+    const needed = currentRow.length === 0 ? w : w + spineGap;
+    if (
+      currentRow.length > 0 &&
+      (currentRow.length >= maxPerRow || usedPx + needed > budget)
+    ) {
       rows.push(currentRow);
       currentRow = [item];
       usedPx = w;
@@ -42,6 +58,7 @@ function packSummariesIntoRows(
 
 interface SpineBookshelfRowProps {
   row: readonly ShelfSummary[];
+  compact: boolean;
   activeKey: string | null;
   registerButtonRef: (shelfKey: string, node: HTMLButtonElement | null) => void;
   onHoverIntent: (shelfKey: string) => void;
@@ -52,6 +69,7 @@ interface SpineBookshelfRowProps {
 
 function SpineBookshelfRow({
   row,
+  compact,
   activeKey,
   registerButtonRef,
   onHoverIntent,
@@ -96,7 +114,8 @@ function SpineBookshelfRow({
           <SpineBookshelfSlot
             key={summary.shelf.key}
             summary={summary}
-            spineWidth={computeSpineWidth(summary.bookCount)}
+            spineWidth={computeSpineWidth(summary.bookCount, compact)}
+            compact={compact}
             isOpen={summary.shelf.key === activeKey}
             isRowVisible={isRowVisible}
             registerButtonRef={registerButtonRef}
@@ -129,7 +148,9 @@ export function SpineBookshelfView({ summaries, onOpenShelf }: SpineBookshelfVie
     () => summaries[0]?.shelf.key ?? null,
   );
 
-  useEffect(() => {
+  const hasSummaries = summaries.length > 0;
+
+  useLayoutEffect(() => {
     const node = stageRef.current;
     if (!node) return;
     const measure = () => {
@@ -141,7 +162,7 @@ export function SpineBookshelfView({ summaries, onOpenShelf }: SpineBookshelfVie
     const ro = new ResizeObserver(measure);
     ro.observe(node);
     return () => ro.disconnect();
-  }, []);
+  }, [hasSummaries]);
 
   useEffect(() => {
     return () => {
@@ -201,6 +222,7 @@ export function SpineBookshelfView({ summaries, onOpenShelf }: SpineBookshelfVie
     [summaries],
   );
 
+  const compact = containerWidth < COMPACT_BREAKPOINT_PX;
   const rows = useMemo(
     () => packSummariesIntoRows(summaries, containerWidth),
     [summaries, containerWidth],
@@ -230,13 +252,14 @@ export function SpineBookshelfView({ summaries, onOpenShelf }: SpineBookshelfVie
     <div
       ref={stageRef}
       aria-label="Tủ gáy sách Light Novel"
-      className="spine-shelf-stage rounded-2xl border pb-3 shadow-sm"
+      className="spine-shelf-stage rounded-2xl border pb-4 shadow-sm"
     >
       <div>
         {rows.map((row, rowIdx) => (
           <SpineBookshelfRow
-            key={row[0]?.shelf.key ?? `row-${rowIdx}`}
+            key={`${compact ? 'c' : 'd'}-${row[0]?.shelf.key ?? rowIdx}`}
             row={row}
+            compact={compact}
             activeKey={activeSummary.shelf.key}
             registerButtonRef={registerButtonRef}
             onHoverIntent={handleHoverIntent}
@@ -248,7 +271,7 @@ export function SpineBookshelfView({ summaries, onOpenShelf }: SpineBookshelfVie
       </div>
 
       {/* Thanh thông tin cố định dưới đáy tủ sách */}
-      <div className="spine-shelf-footer sticky bottom-2 z-40 mx-3 mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs shadow-sm">
+      <div className="spine-shelf-footer sticky bottom-2 z-40 mx-3 mt-3.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs shadow-sm">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <span
             style={{ backgroundColor: badgeBg, color: '#f6efe2' }}

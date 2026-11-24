@@ -193,14 +193,6 @@ export function ShelfDetailView({
         onTogglePlanToRead={onTogglePlanToRead}
       />
 
-      {onOpenShelf && linkedItems.length > 0 && (
-        <ShelfLinkedUniverseStrip
-          items={linkedItems}
-          onOpenShelf={onOpenShelf}
-          onManageRelations={onManageRelations}
-        />
-      )}
-
       {/* Thanh chọn nhiều trong phạm vi kệ đang mở */}
       {selectionMode && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/40 bg-surface px-4 py-3 shadow-sm">
@@ -346,8 +338,21 @@ export function ShelfDetailView({
         )}
       </section>
 
+      {onOpenShelf && linkedItems.length > 0 && (
+        <ShelfLinkedUniverseStrip
+          sectionIndex={2}
+          items={linkedItems}
+          onOpenShelf={onOpenShelf}
+          onManageRelations={onManageRelations}
+        />
+      )}
+
       {onOpenShelf && similarItems.length > 0 && (
-        <ShelfSameTasteStrip items={similarItems} onOpenShelf={onOpenShelf} />
+        <ShelfSameTasteStrip
+          sectionIndex={linkedItems.length > 0 ? 3 : 2}
+          items={similarItems}
+          onOpenShelf={onOpenShelf}
+        />
       )}
 
       <Suspense
