@@ -6,6 +6,7 @@ import type {
   CustomCollection,
   ReadingProgress,
   ShelfAccessSummary,
+  ShelfRatingSummary,
   StorageStats,
   ViewMode,
 } from '@/types';
@@ -13,13 +14,19 @@ import { isCloudMode } from '@/lib/api';
 import { BookCard } from '@/components/BookCard';
 import { type LibraryAdvancedFilterProps, LibraryFilterBar } from '@/components/LibraryFilterBar';
 import { LibraryHeader } from '@/components/LibraryHeader';
-import { LibraryHomeShelvesSection } from '@/components/LibraryHomeShelvesSection';
+import { useHorizontalEdgeFade } from '@/hooks/useCardReveal';
 import type { LibraryViewState } from '@/hooks/useLibraryViewState';
 import { type UiTheme, isDarkTheme } from '@/hooks/useTheme';
 import type { ToastType } from '@/hooks/useToast';
 
 const LazyBulkSelectionBar = lazy(() =>
   import('@/components/BulkSelectionBar').then((mod) => ({ default: mod.BulkSelectionBar })),
+);
+
+const LazyLibraryHomeShelvesSection = lazy(() =>
+  import('@/components/LibraryHomeShelvesSection').then((mod) => ({
+    default: mod.LibraryHomeShelvesSection,
+  })),
 );
 
 const LazyLibraryCatalogView = lazy(() =>
@@ -43,6 +50,7 @@ interface Library2DViewProps {
   shelfAccess?: Readonly<Record<string, ShelfAccessSummary>>;
   shelfTags?: Readonly<Record<string, string[]>>;
   shelfAltTitles?: Readonly<Record<string, string[]>>;
+  shelfRatings?: Readonly<Record<string, ShelfRatingSummary>>;
   favoriteShelfKeys?: ReadonlySet<string>;
   planToReadShelfKeys?: ReadonlySet<string>;
   planToReadBookIds?: ReadonlySet<string>;
@@ -75,6 +83,7 @@ interface Library2DViewProps {
   onShelfAccessChanged?: (shelfName: string, summary: ShelfAccessSummary | null) => void;
   onShelfTagsChanged?: (shelfName: string, tags: string[]) => void;
   onShelfAltTitlesChanged?: (shelfName: string, altTitles: string[]) => void;
+  onShelfRatingUpdated?: (shelfKey: string, average: number | null, count: number) => void;
   onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
   onTogglePlanToRead?: (shelfName: string, nextPlanToRead: boolean) => void;
   onTogglePlanToReadBook?: (book: Book, nextPlanToRead: boolean) => void;
@@ -104,16 +113,16 @@ function LibraryGridSkeleton() {
 }
 
 export function Library2DView({
-  books, progress, shelfCovers, shelfAccess, shelfTags, shelfAltTitles,
+  books, progress, shelfCovers, shelfAccess, shelfTags, shelfAltTitles, shelfRatings,
   favoriteShelfKeys, planToReadShelfKeys, planToReadBookIds, collections,
   storage, loading, theme, viewState, sessionRole = 'owner', sessionExpiresAt = null,
   canUse3D = false, viewMode = '2d', onChangeViewMode, onCycleTheme, onRefresh, onLogout,
   onOpenBook, onInspectBook, onDismissContinue, onOpenStats, onOpenUsage, onOpenCacheManager,
   onUploadClick, onProtectionClick, unprotectedBookCount = 0, onEditBook, onBooksUpdated,
   onRenameShelf, onShelfCoverChanged, onShelfAccessChanged, onShelfTagsChanged,
-  onShelfAltTitlesChanged, onToggleFavoriteShelf, onTogglePlanToRead, onTogglePlanToReadBook,
-  onCollectionSaved, onCollectionDeleted, onMoveSelectedToShelf, onDeleteSelected,
-  onApiError, onNotify,
+  onShelfAltTitlesChanged, onShelfRatingUpdated, onToggleFavoriteShelf, onTogglePlanToRead,
+  onTogglePlanToReadBook, onCollectionSaved, onCollectionDeleted, onMoveSelectedToShelf,
+  onDeleteSelected, onApiError, onNotify,
 }: Library2DViewProps) {
   const isDark = isDarkTheme(theme);
   const {
@@ -152,6 +161,7 @@ export function Library2DView({
   );
 
   const isLibraryGridMode = activeTab === 'library' && !openedLibraryShelf;
+  const continueEdge = useHorizontalEdgeFade(continueReadingBooks.length);
   const selectedVisibleCount = useMemo(
     () => filteredBooks.reduce((acc, b) => acc + (selectedIds.has(b.id) ? 1 : 0), 0),
     [filteredBooks, selectedIds],
@@ -256,6 +266,7 @@ export function Library2DView({
               shelfAccess={shelfAccess}
               shelfTags={shelfTags}
               shelfAltTitles={shelfAltTitles}
+              shelfRatings={shelfRatings}
               favoriteShelfKeys={favoriteShelfKeys}
               planToReadShelfKeys={planToReadShelfKeys}
               planToReadBookIds={planToReadBookIds}
@@ -293,6 +304,7 @@ export function Library2DView({
               onShelfAccessChanged={onShelfAccessChanged}
               onShelfTagsChanged={onShelfTagsChanged}
               onShelfAltTitlesChanged={onShelfAltTitlesChanged}
+              onShelfRatingUpdated={onShelfRatingUpdated}
               onToggleFavoriteShelf={onToggleFavoriteShelf}
               onTogglePlanToRead={onTogglePlanToRead}
               onTogglePlanToReadBook={onTogglePlanToReadBook}
@@ -362,7 +374,9 @@ export function Library2DView({
                 </div>
 
                 <div
-                  className={`flex gap-3.5 overflow-x-auto pb-2 scrollbar-hover ${
+                  ref={continueEdge.scrollerRef}
+                  onScroll={continueEdge.syncScrollState}
+                  className={`flex gap-3.5 overflow-x-auto pb-2 scrollbar-hover ${continueEdge.edgeFadeClass} ${
                     isDark ? 'scrollbar-hover-dark' : ''
                   }`}
                 >
@@ -425,25 +439,27 @@ export function Library2DView({
             )}
 
             {/* Danh sách kệ sách */}
-            <LibraryHomeShelvesSection
-              visibleShelves={visibleShelves}
-              totalBooksCount={books.length}
-              progress={progress}
-              favoriteShelfKeys={favoriteShelfKeys}
-              planToReadBookIds={planToReadBookIds}
-              sessionRole={sessionRole}
-              isFiltering={isFiltering}
-              selectionMode={selectionMode}
-              selectedIds={selectedIds}
-              onOpenBook={onOpenBook}
-              onInspectBook={onInspectBook}
-              onToggleSelectBook={toggleSelectBook}
-              onEditBook={onEditBook}
-              onRenameShelf={onRenameShelf}
-              onToggleFavoriteShelf={onToggleFavoriteShelf}
-              onTogglePlanToReadBook={onTogglePlanToReadBook}
-              onClearFilters={clearFilters}
-            />
+            <Suspense fallback={<LibraryGridSkeleton />}>
+              <LazyLibraryHomeShelvesSection
+                visibleShelves={visibleShelves}
+                totalBooksCount={books.length}
+                progress={progress}
+                favoriteShelfKeys={favoriteShelfKeys}
+                planToReadBookIds={planToReadBookIds}
+                sessionRole={sessionRole}
+                isFiltering={isFiltering}
+                selectionMode={selectionMode}
+                selectedIds={selectedIds}
+                onOpenBook={onOpenBook}
+                onInspectBook={onInspectBook}
+                onToggleSelectBook={toggleSelectBook}
+                onEditBook={onEditBook}
+                onRenameShelf={onRenameShelf}
+                onToggleFavoriteShelf={onToggleFavoriteShelf}
+                onTogglePlanToReadBook={onTogglePlanToReadBook}
+                onClearFilters={clearFilters}
+              />
+            </Suspense>
           </>
         )}
       </main>

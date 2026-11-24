@@ -9,6 +9,7 @@ import type {
   ReadingProgress,
   ShelfAccessSummary,
   ShelfGroup,
+  ShelfRatingSummary,
 } from '@/types';
 import { isCloudMode } from '@/lib/api';
 import { summarizeShelf, type ShelfSummary } from '@/lib/shelfSummary';
@@ -40,6 +41,7 @@ export interface LibraryCatalogViewProps {
   shelfAccess?: Readonly<Record<string, ShelfAccessSummary>>;
   shelfTags?: Readonly<Record<string, string[]>>;
   shelfAltTitles?: Readonly<Record<string, string[]>>;
+  shelfRatings?: Readonly<Record<string, ShelfRatingSummary>>;
   favoriteShelfKeys?: ReadonlySet<string>;
   planToReadShelfKeys?: ReadonlySet<string>;
   planToReadBookIds?: ReadonlySet<string>;
@@ -77,6 +79,7 @@ export interface LibraryCatalogViewProps {
   onShelfAccessChanged?: (shelfName: string, summary: ShelfAccessSummary | null) => void;
   onShelfTagsChanged?: (shelfName: string, tags: string[]) => void;
   onShelfAltTitlesChanged?: (shelfName: string, altTitles: string[]) => void;
+  onShelfRatingUpdated?: (shelfKey: string, average: number | null, count: number) => void;
   onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
   onTogglePlanToRead?: (shelfName: string, nextPlanToRead: boolean) => void;
   onTogglePlanToReadBook?: (book: Book, nextPlanToRead: boolean) => void;
@@ -97,6 +100,7 @@ export function LibraryCatalogView({
   shelfAccess,
   shelfTags,
   shelfAltTitles,
+  shelfRatings,
   favoriteShelfKeys,
   planToReadShelfKeys,
   planToReadBookIds,
@@ -134,6 +138,7 @@ export function LibraryCatalogView({
   onShelfAccessChanged,
   onShelfTagsChanged,
   onShelfAltTitlesChanged,
+  onShelfRatingUpdated,
   onToggleFavoriteShelf,
   onTogglePlanToRead,
   onTogglePlanToReadBook,
@@ -149,6 +154,7 @@ export function LibraryCatalogView({
   const [batchNoteOpen, setBatchNoteOpen] = useState(false);
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
   const [collectionManagerOpen, setCollectionManagerOpen] = useState(false);
+  const [announcingDiscord, setAnnouncingDiscord] = useState(false);
 
   useEffect(() => {
     if (!openedLibraryShelf) {
@@ -167,27 +173,13 @@ export function LibraryCatalogView({
     () =>
       libraryShelves.map((shelf) =>
         summarizeShelf(
-          shelf,
-          progress,
-          shelfCovers,
-          favoriteShelfKeys,
-          shelfAccess?.[shelf.key] ?? null,
-          shelfTags,
-          sessionRole,
-          shelfAltTitles,
-          planToReadShelfKeys,
+          shelf, progress, shelfCovers, favoriteShelfKeys, shelfAccess?.[shelf.key] ?? null,
+          shelfTags, sessionRole, shelfAltTitles, planToReadShelfKeys, shelfRatings,
         ),
       ),
     [
-      libraryShelves,
-      progress,
-      shelfCovers,
-      favoriteShelfKeys,
-      shelfAccess,
-      shelfTags,
-      sessionRole,
-      shelfAltTitles,
-      planToReadShelfKeys,
+      libraryShelves, progress, shelfCovers, favoriteShelfKeys, shelfAccess,
+      shelfTags, sessionRole, shelfAltTitles, planToReadShelfKeys, shelfRatings,
     ],
   );
 
@@ -195,27 +187,14 @@ export function LibraryCatalogView({
     () =>
       openedLibraryShelf
         ? summarizeShelf(
-            openedLibraryShelf,
-            progress,
-            shelfCovers,
-            favoriteShelfKeys,
-            shelfAccess?.[openedLibraryShelf.key] ?? null,
-            shelfTags,
-            sessionRole,
-            shelfAltTitles,
-            planToReadShelfKeys,
+            openedLibraryShelf, progress, shelfCovers, favoriteShelfKeys,
+            shelfAccess?.[openedLibraryShelf.key] ?? null, shelfTags, sessionRole,
+            shelfAltTitles, planToReadShelfKeys, shelfRatings,
           )
         : null,
     [
-      openedLibraryShelf,
-      progress,
-      shelfCovers,
-      favoriteShelfKeys,
-      shelfAccess,
-      shelfTags,
-      sessionRole,
-      shelfAltTitles,
-      planToReadShelfKeys,
+      openedLibraryShelf, progress, shelfCovers, favoriteShelfKeys, shelfAccess,
+      shelfTags, sessionRole, shelfAltTitles, planToReadShelfKeys, shelfRatings,
     ],
   );
 
@@ -238,6 +217,24 @@ export function LibraryCatalogView({
   const handleOpenAccessModal = onShelfAccessChanged
     ? (summary: ShelfSummary) => setAccessShelfKey(summary.shelf.key)
     : undefined;
+
+  const handleAnnounceOpenedShelf =
+    sessionRole === 'owner' && isCloudMode && openedShelfSummary && onNotify && onApiError
+      ? async () => {
+          if (announcingDiscord) return;
+          setAnnouncingDiscord(true);
+          try {
+            const { triggerDiscordReleaseAnnouncement } = await import('@/lib/uploadBatchHelpers');
+            await triggerDiscordReleaseAnnouncement(
+              openedShelfSummary.shelf.books.map((b) => b.id),
+              onNotify,
+              onApiError,
+            );
+          } finally {
+            setAnnouncingDiscord(false);
+          }
+        }
+      : undefined;
 
   return (
     <>
@@ -268,6 +265,9 @@ export function LibraryCatalogView({
               ? () => setAccessShelfKey(openedShelfSummary.shelf.key)
               : undefined
           }
+          onAnnounceDiscord={handleAnnounceOpenedShelf}
+          announcingDiscord={announcingDiscord}
+          onShelfRatingUpdated={onShelfRatingUpdated}
           onToggleFavorite={onToggleFavoriteShelf}
           onTogglePlanToRead={onTogglePlanToRead}
           onTogglePlanToReadBook={onTogglePlanToReadBook}

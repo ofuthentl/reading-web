@@ -226,3 +226,53 @@ export function handleCoverTiltLeave(event: ReactPointerEvent<HTMLElement>): voi
   }, 430);
   resetTimers.set(el, tid);
 }
+
+export function useHorizontalEdgeFade(itemCount: number) {
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const syncScrollState = () => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 8);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 8);
+  };
+
+  useEffect(() => {
+    syncScrollState();
+    const el = scrollerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(syncScrollState);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [itemCount]);
+
+  const edgeFadeClass =
+    canScrollLeft && canScrollRight
+      ? 'edge-fade-both'
+      : canScrollLeft
+        ? 'edge-fade-left'
+        : canScrollRight
+          ? 'edge-fade-right'
+          : '';
+
+  return { scrollerRef, canScrollLeft, canScrollRight, syncScrollState, edgeFadeClass };
+}
+
+export function runWithViewTransition(update: () => void): void {
+  if (typeof document === 'undefined' || prefersReducedMotion()) {
+    update();
+    return;
+  }
+  const docWithVt = document as Document & {
+    startViewTransition?: (cb: () => void) => unknown;
+  };
+  if (typeof docWithVt.startViewTransition === 'function') {
+    docWithVt.startViewTransition(() => {
+      update();
+    });
+    return;
+  }
+  update();
+}

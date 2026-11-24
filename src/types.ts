@@ -81,14 +81,26 @@ export type ReaderSettings = {
   paragraphIndent: boolean;
   paragraphSpacing: ReaderParagraphSpacing;
   nightDimPercent: number;
+  readingRuler: boolean;
+  dailyGoalMinutes: number;
 };
 
 export type ViewMode = '3d' | '2d';
 export type LibraryTab = 'home' | 'library' | 'support';
 export type LibraryStatusFilter = 'all' | 'reading' | 'unread' | 'plan_to_read' | 'completed';
-export type LibrarySortMode = 'title_asc' | 'recent_upload' | 'recent_read' | 'volume_desc';
+export type LibrarySortMode =
+  | 'title_asc'
+  | 'recent_upload'
+  | 'recent_read'
+  | 'volume_desc'
+  | 'rating_desc';
 export type TagMatchMode = 'all' | 'any';
 export type TagFilterState = 'none' | 'include' | 'exclude';
+
+export type ShelfRatingSummary = {
+  average: number;
+  count: number;
+};
 
 export type CustomCollection = {
   id: string;
@@ -129,6 +141,7 @@ export type GuestInlineSpan = {
   t: string;
   b?: 1;
   i?: 1;
+  rt?: string;
 };
 
 export type GuestBlock =
@@ -235,15 +248,23 @@ export type ShelfAccessRuleDetail = {
 
 export type CommunityTargetType = 'shelf' | 'book';
 
+export type CommunityReactionEmoji = 'fire' | 'cry' | 'laugh' | 'heart' | 'mindblown';
+
 export type CommunityComment = {
   id: string;
   authorName: string;
   authorRole: AuthRole;
   content: string;
+  parentId?: string | null;
+  chapterNumber?: number | null;
   createdAt: number;
   updatedAt: number;
+  isEdited?: boolean;
   isMine: boolean;
+  canEdit?: boolean;
   canDelete: boolean;
+  reactions?: Partial<Record<CommunityReactionEmoji, number>>;
+  myReactions?: CommunityReactionEmoji[];
 };
 
 export type CommunitySummary = {

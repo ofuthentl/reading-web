@@ -29,6 +29,7 @@ export interface CommunityReviewsSectionProps {
   variant?: 'library' | 'reader';
   palette?: ReaderThemePalette;
   lockedMessage?: string | null;
+  onRatingUpdated?: (average: number | null, count: number) => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
   onNotify?: (message: string, type?: ToastType) => void;
 }
@@ -42,6 +43,7 @@ export function CommunityReviewsSection({
   variant = 'library',
   palette,
   lockedMessage = null,
+  onRatingUpdated,
   onApiError,
   onNotify,
 }: CommunityReviewsSectionProps) {
@@ -54,6 +56,7 @@ export function CommunityReviewsSection({
   const [isLockedByApi, setIsLockedByApi] = useState(false);
 
   const [hoverStar, setHoverStar] = useState<number | null>(null);
+  const [popStar, setPopStar] = useState<number | null>(null);
   const [savingRating, setSavingRating] = useState(false);
 
   const [draft, setDraft] = useState('');
@@ -145,6 +148,7 @@ export function CommunityReviewsSection({
               totalComments: 0,
             },
       );
+      onRatingUpdated?.(updated.averageRating, updated.ratingCount);
       onNotify?.(
         nextRating ? `Đã chấm ${nextRating}/5 sao.` : 'Đã gỡ điểm đánh giá của bạn.',
         'success',
@@ -305,8 +309,16 @@ export function CommunityReviewsSection({
                         : `Chấm ${star} sao`
                     }
                     onMouseEnter={() => setHoverStar(star)}
-                    onClick={() => void handleRate(star)}
-                    className="rounded-md p-1 transition-transform hover:scale-110 disabled:opacity-50"
+                    onClick={() => {
+                      setPopStar(star);
+                      void handleRate(star);
+                    }}
+                    onAnimationEnd={() => {
+                      if (popStar === star) setPopStar(null);
+                    }}
+                    className={`rounded-md p-1 transition-transform hover:scale-110 disabled:opacity-50 ${
+                      popStar === star ? 'micro-pop' : ''
+                    }`}
                   >
                     <Star
                       fill={filled ? 'currentColor' : 'none'}

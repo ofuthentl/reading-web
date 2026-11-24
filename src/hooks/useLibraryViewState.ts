@@ -8,6 +8,7 @@ import type {
   LibraryTab,
   ReadingProgress,
   ShelfGroup,
+  ShelfRatingSummary,
   TagMatchMode,
 } from '@/types';
 import { groupBooksIntoShelves } from '@/lib/api';
@@ -29,6 +30,7 @@ import {
 } from '@/lib/libraryFiltering';
 import { isKnownAuthor } from '@/lib/shelfPlacement';
 import { sortShelvesFavoriteFirst, toShelfPrefKey } from '@/lib/shelfPrefs';
+import { runWithViewTransition } from '@/hooks/useCardReveal';
 
 export { computeBookProgressPercent, normalizeSearchText, selectContinueReadingBooks };
 
@@ -54,6 +56,7 @@ function writeStoredLibraryTab(tab: LibraryTab) {
 
 export interface LibraryCatalogStateOptions {
   shelfAltTitles?: Readonly<Record<string, string[]>>;
+  shelfRatings?: Readonly<Record<string, ShelfRatingSummary>>;
   planToReadShelfKeys?: ReadonlySet<string>;
   planToReadBookIds?: ReadonlySet<string>;
   collections?: readonly CustomCollection[];
@@ -120,6 +123,7 @@ export function useLibraryViewState(
   catalogOptions?: LibraryCatalogStateOptions,
 ): LibraryViewState {
   const shelfAltTitles = catalogOptions?.shelfAltTitles;
+  const shelfRatings = catalogOptions?.shelfRatings;
   const planToReadShelfKeys = catalogOptions?.planToReadShelfKeys;
   const planToReadBookIds = catalogOptions?.planToReadBookIds;
   const collections = catalogOptions?.collections;
@@ -210,15 +214,19 @@ export function useLibraryViewState(
   }, []);
 
   const openLibraryShelf = useCallback((shelfKey: string) => {
-    setOpenedLibraryShelfKey(shelfKey);
-    setSelectionMode(false);
-    setSelectedIds(new Set());
+    runWithViewTransition(() => {
+      setOpenedLibraryShelfKey(shelfKey);
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+    });
   }, []);
 
   const closeLibraryShelf = useCallback(() => {
-    setOpenedLibraryShelfKey(null);
-    setSelectionMode(false);
-    setSelectedIds(new Set());
+    runWithViewTransition(() => {
+      setOpenedLibraryShelfKey(null);
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+    });
   }, []);
 
   const syncRenamedShelf = useCallback((oldName: string, newName: string) => {
@@ -339,23 +347,12 @@ export function useLibraryViewState(
       }
       return matchesShelfSearchQuery(shelf, normalizedQuery, shelfTags, shelfAltTitles);
     });
-    return sortShelvesByMode(matched, sortMode, progress, favoriteShelfKeys);
+    return sortShelvesByMode(matched, sortMode, progress, favoriteShelfKeys, shelfRatings);
   }, [
-    activeCollectionShelfSet,
-    allShelves,
-    excludedTagKeys,
-    favoriteShelfKeys,
-    includedTagKeys,
-    normalizedAuthor,
-    normalizedQuery,
-    planToReadBookIds,
-    planToReadShelfKeys,
-    progress,
-    shelfAltTitles,
-    shelfTags,
-    sortMode,
-    statusFilter,
-    tagMatchMode,
+    activeCollectionShelfSet, allShelves, excludedTagKeys, favoriteShelfKeys,
+    includedTagKeys, normalizedAuthor, normalizedQuery, planToReadBookIds,
+    planToReadShelfKeys, progress, shelfAltTitles, shelfRatings, shelfTags,
+    sortMode, statusFilter, tagMatchMode,
   ]);
 
   const filteredBooks = useMemo(() => {
@@ -380,19 +377,9 @@ export function useLibraryViewState(
       return matchesBookSearchQuery(book, shelfKey, normalizedQuery, shelfTags, shelfAltTitles);
     });
   }, [
-    activeShelfKey,
-    books,
-    excludedTagKeys,
-    includedTagKeys,
-    normalizedAuthor,
-    normalizedQuery,
-    planToReadBookIds,
-    planToReadShelfKeys,
-    progress,
-    shelfAltTitles,
-    shelfTags,
-    statusFilter,
-    tagMatchMode,
+    activeShelfKey, books, excludedTagKeys, includedTagKeys, normalizedAuthor,
+    normalizedQuery, planToReadBookIds, planToReadShelfKeys, progress,
+    shelfAltTitles, shelfTags, statusFilter, tagMatchMode,
   ]);
 
   const visibleShelves = useMemo(

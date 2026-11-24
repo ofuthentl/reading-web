@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { type CSSProperties, useEffect, useState } from 'react';
 import {
   Bookmark, BookOpen, Calendar, CheckCircle2, HardDrive, Library, Lock, Pencil, RotateCcw, UserRound, X,
 } from 'lucide-react';
@@ -12,6 +12,7 @@ import {
   isVolumeOrSubtitleSegment,
   pickClothCoverColor,
 } from '@/lib/bookMetadata';
+import { useCoverAccentColor } from '@/lib/coverAccentColor';
 import { isKnownAuthor } from '@/lib/shelfPlacement';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 
@@ -53,7 +54,9 @@ export function BookInfoModal({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [book, onClose]);
 
+  const [ptrPop, setPtrPop] = useState(false);
   const coverUrl = useCoverUrl(book?.cover_key ?? null, Boolean(book));
+  const accentRgb = useCoverAccentColor(book?.cover_key ?? null, coverUrl);
 
   if (!book) return null;
 
@@ -72,6 +75,13 @@ export function BookInfoModal({
     : null;
   const descriptionText = book.description?.trim() || null;
 
+  const modalCardStyle: CSSProperties | undefined = accentRgb
+    ? ({
+        ['--cover-accent' as string]: accentRgb,
+        borderColor: 'rgb(var(--cover-accent) / 0.36)',
+      } as CSSProperties)
+    : undefined;
+
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
@@ -81,10 +91,24 @@ export function BookInfoModal({
       onClick={onClose}
     >
       <div
-        className="moonlit-card fade-in flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
+        style={modalCardStyle}
+        className="moonlit-card fade-in relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
+        {coverUrl && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 select-none overflow-hidden [mask-image:linear-gradient(to_bottom,black_0%,rgba(0,0,0,0.48)_55%,transparent_100%)]"
+          >
+            <img
+              src={coverUrl}
+              alt=""
+              className="h-full w-full scale-125 object-cover opacity-[0.15] blur-[48px] saturate-[1.3] dark:opacity-[0.2]"
+            />
+          </div>
+        )}
+
+        <div className="relative z-10 flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
           <div className="flex min-w-0 items-center gap-2 text-xs text-ink-muted">
             <button
               type="button"
@@ -124,7 +148,7 @@ export function BookInfoModal({
           </button>
         </div>
 
-        <div className="scrollbar-thin flex-1 overflow-y-auto px-5 py-5">
+        <div className="scrollbar-thin relative z-10 flex-1 overflow-y-auto px-5 py-5">
           <div className="grid gap-5 sm:grid-cols-[9.25rem_1fr]">
             <div className="relative mx-auto aspect-[7/10] w-36 overflow-hidden rounded-xl border border-line bg-subtle shadow-sm sm:mx-0 sm:w-full">
               {coverUrl ? (
@@ -204,7 +228,10 @@ export function BookInfoModal({
                   <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-subtle">
                     <div
                       className="h-full rounded-full bg-crimson-accent transition-all"
-                      style={{ width: `${Math.max(percent ?? 0, isCompleted ? 100 : 6)}%` }}
+                      style={{
+                        width: `${Math.max(percent ?? 0, isCompleted ? 100 : 6)}%`,
+                        ...(accentRgb ? { backgroundColor: 'rgb(var(--cover-accent))' } : {}),
+                      }}
                     />
                   </div>
                 </div>
@@ -241,14 +268,20 @@ export function BookInfoModal({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-canvas/60 px-5 py-3.5">
+        <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 border-t border-line bg-canvas/60 px-5 py-3.5">
           <div className="flex flex-wrap items-center gap-2">
             {!isMemberLocked && onTogglePlanToRead && (
               <button
                 type="button"
                 aria-pressed={isPlanToRead}
-                onClick={() => onTogglePlanToRead(book, !isPlanToRead)}
+                onClick={() => {
+                  setPtrPop(true);
+                  onTogglePlanToRead(book, !isPlanToRead);
+                }}
+                onAnimationEnd={() => setPtrPop(false)}
                 className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition-colors ${
+                  ptrPop ? 'micro-pop' : ''
+                } ${
                   isPlanToRead
                     ? 'border-sky-500/45 bg-sky-500/12 text-sky-700 hover:bg-sky-500/20 dark:border-sky-400/40 dark:text-sky-300'
                     : 'border-line bg-surface text-ink hover:border-line-strong hover:bg-subtle'

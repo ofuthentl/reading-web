@@ -41,6 +41,7 @@ const STATUS_OPTIONS: ReadonlyArray<{ id: LibraryStatusFilter; label: string }> 
 
 const SORT_OPTIONS: ReadonlyArray<{ id: LibrarySortMode; label: string }> = [
   { id: 'title_asc', label: 'Tên A → Z' },
+  { id: 'rating_desc', label: 'Đánh giá cao nhất' },
   { id: 'recent_upload', label: 'Mới tải lên' },
   { id: 'recent_read', label: 'Mới đọc gần đây' },
   { id: 'volume_desc', label: 'Nhiều tập nhất' },

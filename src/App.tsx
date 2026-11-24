@@ -21,6 +21,7 @@ import { useBookReader } from '@/hooks/useBookReader';
 import { useCanUse3D } from '@/hooks/useCanUse3D';
 import { useLibraryDataStore } from '@/hooks/useLibraryDataStore';
 import { useLibraryViewState } from '@/hooks/useLibraryViewState';
+import { useShelfDeepLink } from '@/hooks/useShelfDeepLink';
 import { toScene3DTheme, useTheme } from '@/hooks/useTheme';
 import { useToast } from '@/hooks/useToast';
 
@@ -121,15 +122,14 @@ export default function App() {
   const catalogViewOptions = useMemo(
     () => ({
       shelfAltTitles: store.shelfPrefs.altTitles,
+      shelfRatings: store.shelfRatings,
       planToReadShelfKeys: store.planToReadShelfKeys,
       planToReadBookIds: store.planToReadBookIds,
       collections: store.collections,
     }),
     [
-      store.collections,
-      store.planToReadBookIds,
-      store.planToReadShelfKeys,
-      store.shelfPrefs.altTitles,
+      store.collections, store.planToReadBookIds, store.planToReadShelfKeys,
+      store.shelfPrefs.altTitles, store.shelfRatings,
     ],
   );
 
@@ -266,6 +266,19 @@ export default function App() {
     },
     [openLibraryShelf, setActiveTab],
   );
+  const handleSwitchToLibraryTab = useCallback(() => setActiveTab('library'), [setActiveTab]);
+
+  useShelfDeepLink({
+    authenticated,
+    hasLoadedOnce: store.hasLoadedOnce,
+    allShelves: libraryViewState.allShelves,
+    sessionRole: session.role,
+    effectiveMode,
+    setViewMode,
+    onJumpToShelf: handleJumpToShelf,
+    onSwitchToLibraryTab: handleSwitchToLibraryTab,
+    addToast,
+  });
 
   const handleShelfRenamed = useCallback(
     (oldName: string, newName: string) => {
@@ -407,6 +420,7 @@ export default function App() {
             shelfAccess={isOwner ? store.shelfPrefs.access : undefined}
             shelfTags={store.shelfPrefs.tags}
             shelfAltTitles={store.shelfPrefs.altTitles}
+            shelfRatings={store.shelfRatings}
             favoriteShelfKeys={store.effectiveFavoriteShelfKeys}
             planToReadShelfKeys={store.planToReadShelfKeys}
             planToReadBookIds={store.planToReadBookIds}
@@ -415,6 +429,7 @@ export default function App() {
             onShelfAccessChanged={isOwner ? store.handleShelfAccessChanged : undefined}
             onShelfTagsChanged={isOwner ? store.handleShelfTagsChanged : undefined}
             onShelfAltTitlesChanged={isOwner ? store.handleShelfAltTitlesChanged : undefined}
+            onShelfRatingUpdated={store.handleShelfRatingUpdated}
             onToggleFavoriteShelf={store.handleToggleFavoriteShelf}
             onTogglePlanToRead={store.handleTogglePlanToRead}
             onTogglePlanToReadBook={store.handleTogglePlanToReadBook}

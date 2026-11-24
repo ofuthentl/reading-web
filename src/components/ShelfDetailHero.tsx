@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import {
-  Bookmark, BookOpen, FileText, FolderEdit, Image, Languages, Lock, Plus, Star, Tag, UserRound, Users,
+  Bell, Bookmark, BookOpen, FileText, FolderEdit, Image, Languages, Lock, Plus, Star, Tag, UserRound, Users,
 } from 'lucide-react';
 import type { Book } from '@/types';
 import { formatBytes } from '@/lib/api';
 import { pickClothCoverColor } from '@/lib/bookMetadata';
+import { useCoverAccentColor } from '@/lib/coverAccentColor';
 import type { ShelfSummary } from '@/lib/shelfSummary';
+import { handleCoverTiltLeave, handleCoverTiltMove } from '@/hooks/useCardReveal';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 
 export interface ShelfDetailHeroProps {
@@ -18,6 +20,8 @@ export interface ShelfDetailHeroProps {
   onChangeShelfCover?: (summary: ShelfSummary) => void;
   onOpenBatchNotes?: () => void;
   onManageAccess?: () => void;
+  onAnnounceDiscord?: () => Promise<void> | void;
+  announcingDiscord?: boolean;
   onToggleFavorite?: (shelfName: string, nextFavorite: boolean) => void;
   onTogglePlanToRead?: (shelfName: string, nextPlanToRead: boolean) => void;
 }
@@ -32,36 +36,26 @@ export function ShelfDetailHero({
   onChangeShelfCover,
   onOpenBatchNotes,
   onManageAccess,
+  onAnnounceDiscord,
+  announcingDiscord = false,
   onToggleFavorite,
   onTogglePlanToRead,
 }: ShelfDetailHeroProps) {
   const {
-    shelf,
-    coverBook,
-    isFavorite,
-    isPlanToRead,
-    authorLabel,
-    authors,
-    tags,
-    altTitles,
-    bookCount,
-    completedCount,
-    readingStatus,
-    progressPercent,
-    totalBytes,
-    resumeBook,
-    resumeActionLabel,
-    isGuestLocked,
-    accessSummary,
+    shelf, coverBook, isFavorite, isPlanToRead, authorLabel, authors, tags, altTitles,
+    bookCount, completedCount, readingStatus, progressPercent, totalBytes,
+    resumeBook, resumeActionLabel, isGuestLocked, accessSummary, ratingAverage, ratingCount,
   } = summary;
 
   const [imgFailed, setImgFailed] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
   const [altExpanded, setAltExpanded] = useState(false);
+  const [popKind, setPopKind] = useState<'fav' | 'ptr' | null>(null);
 
   const coverKey = coverBook?.cover_key ?? null;
   const coverUrl = useCoverUrl(coverKey, true);
   const showImage = Boolean(coverUrl && !imgFailed);
+  const accentRgb = useCoverAccentColor(showImage ? coverKey : null, showImage ? coverUrl : null);
   const clothColor = pickClothCoverColor(`${shelf.key}-${shelf.name}`);
 
   const missingNoteCount = useMemo(
@@ -121,9 +115,37 @@ export function ShelfDetailHero({
 
   const displayedAltTitles = altExpanded ? altTitles : altTitles.slice(0, 3);
 
+  const heroStyle: CSSProperties | undefined = accentRgb
+    ? ({
+        ['--cover-accent' as string]: accentRgb,
+        borderColor: 'rgb(var(--cover-accent) / 0.34)',
+      } as CSSProperties)
+    : undefined;
+
   return (
-    <section className="moonlit-card flex flex-col gap-5 rounded-2xl border border-line bg-surface p-4 shadow-sm sm:flex-row sm:items-start sm:p-5 dark:border-line-strong/60">
-      <div className="group relative aspect-[7/10] w-28 shrink-0 self-center overflow-hidden rounded-xl border border-line bg-subtle shadow-sm sm:w-32 sm:self-start">
+    <section
+      style={heroStyle}
+      className="moonlit-card relative flex flex-col gap-5 overflow-hidden rounded-2xl border border-line bg-surface p-4 shadow-sm sm:flex-row sm:items-start sm:p-5 dark:border-line-strong/60"
+    >
+      {showImage && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 select-none overflow-hidden [mask-image:linear-gradient(to_bottom,black_0%,rgba(0,0,0,0.52)_58%,transparent_100%)]"
+        >
+          <img
+            src={coverUrl!}
+            alt=""
+            className="h-full w-full scale-125 object-cover opacity-[0.16] blur-[48px] saturate-[1.3] dark:opacity-[0.21]"
+          />
+        </div>
+      )}
+
+      <div
+        onPointerMove={handleCoverTiltMove}
+        onPointerLeave={handleCoverTiltLeave}
+        onPointerCancel={handleCoverTiltLeave}
+        className="tilt-card group relative z-10 aspect-[7/10] w-28 shrink-0 self-center overflow-hidden rounded-xl border border-line bg-subtle shadow-sm sm:w-32 sm:self-start"
+      >
         {showImage ? (
           <img
             src={coverUrl!}
@@ -170,7 +192,7 @@ export function ShelfDetailHero({
         )}
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col justify-between gap-4">
+      <div className="relative z-10 flex min-w-0 flex-1 flex-col justify-between gap-4">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span
@@ -178,9 +200,16 @@ export function ShelfDetailHero({
             >
               {statusBadge.label}
             </span>
-            <span className="rounded-full border border-line bg-canvas px-2.5 py-0.5 text-[11px] text-ink-muted">
+            <span className="rounded-full border border-line bg-canvas/85 px-2.5 py-0.5 text-[11px] text-ink-muted">
               {bookCount} tập · {formatBytes(totalBytes)}
             </span>
+            {ratingCount > 0 && ratingAverage !== null && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/35 bg-amber-500/12 px-2.5 py-0.5 text-[11px] font-semibold tabular-nums text-amber-700 dark:border-amber-400/35 dark:text-amber-300">
+                <span aria-hidden="true">★</span>
+                <span>{ratingAverage.toFixed(1)}</span>
+                <span className="font-normal opacity-80">({ratingCount})</span>
+              </span>
+            )}
           </div>
 
           <h2 className="font-display text-xl font-semibold leading-tight text-ink sm:text-2xl">
@@ -288,6 +317,7 @@ export function ShelfDetailHero({
                   className="h-full rounded-full bg-crimson-accent transition-all duration-300"
                   style={{
                     width: `${Math.max(progressPercent, readingStatus === 'completed' ? 100 : 6)}%`,
+                    ...(accentRgb ? { backgroundColor: 'rgb(var(--cover-accent))' } : {}),
                   }}
                 />
               </div>
@@ -320,9 +350,17 @@ export function ShelfDetailHero({
           {!isGuestLocked && onTogglePlanToRead && (
             <button
               type="button"
-              onClick={() => onTogglePlanToRead(shelf.name, !isPlanToRead)}
+              onClick={() => {
+                setPopKind('ptr');
+                onTogglePlanToRead(shelf.name, !isPlanToRead);
+              }}
+              onAnimationEnd={() => {
+                if (popKind === 'ptr') setPopKind(null);
+              }}
               aria-pressed={isPlanToRead}
               className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-medium transition-colors ${
+                popKind === 'ptr' ? 'micro-pop' : ''
+              } ${
                 isPlanToRead
                   ? 'border-sky-500/45 bg-sky-500/12 text-sky-700 hover:bg-sky-500/20 dark:border-sky-400/40 dark:text-sky-300'
                   : 'border-line bg-canvas text-ink hover:border-line-strong hover:bg-subtle'
@@ -342,9 +380,17 @@ export function ShelfDetailHero({
           {onToggleFavorite && (
             <button
               type="button"
-              onClick={() => onToggleFavorite(shelf.name, !isFavorite)}
+              onClick={() => {
+                setPopKind('fav');
+                onToggleFavorite(shelf.name, !isFavorite);
+              }}
+              onAnimationEnd={() => {
+                if (popKind === 'fav') setPopKind(null);
+              }}
               aria-pressed={isFavorite}
               className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-medium transition-colors ${
+                popKind === 'fav' ? 'micro-pop' : ''
+              } ${
                 isFavorite
                   ? 'border-amber-500/45 bg-amber-500/12 text-amber-700 hover:bg-amber-500/20 dark:border-amber-400/40 dark:text-amber-300'
                   : 'border-line bg-canvas text-ink hover:border-line-strong hover:bg-subtle'
@@ -440,6 +486,18 @@ export function ShelfDetailHero({
                     : 'Giới hạn (Chỉ Admin)'
                   : 'Phân quyền'}
               </span>
+            </button>
+          )}
+          {onAnnounceDiscord && (
+            <button
+              type="button"
+              disabled={announcingDiscord}
+              onClick={() => void onAnnounceDiscord()}
+              title="Đăng thông báo bộ truyện này lên kênh Discord"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-500/20 disabled:opacity-55 dark:border-amber-400/35 dark:text-amber-300"
+            >
+              <Bell className="h-4 w-4" />
+              <span>{announcingDiscord ? 'Đang gửi Discord...' : 'Thông báo Discord'}</span>
             </button>
           )}
         </div>

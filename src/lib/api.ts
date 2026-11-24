@@ -6,6 +6,7 @@ import type {
   ReadingProgress,
   SaveProgressOptions,
   ShelfAccessSummary,
+  ShelfRatingSummary,
   StorageStats,
 } from '@/types';
 import {
@@ -109,11 +110,40 @@ function readLocalArraySafe<T>(storageKey: string): T[] {
   }
 }
 
+function readLocalShelfRatingsFallback(): Record<string, ShelfRatingSummary> {
+  try {
+    const raw = localStorage.getItem('ofu-library-local-community-v1');
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as {
+      ratings?: Record<string, Record<string, { rating?: number }>>;
+    };
+    const out: Record<string, ShelfRatingSummary> = {};
+    for (const [bucketKey, map] of Object.entries(parsed.ratings || {})) {
+      if (!bucketKey.startsWith('shelf:') || !map || typeof map !== 'object') continue;
+      const shelfKey = bucketKey.slice('shelf:'.length);
+      const vals = Object.values(map)
+        .map((r) => Number(r?.rating))
+        .filter((n) => Number.isFinite(n) && n >= 1 && n <= 5);
+      if (vals.length > 0) {
+        const sum = vals.reduce((a, b) => a + b, 0);
+        out[shelfKey] = {
+          average: Math.round((sum / vals.length) * 10) / 10,
+          count: vals.length,
+        };
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 export async function fetchLibraryState(): Promise<{
   books: Book[];
   progress: Record<string, ReadingProgress>;
   weeklyPopularIds: string[];
   shelfPrefs: ShelfPrefsState;
+  shelfRatings: Record<string, ShelfRatingSummary>;
   planToReadShelves: string[];
   planToReadBooks: string[];
   collections: CustomCollection[];
@@ -131,6 +161,7 @@ export async function fetchLibraryState(): Promise<{
       progress,
       weeklyPopularIds: computeLocalWeeklyPopularIds(sorted, progress),
       shelfPrefs: localPrefs,
+      shelfRatings: readLocalShelfRatingsFallback(),
       planToReadShelves: readLocalArraySafe<string>(LOCAL_PTR_STORAGE_KEY),
       planToReadBooks: readLocalArraySafe<string>(LOCAL_PTR_BOOKS_STORAGE_KEY),
       collections: readLocalArraySafe<CustomCollection>(LOCAL_COLLECTIONS_STORAGE_KEY),
@@ -148,6 +179,7 @@ export async function fetchLibraryState(): Promise<{
     favoriteShelves?: string[];
     shelfTags?: Record<string, string[]>;
     shelfAltTitles?: Record<string, string[]>;
+    shelfRatings?: Record<string, ShelfRatingSummary>;
     planToReadShelves?: string[];
     planToReadBooks?: string[];
     collections?: CustomCollection[];
@@ -196,6 +228,8 @@ export async function fetchLibraryState(): Promise<{
     progress: progressMap,
     weeklyPopularIds,
     shelfPrefs: nextPrefs,
+    shelfRatings:
+      data.shelfRatings && typeof data.shelfRatings === 'object' ? data.shelfRatings : {},
     planToReadShelves: Array.isArray(data.planToReadShelves) ? data.planToReadShelves : [],
     planToReadBooks: Array.isArray(data.planToReadBooks) ? data.planToReadBooks : [],
     collections: Array.isArray(data.collections) ? data.collections : [],
