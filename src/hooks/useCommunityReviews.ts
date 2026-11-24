@@ -119,7 +119,11 @@ export function useCommunityReviews({
   const handleRate = async (star: number) => {
     if (savingRating) return;
     const reqKey = `${targetType}:${targetKey}`;
-    const nextRating = summary?.myRating === star ? null : star;
+    const isSame =
+      summary?.myRating !== null &&
+      summary?.myRating !== undefined &&
+      Math.abs(summary.myRating - star) < 0.01;
+    const nextRating = isSame ? null : Math.round(star * 2) / 2;
     setSavingRating(true);
     try {
       const updated = await saveCommunityRating(targetType, targetKey, nextRating);

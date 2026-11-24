@@ -1,9 +1,23 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Bookmark, BookMarked, FolderInput, Search, Trash2, X } from 'lucide-react';
-import type { AuthRole, Book, ReadingProgress } from '@/types';
+import type {
+  AuthRole,
+  Book,
+  BookAccessSummary,
+  ReadingProgress,
+  ShelfRelation,
+} from '@/types';
+import {
+  computeSimilarShelves,
+  resolveShelfLinkedItems,
+} from '@/lib/shelfRecommendations';
 import type { ShelfSummary } from '@/lib/shelfSummary';
 import { BookCard } from '@/components/BookCard';
 import { ShelfDetailHero } from '@/components/ShelfDetailHero';
+import {
+  ShelfLinkedUniverseStrip,
+  ShelfSameTasteStrip,
+} from '@/components/ShelfRelatedStrip';
 import { normalizeSearchText } from '@/hooks/useLibraryViewState';
 import type { ToastType } from '@/hooks/useToast';
 
@@ -15,12 +29,16 @@ const LazyCommunityReviewsSection = lazy(() =>
 
 interface ShelfDetailViewProps {
   summary: ShelfSummary;
+  allSummaries?: readonly ShelfSummary[];
+  shelfRelations?: readonly ShelfRelation[];
+  bookAccess?: Readonly<Record<string, BookAccessSummary>>;
   progress: Record<string, ReadingProgress>;
   planToReadBookIds?: ReadonlySet<string>;
   sessionRole?: AuthRole;
   selectionMode: boolean;
   selectedIds: Set<string>;
   onBack: () => void;
+  onOpenShelf?: (shelfKey: string) => void;
   onOpenBook: (book: Book) => void;
   onInspectBook?: (book: Book) => void;
   onSelectAuthor?: (authorName: string) => void;
@@ -31,10 +49,12 @@ interface ShelfDetailViewProps {
   onClearSelection: () => void;
   onToggleSelectionMode: () => void;
   onEditBook?: (book: Book) => void;
+  onManageBookAccess?: (book: Book) => void;
   onRenameShelf?: (shelfName: string) => void;
   onChangeShelfCover?: (summary: ShelfSummary) => void;
   onOpenBatchNotes?: () => void;
   onManageAccess?: () => void;
+  onManageRelations?: () => void;
   onAnnounceDiscord?: () => Promise<void> | void;
   announcingDiscord?: boolean;
   onShelfRatingUpdated?: (shelfKey: string, average: number | null, count: number) => void;
@@ -49,12 +69,16 @@ interface ShelfDetailViewProps {
 
 export function ShelfDetailView({
   summary,
+  allSummaries = [],
+  shelfRelations = [],
+  bookAccess,
   progress,
   planToReadBookIds,
   sessionRole,
   selectionMode,
   selectedIds,
   onBack,
+  onOpenShelf,
   onOpenBook,
   onInspectBook,
   onSelectAuthor,
@@ -65,10 +89,12 @@ export function ShelfDetailView({
   onClearSelection,
   onToggleSelectionMode,
   onEditBook,
+  onManageBookAccess,
   onRenameShelf,
   onChangeShelfCover,
   onOpenBatchNotes,
   onManageAccess,
+  onManageRelations,
   onAnnounceDiscord,
   announcingDiscord,
   onShelfRatingUpdated,
@@ -121,6 +147,16 @@ export function ShelfDetailView({
   const allDisplayedSelected =
     displayedBooks.length > 0 && displayedBooks.every((book) => selectedIds.has(book.id));
 
+  const linkedItems = useMemo(
+    () => resolveShelfLinkedItems(shelf.key, allSummaries, shelfRelations, sessionRole),
+    [allSummaries, sessionRole, shelf.key, shelfRelations],
+  );
+
+  const similarItems = useMemo(
+    () => computeSimilarShelves(summary, allSummaries, shelfRelations, sessionRole),
+    [allSummaries, sessionRole, shelfRelations, summary],
+  );
+
   return (
     <div className="space-y-6">
       {/* Thanh quay lại & breadcrumb */}
@@ -141,6 +177,7 @@ export function ShelfDetailView({
 
       <ShelfDetailHero
         summary={summary}
+        relationCount={linkedItems.length}
         onOpenBook={onOpenBook}
         onSelectAuthor={onSelectAuthor}
         onSelectTag={onSelectTag}
@@ -149,11 +186,20 @@ export function ShelfDetailView({
         onChangeShelfCover={onChangeShelfCover}
         onOpenBatchNotes={onOpenBatchNotes}
         onManageAccess={onManageAccess}
+        onManageRelations={onManageRelations}
         onAnnounceDiscord={onAnnounceDiscord}
         announcingDiscord={announcingDiscord}
         onToggleFavorite={onToggleFavorite}
         onTogglePlanToRead={onTogglePlanToRead}
       />
+
+      {onOpenShelf && linkedItems.length > 0 && (
+        <ShelfLinkedUniverseStrip
+          items={linkedItems}
+          onOpenShelf={onOpenShelf}
+          onManageRelations={onManageRelations}
+        />
+      )}
 
       {/* Thanh chọn nhiều trong phạm vi kệ đang mở */}
       {selectionMode && (
@@ -283,6 +329,7 @@ export function ShelfDetailView({
                 book={book}
                 staggerIndex={index}
                 progress={progress[book.id]}
+                bookAccessSummary={bookAccess?.[book.id] ?? null}
                 isPlanToRead={Boolean(planToReadBookIds?.has(book.id))}
                 sessionRole={sessionRole}
                 selectionMode={selectionMode}
@@ -290,6 +337,7 @@ export function ShelfDetailView({
                 onOpen={onOpenBook}
                 onToggleSelect={onToggleSelect}
                 onEdit={onEditBook}
+                onManageBookAccess={onManageBookAccess}
                 onInspect={onInspectBook}
                 onTogglePlanToRead={onTogglePlanToReadBook}
               />
@@ -297,6 +345,10 @@ export function ShelfDetailView({
           </div>
         )}
       </section>
+
+      {onOpenShelf && similarItems.length > 0 && (
+        <ShelfSameTasteStrip items={similarItems} onOpenShelf={onOpenShelf} />
+      )}
 
       <Suspense
         fallback={

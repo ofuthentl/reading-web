@@ -41,6 +41,7 @@ export interface GuestCanvasScrollStageProps {
   onPrevChapter: () => void;
   onNextChapter: () => void;
   onCompleteBook: (nextBook?: Book) => void;
+  onStartReread?: () => void;
   onOpenFootnote: (fn: ResolvedFootnoteItem) => void;
   onOpenGuestImage: (bitmap: ImageBitmap, alt: string) => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
@@ -74,6 +75,7 @@ export function GuestCanvasScrollStage({
   onPrevChapter,
   onNextChapter,
   onCompleteBook,
+  onStartReread,
   onOpenFootnote,
   onOpenGuestImage,
   onApiError,
@@ -159,6 +161,7 @@ export function GuestCanvasScrollStage({
             onNext={onNextChapter}
             onCompleteAndClose={() => onCompleteBook()}
             onCompleteAndOpenNext={(nb) => onCompleteBook(nb)}
+            onStartReread={onStartReread}
           />
           {chapterIndex >= totalChapters - 1 ? (
             <ReaderBookCommunityBlock

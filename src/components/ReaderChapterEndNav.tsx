@@ -1,4 +1,4 @@
-import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import type { Book } from '@/types';
 import { getBookSortTitle } from '@/lib/bookMetadata';
 import type { ReaderThemePalette } from '@/lib/readerConfig';
@@ -12,6 +12,7 @@ export interface ReaderChapterEndNavProps {
   onNext: () => void;
   onCompleteAndClose: () => void;
   onCompleteAndOpenNext?: (nextBook: Book) => void;
+  onStartReread?: () => void;
 }
 
 export function ReaderChapterEndNav({
@@ -23,6 +24,7 @@ export function ReaderChapterEndNav({
   onNext,
   onCompleteAndClose,
   onCompleteAndOpenNext,
+  onStartReread,
 }: ReaderChapterEndNavProps) {
   const isLastChapter = chapterIndex >= totalChapters - 1;
 
@@ -42,6 +44,18 @@ export function ReaderChapterEndNav({
 
       {isLastChapter ? (
         <div className="contents sm:flex sm:min-w-0 sm:max-w-full sm:flex-wrap sm:items-center sm:justify-end sm:gap-2.5">
+          {onStartReread && (
+            <button
+              type="button"
+              onClick={onStartReread}
+              title="Đọc lại cuốn sách này từ chương đầu và cộng 1 lượt đọc lại"
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3.5 py-2.5 text-sm font-medium transition ${palette.border} ${palette.hover}`}
+            >
+              <RotateCcw className="h-4 w-4 shrink-0" />
+              <span>Đọc lại từ đầu</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onCompleteAndClose}

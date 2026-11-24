@@ -100,7 +100,7 @@ export function GuestCanvasReader({
     restoreTargetRatioRef, suppressSaveRef, overallPercent, syncChapterWords,
     computeRemainingEstimate, handleUpdateSettings,
     goToChapter, goPrevChapter, goNextChapter,
-    handlePaginatedRatioChange, handleJumpToSearchResult, completeBook,
+    handlePaginatedRatioChange, handleJumpToSearchResult, completeBook, restartBookReread,
   } = useReaderChapterProgress({
     chapters: tocChapters,
     initialProgress: effectiveInitialProgress,
@@ -395,6 +395,7 @@ export function GuestCanvasReader({
             onPrevChapter={() => { immersion.triggerPageTurnSound(); goPrevChapter(); }}
             onNextChapter={() => { immersion.triggerPageTurnSound(); goNextChapter(); }}
             onCompleteBook={completeBook}
+            onStartReread={restartBookReread}
             onOpenFootnote={(fn) => features.setActiveFootnote(fn)}
             onOpenGuestImage={(bitmap, alt) =>
               setLightboxTarget({ kind: 'guest-bitmap', bitmap, watermarkLabel: effectiveWatermark, alt })

@@ -1,8 +1,14 @@
-import type { AniListNovelCandidate, CustomCollection } from '@/types';
+import type {
+  AniListNovelCandidate,
+  CustomCollection,
+  ShelfRelation,
+  ShelfRelationType,
+} from '@/types';
 import {
   LOCAL_COLLECTIONS_STORAGE_KEY,
   LOCAL_PTR_BOOKS_STORAGE_KEY,
   LOCAL_PTR_STORAGE_KEY,
+  LOCAL_SHELF_RELATIONS_STORAGE_KEY,
   MAX_SHELF_NAME_LENGTH,
   apiFetch,
   assertApiConfigured,
@@ -59,6 +65,22 @@ export function syncLocalCatalogOnShelfRenamed(oldName: string, newName: string)
     };
   });
   if (colChanged) writeLocalJson(LOCAL_COLLECTIONS_STORAGE_KEY, nextCols);
+
+  const rels = readLocalJson<ShelfRelation[]>(LOCAL_SHELF_RELATIONS_STORAGE_KEY, []);
+  if (rels.some((r) => r.sourceShelfKey === oldKey || r.targetShelfKey === oldKey)) {
+    const byPair = new Map<string, ShelfRelation>();
+    for (const r of rels) {
+      const src = r.sourceShelfKey === oldKey ? newKey : r.sourceShelfKey;
+      const dst = r.targetShelfKey === oldKey ? newKey : r.targetShelfKey;
+      if (!src || !dst || src === dst) continue;
+      const pk = src < dst ? `${src}\u0000${dst}` : `${dst}\u0000${src}`;
+      const existing = byPair.get(pk);
+      if (!existing || r.createdAt >= existing.createdAt) {
+        byPair.set(pk, { ...r, sourceShelfKey: src, targetShelfKey: dst });
+      }
+    }
+    writeLocalJson(LOCAL_SHELF_RELATIONS_STORAGE_KEY, Array.from(byPair.values()));
+  }
 }
 
 export function syncLocalCatalogOnBooksDeleted(
@@ -88,6 +110,16 @@ export function syncLocalCatalogOnBooksDeleted(
     return col;
   });
   if (colChanged) writeLocalJson(LOCAL_COLLECTIONS_STORAGE_KEY, nextCols);
+
+  const rels = readLocalJson<ShelfRelation[]>(LOCAL_SHELF_RELATIONS_STORAGE_KEY, []);
+  const nextRels = rels.filter(
+    (r) =>
+      remainingShelfKeys.has(toShelfPrefKey(r.sourceShelfKey)) &&
+      remainingShelfKeys.has(toShelfPrefKey(r.targetShelfKey)),
+  );
+  if (nextRels.length !== rels.length) {
+    writeLocalJson(LOCAL_SHELF_RELATIONS_STORAGE_KEY, nextRels);
+  }
 }
 
 export async function setShelfAltTitles(
@@ -340,4 +372,94 @@ export async function searchAniListLightNovelsApi(
   throw new Error(
     data.error || 'AniList tạm thời không phản hồi. Bạn vẫn có thể nhập thông tin thủ công.',
   );
+}
+
+export async function saveShelfRelationApi(
+  sourceShelfName: string,
+  targetShelfName: string,
+  relationType: ShelfRelationType,
+): Promise<ShelfRelation> {
+  assertApiConfigured();
+  const srcKey = toShelfPrefKey(sourceShelfName);
+  const dstKey = toShelfPrefKey(targetShelfName);
+  if (!srcKey || !dstKey || srcKey === dstKey) {
+    throw new Error('Vui lòng chọn hai bộ truyện khác nhau để liên kết.');
+  }
+
+  if (!isCloudMode) {
+    const saved: ShelfRelation = {
+      sourceShelfKey: relationType === 'same_universe' && srcKey > dstKey ? dstKey : srcKey,
+      targetShelfKey: relationType === 'same_universe' && srcKey > dstKey ? srcKey : dstKey,
+      relationType,
+      createdAt: Date.now(),
+    };
+    const pk = srcKey < dstKey ? `${srcKey}\u0000${dstKey}` : `${dstKey}\u0000${srcKey}`;
+    const existing = readLocalJson<ShelfRelation[]>(LOCAL_SHELF_RELATIONS_STORAGE_KEY, []);
+    const filtered = existing.filter((r) => {
+      const k =
+        r.sourceShelfKey < r.targetShelfKey
+          ? `${r.sourceShelfKey}\u0000${r.targetShelfKey}`
+          : `${r.targetShelfKey}\u0000${r.sourceShelfKey}`;
+      return k !== pk;
+    });
+    writeLocalJson(LOCAL_SHELF_RELATIONS_STORAGE_KEY, [...filtered, saved]);
+    return saved;
+  }
+
+  const res = await apiFetch('/api/shelves/relations', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sourceShelfName: sourceShelfName.trim(),
+      targetShelfName: targetShelfName.trim(),
+      relationType,
+    }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    relation?: ShelfRelation;
+    error?: string;
+  };
+  if (!res.ok || !data.relation) {
+    throw new Error(data.error || 'Không thể lưu liên kết giữa hai bộ truyện.');
+  }
+  return data.relation;
+}
+
+export async function deleteShelfRelationApi(
+  sourceShelfName: string,
+  targetShelfName: string,
+): Promise<void> {
+  assertApiConfigured();
+  const srcKey = toShelfPrefKey(sourceShelfName);
+  const dstKey = toShelfPrefKey(targetShelfName);
+  if (!srcKey || !dstKey) return;
+
+  if (!isCloudMode) {
+    const pk = srcKey < dstKey ? `${srcKey}\u0000${dstKey}` : `${dstKey}\u0000${srcKey}`;
+    const existing = readLocalJson<ShelfRelation[]>(LOCAL_SHELF_RELATIONS_STORAGE_KEY, []);
+    writeLocalJson(
+      LOCAL_SHELF_RELATIONS_STORAGE_KEY,
+      existing.filter((r) => {
+        const k =
+          r.sourceShelfKey < r.targetShelfKey
+            ? `${r.sourceShelfKey}\u0000${r.targetShelfKey}`
+            : `${r.targetShelfKey}\u0000${r.sourceShelfKey}`;
+        return k !== pk;
+      }),
+    );
+    return;
+  }
+
+  const res = await apiFetch('/api/shelves/relations', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sourceShelfName: sourceShelfName.trim(),
+      targetShelfName: targetShelfName.trim(),
+    }),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || 'Không thể xoá liên kết bộ truyện.');
+  }
 }

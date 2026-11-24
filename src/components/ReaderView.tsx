@@ -68,7 +68,7 @@ export function ReaderView({
     restoreTargetRatioRef, suppressSaveRef, overallPercent, syncChapterWords,
     computeRemainingEstimate, handleUpdateSettings,
     goToChapter, goPrevChapter, goNextChapter,
-    handlePaginatedRatioChange, handleJumpToSearchResult, completeBook,
+    handlePaginatedRatioChange, handleJumpToSearchResult, completeBook, restartBookReread,
   } = useReaderChapterProgress({
     chapters,
     initialProgress,
@@ -423,6 +423,7 @@ export function ReaderView({
             onPrevChapter={() => { immersion.triggerPageTurnSound(); goPrevChapter(); }}
             onNextChapter={() => { immersion.triggerPageTurnSound(); goNextChapter(); }}
             onCompleteBook={completeBook}
+            onStartReread={restartBookReread}
             onOpenDomImage={(src, alt) => setLightboxTarget({ kind: 'dom', src, alt })}
             onApiError={onApiError}
           />

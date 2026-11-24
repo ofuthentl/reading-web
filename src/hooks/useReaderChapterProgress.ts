@@ -76,6 +76,7 @@ export function useReaderChapterProgress({
       : null,
   );
   const suppressSaveRef = useRef(false);
+  const rereadCountRef = useRef(Math.max(0, Math.floor(initialProgress?.rereadCount ?? 0)));
   const goPrevRef = useRef<() => void>(() => undefined);
   const goNextRef = useRef<() => void>(() => undefined);
 
@@ -91,6 +92,7 @@ export function useReaderChapterProgress({
       scrollRatio: chapterScrollRatio,
       scrollTop: 0,
       completed: Boolean(initialProgress?.completed),
+      ...(rereadCountRef.current > 0 ? { rereadCount: rereadCountRef.current } : {}),
       updatedAt: Date.now(),
     };
   }, [
@@ -321,6 +323,7 @@ export function useReaderChapterProgress({
             scrollRatio: 1,
             scrollTop: scrollContainerRef.current?.scrollTop || 0,
             completed: true,
+            ...(rereadCountRef.current > 0 ? { rereadCount: rereadCountRef.current } : {}),
             updatedAt: Date.now(),
           },
           true,
@@ -340,6 +343,28 @@ export function useReaderChapterProgress({
       scrollContainerRef,
     ],
   );
+
+  const restartBookReread = useCallback(() => {
+    const first = chapters[0];
+    if (!first) return;
+    rereadCountRef.current = Math.min(999, rereadCountRef.current + 1);
+    completedRef.current = false;
+    goToChapter(0, 0);
+    queueProgressSave(
+      {
+        chapterId: first.id,
+        chapterIndex: 0,
+        chapterTitle: first.title,
+        totalChapters: chapters.length,
+        scrollRatio: 0,
+        scrollTop: 0,
+        completed: false,
+        rereadCount: rereadCountRef.current,
+        updatedAt: Date.now(),
+      },
+      true,
+    );
+  }, [chapters, completedRef, goToChapter, queueProgressSave]);
 
   const overallPercent = useMemo(() => {
     if (chapters.length === 0) return 0;
@@ -404,5 +429,6 @@ export function useReaderChapterProgress({
     handlePaginatedRatioChange,
     handleJumpToSearchResult,
     completeBook,
+    restartBookReread,
   };
 }

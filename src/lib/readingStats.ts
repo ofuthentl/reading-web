@@ -27,6 +27,7 @@ export interface DetailedLibraryInsights {
   rpg: ReaderRpgStats;
   totalBooks: number;
   unreadBooks: number;
+  totalRereads: number;
   completionPercent: number;
   totalShelves: number;
   completedShelves: number;
@@ -133,11 +134,16 @@ export function computeDetailedLibraryInsights(
   const rpg = computeReaderRpgStats(books, progress);
   const totalBooks = books.length;
   let startedCount = 0;
+  let totalRereads = 0;
   const formatCounts: Record<BookFileType, number> = { epub: 0, docx: 0 };
 
   for (const b of books) {
     formatCounts[b.file_type] = (formatCounts[b.file_type] ?? 0) + 1;
-    if (progress[b.id]) startedCount += 1;
+    const p = progress[b.id];
+    if (p) {
+      startedCount += 1;
+      totalRereads += Math.max(0, Math.floor(p.rereadCount ?? 0));
+    }
   }
 
   const unreadBooks = Math.max(0, totalBooks - startedCount);
@@ -171,6 +177,7 @@ export function computeDetailedLibraryInsights(
     rpg,
     totalBooks,
     unreadBooks,
+    totalRereads,
     completionPercent,
     totalShelves: shelves.length,
     completedShelves,

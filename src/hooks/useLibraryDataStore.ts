@@ -2,43 +2,42 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AuthSessionInfo,
   Book,
+  BookAccessSummary,
   CustomCollection,
   ReadingProgress,
   ShelfAccessSummary,
   ShelfRatingSummary,
+  ShelfRelation,
   StorageStats,
 } from '@/types';
-import {
-  clearReadingProgress,
-  fetchLibraryState,
-  saveReadingProgress,
-  sortBooksByTitle,
-} from '@/lib/api';
+import { fetchLibraryState, sortBooksByTitle } from '@/lib/api';
 import {
   type IdleWindow,
-  bumpKeyVersion,
   canPreloadOnIdle,
   mergeBookPreservingFlags,
   mergeShelfRatingsOnRename,
+  mergeShelfRelationsOnRename,
+  pruneDeletedBookAccess,
   pruneOrphanShelfRatings,
+  pruneOrphanShelfRelations,
+  removeShelfRelationPair,
   sortCollectionsList,
-  toggleSetValue,
+  upsertShelfRelationItem,
 } from '@/lib/libraryStoreHelpers';
 import {
   type ShelfPrefsState,
   patchShelfAccessSummary,
   patchShelfAltTitles,
   patchShelfCover,
-  patchShelfFavorite,
   patchShelfTags,
   pruneDeletedBooksFromPrefs,
   pruneMovedBooksFromShelfCovers,
   readLocalShelfPrefs,
   renameShelfPrefs,
-  setShelfFavorite,
   toShelfPrefKey,
 } from '@/lib/shelfPrefs';
 import { useGuestLocalFavorites } from '@/hooks/useGuestLocalFavorites';
+import { useLibraryUserActions } from '@/hooks/useLibraryUserActions';
 import type { ToastType } from '@/hooks/useToast';
 
 interface UseLibraryDataStoreOptions {
@@ -63,6 +62,8 @@ export function useLibraryDataStore({
   const [weeklyPopularIds, setWeeklyPopularIds] = useState<string[]>([]);
   const [shelfPrefs, setShelfPrefs] = useState<ShelfPrefsState>(readLocalShelfPrefs);
   const [shelfRatings, setShelfRatings] = useState<Record<string, ShelfRatingSummary>>({});
+  const [shelfRelations, setShelfRelations] = useState<ShelfRelation[]>([]);
+  const [bookAccess, setBookAccess] = useState<Record<string, BookAccessSummary>>({});
   const [planToReadShelfKeys, setPlanToReadShelfKeys] = useState<Set<string>>(() => new Set());
   const [planToReadBookIds, setPlanToReadBookIds] = useState<Set<string>>(() => new Set());
   const [collections, setCollections] = useState<CustomCollection[]>([]);
@@ -130,6 +131,8 @@ export function useLibraryDataStore({
       setWeeklyPopularIds(state.weeklyPopularIds);
       setShelfPrefs(state.shelfPrefs);
       setShelfRatings(state.shelfRatings || {});
+      setShelfRelations(state.shelfRelations || []);
+      setBookAccess(state.bookAccess || {});
       setPlanToReadShelfKeys(
         new Set((state.planToReadShelves || []).map(toShelfPrefKey).filter(Boolean)),
       );
@@ -197,30 +200,27 @@ export function useLibraryDataStore({
     setWeeklyPopularIds([]);
     setShelfPrefs({ covers: {}, favorites: [] });
     setShelfRatings({});
+    setShelfRelations([]);
+    setBookAccess({});
     setPlanToReadShelfKeys(new Set());
     setPlanToReadBookIds(new Set());
     setCollections([]);
     setStorage(null);
   }, []);
 
-  const handleProgressUpdated = useCallback(
-    (bookId: string, nextProgress: ReadingProgress, readingDeltaSec = 0) => {
-      const wasCompleted = Boolean(progressRef.current[bookId]?.completed);
-      if (!wasCompleted && nextProgress.completed) {
-        void import('@/lib/confettiBurst').then((m) => m.triggerConfettiBurst()).catch(() => undefined);
-      }
-      setProgress((prev) => {
-        const prevSec = prev[bookId]?.readingSeconds ?? 0;
-        const baseSec = Math.max(prevSec, nextProgress.readingSeconds ?? 0);
-        const totalSec = baseSec + Math.max(0, Math.floor(readingDeltaSec));
-        return {
-          ...prev,
-          [bookId]: totalSec > 0 ? { ...nextProgress, readingSeconds: totalSec } : nextProgress,
-        };
-      });
-    },
-    [],
-  );
+  const userActions = useLibraryUserActions({
+    sessionRole: session.role,
+    progress,
+    progressRef,
+    toggleVerRef,
+    setProgress,
+    setShelfPrefs,
+    setPlanToReadShelfKeys,
+    setPlanToReadBookIds,
+    toggleGuestFavorite,
+    onApiError,
+    addToast,
+  });
 
   const handleBookUploaded = useCallback((book: Book, nextStorage: StorageStats) => {
     setBooks((prev) => sortBooksByTitle([...prev.filter((item) => item.id !== book.id), book]));
@@ -279,6 +279,7 @@ export function useLibraryDataStore({
           }),
         );
         setShelfRatings((prev) => mergeShelfRatingsOnRename(prev, oldKey, newKey));
+        setShelfRelations((prev) => mergeShelfRelationsOnRename(prev, oldKey, newKey));
       }
     },
     [syncRenamedGuestFavorite],
@@ -292,6 +293,31 @@ export function useLibraryDataStore({
         const next = { ...prev };
         if (average === null || count <= 0) delete next[key];
         else next[key] = { average, count };
+        return next;
+      });
+    },
+    [],
+  );
+
+  const handleShelfRelationSaved = useCallback((relation: ShelfRelation) => {
+    setShelfRelations((prev) => upsertShelfRelationItem(prev, relation));
+  }, []);
+
+  const handleShelfRelationDeleted = useCallback((sourceKey: string, targetKey: string) => {
+    setShelfRelations((prev) =>
+      removeShelfRelationPair(prev, toShelfPrefKey(sourceKey), toShelfPrefKey(targetKey)),
+    );
+  }, []);
+
+  const handleBookAccessChanged = useCallback(
+    (bookId: string, summary: BookAccessSummary | null) => {
+      setBookAccess((prev) => {
+        const next = { ...prev };
+        if (!summary || (summary.mode === 'inherit' && summary.lockedChapterCount <= 0)) {
+          delete next[bookId];
+        } else {
+          next[bookId] = summary;
+        }
         return next;
       });
     },
@@ -317,54 +343,6 @@ export function useLibraryDataStore({
     setShelfPrefs((prev) => patchShelfAltTitles(prev, shelfName, altTitles));
   }, []);
 
-  const handleTogglePlanToRead = useCallback(
-    (shelfName: string, nextPlanToRead: boolean) => {
-      const key = toShelfPrefKey(shelfName);
-      if (!key) return;
-      const verKey = `ptr-shelf:${key}`;
-      const ver = bumpKeyVersion(toggleVerRef.current, verKey);
-      setPlanToReadShelfKeys((prev) => toggleSetValue(prev, key, nextPlanToRead));
-      addToast(
-        nextPlanToRead
-          ? `Đã thêm "${shelfName}" vào danh sách Đọc sau.`
-          : `Đã gỡ "${shelfName}" khỏi danh sách Đọc sau.`,
-        'info',
-      );
-      void import('@/lib/catalogApi')
-        .then((m) => m.setPlanToReadShelf(shelfName, nextPlanToRead))
-        .catch((err) => {
-          if (toggleVerRef.current.get(verKey) !== ver) return;
-          setPlanToReadShelfKeys((prev) => toggleSetValue(prev, key, !nextPlanToRead));
-          onApiError(err, 'Không thể cập nhật danh sách Đọc sau.');
-        });
-    },
-    [addToast, onApiError],
-  );
-
-  const handleTogglePlanToReadBook = useCallback(
-    (book: Book, nextPlanToRead: boolean) => {
-      const bookId = book.id;
-      if (!bookId) return;
-      const verKey = `ptr-book:${bookId}`;
-      const ver = bumpKeyVersion(toggleVerRef.current, verKey);
-      setPlanToReadBookIds((prev) => toggleSetValue(prev, bookId, nextPlanToRead));
-      addToast(
-        nextPlanToRead
-          ? `Đã thêm "${book.title}" vào danh sách Đọc sau.`
-          : `Đã gỡ "${book.title}" khỏi danh sách Đọc sau.`,
-        'info',
-      );
-      void import('@/lib/catalogApi')
-        .then((m) => m.setPlanToReadBook(bookId, nextPlanToRead))
-        .catch((err) => {
-          if (toggleVerRef.current.get(verKey) !== ver) return;
-          setPlanToReadBookIds((prev) => toggleSetValue(prev, bookId, !nextPlanToRead));
-          onApiError(err, 'Không thể cập nhật Đọc sau cho tập sách.');
-        });
-    },
-    [addToast, onApiError],
-  );
-
   const handleCollectionSaved = useCallback((collection: CustomCollection) => {
     setCollections((prev) => {
       const exists = prev.some((c) => c.id === collection.id);
@@ -379,93 +357,14 @@ export function useLibraryDataStore({
     setCollections((prev) => prev.filter((c) => c.id !== collectionId));
   }, []);
 
-  const handleToggleFavoriteShelf = useCallback(
-    (shelfName: string, nextFavorite: boolean) => {
-      if (session.role !== 'owner') {
-        toggleGuestFavorite(shelfName, nextFavorite);
-        addToast(
-          nextFavorite
-            ? `Đã ghim kệ "${shelfName}" lên đầu trên thiết bị này.`
-            : `Đã bỏ ghim kệ "${shelfName}".`,
-          'info',
-        );
-        return;
-      }
-      const verKey = `fav:${toShelfPrefKey(shelfName)}`;
-      const ver = bumpKeyVersion(toggleVerRef.current, verKey);
-      setShelfPrefs((prev) => patchShelfFavorite(prev, shelfName, nextFavorite));
-      addToast(
-        nextFavorite
-          ? `Đã ghim kệ "${shelfName}" lên đầu danh sách.`
-          : `Đã bỏ yêu thích kệ "${shelfName}".`,
-        'info',
-      );
-      void setShelfFavorite(shelfName, nextFavorite).catch((err) => {
-        if (toggleVerRef.current.get(verKey) !== ver) return;
-        setShelfPrefs((prev) => patchShelfFavorite(prev, shelfName, !nextFavorite));
-        onApiError(err, 'Không thể cập nhật kệ yêu thích.');
-      });
-    },
-    [addToast, onApiError, session.role, toggleGuestFavorite],
-  );
-
-  const handleMarkBookCompleted = useCallback(
-    (book: Book) => {
-      const existing = progress[book.id];
-      const nextProgress: ReadingProgress = {
-        chapterId: existing?.chapterId || 'manual-complete',
-        chapterIndex: Math.max(0, (existing?.totalChapters ?? 1) - 1),
-        ...(existing?.chapterTitle ? { chapterTitle: existing.chapterTitle } : {}),
-        ...(existing?.totalChapters ? { totalChapters: existing.totalChapters } : {}),
-        scrollRatio: 1,
-        scrollTop: existing?.scrollTop ?? 0,
-        completed: true,
-        ...(existing?.readingSeconds ? { readingSeconds: existing.readingSeconds } : {}),
-        updatedAt: Date.now(),
-      };
-      setProgress((prev) => ({ ...prev, [book.id]: nextProgress }));
-      if (!existing?.completed) {
-        void import('@/lib/confettiBurst').then((m) => m.triggerConfettiBurst()).catch(() => undefined);
-      }
-      addToast(`Đã đánh dấu hoàn thành "${book.title}".`, 'success');
-      void saveReadingProgress(book.id, nextProgress).catch((err) => {
-        setProgress((prev) => {
-          const restored = { ...prev };
-          if (existing) restored[book.id] = existing;
-          else delete restored[book.id];
-          return restored;
-        });
-        onApiError(err, 'Không thể lưu trạng thái hoàn thành.');
-      });
-    },
-    [addToast, onApiError, progress],
-  );
-
-  const handleResetBookProgress = useCallback(
-    (book: Book) => {
-      const previous = progress[book.id];
-      setProgress((prev) => {
-        const next = { ...prev };
-        delete next[book.id];
-        return next;
-      });
-      addToast(`Đã đặt lại tiến độ đọc "${book.title}".`, 'info');
-      void clearReadingProgress(book.id).catch((err) => {
-        if (previous) {
-          setProgress((prev) => ({ ...prev, [book.id]: previous }));
-        }
-        onApiError(err, 'Không thể xoá tiến độ đọc.');
-      });
-    },
-    [addToast, onApiError, progress],
-  );
-
   const handleBooksShelfMoved = useCallback((bookIds: string[], targetShelf: string) => {
     const idSet = new Set(bookIds);
-    setBooks((prev) =>
-      prev.map((item) => (idSet.has(item.id) ? { ...item, shelf: targetShelf } : item)),
+    const updatedBooks = booksRef.current.map((item) =>
+      idSet.has(item.id) ? { ...item, shelf: targetShelf } : item,
     );
+    setBooks(updatedBooks);
     setShelfPrefs((prev) => pruneMovedBooksFromShelfCovers(prev, idSet, targetShelf));
+    setShelfRelations((prev) => pruneOrphanShelfRelations(prev, updatedBooks));
     setSelectionResetKey((prev) => prev + 1);
   }, []);
 
@@ -474,6 +373,8 @@ export function useLibraryDataStore({
     const remaining = booksRef.current.filter((item) => !idSet.has(item.id));
     setBooks((prev) => prev.filter((item) => !idSet.has(item.id)));
     setShelfRatings((prevRatings) => pruneOrphanShelfRatings(prevRatings, remaining));
+    setShelfRelations((prevRels) => pruneOrphanShelfRelations(prevRels, remaining));
+    setBookAccess((prevAccess) => pruneDeletedBookAccess(prevAccess, idSet));
     setProgress((prev) =>
       Object.fromEntries(Object.entries(prev).filter(([id]) => !idSet.has(id))),
     );
@@ -486,14 +387,41 @@ export function useLibraryDataStore({
   }, []);
 
   return {
-    loading, hasLoadedOnce, books, progress, weeklyPopularIds, shelfPrefs, shelfRatings,
-    planToReadShelfKeys, planToReadBookIds, collections, storage, selectionResetKey,
-    effectiveFavoriteShelfKeys, unprotectedBookCount, loadLibrary, clearStoreOnLogout,
-    handleProgressUpdated, handleBookUploaded, handleBookUpdated, handleBooksBatchUpdated,
-    handleBookPackSynced, applyShelfRenamed, handleShelfRatingUpdated, handleShelfCoverChanged,
-    handleShelfAccessChanged, handleShelfTagsChanged, handleShelfAltTitlesChanged,
-    handleTogglePlanToRead, handleTogglePlanToReadBook, handleCollectionSaved,
-    handleCollectionDeleted, handleToggleFavoriteShelf, handleMarkBookCompleted,
-    handleResetBookProgress, handleBooksShelfMoved, handleBooksDeleted,
+    loading,
+    hasLoadedOnce,
+    books,
+    progress,
+    weeklyPopularIds,
+    shelfPrefs,
+    shelfRatings,
+    shelfRelations,
+    bookAccess,
+    planToReadShelfKeys,
+    planToReadBookIds,
+    collections,
+    storage,
+    selectionResetKey,
+    effectiveFavoriteShelfKeys,
+    unprotectedBookCount,
+    loadLibrary,
+    clearStoreOnLogout,
+    ...userActions,
+    handleBookUploaded,
+    handleBookUpdated,
+    handleBooksBatchUpdated,
+    handleBookPackSynced,
+    applyShelfRenamed,
+    handleShelfRatingUpdated,
+    handleShelfRelationSaved,
+    handleShelfRelationDeleted,
+    handleBookAccessChanged,
+    handleShelfCoverChanged,
+    handleShelfAccessChanged,
+    handleShelfTagsChanged,
+    handleShelfAltTitlesChanged,
+    handleCollectionSaved,
+    handleCollectionDeleted,
+    handleBooksShelfMoved,
+    handleBooksDeleted,
   };
 }

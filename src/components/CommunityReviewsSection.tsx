@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import {
   EyeOff,
   Loader2,
@@ -6,11 +6,11 @@ import {
   MessageSquare,
   Reply,
   Send,
-  Star,
   X,
 } from 'lucide-react';
 import type { CommunityTargetType } from '@/types';
 import { CommunityCommentItem } from '@/components/CommunityCommentItem';
+import { HalfStarRatingControl } from '@/components/HalfStarRatingControl';
 import { useCommunityReviews } from '@/hooks/useCommunityReviews';
 import type { ToastType } from '@/hooks/useToast';
 import { MAX_COMMUNITY_COMMENT_LENGTH } from '@/lib/communityApi';
@@ -34,8 +34,6 @@ export interface CommunityReviewsSectionProps {
   onNotify?: (message: string, type?: ToastType) => void;
 }
 
-const STAR_VALUES = [1, 2, 3, 4, 5] as const;
-
 export function CommunityReviewsSection({
   targetType,
   targetKey,
@@ -52,8 +50,6 @@ export function CommunityReviewsSection({
   onNotify,
 }: CommunityReviewsSectionProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [hoverStar, setHoverStar] = useState<number | null>(null);
-  const [popStar, setPopStar] = useState<number | null>(null);
 
   const {
     summary, loading, loadError, isLockedByApi, savingRating,
@@ -125,7 +121,6 @@ export function CommunityReviewsSection({
 
   const effectiveLocked = lockedMessage || (isLockedByApi ? loadError : null);
   const headingTitle = targetType === 'shelf' ? 'Đánh giá & Bình luận bộ truyện' : 'Bình luận';
-  const activeStars = hoverStar ?? summary?.myRating ?? 0;
 
   return (
     <section
@@ -148,44 +143,12 @@ export function CommunityReviewsSection({
 
         {!effectiveLocked && (
           <div className="flex flex-wrap items-center gap-2.5 text-xs">
-            <div
-              className="inline-flex items-center gap-0.5"
-              role="group"
-              aria-label="Chấm điểm 1 đến 5 sao"
-              onMouseLeave={() => setHoverStar(null)}
-            >
-              {STAR_VALUES.map((star) => {
-                const filled = star <= activeStars;
-                return (
-                  <button
-                    key={star}
-                    type="button"
-                    disabled={savingRating || loading}
-                    aria-label={`Chấm ${star} sao`}
-                    aria-pressed={summary?.myRating === star}
-                    onMouseEnter={() => setHoverStar(star)}
-                    onClick={() => {
-                      setHoverStar(null);
-                      setPopStar(star);
-                      void handleRate(star);
-                    }}
-                    onAnimationEnd={() => {
-                      if (popStar === star) setPopStar(null);
-                    }}
-                    className={`rounded-md p-1 transition-transform hover:scale-110 disabled:opacity-50 ${
-                      popStar === star ? 'micro-pop' : ''
-                    }`}
-                  >
-                    <Star
-                      fill={filled ? 'currentColor' : 'none'}
-                      className={`h-4 w-4 ${
-                        filled ? 'fill-amber-400 text-amber-400' : `${mutedTextClass} opacity-55 hover:opacity-100`
-                      }`}
-                    />
-                  </button>
-                );
-              })}
-            </div>
+            <HalfStarRatingControl
+              value={summary?.myRating ?? null}
+              disabled={savingRating || loading}
+              mutedTextClass={mutedTextClass}
+              onChange={(score) => void handleRate(score)}
+            />
 
             <span className={`tabular-nums ${mutedTextClass}`}>
               {summary && summary.ratingCount > 0 && summary.averageRating !== null ? (

@@ -3,6 +3,7 @@ import { BookMarked, LayoutGrid, Library } from 'lucide-react';
 import type {
   AuthRole,
   Book,
+  BookAccessSummary,
   CustomCollection,
   LibrarySortMode,
   LibraryStatusFilter,
@@ -10,27 +11,19 @@ import type {
   ShelfAccessSummary,
   ShelfGroup,
   ShelfRatingSummary,
+  ShelfRelation,
 } from '@/types';
 import { isCloudMode } from '@/lib/api';
 import { summarizeShelf, type ShelfSummary } from '@/lib/shelfSummary';
 import { CollectionFilterStrip } from '@/components/CollectionFilterStrip';
+import { LibraryCatalogModals } from '@/components/LibraryCatalogModals';
 import {
   type LibraryAdvancedFilterProps,
   LibraryFilterBar,
 } from '@/components/LibraryFilterBar';
-import { ShelfAccessModal } from '@/components/ShelfAccessModal';
-import { ShelfBatchNoteModal } from '@/components/ShelfBatchNoteModal';
 import { ShelfCoverCard } from '@/components/ShelfCoverCard';
-import { ShelfCoverPickerModal } from '@/components/ShelfCoverPickerModal';
 import { ShelfDetailView } from '@/components/ShelfDetailView';
-import { ShelfTagsModal } from '@/components/ShelfTagsModal';
 import type { ToastType } from '@/hooks/useToast';
-
-const LazyCollectionManagerModal = lazy(() =>
-  import('@/components/CollectionManagerModal').then((mod) => ({
-    default: mod.CollectionManagerModal,
-  })),
-);
 
 const LazySpineBookshelfView = lazy(() =>
   import('@/components/SpineBookshelfView').then((mod) => ({
@@ -59,6 +52,8 @@ export interface LibraryCatalogViewProps {
   shelfTags?: Readonly<Record<string, string[]>>;
   shelfAltTitles?: Readonly<Record<string, string[]>>;
   shelfRatings?: Readonly<Record<string, ShelfRatingSummary>>;
+  shelfRelations?: readonly ShelfRelation[];
+  bookAccess?: Readonly<Record<string, BookAccessSummary>>;
   favoriteShelfKeys?: ReadonlySet<string>;
   planToReadShelfKeys?: ReadonlySet<string>;
   planToReadBookIds?: ReadonlySet<string>;
@@ -90,6 +85,7 @@ export interface LibraryCatalogViewProps {
   onProtectionClick?: () => void;
   unprotectedBookCount?: number;
   onEditBook?: (book: Book) => void;
+  onManageBookAccess?: (book: Book) => void;
   onBooksUpdated?: (books: Book[]) => void;
   onRenameShelf?: (shelfName: string) => void;
   onShelfCoverChanged?: (shelfName: string, bookId: string | null) => void;
@@ -97,6 +93,8 @@ export interface LibraryCatalogViewProps {
   onShelfTagsChanged?: (shelfName: string, tags: string[]) => void;
   onShelfAltTitlesChanged?: (shelfName: string, altTitles: string[]) => void;
   onShelfRatingUpdated?: (shelfKey: string, average: number | null, count: number) => void;
+  onShelfRelationSaved?: (relation: ShelfRelation) => void;
+  onShelfRelationDeleted?: (sourceKey: string, targetKey: string) => void;
   onToggleFavoriteShelf?: (shelfName: string, nextFavorite: boolean) => void;
   onTogglePlanToRead?: (shelfName: string, nextPlanToRead: boolean) => void;
   onTogglePlanToReadBook?: (book: Book, nextPlanToRead: boolean) => void;
@@ -118,6 +116,8 @@ export function LibraryCatalogView({
   shelfTags,
   shelfAltTitles,
   shelfRatings,
+  shelfRelations = [],
+  bookAccess,
   favoriteShelfKeys,
   planToReadShelfKeys,
   planToReadBookIds,
@@ -149,6 +149,7 @@ export function LibraryCatalogView({
   onProtectionClick,
   unprotectedBookCount = 0,
   onEditBook,
+  onManageBookAccess,
   onBooksUpdated,
   onRenameShelf,
   onShelfCoverChanged,
@@ -156,6 +157,8 @@ export function LibraryCatalogView({
   onShelfTagsChanged,
   onShelfAltTitlesChanged,
   onShelfRatingUpdated,
+  onShelfRelationSaved,
+  onShelfRelationDeleted,
   onToggleFavoriteShelf,
   onTogglePlanToRead,
   onTogglePlanToReadBook,
@@ -170,6 +173,7 @@ export function LibraryCatalogView({
   const [accessShelfKey, setAccessShelfKey] = useState<string | null>(null);
   const [batchNoteOpen, setBatchNoteOpen] = useState(false);
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
+  const [relationsModalOpen, setRelationsModalOpen] = useState(false);
   const [collectionManagerOpen, setCollectionManagerOpen] = useState(false);
   const [announcingDiscord, setAnnouncingDiscord] = useState(false);
   const [displayMode, setDisplayMode] = useState<CatalogDisplayMode>(readInitialCatalogDisplayMode);
@@ -187,6 +191,7 @@ export function LibraryCatalogView({
     if (!openedLibraryShelf) {
       setBatchNoteOpen(false);
       setTagsModalOpen(false);
+      setRelationsModalOpen(false);
     }
   }, [openedLibraryShelf]);
 
@@ -196,40 +201,61 @@ export function LibraryCatalogView({
     [allShelves],
   );
 
-  const librarySummaries = useMemo(
+  const allShelfSummaries = useMemo(
     () =>
-      libraryShelves.map((shelf) =>
+      allShelves.map((shelf) =>
         summarizeShelf(
           shelf, progress, shelfCovers, favoriteShelfKeys, shelfAccess?.[shelf.key] ?? null,
           shelfTags, sessionRole, shelfAltTitles, planToReadShelfKeys, shelfRatings,
         ),
       ),
     [
-      libraryShelves, progress, shelfCovers, favoriteShelfKeys, shelfAccess,
+      allShelves, progress, shelfCovers, favoriteShelfKeys, shelfAccess,
       shelfTags, sessionRole, shelfAltTitles, planToReadShelfKeys, shelfRatings,
+    ],
+  );
+
+  const summaryByKey = useMemo(
+    () => new Map(allShelfSummaries.map((s) => [s.shelf.key, s])),
+    [allShelfSummaries],
+  );
+
+  const librarySummaries = useMemo(
+    () =>
+      libraryShelves.map(
+        (shelf) =>
+          summaryByKey.get(shelf.key) ??
+          summarizeShelf(
+            shelf, progress, shelfCovers, favoriteShelfKeys, shelfAccess?.[shelf.key] ?? null,
+            shelfTags, sessionRole, shelfAltTitles, planToReadShelfKeys, shelfRatings,
+          ),
+      ),
+    [
+      libraryShelves, summaryByKey, progress, shelfCovers, favoriteShelfKeys,
+      shelfAccess, shelfTags, sessionRole, shelfAltTitles, planToReadShelfKeys, shelfRatings,
     ],
   );
 
   const openedShelfSummary = useMemo(
     () =>
       openedLibraryShelf
-        ? summarizeShelf(
+        ? summaryByKey.get(openedLibraryShelf.key) ??
+          summarizeShelf(
             openedLibraryShelf, progress, shelfCovers, favoriteShelfKeys,
             shelfAccess?.[openedLibraryShelf.key] ?? null, shelfTags, sessionRole,
             shelfAltTitles, planToReadShelfKeys, shelfRatings,
           )
         : null,
     [
-      openedLibraryShelf, progress, shelfCovers, favoriteShelfKeys, shelfAccess,
-      shelfTags, sessionRole, shelfAltTitles, planToReadShelfKeys, shelfRatings,
+      openedLibraryShelf, summaryByKey, progress, shelfCovers, favoriteShelfKeys,
+      shelfAccess, shelfTags, sessionRole, shelfAltTitles, planToReadShelfKeys, shelfRatings,
     ],
   );
 
-  const pickingSummary: ShelfSummary | null = useMemo(() => {
-    if (!pickingShelfKey) return null;
-    if (openedShelfSummary?.shelf.key === pickingShelfKey) return openedShelfSummary;
-    return librarySummaries.find((s) => s.shelf.key === pickingShelfKey) ?? null;
-  }, [pickingShelfKey, openedShelfSummary, librarySummaries]);
+  const pickingSummary: ShelfSummary | null = useMemo(
+    () => (pickingShelfKey ? summaryByKey.get(pickingShelfKey) ?? null : null),
+    [pickingShelfKey, summaryByKey],
+  );
 
   const accessTargetShelf: ShelfGroup | null = useMemo(() => {
     if (!accessShelfKey) return null;
@@ -268,12 +294,16 @@ export function LibraryCatalogView({
       {openedShelfSummary ? (
         <ShelfDetailView
           summary={openedShelfSummary}
+          allSummaries={allShelfSummaries}
+          shelfRelations={shelfRelations}
+          bookAccess={bookAccess}
           progress={progress}
           planToReadBookIds={planToReadBookIds}
           sessionRole={sessionRole}
           selectionMode={selectionMode}
           selectedIds={selectedIds}
           onBack={onCloseShelf}
+          onOpenShelf={onOpenShelf}
           onOpenBook={onOpenBook}
           onInspectBook={onInspectBook}
           onSelectAuthor={onSelectAuthor}
@@ -284,12 +314,18 @@ export function LibraryCatalogView({
           onClearSelection={onClearSelection}
           onToggleSelectionMode={onToggleSelectionMode}
           onEditBook={onEditBook}
+          onManageBookAccess={onManageBookAccess}
           onRenameShelf={onRenameShelf}
           onChangeShelfCover={handleOpenCoverPicker}
           onOpenBatchNotes={onBooksUpdated ? () => setBatchNoteOpen(true) : undefined}
           onManageAccess={
             onShelfAccessChanged
               ? () => setAccessShelfKey(openedShelfSummary.shelf.key)
+              : undefined
+          }
+          onManageRelations={
+            onShelfRelationSaved && onShelfRelationDeleted
+              ? () => setRelationsModalOpen(true)
               : undefined
           }
           onAnnounceDiscord={handleAnnounceOpenedShelf}
@@ -434,70 +470,37 @@ export function LibraryCatalogView({
         </section>
       )}
 
-      {onShelfCoverChanged && (
-        <ShelfCoverPickerModal
-          shelf={pickingSummary?.shelf ?? null}
-          customCoverBookId={pickingSummary?.customCoverBookId ?? null}
-          onClose={() => setPickingShelfKey(null)}
-          onCoverChanged={onShelfCoverChanged}
-          onApiError={onApiError}
-          onNotify={onNotify}
-        />
-      )}
-
-      {onBooksUpdated && batchNoteOpen && (
-        <ShelfBatchNoteModal
-          shelf={openedShelfSummary?.shelf ?? null}
-          currentAltTitles={openedShelfSummary?.altTitles ?? []}
-          currentTags={openedShelfSummary?.tags ?? []}
-          onClose={() => setBatchNoteOpen(false)}
-          onBooksUpdated={onBooksUpdated}
-          onAltTitlesSaved={onShelfAltTitlesChanged}
-          onTagsSaved={onShelfTagsChanged}
-          onApiError={onApiError}
-          onNotify={onNotify}
-        />
-      )}
-
-      {onShelfAccessChanged && accessTargetShelf && (
-        <ShelfAccessModal
-          shelf={accessTargetShelf}
-          allShelfNames={allShelfNames}
-          onClose={() => setAccessShelfKey(null)}
-          onAccessSaved={onShelfAccessChanged}
-          onApiError={onApiError}
-          onNotify={onNotify}
-        />
-      )}
-
-      {onShelfTagsChanged && tagsModalOpen && openedShelfSummary && (
-        <ShelfTagsModal
-          shelf={openedShelfSummary.shelf}
-          currentTags={openedShelfSummary.tags}
-          currentAltTitles={openedShelfSummary.altTitles}
-          allShelfTags={shelfTags}
-          onClose={() => setTagsModalOpen(false)}
-          onTagsSaved={onShelfTagsChanged}
-          onAltTitlesSaved={onShelfAltTitlesChanged}
-          onApiError={onApiError}
-          onNotify={onNotify}
-        />
-      )}
-
-      {onCollectionSaved && onCollectionDeleted && collectionManagerOpen && (
-        <Suspense fallback={null}>
-          <LazyCollectionManagerModal
-            open={collectionManagerOpen}
-            collections={collections}
-            allShelves={allShelves}
-            onClose={() => setCollectionManagerOpen(false)}
-            onCollectionSaved={onCollectionSaved}
-            onCollectionDeleted={onCollectionDeleted}
-            onApiError={onApiError}
-            onNotify={onNotify}
-          />
-        </Suspense>
-      )}
+      <LibraryCatalogModals
+        allShelves={allShelves}
+        allShelfNames={allShelfNames}
+        collections={collections}
+        shelfTags={shelfTags}
+        shelfRelations={shelfRelations}
+        pickingSummary={pickingSummary}
+        accessTargetShelf={accessTargetShelf}
+        openedShelfSummary={openedShelfSummary}
+        batchNoteOpen={batchNoteOpen}
+        tagsModalOpen={tagsModalOpen}
+        relationsModalOpen={relationsModalOpen}
+        collectionManagerOpen={collectionManagerOpen}
+        onCloseCoverPicker={() => setPickingShelfKey(null)}
+        onCloseAccessModal={() => setAccessShelfKey(null)}
+        onCloseBatchNotes={() => setBatchNoteOpen(false)}
+        onCloseTagsModal={() => setTagsModalOpen(false)}
+        onCloseRelationsModal={() => setRelationsModalOpen(false)}
+        onCloseCollectionManager={() => setCollectionManagerOpen(false)}
+        onBooksUpdated={onBooksUpdated}
+        onShelfCoverChanged={onShelfCoverChanged}
+        onShelfAccessChanged={onShelfAccessChanged}
+        onShelfTagsChanged={onShelfTagsChanged}
+        onShelfAltTitlesChanged={onShelfAltTitlesChanged}
+        onShelfRelationSaved={onShelfRelationSaved}
+        onShelfRelationDeleted={onShelfRelationDeleted}
+        onCollectionSaved={onCollectionSaved}
+        onCollectionDeleted={onCollectionDeleted}
+        onApiError={onApiError}
+        onNotify={onNotify}
+      />
     </>
   );
 }

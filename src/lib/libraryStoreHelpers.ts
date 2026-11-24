@@ -1,4 +1,10 @@
-import type { Book, CustomCollection, ShelfRatingSummary } from '@/types';
+import type {
+  Book,
+  BookAccessSummary,
+  CustomCollection,
+  ShelfRatingSummary,
+  ShelfRelation,
+} from '@/types';
 import { toShelfPrefKey } from '@/lib/shelfPrefs';
 
 export type IdleWindow = Window & { requestIdleCallback?: (cb: () => void) => number };
@@ -84,4 +90,82 @@ export function pruneOrphanShelfRatings(
     else changed = true;
   }
   return changed ? nextRatings : prevRatings;
+}
+
+function makeUndirectedPairKey(a: string, b: string): string {
+  return a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`;
+}
+
+export function upsertShelfRelationItem(
+  prev: readonly ShelfRelation[],
+  incoming: ShelfRelation,
+): ShelfRelation[] {
+  const pairKey = makeUndirectedPairKey(incoming.sourceShelfKey, incoming.targetShelfKey);
+  const filtered = prev.filter(
+    (item) => makeUndirectedPairKey(item.sourceShelfKey, item.targetShelfKey) !== pairKey,
+  );
+  return [...filtered, incoming];
+}
+
+export function removeShelfRelationPair(
+  prev: readonly ShelfRelation[],
+  shelfAKey: string,
+  shelfBKey: string,
+): ShelfRelation[] {
+  const pairKey = makeUndirectedPairKey(shelfAKey, shelfBKey);
+  return prev.filter(
+    (item) => makeUndirectedPairKey(item.sourceShelfKey, item.targetShelfKey) !== pairKey,
+  );
+}
+
+export function mergeShelfRelationsOnRename(
+  prev: readonly ShelfRelation[],
+  oldKey: string,
+  newKey: string,
+): ShelfRelation[] {
+  if (!oldKey || !newKey || oldKey === newKey || prev.length === 0) return [...prev];
+  const byPair = new Map<string, ShelfRelation>();
+  for (const item of prev) {
+    const src = item.sourceShelfKey === oldKey ? newKey : item.sourceShelfKey;
+    const dst = item.targetShelfKey === oldKey ? newKey : item.targetShelfKey;
+    if (!src || !dst || src === dst) continue;
+    const pk = makeUndirectedPairKey(src, dst);
+    const existing = byPair.get(pk);
+    const candidate: ShelfRelation = {
+      sourceShelfKey: src,
+      targetShelfKey: dst,
+      relationType: item.relationType,
+      createdAt: item.createdAt,
+    };
+    if (!existing || candidate.createdAt >= existing.createdAt) {
+      byPair.set(pk, candidate);
+    }
+  }
+  return Array.from(byPair.values());
+}
+
+export function pruneOrphanShelfRelations(
+  prev: readonly ShelfRelation[],
+  remainingBooks: readonly Book[],
+): ShelfRelation[] {
+  if (prev.length === 0) return [];
+  const aliveShelfKeys = new Set(
+    remainingBooks.map((b) => toShelfPrefKey(b.shelf || 'Kho chưa phân loại')),
+  );
+  return prev.filter(
+    (item) => aliveShelfKeys.has(item.sourceShelfKey) && aliveShelfKeys.has(item.targetShelfKey),
+  );
+}
+
+export function pruneDeletedBookAccess(
+  prev: Record<string, BookAccessSummary>,
+  deletedIds: ReadonlySet<string>,
+): Record<string, BookAccessSummary> {
+  let changed = false;
+  const next: Record<string, BookAccessSummary> = {};
+  for (const [id, summary] of Object.entries(prev)) {
+    if (deletedIds.has(id)) changed = true;
+    else next[id] = summary;
+  }
+  return changed ? next : prev;
 }

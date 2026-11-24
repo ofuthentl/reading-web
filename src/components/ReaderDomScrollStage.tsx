@@ -41,6 +41,7 @@ export interface ReaderDomScrollStageProps {
   onPrevChapter: () => void;
   onNextChapter: () => void;
   onCompleteBook: (nextBook?: Book) => void;
+  onStartReread?: () => void;
   onOpenDomImage: (src: string, alt: string) => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
@@ -71,6 +72,7 @@ export function ReaderDomScrollStage({
   onPrevChapter,
   onNextChapter,
   onCompleteBook,
+  onStartReread,
   onOpenDomImage,
   onApiError,
 }: ReaderDomScrollStageProps) {
@@ -145,6 +147,7 @@ export function ReaderDomScrollStage({
             onNext={onNextChapter}
             onCompleteAndClose={() => onCompleteBook()}
             onCompleteAndOpenNext={(nb) => onCompleteBook(nb)}
+            onStartReread={onStartReread}
           />
 
           {chapterIndex >= totalChapters - 1 ? (

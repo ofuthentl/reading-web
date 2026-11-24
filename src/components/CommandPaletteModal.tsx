@@ -47,6 +47,7 @@ export interface CommandPaletteModalProps {
   onSelectCollection: (collectionId: string) => void;
   onCycleTheme: () => void;
   onOpenStats: () => void;
+  onOpenLibraryHealth?: () => void;
   onOpenCacheManager?: () => void;
   onUploadClick?: () => void;
 }
@@ -76,6 +77,7 @@ export function CommandPaletteModal({
   onSelectCollection,
   onCycleTheme,
   onOpenStats,
+  onOpenLibraryHealth,
   onOpenCacheManager,
   onUploadClick,
 }: CommandPaletteModalProps) {
@@ -129,6 +131,19 @@ export function CommandPaletteModal({
         },
       },
     ];
+    if (onOpenLibraryHealth) {
+      list.push({
+        id: 'library-health',
+        title: 'Kiểm tra sức khoẻ kho sách',
+        subtitle: 'Rà soát tập thiếu bìa, thiếu mô tả, chưa đồng bộ gói khách & kệ nghi trùng',
+        keywords: 'suc khoe health audit thieu bia trung ke kiem tra kho',
+        ownerOnly: true,
+        onTrigger: () => {
+          onClose();
+          onOpenLibraryHealth();
+        },
+      });
+    }
     if (onOpenCacheManager) {
       list.push({
         id: 'cache-manager',
@@ -156,7 +171,7 @@ export function CommandPaletteModal({
       });
     }
     return list;
-  }, [onClose, onCycleTheme, onOpenCacheManager, onOpenStats, onUploadClick]);
+  }, [onClose, onCycleTheme, onOpenCacheManager, onOpenLibraryHealth, onOpenStats, onUploadClick]);
 
   const results = useMemo(
     () =>
