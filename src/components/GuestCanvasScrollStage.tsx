@@ -27,10 +27,12 @@ export interface GuestCanvasScrollStageProps {
   settingsOpen: boolean;
   immersiveHidden: boolean;
   pageHidden: boolean;
+  autoScrollOpen?: boolean;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   canvasRef: React.RefObject<HTMLCanvasElement>;
   onScroll: () => void;
   onCloseSettings: () => void;
+  onToggleAutoScrollPlay?: () => void;
   onRevealToolbar: () => void;
   onPrevChapter: () => void;
   onNextChapter: () => void;
@@ -55,10 +57,12 @@ export function GuestCanvasScrollStage({
   settingsOpen,
   immersiveHidden,
   pageHidden,
+  autoScrollOpen = false,
   scrollContainerRef,
   canvasRef,
   onScroll,
   onCloseSettings,
+  onToggleAutoScrollPlay,
   onRevealToolbar,
   onPrevChapter,
   onNextChapter,
@@ -112,6 +116,10 @@ export function GuestCanvasScrollStage({
           }
         }
 
+        if (autoScrollOpen && onToggleAutoScrollPlay) {
+          onToggleAutoScrollPlay();
+          return;
+        }
         const rect = event.currentTarget.getBoundingClientRect();
         const ratio = (event.clientX - rect.left) / rect.width;
         if (settings.sideTapNavigation && ratio < 0.16) onPrevChapter();

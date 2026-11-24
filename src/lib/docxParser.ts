@@ -211,6 +211,33 @@ async function renderParagraphContent(
         text += linkText;
         break;
       }
+      case 'ruby': {
+        const rubyBase = findDirectChild(node, 'rubyBase');
+        const rtNode = findDirectChild(node, 'rt');
+        let baseHtml = '';
+        let baseText = '';
+        let rtText = '';
+        if (rubyBase) {
+          for (const child of Array.from(rubyBase.children)) {
+            if (child.localName === 'r') {
+              const rendered = await renderRunElement(child, ctx, noteRefs);
+              baseHtml += rendered.html;
+              baseText += rendered.text;
+              if (rendered.hasMedia) hasMedia = true;
+            }
+          }
+        }
+        if (rtNode) {
+          rtText = (rtNode.textContent || '').replace(/\s+/g, ' ').trim();
+        }
+        if (baseHtml) {
+          html += rtText
+            ? `<ruby>${baseHtml}<rp>(</rp><rt>${escapeHtml(rtText)}</rt><rp>)</rp></ruby>`
+            : baseHtml;
+          text += baseText;
+        }
+        break;
+      }
       case 'ins':
       case 'smartTag': {
         for (const child of Array.from(node.children)) await walkNode(child);

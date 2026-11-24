@@ -239,22 +239,34 @@ export function drawCanvasLayoutItems(options: {
   bitmaps: ReadonlyMap<number, ImageBitmap>;
   highlightSourceY?: number | null;
   footnoteKeys?: ReadonlySet<string>;
+  focusBand?: { minY: number; maxY: number } | null;
+  focusedBlockSet?: ReadonlySet<number> | null;
+  showFocusAccentBar?: boolean;
 }) {
   const {
-    ctx,
-    items,
-    contentWidth,
-    offsetX,
-    sliceTop,
-    sliceHeight,
-    canvasCssWidth,
-    palette,
-    font,
-    watermarkLabel,
-    bitmaps,
-    highlightSourceY = null,
-    footnoteKeys,
+    ctx, items, contentWidth, offsetX, sliceTop, sliceHeight, canvasCssWidth,
+    palette, font, watermarkLabel, bitmaps, highlightSourceY = null, footnoteKeys,
+    focusBand = null, focusedBlockSet = null, showFocusAccentBar = false,
   } = options;
+
+  let focusedBlocks: ReadonlySet<number> | null = focusedBlockSet;
+  if (!focusedBlocks && focusBand) {
+    const computed = new Set<number>();
+    let nearestBlock: number | null = null;
+    let nearestDist = Number.POSITIVE_INFINITY;
+    const mid = (focusBand.minY + focusBand.maxY) / 2;
+    for (const it of items) {
+      if (it.kind !== 'text-line' || it.blockIndex === undefined) continue;
+      if (it.y + it.height >= focusBand.minY && it.y <= focusBand.maxY) {
+        computed.add(it.blockIndex);
+      } else {
+        const d = Math.abs(it.y + it.height / 2 - mid);
+        if (d < nearestDist) { nearestDist = d; nearestBlock = it.blockIndex; }
+      }
+    }
+    if (computed.size === 0 && nearestBlock !== null) computed.add(nearestBlock);
+    focusedBlocks = computed;
+  }
 
   const sliceBottom = sliceTop + sliceHeight;
 
@@ -266,6 +278,7 @@ export function drawCanvasLayoutItems(options: {
 
     if (item.kind === 'chapter-header') {
       ctx.save();
+      if (focusedBlocks && !focusedBlocks.has(0)) ctx.globalAlpha = 0.34;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.font = '600 11px "Be Vietnam Pro", system-ui, sans-serif';
@@ -328,22 +341,10 @@ export function drawCanvasLayoutItems(options: {
         ctx.rect(imgX, imgY, item.drawWidth, item.drawHeight);
         ctx.clip();
         drawWatermarkGrid(
-          ctx,
-          watermarkLabel,
-          canvasCssWidth,
-          sliceTop,
-          sliceHeight,
-          'rgba(255, 255, 255, 0.14)',
-          12,
+          ctx, watermarkLabel, canvasCssWidth, sliceTop, sliceHeight, 'rgba(255, 255, 255, 0.14)', 12,
         );
         drawWatermarkGrid(
-          ctx,
-          watermarkLabel,
-          canvasCssWidth,
-          sliceTop + 2,
-          sliceHeight,
-          'rgba(0, 0, 0, 0.12)',
-          12,
+          ctx, watermarkLabel, canvasCssWidth, sliceTop + 2, sliceHeight, 'rgba(0, 0, 0, 0.12)', 12,
         );
       } else {
         ctx.fillStyle = palette.imageFrameBg;
@@ -366,6 +367,19 @@ export function drawCanvasLayoutItems(options: {
     }
 
     ctx.save();
+    const isFocusedBlock =
+      focusedBlocks !== null && item.blockIndex !== undefined && focusedBlocks.has(item.blockIndex);
+    if (
+      focusedBlocks &&
+      item.blockIndex !== undefined &&
+      !isFocusedBlock &&
+      !item.flashHighlight
+    ) {
+      ctx.globalAlpha = 0.32;
+    } else if (showFocusAccentBar && isFocusedBlock) {
+      ctx.fillStyle = 'rgba(217, 119, 6, 0.72)';
+      ctx.fillRect(Math.max(1, offsetX - 8), localY + 2, 2.5, Math.max(8, item.height - 4));
+    }
     const accentX = Math.max(2, offsetX - 6);
     const accentRight = Math.min(canvasCssWidth - 2, offsetX + contentWidth + 6);
     const accentWidth = Math.max(4, accentRight - accentX);
@@ -380,6 +394,7 @@ export function drawCanvasLayoutItems(options: {
       item.flashHighlight === true ||
       (highlightSourceY !== null && Math.abs(item.y - highlightSourceY) <= item.height * 1.15);
     if (isFlashed) {
+      ctx.globalAlpha = 1;
       ctx.fillStyle = 'rgba(245, 158, 11, 0.32)';
       ctx.fillRect(accentX, localY - 2, accentWidth, item.height + 2);
       ctx.fillStyle = 'rgba(245, 158, 11, 0.85)';
@@ -388,7 +403,7 @@ export function drawCanvasLayoutItems(options: {
 
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    const baselineY = localY + Math.round(item.fontSize * 1.05);
+    const baselineY = localY + (item.rubyHeadroom ?? 0) + Math.round(item.fontSize * 1.05);
 
     if (item.isQuote) {
       ctx.fillStyle = palette.divider;
@@ -407,12 +422,20 @@ export function drawCanvasLayoutItems(options: {
     ctx.fillStyle = normalFill;
     for (const frag of item.fragments) {
       ctx.font = buildCanvasFontSpec(
-        item.isHeading ? 'serif' : font,
-        item.fontSize,
-        item.isHeading || frag.bold,
-        frag.italic,
+        item.isHeading ? 'serif' : font, item.fontSize, item.isHeading || frag.bold, frag.italic,
       );
       ctx.fillText(frag.text, offsetX + frag.x, baselineY);
+
+      if (frag.rt) {
+        const baseW = ctx.measureText(frag.text).width;
+        const rtSize = Math.max(9, Math.round(item.fontSize * 0.52));
+        ctx.save();
+        ctx.font = buildCanvasFontSpec(font, rtSize, false, false);
+        ctx.fillStyle = palette.inkSecondary;
+        ctx.textAlign = 'center';
+        ctx.fillText(frag.rt, offsetX + frag.x + baseW / 2, baselineY - Math.round(item.fontSize * 0.92));
+        ctx.restore();
+      }
 
       if (footnoteKeys && footnoteKeys.size > 0 && (frag.text.includes('[') || frag.text.includes('('))) {
         INLINE_FOOTNOTE_TOKEN_RE.lastIndex = 0;
@@ -450,46 +473,23 @@ export function paintGuestViewportCanvas(options: {
   bitmaps: ReadonlyMap<number, ImageBitmap>;
   highlightSourceY?: number | null;
   footnoteKeys?: ReadonlySet<string>;
+  focusBand?: { minY: number; maxY: number } | null;
 }) {
   const {
-    canvas,
-    layout,
-    sliceTop,
-    sliceHeight,
-    canvasCssWidth,
-    theme,
-    font,
-    watermarkLabel,
-    bitmaps,
-    highlightSourceY = null,
-    footnoteKeys,
+    canvas, layout, sliceTop, sliceHeight, canvasCssWidth, theme,
+    font, watermarkLabel, bitmaps, highlightSourceY = null, footnoteKeys, focusBand = null,
   } = options;
 
   const surface = prepareProtectedCanvasSurface({
-    canvas,
-    canvasCssWidth,
-    sliceTop,
-    sliceHeight,
-    theme,
-    watermarkLabel,
+    canvas, canvasCssWidth, sliceTop, sliceHeight, theme, watermarkLabel,
   });
   if (!surface) return;
 
   const offsetX = Math.max(0, Math.floor((canvasCssWidth - layout.contentWidth) / 2));
   drawCanvasLayoutItems({
-    ctx: surface.ctx,
-    items: layout.items,
-    contentWidth: layout.contentWidth,
-    offsetX,
-    sliceTop,
-    sliceHeight,
-    canvasCssWidth,
-    palette: surface.palette,
-    font,
-    watermarkLabel,
-    bitmaps,
-    highlightSourceY,
-    footnoteKeys,
+    ctx: surface.ctx, items: layout.items, contentWidth: layout.contentWidth, offsetX,
+    sliceTop, sliceHeight, canvasCssWidth, palette: surface.palette, font, watermarkLabel,
+    bitmaps, highlightSourceY, footnoteKeys, focusBand,
   });
 }
 

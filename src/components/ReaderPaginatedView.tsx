@@ -12,21 +12,15 @@ import {
 } from 'react';
 import type { Book, BookHighlight, Chapter, ReaderSettings } from '@/types';
 import { ReaderPaginatedFooter } from '@/components/ReaderPaginatedFooter';
+import { useDomPaginatedReadingRuler } from '@/hooks/usePaginatedReadingRuler';
 import { applyChapterDomHighlights } from '@/lib/domHighlights';
 import type { CanvasLayoutItem } from '@/lib/guestCanvasLayout';
 import {
-  READER_FONT_CLASS,
-  type ReaderThemePalette,
-  findClickedReaderImage,
-  handleReaderContentLinkClick,
-  resolvePaginatedSpreadWidth,
+  READER_FONT_CLASS, type ReaderThemePalette,
+  findClickedReaderImage, handleReaderContentLinkClick, resolvePaginatedSpreadWidth,
 } from '@/lib/readerConfig';
 import { buildReaderTypographyStyle } from '@/lib/readingEstimate';
-import {
-  type ReaderSearchJumpTarget,
-  findDomBlockForSearchQuery,
-  flashDomSearchElement,
-} from '@/lib/readerSearchJump';
+import { type ReaderSearchJumpTarget, findDomBlockForSearchQuery, flashDomSearchElement } from '@/lib/readerSearchJump';
 
 export interface PaginatedStageHandle {
   stepPrev: () => void;
@@ -58,6 +52,7 @@ interface ReaderPaginatedViewProps {
   onNextChapterStart: () => void;
   onCompleteBook: (nextBook?: Book) => void;
   onOpenImage: (src: string, alt: string) => void;
+  onPageTurn?: () => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
 
@@ -86,13 +81,17 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       onNextChapterStart,
       onCompleteBook,
       onOpenImage,
+      onPageTurn,
       onApiError,
     },
     ref,
   ) {
+    const stageRef = useRef<HTMLDivElement | null>(null);
     const outerRef = useRef<HTMLDivElement | null>(null);
     const clipRef = useRef<HTMLDivElement | null>(null);
     const trackRef = useRef<HTMLDivElement | null>(null);
+    const headerRef = useRef<HTMLElement | null>(null);
+    const rulerIndicatorRef = useRef<HTMLSpanElement | null>(null);
     const touchStartRef = useRef<{ x: number; y: number } | null>(null);
     const wheelCooldownRef = useRef(0);
     const anchorRatioRef = useRef(Math.min(1, Math.max(0, initialRatio)));
@@ -251,19 +250,23 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
 
     const stepPrev = useCallback(() => {
       if (safePageIndex > 0) {
+        onPageTurn?.();
         commitPage(safePageIndex - 1, true);
       } else if (chapterIndex > 0) {
+        onPageTurn?.();
         onPrevChapterEnd();
       }
-    }, [chapterIndex, commitPage, onPrevChapterEnd, safePageIndex]);
+    }, [chapterIndex, commitPage, onPageTurn, onPrevChapterEnd, safePageIndex]);
 
     const stepNext = useCallback(() => {
       if (safePageIndex < totalPages - 1) {
+        onPageTurn?.();
         commitPage(safePageIndex + 1, true);
       } else if (chapterIndex < totalChapters - 1) {
+        onPageTurn?.();
         onNextChapterStart();
       }
-    }, [chapterIndex, commitPage, onNextChapterStart, safePageIndex, totalChapters, totalPages]);
+    }, [chapterIndex, commitPage, onNextChapterStart, onPageTurn, safePageIndex, totalChapters, totalPages]);
 
     const jumpToRatio = useCallback(
       (ratio: number) => {
@@ -336,6 +339,17 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
     const isLastChapter = chapterIndex >= totalChapters - 1;
     const isLastSpread = safePageIndex >= totalPages - 1;
     const isFirstSpread = safePageIndex === 0 && chapterIndex === 0;
+    const rulerDepsKey = `${chapter.id}:${safePageIndex}:${totalPages}:${geometry.columns}:${geometry.colWidth}:${geometry.pageHeight}:${settings.fontSizePx}:${settings.lineHeight}:${imagesSettled}`;
+    const { updateFromClientPoint } = useDomPaginatedReadingRuler({
+      enabled: settings.readingRuler, columns: geometry.columns, pageIndex: safePageIndex,
+      chapterId: chapter.id, layoutDepsKey: rulerDepsKey, stageRef, clipRef, trackRef,
+      headerRef, indicatorRef: rulerIndicatorRef, onStepPrevPage: stepPrev, onStepNextPage: stepNext,
+    });
+
+    const reducedMotion =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     const trackStyle: CSSProperties = {
       width: `${geometry.innerWidth}px`,
@@ -344,7 +358,8 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       columnGap: `${geometry.gap}px`,
       columnFill: 'auto',
       transform: `translate3d(-${safePageIndex * geometry.stride}px, 0, 0)`,
-      transition: animateTurn ? 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)' : 'none',
+      transition:
+        animateTurn && !reducedMotion ? 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)' : 'none',
       ['--paginated-img-max-h' as string]: `${Math.max(180, geometry.pageHeight - 36)}px`,
     };
 
@@ -352,7 +367,9 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* Vùng trang sách lật ngang (CSS Multi-column 1–2 cột, D-011) — giữ padding cố định tránh ResizeObserver thrashing */}
         <div
+          ref={stageRef}
           className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4 pb-2 pt-[3.75rem] sm:px-8 sm:pt-[4rem]"
+          onMouseMove={(event) => updateFromClientPoint(event.clientX, event.clientY)}
           onMouseUp={() => onSelectionEnd?.(trackRef.current)}
           onClick={(event) => {
             if (onCloseSettings()) return;
@@ -392,7 +409,17 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
             if (touch) touchStartRef.current = { x: touch.clientX, y: touch.clientY };
           }}
           onTouchMove={(event) => {
-            if (event.touches.length > 1) touchStartRef.current = null;
+            if (event.touches.length > 1) {
+              touchStartRef.current = null;
+              return;
+            }
+            const touch = event.touches[0];
+            const start = touchStartRef.current;
+            if (settings.readingRuler && touch && start && touch.clientX > 28) {
+              const dx = Math.abs(touch.clientX - start.x);
+              const dy = Math.abs(touch.clientY - start.y);
+              if (dy > 10 && dy > dx * 1.2) updateFromClientPoint(touch.clientX, touch.clientY);
+            }
           }}
           onTouchEnd={(event) => {
             onSelectionEnd?.(trackRef.current);
@@ -422,9 +449,17 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
           {geometry.columns === 2 && (
             <span
               aria-hidden="true"
-              className={`pointer-events-none absolute bottom-0 left-1/2 z-10 border-l transition-[top] duration-200 ${palette.border} ${
+              className={`reader-spine-gutter pointer-events-none absolute bottom-0 left-1/2 z-10 w-10 -translate-x-1/2 transition-[top] duration-200 ${
                 immersiveHidden ? 'top-0' : 'top-[3.25rem]'
               }`}
+            />
+          )}
+          {settings.readingRuler && (
+            <span
+              ref={rulerIndicatorRef}
+              aria-hidden="true"
+              className="pointer-events-none absolute left-0 top-0 z-20 w-[2.5px] rounded-full bg-amber-500/75 transition-[transform,height,opacity] duration-150 ease-out"
+              style={{ opacity: 0, height: '24px' }}
             />
           )}
 
@@ -436,6 +471,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
             >
               <div ref={trackRef} style={trackStyle} className="reading-paginated-content">
                 <header
+                  ref={headerRef}
                   className={`mb-5 border-b pb-4 text-center ${palette.border}`}
                   style={{ breakInside: 'avoid' }}
                 >

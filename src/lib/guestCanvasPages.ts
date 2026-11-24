@@ -174,6 +174,7 @@ export function paintGuestPaginatedCanvas(options: {
   highlightSourceY?: number | null;
   footnoteKeys?: ReadonlySet<string>;
   footnoteHitRectsOut?: CanvasFootnoteHitRect[];
+  focusedTarget?: { col: 0 | 1; blockIndex: number } | null;
 }): CanvasImageHitRect[] {
   const {
     canvas,
@@ -190,15 +191,18 @@ export function paintGuestPaginatedCanvas(options: {
     highlightSourceY = null,
     footnoteKeys,
     footnoteHitRectsOut,
+    focusedTarget = null,
   } = options;
 
   const totalCssW = columns === 2 ? columnWidth * 2 + columnGap : columnWidth;
-  canvas.style.width = `${totalCssW}px`;
+  const padX = focusedTarget ? 10 : 0;
+  const surfaceW = totalCssW + padX * 2;
+  canvas.style.width = `${surfaceW}px`;
   canvas.style.height = `${pageHeight}px`;
 
   const surface = prepareProtectedCanvasSurface({
     canvas,
-    canvasCssWidth: totalCssW,
+    canvasCssWidth: surfaceW,
     sliceTop: 0,
     sliceHeight: pageHeight,
     theme,
@@ -209,12 +213,24 @@ export function paintGuestPaginatedCanvas(options: {
   const hitRects: CanvasImageHitRect[] = [];
   const footnoteRects: CanvasFootnoteHitRect[] = [];
   const { ctx, palette } = surface;
+  const leftFocusSet =
+    focusedTarget === null
+      ? null
+      : focusedTarget.col === 0
+        ? new Set([focusedTarget.blockIndex])
+        : new Set<number>();
+  const rightFocusSet =
+    focusedTarget === null
+      ? null
+      : focusedTarget.col === 1
+        ? new Set([focusedTarget.blockIndex])
+        : new Set<number>();
 
   if (leftPage && leftPage.items.length > 0) {
     const shiftedLeft = shiftColumnItems(
       leftPage,
       columnWidth,
-      0,
+      padX,
       pageHeight,
       font,
       hitRects,
@@ -226,20 +242,22 @@ export function paintGuestPaginatedCanvas(options: {
       ctx,
       items: shiftedLeft,
       contentWidth: columnWidth,
-      offsetX: 0,
+      offsetX: padX,
       sliceTop: 0,
       sliceHeight: pageHeight,
-      canvasCssWidth: totalCssW,
+      canvasCssWidth: surfaceW,
       palette,
       font,
       watermarkLabel,
       bitmaps,
       footnoteKeys,
+      focusedBlockSet: leftFocusSet,
+      showFocusAccentBar: focusedTarget?.col === 0,
     });
   }
 
   if (columns === 2 && rightPage && rightPage.items.length > 0) {
-    const rightOffsetX = columnWidth + columnGap;
+    const rightOffsetX = padX + columnWidth + columnGap;
     const shiftedRight = shiftColumnItems(
       rightPage,
       columnWidth,
@@ -258,12 +276,14 @@ export function paintGuestPaginatedCanvas(options: {
       offsetX: rightOffsetX,
       sliceTop: 0,
       sliceHeight: pageHeight,
-      canvasCssWidth: totalCssW,
+      canvasCssWidth: surfaceW,
       palette,
       font,
       watermarkLabel,
       bitmaps,
       footnoteKeys,
+      focusedBlockSet: rightFocusSet,
+      showFocusAccentBar: focusedTarget?.col === 1,
     });
   }
 

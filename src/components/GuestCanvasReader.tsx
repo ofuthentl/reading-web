@@ -21,6 +21,7 @@ import {
   ReaderFooterStatusBar,
   ReaderNightDimOverlay,
 } from '@/components/ReaderFooterStatusBar';
+import { ReaderImmersionChrome } from '@/components/ReaderScrollEnhancements';
 import { ReaderOverlaysHost } from '@/components/ReaderOverlaysHost';
 import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
 import { ReaderTopBar } from '@/components/ReaderTopBar';
@@ -29,6 +30,8 @@ import { useGuestChapterStream } from '@/hooks/useGuestChapterStream';
 import { useReaderBookFeatures } from '@/hooks/useReaderBookFeatures';
 import { useReaderCanvasFontVersion } from '@/hooks/useReaderCanvasFontVersion';
 import { useReaderChapterProgress } from '@/hooks/useReaderChapterProgress';
+import { useReaderImmersionTools } from '@/hooks/useReaderImmersionTools';
+import { useReaderSoundBarModel } from '@/hooks/useReaderScrollGestures';
 import { buildGuestChapterFootnoteMap } from '@/lib/epubFootnotes';
 import {
   computeChapterCanvasLayout,
@@ -135,15 +138,22 @@ export function GuestCanvasReader({
 
   const currentTocItem = tocChapters[chapterIndex];
   const features = useReaderBookFeatures({
-    bookId: book.id,
-    chapterIndex,
-    currentChapterId: currentTocItem?.id || '',
-    currentChapterTitle: currentTocItem?.title || '',
-    initialChapterIndex: initialProgress?.chapterIndex ?? 0,
-    initialCompleted: Boolean(initialProgress?.completed),
-    totalChapters: tocChapters.length,
-    onApiError,
+    bookId: book.id, chapterIndex, currentChapterId: currentTocItem?.id || '',
+    currentChapterTitle: currentTocItem?.title || '', initialChapterIndex: initialProgress?.chapterIndex ?? 0,
+    initialCompleted: Boolean(initialProgress?.completed), totalChapters: tocChapters.length, onApiError,
   });
+
+  const anyOverlayOpen =
+    tocOpen || settingsOpen || Boolean(lightboxTarget) || Boolean(features.activeFootnote) ||
+    features.guestPickerOpen || Boolean(features.editingHighlight);
+  const immersion = useReaderImmersionTools({
+    isPaginated, scrollContainerRef, overlayOpen: anyOverlayOpen, chapterId: currentTocItem?.id || '',
+  });
+  const closePopoversForSound = useCallback(() => {
+    setTocOpen(false);
+    setSettingsOpen(false);
+  }, [setSettingsOpen, setTocOpen]);
+  const soundBarModel = useReaderSoundBarModel(immersion, closePopoversForSound);
 
   const tocDrawerChapters = useMemo<Chapter[]>(
     () =>
@@ -227,19 +237,24 @@ export function GuestCanvasReader({
     canvas.style.width = `${stageBox.width}px`;
     canvas.style.height = `${sliceHeight}px`;
 
+    const maxScroll = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+    const vTop = scrollEl.scrollTop;
+    const vH = scrollEl.clientHeight;
+    const focusBand = settings.readingRuler
+      ? {
+          minY: vTop <= 48 ? 0 : vTop + vH * 0.28,
+          maxY: maxScroll > 0 && vTop >= maxScroll - 64 ? layout.totalHeight : vTop + vH * 0.62,
+        }
+      : null;
+
     paintGuestViewportCanvas({
-      canvas, layout, sliceTop, sliceHeight,
-      canvasCssWidth: stageBox.width,
-      theme: settings.theme,
-      font: settings.font,
-      watermarkLabel: effectiveWatermark,
-      bitmaps: bitmapsRef.current,
-      highlightSourceY,
-      footnoteKeys,
+      canvas, layout, sliceTop, sliceHeight, canvasCssWidth: stageBox.width,
+      theme: settings.theme, font: settings.font, watermarkLabel: effectiveWatermark,
+      bitmaps: bitmapsRef.current, highlightSourceY, footnoteKeys, focusBand,
     });
   }, [
     bitmapsRef, effectiveWatermark, footnoteKeys, highlightSourceY,
-    layout, settings.font, settings.theme, stageBox.height, stageBox.width,
+    layout, settings.font, settings.readingRuler, settings.theme, stageBox.height, stageBox.width,
   ]);
 
   paintSliceRef.current = paintVisibleSlice;
@@ -399,11 +414,14 @@ export function GuestCanvasReader({
         settings={settings}
         palette={palette}
         statusBadge={watermarkBadge}
+        soundModel={soundBarModel}
+        autoScrollActive={immersion.autoScrollOpen}
+        onToggleAutoScroll={immersion.toggleAutoScrollBar}
         onBack={() => { flushProgress({ forceTimeFlush: true, keepalive: true }); onClose(); }}
-        onOpenDrawerTab={openDrawerTab}
+        onOpenDrawerTab={(tab) => { immersion.setSoundOpen(false); openDrawerTab(tab); }}
         onQuickGuestHighlight={() => features.setGuestPickerOpen(true)}
-        onHideToolbar={() => { setSettingsOpen(false); setImmersiveHidden(true); }}
-        onToggleSettings={() => { setTocOpen(false); setSettingsOpen((v) => !v); }}
+        onHideToolbar={() => { setSettingsOpen(false); immersion.setSoundOpen(false); setImmersiveHidden(true); }}
+        onToggleSettings={() => { setTocOpen(false); immersion.setSoundOpen(false); setSettingsOpen((v) => !v); }}
         onCloseSettings={() => setSettingsOpen(false)}
         onUpdateSettings={handleUpdateSettings}
       />
@@ -430,29 +448,18 @@ export function GuestCanvasReader({
         <>
           <GuestCanvasPaginatedView
             ref={paginatedRef}
-            bookId={book.id}
-            bookTitle={book.title}
-            chapterData={chapterData}
-            chapterIndex={chapterIndex}
-            totalChapters={tocChapters.length}
-            initialRatio={paginatedStartRatio}
-            watermarkLabel={effectiveWatermark}
-            imageSizes={imageSizes}
-            bitmapsRef={bitmapsRef}
-            blockHighlightColors={features.blockHighlightColors}
-            footnoteMap={footnoteMap}
-            nextBook={nextBook}
-            settings={settings}
-            palette={palette}
-            immersiveHidden={immersiveHidden}
-            pageHidden={pageHidden}
-            remainingEstimate={remainingEstimate}
-            searchTarget={searchTarget}
+            bookId={book.id} bookTitle={book.title} chapterData={chapterData}
+            chapterIndex={chapterIndex} totalChapters={tocChapters.length}
+            initialRatio={paginatedStartRatio} watermarkLabel={effectiveWatermark}
+            imageSizes={imageSizes} bitmapsRef={bitmapsRef}
+            blockHighlightColors={features.blockHighlightColors} footnoteMap={footnoteMap}
+            nextBook={nextBook} settings={settings} palette={palette}
+            immersiveHidden={immersiveHidden} pageHidden={pageHidden}
+            remainingEstimate={remainingEstimate} searchTarget={searchTarget}
             onToggleImmersive={() => setImmersiveHidden((prev) => !prev)}
             onCloseSettings={() => {
-              if (!settingsOpen) return false;
-              setSettingsOpen(false);
-              return true;
+              if (!settingsOpen && !immersion.soundOpen) return false;
+              setSettingsOpen(false); immersion.setSoundOpen(false); return true;
             }}
             onRatioChange={handlePaginatedRatioChange}
             onPrevChapterEnd={() => { if (chapterIndex > 0) goToChapter(chapterIndex - 1, 1); }}
@@ -462,6 +469,7 @@ export function GuestCanvasReader({
               setLightboxTarget({ kind: 'guest-bitmap', bitmap, watermarkLabel: effectiveWatermark, alt })
             }
             onOpenFootnote={(fn) => features.setActiveFootnote(fn)}
+            onPageTurn={immersion.triggerPageTurnSound}
             onApiError={onApiError}
           />
           <div className="h-1 w-full shrink-0 bg-black/10">
@@ -471,27 +479,19 @@ export function GuestCanvasReader({
       ) : (
         <>
           <GuestCanvasScrollStage
-            bookId={book.id}
-            bookTitle={book.title}
-            chapterIndex={chapterIndex}
-            totalChapters={tocChapters.length}
-            stageWidth={stageBox.width}
-            layout={layout}
-            footnoteMap={footnoteMap}
-            bitmapsRef={bitmapsRef}
-            nextBook={nextBook}
-            settings={settings}
-            palette={palette}
-            settingsOpen={settingsOpen}
-            immersiveHidden={immersiveHidden}
-            pageHidden={pageHidden}
-            scrollContainerRef={scrollContainerRef}
-            canvasRef={canvasRef}
+            bookId={book.id} bookTitle={book.title} chapterIndex={chapterIndex}
+            totalChapters={tocChapters.length} stageWidth={stageBox.width}
+            layout={layout} footnoteMap={footnoteMap} bitmapsRef={bitmapsRef}
+            nextBook={nextBook} settings={settings} palette={palette}
+            settingsOpen={settingsOpen || immersion.soundOpen} immersiveHidden={immersiveHidden}
+            pageHidden={pageHidden} autoScrollOpen={immersion.autoScrollOpen}
+            scrollContainerRef={scrollContainerRef} canvasRef={canvasRef}
             onScroll={handleScroll}
-            onCloseSettings={() => setSettingsOpen(false)}
+            onCloseSettings={() => { setSettingsOpen(false); immersion.setSoundOpen(false); }}
+            onToggleAutoScrollPlay={() => immersion.setAutoScrollPlaying((v) => !v)}
             onRevealToolbar={() => setImmersiveHidden(false)}
-            onPrevChapter={goPrevChapter}
-            onNextChapter={goNextChapter}
+            onPrevChapter={() => { immersion.triggerPageTurnSound(); goPrevChapter(); }}
+            onNextChapter={() => { immersion.triggerPageTurnSound(); goNextChapter(); }}
             onCompleteBook={completeBook}
             onOpenFootnote={(fn) => features.setActiveFootnote(fn)}
             onOpenGuestImage={(bitmap, alt) =>
@@ -501,37 +501,38 @@ export function GuestCanvasReader({
           />
 
           <ReaderFooterStatusBar
-            chapterIndex={chapterIndex}
-            totalChapters={tocChapters.length}
-            overallPercent={overallPercent}
-            remainingEstimate={remainingEstimate}
-            immersiveHidden={immersiveHidden}
-            palette={palette}
+            chapterIndex={chapterIndex} totalChapters={tocChapters.length}
+            overallPercent={overallPercent} remainingEstimate={remainingEstimate}
+            immersiveHidden={immersiveHidden} palette={palette}
           />
         </>
       )}
 
+      <ReaderImmersionChrome
+        immersion={immersion}
+        isPaginated={isPaginated}
+        chapterIndex={chapterIndex}
+        totalChapters={tocChapters.length}
+        nightDimPercent={settings.nightDimPercent}
+        palette={palette}
+        scrollContainerRef={scrollContainerRef}
+        onUpdateSettings={handleUpdateSettings}
+        onAdvanceChapter={() => {
+          immersion.triggerPageTurnSound();
+          goNextChapter();
+        }}
+      />
+
       <ReaderOverlaysHost
         role="guest"
-        book={book}
-        allBooks={allBooks}
-        chapters={tocDrawerChapters}
-        chapterIndex={chapterIndex}
-        currentChapterId={currentTocItem?.id || ''}
-        currentChapterTitle={currentTocItem?.title || ''}
-        chapterScrollRatio={chapterScrollRatio}
-        watermarkLabel={effectiveWatermark}
-        tocOpen={tocOpen}
-        drawerTab={drawerTab}
-        palette={palette}
-        features={features}
-        visibleGuestParagraphs={visibleGuestParagraphs}
-        lightboxTarget={lightboxTarget}
-        onCloseToc={() => setTocOpen(false)}
-        onSelectChapter={(idx) => goToChapter(idx, 0)}
-        onJumpToRatio={goToChapter}
-        onJumpToSearchResult={handleJumpToSearchResult}
-        onSetLightboxTarget={setLightboxTarget}
+        book={book} allBooks={allBooks} chapters={tocDrawerChapters}
+        chapterIndex={chapterIndex} currentChapterId={currentTocItem?.id || ''}
+        currentChapterTitle={currentTocItem?.title || ''} chapterScrollRatio={chapterScrollRatio}
+        watermarkLabel={effectiveWatermark} tocOpen={tocOpen} drawerTab={drawerTab}
+        palette={palette} features={features} visibleGuestParagraphs={visibleGuestParagraphs}
+        lightboxTarget={lightboxTarget} onCloseToc={() => setTocOpen(false)}
+        onSelectChapter={(idx) => goToChapter(idx, 0)} onJumpToRatio={goToChapter}
+        onJumpToSearchResult={handleJumpToSearchResult} onSetLightboxTarget={setLightboxTarget}
         onOpenOtherBook={(targetBook, jumpTarget) => {
           flushProgress({ forceTimeFlush: true, keepalive: true });
           onOpenNextBook?.(targetBook, jumpTarget);

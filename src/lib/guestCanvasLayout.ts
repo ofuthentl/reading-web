@@ -27,6 +27,7 @@ export interface CanvasSpanFragment {
   x: number;
   bold: boolean;
   italic: boolean;
+  rt?: string;
 }
 
 export type CanvasLayoutItem =
@@ -51,6 +52,7 @@ export type CanvasLayoutItem =
       listMarker?: string;
       markerX?: number;
       blockIndex?: number;
+      rubyHeadroom?: number;
       highlightColor?: HighlightColor;
       flashHighlight?: boolean;
       fragments: CanvasSpanFragment[];
@@ -106,12 +108,19 @@ function wrapInlineSpans(
   let cursorX = startX + firstIndent;
   const limitX = startX + Math.max(80, maxWidth);
 
-  const pushFragment = (text: string, x: number, bold: boolean, italic: boolean) => {
+  const pushFragment = (text: string, x: number, bold: boolean, italic: boolean, rt?: string) => {
     const prev = currentLine[currentLine.length - 1];
-    if (prev && prev.bold === bold && prev.italic === italic && Math.abs(x - cursorX) < 0.5) {
+    if (
+      prev &&
+      !prev.rt &&
+      !rt &&
+      prev.bold === bold &&
+      prev.italic === italic &&
+      Math.abs(x - cursorX) < 0.5
+    ) {
       prev.text += text;
     } else {
-      currentLine.push({ text, x, bold, italic });
+      currentLine.push({ text, x, bold, italic, ...(rt ? { rt } : {}) });
     }
   };
 
@@ -127,6 +136,19 @@ function wrapInlineSpans(
     const bold = forceBold || span.b === 1;
     const italic = span.i === 1;
     const fontSpec = buildCanvasFontSpec(font, fontSize, bold, italic);
+
+    if (span.rt) {
+      const rtSpec = buildCanvasFontSpec(font, Math.max(9, Math.round(fontSize * 0.52)), false, false);
+      const baseW = measureCanvasTextWidth(span.t, fontSpec);
+      const rtW = measureCanvasTextWidth(span.rt, rtSpec);
+      const rubyBoxW = Math.max(baseW, rtW + 2);
+      if (cursorX + rubyBoxW > limitX && currentLine.length > 0) commitLine();
+      const padLeft = Math.max(0, (rubyBoxW - baseW) / 2);
+      pushFragment(span.t, cursorX + padLeft, bold, italic, span.rt);
+      cursorX += rubyBoxW;
+      continue;
+    }
+
     const tokens = span.t.match(/\S+|\s+/g) || [];
 
     for (const token of tokens) {
@@ -371,18 +393,22 @@ export function computeChapterCanvasLayout(options: {
       justify: doJustify,
     });
     for (const fragments of lines) {
+      const hasRuby = fragments.some((f) => Boolean(f.rt));
+      const rubyHeadroom = hasRuby ? Math.round(baseSize * 0.44) : 0;
+      const lineH = baseLineHeight + rubyHeadroom;
       items.push({
         kind: 'text-line',
         y,
-        height: baseLineHeight,
+        height: lineH,
         fontSize: baseSize,
         isHeading: false,
         isQuote: false,
         blockIndex: blockIdx,
+        ...(rubyHeadroom > 0 ? { rubyHeadroom } : {}),
         ...(hlColor ? { highlightColor: hlColor } : {}),
         fragments,
       });
-      y += baseLineHeight;
+      y += lineH;
     }
     y += paragraphGap;
   }

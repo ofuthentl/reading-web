@@ -199,6 +199,58 @@
     text-underline-offset: 2px;
   }
 
+  /* Hiển thị chuẩn <ruby><rt> (Furigana) gọn đẹp không đè dòng (D-039 Mục 10) */
+  .reading-content ruby {
+    ruby-position: over;
+    ruby-align: center;
+  }
+
+  .reading-content rt {
+    font-size: 0.54em;
+    line-height: 1.1;
+    font-weight: 500;
+    opacity: 0.86;
+    user-select: none;
+  }
+
+  .reading-content rp {
+    display: none;
+  }
+
+  /* Thanh Dẫn Mắt (Reading Ruler / Focus Paragraph — D-039 Mục 8) */
+  .reading-content.reader-ruler-active p,
+  .reading-content.reader-ruler-active blockquote,
+  .reading-content.reader-ruler-active li,
+  .reading-content.reader-ruler-active h1,
+  .reading-content.reader-ruler-active h2,
+  .reading-content.reader-ruler-active h3,
+  .reading-content.reader-ruler-active h4,
+  .reading-content.reader-ruler-active table,
+  .reading-content.reader-ruler-active figure,
+  .reader-ruler-header-dim {
+    opacity: 0.32;
+    transition: opacity 160ms ease;
+  }
+
+  .reading-content.reader-ruler-active .reader-ruler-focus,
+  .reading-content.reader-ruler-active .reader-ruler-focus p,
+  .reading-content.reader-ruler-active .reader-ruler-focus li {
+    opacity: 1;
+  }
+
+  /* Bóng gáy sách giữa 2 cột ở chế độ Lật trang (D-039 Mục 7) */
+  .reader-spine-gutter {
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(0, 0, 0, 0.045) 34%,
+      rgba(0, 0, 0, 0.14) 50%,
+      rgba(255, 255, 255, 0.08) 53%,
+      rgba(0, 0, 0, 0.04) 68%,
+      transparent 100%
+    );
+  }
+
 @media print {
   .guest-protected-reader {
     display: none !important;
