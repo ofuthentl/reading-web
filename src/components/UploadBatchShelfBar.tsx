@@ -62,7 +62,7 @@ export function UploadBatchShelfBar({
 
   return (
     <div
-      className={`inline-flex max-w-full items-center gap-2 rounded-xl border px-3 py-1.5 text-xs transition-colors ${
+      className={`inline-flex max-w-full flex-wrap items-center gap-2 rounded-xl border px-3 py-1.5 text-xs transition-colors ${
         enabled
           ? 'border-accent/50 bg-accent/10 text-ink'
           : 'border-line bg-surface text-ink-muted hover:border-line-strong'
@@ -81,7 +81,7 @@ export function UploadBatchShelfBar({
       </label>
 
       {editing ? (
-        <div className="inline-flex items-center gap-1">
+        <div className="inline-flex min-w-0 max-w-full items-center gap-1">
           <input
             ref={inputRef}
             type="text"
@@ -104,7 +104,7 @@ export function UploadBatchShelfBar({
             }}
             placeholder="Nhập tên kệ..."
             aria-label="Tên kệ áp dụng cho cả lô"
-            className="w-32 rounded-lg border border-accent bg-canvas px-2 py-0.5 text-xs font-semibold text-ink outline-none sm:w-44"
+            className="w-44 max-w-full rounded-lg border border-accent bg-canvas px-2 py-0.5 text-xs font-semibold text-ink outline-none sm:w-72"
           />
           <datalist id="upload-batch-shelves-datalist">
             {existingShelves.map((option) => (
@@ -123,13 +123,13 @@ export function UploadBatchShelfBar({
           </button>
         </div>
       ) : (
-        <div className="inline-flex min-w-0 items-center gap-1">
+        <div className="inline-flex min-w-0 max-w-full items-center gap-1">
           <button
             type="button"
             disabled={disabled}
             onClick={() => setEditing(true)}
             title={`${shelfName} (Bấm để đổi tên kệ)`}
-            className="max-w-[8.5rem] truncate rounded-md bg-canvas/80 px-2 py-0.5 font-semibold text-accent transition-colors hover:bg-subtle sm:max-w-[12.5rem] disabled:cursor-not-allowed"
+            className="max-w-[14rem] truncate rounded-md bg-canvas/80 px-2 py-0.5 font-semibold text-accent transition-colors hover:bg-subtle sm:max-w-[26rem] disabled:cursor-not-allowed"
           >
             {shelfName}
           </button>

@@ -16,14 +16,27 @@ const STOPWORD_PREFIXES = new Set([
   'tuyển tập', 'tuyen tap', 'ngoại truyện', 'ngoai truyen', 'la', 'và', 'va', 'bộ', 'bo', 'về', 've', 'số', 'so',
 ]);
 
-const VOL_UNIT =
-  '(?:(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|màn|man|hồi|hoi|book|part|act|arc|ep(?:isode)?)\\.?\\s*(?:\\d+(?:[.,]\\d+)?(?:\\s*[-–—~]\\s*\\d+(?:[.,]\\d+)?)?|[ivxlcdm]{1,6}|[a-z]|ex|ss|sp|ova|oad|thượng|thuong|trung|hạ|ha|đầu|dau|cuối|cuoi)|(?:[chv]|#)\\.?\\s*\\d+(?:[.,]\\d+)?)';
+const VOL_CORE_WORD =
+  '(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|màn|man|hồi|hoi|book|part|act|arc|ep(?:isode)?)';
+
+const SPECIAL_VOL_PREFIX =
+  '(?:ss|ex|sp|ova|oad|extra|special|bonus|ngoại\\s+truyện|ngoai\\s+truyen|hậu\\s+truyện|hau\\s+truyen|tiền\\s+truyện|tien\\s+truyen|phiên\\s+ngoại|phien\\s+ngoai|side\\s+stor(?:y|ies)|short\\s+stor(?:y|ies)|after\\s+the\\s+end)';
+
+const VOL_NUMBER_OR_PART =
+  '(?:\\d+(?:[.,]\\d+)?(?:\\s*[-–—~]\\s*\\d+(?:[.,]\\d+)?)?|[ivxlcdm]{1,6}|thượng|thuong|trung|hạ|ha|đầu|dau|cuối|cuoi)';
+
+const VOL_STD_UNIT = `${VOL_CORE_WORD}\\.?\\s*(?:${VOL_NUMBER_OR_PART}|[a-z]|ex|ss|sp|ova|oad|bonus|extra|special)(?:\\s+${SPECIAL_VOL_PREFIX}(?:\\s*\\d+(?:[.,]\\d+)?)?)?`;
+const VOL_PREFIXED_UNIT = `${SPECIAL_VOL_PREFIX}\\.?\\s+${VOL_CORE_WORD}\\.?\\s*${VOL_NUMBER_OR_PART}`;
+const VOL_SPECIAL_NUMBERED = `${SPECIAL_VOL_PREFIX}\\.?\\s*\\d+(?:[.,]\\d+)?(?:\\s*[-–—~]\\s*\\d+(?:[.,]\\d+)?)?`;
+const VOL_SHORT_PREFIX = '(?:[chv]|#)\\.?\\s*\\d+(?:[.,]\\d+)?';
+
+const VOL_UNIT = `(?:${VOL_PREFIXED_UNIT}|${VOL_STD_UNIT}|${VOL_SPECIAL_NUMBERED}|${VOL_SHORT_PREFIX})`;
 
 const EXTRA_LABEL =
-  '(?:ngoại\\s+truyện|ngoai\\s+truyen|hậu\\s+truyện|hau\\s+truyen|tiền\\s+truyện|tien\\s+truyen|after\\s+the\\s+end(?:\\s*\\d+)?|side\\s+story|short\\s+stories|extra|ova|special)';
+  '(?:ngoại\\s+truyện|ngoai\\s+truyen|hậu\\s+truyện|hau\\s+truyen|tiền\\s+truyện|tien\\s+truyen|phiên\\s+ngoại|phien\\s+ngoai|after\\s+the\\s+end(?:\\s*\\d+)?|side\\s+stor(?:y|ies)|short\\s+stor(?:y|ies)|extra|ova|oad|special|bonus|ss|ex|sp)';
 
 export const VOLUME_SEGMENT_RE = new RegExp(
-  `^(?:${VOL_UNIT}|\\d+(?:[.,]\\d+)?(?:\\s*[-–—~]\\s*\\d+(?:[.,]\\d+)?)?|[IVX]{1,5})$`,
+  `^(?:${VOL_UNIT}|${EXTRA_LABEL}|\\d+(?:[.,]\\d+)?(?:\\s*[-–—~]\\s*\\d+(?:[.,]\\d+)?)?|[IVX]{1,5})$`,
   'i',
 );
 
@@ -38,7 +51,7 @@ export function isVolumeOrSubtitleSegment(segment: string): boolean {
 }
 
 export const TITLE_ENDS_WITH_BARE_VOL_RE = new RegExp(
-  `(?:(?:^|\\s[-–—―−_:|：]\\s*)(?:${VOL_UNIT}|${EXTRA_LABEL})|\\s+(?:II|III|IV|VI|VII|VIII|IX|XI|XII|I|V|X))\\s*$`,
+  `(?:(?:^|\\s*[-–—―−_:|：]\\s*|\\s+)${VOL_UNIT}|(?:^|\\s*[-–—―−_:|：]\\s*)${EXTRA_LABEL}|\\s+(?:II|III|IV|VI|VII|VIII|IX|XI|XII|I|V|X))\\s*$`,
   'i',
 );
 
@@ -97,12 +110,18 @@ export function extractSeriesName(title: string): string | null {
   let stripped = clean
     .replace(
       new RegExp(
-        `\\s*(?:[-–—―−_:|：]\\s*)?(?:\\(|\\[|（|［|【)?\\s*${VOL_UNIT}(?=$|[\\s\\-–—―−_:|：~.)\\]）］】]).*$`,
+        `(?:\\s*[-–—―−_:|：]\\s*(?:[(（[［【]\\s*)?|\\s*[(（[［【]\\s*|\\s+)${VOL_UNIT}(?=$|[\\s\\-–—―−_:|：~.)\\]）］】]).*$`,
         'i',
       ),
       '',
     )
-    .replace(new RegExp(`\\s*[-–—―−_:|：]\\s*${EXTRA_LABEL}\\b.*$`, 'i'), '')
+    .replace(
+      new RegExp(
+        `\\s*[-–—―−_:|：]\\s*${EXTRA_LABEL}(?=$|[\\s\\-–—―−_:|：~.)\\]）］】]).*$`,
+        'i',
+      ),
+      '',
+    )
     .replace(/\s+(?:II|III|IV|VI|VII|VIII|IX|XI|XII|I|V|X)(?:\s*[-–—―−_:|：].*)?$/, '')
     // 2. Dấu phân cách + số tập thuần (`Tên - 01`, `Tên – 1`, không cắt nhầm `Tên - 7 Người`)
     .replace(
@@ -179,6 +198,8 @@ function collectDirectCandidatesForTitle(rawTitle: string): Map<string, string> 
   addCandidate(series);
 
   const baseForSplit = series || cleanShelfLabel(cleanTitle);
+  addCandidate(baseForSplit);
+
   const delimRe = /\s*[_:\-–—―−|：/(（[［【]+\s*/g;
   let match = delimRe.exec(baseForSplit);
   while (match !== null) {
@@ -191,7 +212,7 @@ function collectDirectCandidatesForTitle(rawTitle: string): Map<string, string> 
   const words = baseForSplit
     .split(/\s+/)
     .filter((token) => Boolean(token) && !/^[-–—―−_:|：;/~]+$/.test(token));
-  for (let count = 1; count <= Math.min(words.length, 6); count += 1) {
+  for (let count = 1; count <= Math.min(words.length, 24); count += 1) {
     const wordPrefix = words.slice(0, count).join(' ');
     addCandidate(wordPrefix);
     addCandidate(extractSeriesName(wordPrefix));
