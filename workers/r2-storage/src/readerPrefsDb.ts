@@ -3,6 +3,7 @@ import { type AuthContext, HttpError } from './auth';
 export interface StoredReaderSettings {
   theme: 'paper' | 'sepia' | 'dark' | 'midnight';
   font: 'serif' | 'sans' | 'mono';
+  fontWeight: 'normal' | 'semibold' | 'bold';
   fontSizePx: number;
   lineHeight: number;
   width: 'narrow' | 'medium' | 'wide';
@@ -14,10 +15,16 @@ export interface StoredReaderSettings {
   nightDimPercent: number;
   readingRuler: boolean;
   dailyGoalMinutes: number;
+  eyeBreakMinutes: 0 | 30 | 45 | 60;
 }
 
 const VALID_THEMES = new Set<StoredReaderSettings['theme']>(['paper', 'sepia', 'dark', 'midnight']);
 const VALID_FONTS = new Set<StoredReaderSettings['font']>(['serif', 'sans', 'mono']);
+const VALID_FONT_WEIGHTS = new Set<StoredReaderSettings['fontWeight']>([
+  'normal',
+  'semibold',
+  'bold',
+]);
 const VALID_WIDTHS = new Set<StoredReaderSettings['width']>(['narrow', 'medium', 'wide']);
 const VALID_LAYOUTS = new Set<StoredReaderSettings['layoutMode']>(['scroll', 'paginated']);
 const VALID_ALIGNS = new Set<StoredReaderSettings['textAlign']>(['justify', 'left']);
@@ -26,6 +33,7 @@ const VALID_SPACINGS = new Set<StoredReaderSettings['paragraphSpacing']>([
   'normal',
   'relaxed',
 ]);
+const VALID_EYE_BREAK = new Set<StoredReaderSettings['eyeBreakMinutes']>([0, 30, 45, 60]);
 
 const ensuredPrefsDbs = new WeakSet<D1Database>();
 
@@ -59,6 +67,9 @@ export function sanitizeReaderSettingsPayload(raw: unknown): StoredReaderSetting
   const font = VALID_FONTS.has(obj.font as StoredReaderSettings['font'])
     ? (obj.font as StoredReaderSettings['font'])
     : 'serif';
+  const fontWeight = VALID_FONT_WEIGHTS.has(obj.fontWeight as StoredReaderSettings['fontWeight'])
+    ? (obj.fontWeight as StoredReaderSettings['fontWeight'])
+    : 'normal';
 
   const rawFontSize = Number(obj.fontSizePx ?? 19);
   const fontSizePx = Number.isFinite(rawFontSize)
@@ -102,9 +113,17 @@ export function sanitizeReaderSettingsPayload(raw: unknown): StoredReaderSetting
     dailyGoalMinutes = Math.min(240, Math.max(10, Math.round(rawGoal)));
   }
 
+  const rawEyeBreak = Number(obj.eyeBreakMinutes ?? 0);
+  const eyeBreakMinutes = VALID_EYE_BREAK.has(
+    rawEyeBreak as StoredReaderSettings['eyeBreakMinutes'],
+  )
+    ? (rawEyeBreak as StoredReaderSettings['eyeBreakMinutes'])
+    : 0;
+
   return {
     theme,
     font,
+    fontWeight,
     fontSizePx,
     lineHeight,
     width,
@@ -116,6 +135,7 @@ export function sanitizeReaderSettingsPayload(raw: unknown): StoredReaderSetting
     nightDimPercent,
     readingRuler,
     dailyGoalMinutes,
+    eyeBreakMinutes,
   };
 }
 

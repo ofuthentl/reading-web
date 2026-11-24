@@ -1,4 +1,10 @@
 import { type AuthContext, type AuthEnv, HttpError } from './auth';
+import { cleanupBookAccessRecords } from './bookChapterAccessAdminDb';
+import {
+  computeGuestLockedShelfKeys,
+  loadBookAccessSnapshot,
+  resolveGuestBookLocked,
+} from './bookChapterAccessDb';
 import {
   ensureCatalogEnhancementsTables,
   loadCatalogEnhancementsSnapshot,
@@ -21,6 +27,7 @@ import {
   upsertShelfCover,
   upsertShelfFavorite,
 } from './shelfMutationsDb';
+import { loadVisibleShelfRelations } from './shelfRelationsDb';
 import {
   DELETE_EMPTY_SHELF_PREFS_SQL,
   ensureShelfTagsSchema,
@@ -164,7 +171,7 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     auth.role === 'owner'
       ? env.DB.prepare('SELECT * FROM reading_progress').all<ProgressRow>()
       : env.DB.prepare(
-          `SELECT book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, updated_at
+          `SELECT book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, reread_count, updated_at
            FROM guest_reading_progress
            WHERE discord_user_id = ?`,
         )
@@ -172,45 +179,65 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
           .all<ProgressRow>()
           .catch(() => ({ results: [] as ProgressRow[] }));
 
-  const [booksRes, progressRes, shelfPrefsRes, guestPacksRes, accessSnapshot, storage] =
-    await Promise.all([
-      env.DB.prepare('SELECT * FROM books ORDER BY created_at DESC').all<BookRow>(),
-      progressQuery,
-      env.DB.prepare(
-        'SELECT shelf_key, cover_book_id, is_favorite, tags_json, alt_titles_json FROM shelf_prefs',
-      )
-        .all<
+  const [
+    booksRes,
+    progressRes,
+    shelfPrefsRes,
+    guestPacksRes,
+    accessSnapshot,
+    bookAccessSnapshot,
+    storage,
+  ] = await Promise.all([
+    env.DB.prepare('SELECT * FROM books ORDER BY created_at DESC').all<BookRow>(),
+    progressQuery,
+    env.DB.prepare(
+      'SELECT shelf_key, cover_book_id, is_favorite, tags_json, alt_titles_json FROM shelf_prefs',
+    )
+      .all<
+        Pick<
+          ShelfPrefRow,
+          'shelf_key' | 'cover_book_id' | 'is_favorite' | 'tags_json' | 'alt_titles_json'
+        >
+      >()
+      .catch(() => ({
+        results: [] as Array<
           Pick<
             ShelfPrefRow,
             'shelf_key' | 'cover_book_id' | 'is_favorite' | 'tags_json' | 'alt_titles_json'
           >
-        >()
-        .catch(() => ({
-          results: [] as Array<
-            Pick<
-              ShelfPrefRow,
-              'shelf_key' | 'cover_book_id' | 'is_favorite' | 'tags_json' | 'alt_titles_json'
-            >
-          >,
+        >,
+      })),
+    env.DB.prepare('SELECT book_id FROM book_guest_packs')
+      .all<{ book_id: string }>()
+      .catch(() => ({ results: [] as Array<{ book_id: string }> })),
+    auth.role === 'guest'
+      ? loadShelfAccessSnapshot(env.DB, auth).catch(() => {
+          throw new HttpError(
+            'Không thể xác minh phân quyền kệ sách. Vui lòng thử lại sau giây lát.',
+            503,
+          );
+        })
+      : loadShelfAccessSnapshot(env.DB, auth).catch(() => ({
+          restrictedKeys: new Set<string>(),
+          allowedRestrictedKeys: new Set<string>(),
+          ownerShelfAccess: {},
         })),
-      env.DB.prepare('SELECT book_id FROM book_guest_packs')
-        .all<{ book_id: string }>()
-        .catch(() => ({ results: [] as Array<{ book_id: string }> })),
-      auth.role === 'guest'
-        ? loadShelfAccessSnapshot(env.DB, auth).catch(() => {
-            throw new HttpError(
-              'Không thể xác minh phân quyền kệ sách. Vui lòng thử lại sau giây lát.',
-              503,
-            );
-          })
-        : loadShelfAccessSnapshot(env.DB, auth).catch(() => ({
-            restrictedKeys: new Set<string>(),
-            allowedRestrictedKeys: new Set<string>(),
-            ownerShelfAccess: {},
-          })),
-      // Chỉ truy vấn thống kê dung lượng R2 cho Owner; Guest không hiển thị thanh dung lượng (L-5)
-      auth.role === 'owner' ? getStorageStats(env) : Promise.resolve(null),
-    ]);
+    auth.role === 'guest'
+      ? loadBookAccessSnapshot(env.DB, auth).catch(() => {
+          throw new HttpError(
+            'Không thể xác minh phân quyền tập sách. Vui lòng thử lại sau giây lát.',
+            503,
+          );
+        })
+      : loadBookAccessSnapshot(env.DB, auth).catch(() => ({
+          publicOverrideBookIds: new Set<string>(),
+          restrictedBookIds: new Set<string>(),
+          allowedRestrictedBookIds: new Set<string>(),
+          ownerBookAccess: {},
+        })),
+    // Chỉ truy vấn thống kê dung lượng R2 cho Owner; Guest không hiển thị thanh dung lượng (L-5)
+    auth.role === 'owner' ? getStorageStats(env) : Promise.resolve(null),
+  ]);
 
   const progressMap: Record<
     string,
@@ -222,6 +249,8 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
       scrollRatio: number;
       scrollTop: number;
       completed: boolean;
+      readingSeconds?: number;
+      rereadCount?: number;
       updatedAt: number;
     }
   > = {};
@@ -240,11 +269,37 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
       ...(typeof row.reading_seconds === 'number' && row.reading_seconds > 0
         ? { readingSeconds: row.reading_seconds }
         : {}),
+      ...(typeof row.reread_count === 'number' && row.reread_count > 0
+        ? { rereadCount: row.reread_count }
+        : {}),
       updatedAt: row.updated_at,
     };
   }
 
   const isGuest = auth.role === 'guest';
+  const rawBooks = booksRes.results || [];
+  const existingShelfKeys = new Set<string>();
+  const guestReadyIds = new Set((guestPacksRes.results || []).map((r) => r.book_id));
+  const guestLockedBookIds = new Set<string>();
+
+  const sanitizedBooks = rawBooks.map((book) => {
+    const shelfKey = toShelfAccessKey(book.shelf);
+    existingShelfKeys.add(shelfKey);
+    const isGuestLocked =
+      isGuest && resolveGuestBookLocked(book.id, shelfKey, accessSnapshot, bookAccessSnapshot);
+    if (isGuestLocked) guestLockedBookIds.add(book.id);
+    return {
+      ...book,
+      file_key: isGuest ? '' : book.file_key,
+      guest_ready: guestReadyIds.has(book.id),
+      ...(isGuestLocked ? { guest_locked: true } : {}),
+    };
+  });
+
+  const guestLockedShelfKeys = isGuest
+    ? computeGuestLockedShelfKeys(rawBooks, accessSnapshot, bookAccessSnapshot)
+    : new Set<string>();
+
   const shelfCovers: Record<string, string> = {};
   const favoriteShelves: string[] = [];
   const shelfTags: Record<string, string[]> = {};
@@ -256,39 +311,29 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     if (row.is_favorite === 1) favoriteShelves.push(shelfKey);
     const parsedTags = parseShelfTagsJson(row.tags_json);
     if (parsedTags.length > 0) shelfTags[shelfKey] = parsedTags;
-    const isGuestLockedShelf =
-      isGuest &&
-      accessSnapshot.restrictedKeys.has(shelfKey) &&
-      !accessSnapshot.allowedRestrictedKeys.has(shelfKey);
-    if (!isGuestLockedShelf) {
+    if (!isGuest || !guestLockedShelfKeys.has(shelfKey)) {
       const parsedAlt = parseShelfAltTitlesJson(row.alt_titles_json);
       if (parsedAlt.length > 0) shelfAltTitles[shelfKey] = parsedAlt;
     }
   }
 
-  const guestReadyIds = new Set((guestPacksRes.results || []).map((r) => r.book_id));
-  const rawBooks = booksRes.results || [];
-  const sanitizedBooks = rawBooks.map((book) => {
-    const shelfKey = toShelfAccessKey(book.shelf);
-    const isGuestLocked =
-      isGuest &&
-      accessSnapshot.restrictedKeys.has(shelfKey) &&
-      !accessSnapshot.allowedRestrictedKeys.has(shelfKey);
-    return {
-      ...book,
-      file_key: isGuest ? '' : book.file_key,
-      guest_ready: guestReadyIds.has(book.id),
-      ...(isGuestLocked ? { guest_locked: true } : {}),
-    };
-  });
-  const [weeklyPopular, catalogSnapshot, shelfRatings] = await Promise.all([
+  const [weeklyPopular, catalogSnapshot, shelfRatings, shelfRelations] = await Promise.all([
     computeWeeklyPopularBookIds(env.DB, rawBooks, 10),
-    loadCatalogEnhancementsSnapshot(env.DB, auth, accessSnapshot, rawBooks).catch(() => ({
+    loadCatalogEnhancementsSnapshot(
+      env.DB,
+      auth,
+      guestLockedShelfKeys,
+      guestLockedBookIds,
+      rawBooks,
+    ).catch(() => ({
       planToReadShelves: [] as string[],
       planToReadBooks: [] as string[],
       collections: [],
     })),
     loadAllShelfRatingsMap(env.DB).catch(() => ({})),
+    loadVisibleShelfRelations(env.DB, auth, existingShelfKeys, guestLockedShelfKeys).catch(
+      () => [],
+    ),
   ]);
 
   const effectiveStorage = storage ?? {
@@ -307,10 +352,16 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     shelfTags,
     shelfAltTitles,
     shelfRatings,
+    shelfRelations,
     planToReadShelves: catalogSnapshot.planToReadShelves,
     planToReadBooks: catalogSnapshot.planToReadBooks,
     collections: catalogSnapshot.collections,
-    ...(auth.role === 'owner' ? { shelfAccess: accessSnapshot.ownerShelfAccess } : {}),
+    ...(auth.role === 'owner'
+      ? {
+          shelfAccess: accessSnapshot.ownerShelfAccess,
+          bookAccess: bookAccessSnapshot.ownerBookAccess,
+        }
+      : {}),
     storage: effectiveStorage,
     session: {
       role: auth.role,
@@ -359,6 +410,7 @@ export async function deleteSingleBook(env: Env, bookId: string) {
     env.DB.prepare('DELETE FROM user_plan_to_read_books WHERE book_id = ?').bind(bookId).run().catch(() => undefined),
     env.DB.prepare("DELETE FROM library_ratings WHERE target_type = 'book' AND target_key = ?").bind(bookId).run().catch(() => undefined),
     deleteTargetCommentsSafely(env.DB, 'book', [bookId], ensureCommunityTables),
+    cleanupBookAccessRecords(env.DB, [bookId]),
   ]);
   await cleanupOrphanShelves(env.DB, [toShelfAccessKey(existing.shelf)]);
 
@@ -434,6 +486,7 @@ export async function bulkDeleteBooks(env: Env, rawIds: unknown) {
       env.DB.prepare(`DELETE FROM user_plan_to_read_books WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       env.DB.prepare(`DELETE FROM library_ratings WHERE target_type = 'book' AND target_key IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
       deleteTargetCommentsSafely(env.DB, 'book', chunk, ensureCommunityTables),
+      cleanupBookAccessRecords(env.DB, chunk),
     ]);
   }
 

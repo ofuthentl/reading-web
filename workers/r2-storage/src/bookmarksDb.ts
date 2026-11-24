@@ -1,4 +1,9 @@
 import { type AuthContext, HttpError } from './auth';
+import {
+  assertGuestChapterAccess,
+  loadGuestLockedChapterKeysForBook,
+  toCanonicalChapterKey,
+} from './bookChapterAccessDb';
 import { type Env, isValidId } from './booksDb';
 import { assertGuestBookAccess } from './shelfAccessDb';
 
@@ -84,16 +89,26 @@ export async function listBookBookmarks(env: Env, auth: AuthContext, bookId: str
   await ensureBookmarksTable(env.DB);
   const scope = resolveUserScope(auth);
 
-  const rows = await env.DB.prepare(
-    `SELECT * FROM book_bookmarks
-     WHERE user_scope = ? AND book_id = ?
-     ORDER BY created_at DESC`,
-  )
-    .bind(scope, bookId)
-    .all<BookmarkRow>();
+  const [rows, lockedChapterKeys] = await Promise.all([
+    env.DB.prepare(
+      `SELECT * FROM book_bookmarks
+       WHERE user_scope = ? AND book_id = ?
+       ORDER BY created_at DESC`,
+    )
+      .bind(scope, bookId)
+      .all<BookmarkRow>(),
+    loadGuestLockedChapterKeysForBook(env.DB, auth, bookId),
+  ]);
+
+  const visibleRows =
+    lockedChapterKeys.size > 0
+      ? (rows.results || []).filter(
+          (r) => !lockedChapterKeys.has(toCanonicalChapterKey(r.chapter_id)),
+        )
+      : rows.results || [];
 
   return {
-    bookmarks: (rows.results || []).map(mapBookmarkRow),
+    bookmarks: visibleRows.map(mapBookmarkRow),
   };
 }
 
@@ -123,6 +138,7 @@ export async function createBookBookmark(
   if (!existingBook) throw new HttpError('Không tìm thấy sách.', 404);
 
   await assertGuestBookAccess(env.DB, auth, bookId);
+  await assertGuestChapterAccess(env.DB, auth, bookId, body.chapterId.trim());
   await ensureBookmarksTable(env.DB);
   const scope = resolveUserScope(auth);
 

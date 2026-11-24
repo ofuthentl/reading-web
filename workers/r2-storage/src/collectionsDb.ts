@@ -66,8 +66,7 @@ export function buildVisibleCollections(
   colShelvesRows: readonly CollectionShelfRow[],
   auth: AuthContext,
   existingShelfKeys: ReadonlySet<string>,
-  restrictedKeys: ReadonlySet<string>,
-  allowedRestrictedKeys: ReadonlySet<string>,
+  guestLockedShelfKeys: ReadonlySet<string>,
 ): CustomCollectionDto[] {
   const isGuest = auth.role === 'guest';
   const shelvesByCol = new Map<string, string[]>();
@@ -82,11 +81,7 @@ export function buildVisibleCollections(
   for (const col of colsRows) {
     const rawKeys = shelvesByCol.get(col.id) || [];
     const visibleKeys = isGuest
-      ? rawKeys.filter(
-          (key) =>
-            existingShelfKeys.has(key) &&
-            !(restrictedKeys.has(key) && !allowedRestrictedKeys.has(key)),
-        )
+      ? rawKeys.filter((key) => existingShelfKeys.has(key) && !guestLockedShelfKeys.has(key))
       : rawKeys;
 
     // Với Guest: tự lọc bỏ bộ sưu tập trống hoặc chỉ chứa kệ restricted không có quyền đọc (D-030)

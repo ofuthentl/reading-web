@@ -1,4 +1,12 @@
 import { type AuthContext, HttpError } from './auth';
+import {
+  assertGuestChapterAccess,
+  ensureBookChapterAccessTables,
+  loadBookAccessSnapshot,
+  loadGuestLockedChapterKeysForBook,
+  resolveGuestBookLocked,
+  toCanonicalChapterKey,
+} from './bookChapterAccessDb';
 import { type Env, isValidId } from './booksDb';
 import {
   assertGuestBookAccess,
@@ -157,20 +165,30 @@ export async function listHighlights(
     if (!isValidId(trimmedBookId)) throw new HttpError('ID sách không hợp lệ.', 400);
     await assertGuestBookAccess(env.DB, auth, trimmedBookId);
 
-    const rows = await env.DB.prepare(
-      `SELECT * FROM book_highlights
-       WHERE user_scope = ? AND book_id = ?
-       ORDER BY chapter_index ASC, created_at ASC`,
-    )
-      .bind(scope, trimmedBookId)
-      .all<HighlightRow>();
+    const [rows, lockedChapterKeys] = await Promise.all([
+      env.DB.prepare(
+        `SELECT * FROM book_highlights
+         WHERE user_scope = ? AND book_id = ?
+         ORDER BY chapter_index ASC, created_at ASC`,
+      )
+        .bind(scope, trimmedBookId)
+        .all<HighlightRow>(),
+      loadGuestLockedChapterKeysForBook(env.DB, auth, trimmedBookId),
+    ]);
+
+    const visibleRows =
+      lockedChapterKeys.size > 0
+        ? (rows.results || []).filter(
+            (r) => !lockedChapterKeys.has(toCanonicalChapterKey(r.chapter_id)),
+          )
+        : rows.results || [];
 
     return {
-      highlights: (rows.results || []).map(mapHighlightRow),
+      highlights: visibleRows.map(mapHighlightRow),
     };
   }
 
-  // Trả toàn bộ Kho trích dẫn của người dùng gom theo sách/bộ (bảo toàn D-030 với kệ restricted)
+  // Trả toàn bộ Kho trích dẫn của người dùng gom theo sách/bộ (bảo toàn D-030 & D19 3 tầng)
   const rows = await env.DB.prepare(
     `SELECT h.*, b.title AS book_title, b.author AS book_author, b.shelf AS book_shelf,
             b.cover_key AS book_cover_key, b.cover_color AS book_cover_color
@@ -185,13 +203,36 @@ export async function listHighlights(
 
   let list = rows.results || [];
   if (auth.role === 'guest' && list.length > 0) {
-    const access = await loadShelfAccessSnapshot(env.DB, auth);
-    if (access.restrictedKeys.size > 0) {
-      list = list.filter((row) => {
-        const shelfKey = toShelfAccessKey(row.book_shelf);
-        return !access.restrictedKeys.has(shelfKey) || access.allowedRestrictedKeys.has(shelfKey);
-      });
+    await ensureBookChapterAccessTables(env.DB);
+    const [shelfAccess, bookAccess, chRulesRes, chGrantsRes] = await Promise.all([
+      loadShelfAccessSnapshot(env.DB, auth),
+      loadBookAccessSnapshot(env.DB, auth),
+      env.DB.prepare('SELECT book_id, chapter_key FROM chapter_access_rules').all<{
+        book_id: string;
+        chapter_key: string;
+      }>(),
+      env.DB.prepare('SELECT book_id, chapter_key FROM chapter_guest_grants WHERE discord_user_id = ?')
+        .bind(auth.userId)
+        .all<{ book_id: string; chapter_key: string }>(),
+    ]);
+
+    const lockedChPairs = new Set<string>();
+    for (const r of chRulesRes.results || []) {
+      const k = toCanonicalChapterKey(r.chapter_key);
+      if (r.book_id && k) lockedChPairs.add(`${r.book_id}\0${k}`);
     }
+    for (const g of chGrantsRes.results || []) {
+      const k = toCanonicalChapterKey(g.chapter_key);
+      if (g.book_id && k) lockedChPairs.delete(`${g.book_id}\0${k}`);
+    }
+
+    list = list.filter((row) => {
+      const shelfKey = toShelfAccessKey(row.book_shelf);
+      if (resolveGuestBookLocked(row.book_id, shelfKey, shelfAccess, bookAccess)) return false;
+      const chKey = toCanonicalChapterKey(row.chapter_id);
+      if (chKey && lockedChPairs.has(`${row.book_id}\0${chKey}`)) return false;
+      return true;
+    });
   }
 
   return {
@@ -239,6 +280,7 @@ export async function createHighlight(
   if (!existingBook) throw new HttpError('Không tìm thấy sách.', 404);
 
   await assertGuestBookAccess(env.DB, auth, bookId);
+  await assertGuestChapterAccess(env.DB, auth, bookId, body.chapterId.trim());
   await ensureHighlightsTable(env.DB);
   const scope = resolveUserScope(auth);
 
@@ -328,6 +370,7 @@ export async function updateHighlight(
   if (!existing) throw new HttpError('Không tìm thấy trích dẫn cần cập nhật.', 404);
 
   await assertGuestBookAccess(env.DB, auth, existing.book_id);
+  await assertGuestChapterAccess(env.DB, auth, existing.book_id, existing.chapter_id);
 
   const body = (rawBody && typeof rawBody === 'object' ? rawBody : {}) as {
     color?: unknown;

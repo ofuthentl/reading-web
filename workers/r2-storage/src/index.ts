@@ -380,6 +380,7 @@ async function handleApi(
   const catalogRes = await tryHandleCatalogRoutes(
     request,
     normalizedPath,
+    url,
     env.DB,
     auth,
     origin,

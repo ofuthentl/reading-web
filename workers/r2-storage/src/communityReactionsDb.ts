@@ -1,6 +1,6 @@
 import { type AuthContext, HttpError } from './auth';
 import { BULK_D1_CHUNK_SIZE, isValidId } from './booksDb';
-import { assertGuestShelfAccess } from './shelfAccessDb';
+import { assertGuestBookAccess, assertGuestShelfAccess } from './shelfAccessDb';
 
 export type CommunityReactionEmoji = 'fire' | 'cry' | 'laugh' | 'heart' | 'mindblown';
 
@@ -51,13 +51,13 @@ export async function authorizeExistingCommentAccess(
     return;
   }
   const bookRow = await db
-    .prepare('SELECT shelf FROM books WHERE id = ?')
+    .prepare('SELECT id FROM books WHERE id = ?')
     .bind(targetKey)
-    .first<{ shelf: string }>();
+    .first<{ id: string }>();
   if (!bookRow) {
     throw new HttpError('Không tìm thấy tập sách.', 404);
   }
-  await assertGuestShelfAccess(db, auth, bookRow.shelf);
+  await assertGuestBookAccess(db, auth, bookRow.id);
 }
 
 export async function loadReactionsForComments(
