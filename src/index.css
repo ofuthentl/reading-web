@@ -408,8 +408,14 @@
   }
 
   @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-    .shelf-fan-card:hover .shelf-fan-main {
-      transform: translate3d(-5px, -3px, 0) rotate(-1.2deg);
+    .shelf-fan-card:hover .shelf-fan-main:not([data-tilting]) {
+      transform: translate3d(-5px, -3px, 0) rotate(-1deg);
+    }
+
+    .shelf-fan-main.tilt-card[data-tilting] {
+      transform: perspective(740px) translate3d(-5px, var(--tilt-lift, 0px), 0)
+        rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg))
+        scale3d(var(--tilt-scale, 1), var(--tilt-scale, 1), 1);
     }
 
     .shelf-fan-card:hover .shelf-fan-1 {
