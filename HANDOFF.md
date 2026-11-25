@@ -23,7 +23,7 @@ Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · d
 ### Phase 2.4 — Sao lưu / Khôi phục JSON Owner & Tối ưu `GET /api/books` bằng ETag (`304`)
 - Worker (`backupSchema.ts`, `backupExport.ts`, `backupRoute.ts`, `adminRoutes.ts`): `GET /api/admin/backup/export` & `POST /api/admin/backup/import` (`requireOwner`, validate chặt schema v1, `0 B` R2, `merge`/`replace`, bỏ qua sách đã xoá tránh FK). Frontend (`backupApi.ts`, `AdminBackupCard.tsx`) nạp lười trên `/usage`.
 - Worker + Frontend (`booksEtag.ts`, `index.ts`, `libraryStateCache.ts`, `api.ts`, `authSession.ts`): `GET /api/books` sinh Weak ETag `W/"v1-<role>-<32hex>"` + `If-None-Match` → `304 Not Modified`; client cache RAM/`sessionStorage` theo phiên.
-- Unit Tests (`tests/wave2AdminAndEtag.test.ts`, `scripts/run-tests.mjs`): bổ sung 6 test Wave 2 (tổng 31/31 pass) + cập nhật `docs/ARCHITECTURE.md`, `docs/plans/v5-bugfixes-and-upgrades.md`.
+- Unit Tests (`tests/wave2AdminAndEtag.test.ts`, `scripts/run-tests.mjs`): bổ sung 6 test Wave 2 (tổng 31/31 pass), giữ tên job CI `Frontend (typecheck, lint, build)` khớp Required check của `main` (vẫn chạy đủ `typecheck`, `lint`, `test`, `build`, `check:bundle`) + cập nhật `docs/ARCHITECTURE.md`, `docs/plans/v5-bugfixes-and-upgrades.md`.
 
 ## Bước tiếp theo
 1. Mở & merge Pull Request Wave 2 (`feat/v5-wave2-admin-storage-and-catalog` → `main`) sau khi CI xanh để auto-deploy Frontend lên `ofu.lol`.
