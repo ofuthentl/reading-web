@@ -28,6 +28,7 @@ export interface ShelfBatchNoteModalProps {
   shelf: ShelfGroup | null;
   currentAltTitles?: readonly string[];
   currentTags?: readonly string[];
+  initialAniListOpen?: boolean;
   onClose: () => void;
   onBooksUpdated: (books: Book[]) => void;
   onAltTitlesSaved?: (shelfName: string, altTitles: string[]) => void;
@@ -40,6 +41,7 @@ export function ShelfBatchNoteModal({
   shelf,
   currentAltTitles = [],
   currentTags = [],
+  initialAniListOpen = false,
   onClose,
   onBooksUpdated,
   onAltTitlesSaved,
@@ -109,11 +111,11 @@ export function ShelfBatchNoteModal({
     setAuthorInput(firstKnownAuthor);
     setOnlyMissingAuthor(false);
     setAltTitlesDraft(normalizeClientAltTitles(altRef.current));
-    setAnilistOpen(false);
+    setAnilistOpen(initialAniListOpen);
     setMode('shared');
     setSaving(false);
     setExtracting(false);
-  }, [shelfKey]);
+  }, [initialAniListOpen, shelfKey]);
 
   useEffect(() => {
     if (!shelf) return;

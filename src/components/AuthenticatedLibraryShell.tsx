@@ -376,6 +376,7 @@ export function AuthenticatedLibraryShell({
             books={store.books}
             shelves={libraryViewState.allShelves}
             shelfTags={store.shelfPrefs.tags}
+            shelfAltTitles={store.shelfPrefs.altTitles}
             storage={store.storage}
             existingShelves={existingShelves}
             renamingShelfName={renamingShelfName}
@@ -386,6 +387,9 @@ export function AuthenticatedLibraryShell({
             onRequestDelete={(book) => setModal({ kind: 'delete', books: [book] })}
             onBookUploaded={store.handleBookUploaded}
             onBookUpdated={store.handleBookUpdated}
+            onBooksUpdated={store.handleBooksBatchUpdated}
+            onShelfAltTitlesChanged={store.handleShelfAltTitlesChanged}
+            onShelfTagsChanged={store.handleShelfTagsChanged}
             onStorageSynced={store.handleStorageSynced}
             onBookPackSynced={store.handleBookPackSynced}
             onBookAccessSaved={store.handleBookAccessChanged}

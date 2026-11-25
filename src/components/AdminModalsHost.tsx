@@ -34,12 +34,19 @@ const LazyBookAccessModal = lazy(() =>
   })),
 );
 
+const LazyShelfBatchNoteModal = lazy(() =>
+  import('@/components/ShelfBatchNoteModal').then((mod) => ({
+    default: mod.ShelfBatchNoteModal,
+  })),
+);
+
 export type LibraryModalState =
   | { kind: 'none' }
   | { kind: 'upload' }
-  | { kind: 'protection' }
+  | { kind: 'protection'; initialShelfKey?: string; initialBookId?: string }
   | { kind: 'cache-manager' }
   | { kind: 'library-health' }
+  | { kind: 'shelf-batch-note'; shelfKey: string; openAniList?: boolean }
   | { kind: 'book-access'; book: Book }
   | { kind: 'edit'; book: Book }
   | { kind: 'rename-shelf'; shelfName: string }
@@ -51,6 +58,7 @@ interface AdminModalsHostProps {
   books: Book[];
   shelves: readonly ShelfGroup[];
   shelfTags?: Readonly<Record<string, string[]>>;
+  shelfAltTitles?: Readonly<Record<string, string[]>>;
   storage: StorageStats | null;
   existingShelves: string[];
   renamingShelfName: string | null;
@@ -61,6 +69,9 @@ interface AdminModalsHostProps {
   onRequestDelete: (book: Book) => void;
   onBookUploaded: (book: Book, storage: StorageStats) => void;
   onBookUpdated: (book: Book, storage?: StorageStats) => void;
+  onBooksUpdated?: (books: Book[]) => void;
+  onShelfAltTitlesChanged?: (shelfName: string, altTitles: string[]) => void;
+  onShelfTagsChanged?: (shelfName: string, tags: string[]) => void;
   onStorageSynced?: (storage: StorageStats) => void;
   onBookPackSynced: (bookId: string, storage?: StorageStats) => void;
   onBookAccessSaved: (bookId: string, summary: BookAccessSummary | null) => void;
@@ -76,6 +87,7 @@ export function AdminModalsHost({
   books,
   shelves,
   shelfTags,
+  shelfAltTitles,
   storage,
   existingShelves,
   renamingShelfName,
@@ -86,6 +98,9 @@ export function AdminModalsHost({
   onRequestDelete,
   onBookUploaded,
   onBookUpdated,
+  onBooksUpdated,
+  onShelfAltTitlesChanged,
+  onShelfTagsChanged,
   onStorageSynced,
   onBookPackSynced,
   onBookAccessSaved,
@@ -98,6 +113,13 @@ export function AdminModalsHost({
   const allShelfNames = useMemo(
     () => new Map(shelves.map((s) => [s.key, s.name])),
     [shelves],
+  );
+  const batchNoteTargetShelf = useMemo(
+    () =>
+      modal.kind === 'shelf-batch-note'
+        ? (shelves.find((s) => s.key === modal.shelfKey) ?? null)
+        : null,
+    [modal, shelves],
   );
 
   return (
@@ -122,8 +144,11 @@ export function AdminModalsHost({
           <LazyAdminProtectionModal
             open
             books={books}
+            initialShelfKey={modal.initialShelfKey}
+            initialBookId={modal.initialBookId}
             onClose={onClose}
             onBookPackSynced={onBookPackSynced}
+            onStorageSynced={onStorageSynced}
             onApiError={onApiError}
             onNotify={onNotify}
           />
@@ -147,9 +172,34 @@ export function AdminModalsHost({
             shelfTags={shelfTags}
             onClose={onClose}
             onEditBook={(book) => onSwitchModal({ kind: 'edit', book })}
+            onOpenShelfMetadata={(shelfKey, openAniList) =>
+              onSwitchModal({ kind: 'shelf-batch-note', shelfKey, openAniList })
+            }
             onRenameShelf={(shelfName) => onSwitchModal({ kind: 'rename-shelf', shelfName })}
-            onOpenProtection={() => onSwitchModal({ kind: 'protection' })}
+            onOpenProtection={(options) =>
+              onSwitchModal({
+                kind: 'protection',
+                ...(options?.initialShelfKey ? { initialShelfKey: options.initialShelfKey } : {}),
+                ...(options?.initialBookId ? { initialBookId: options.initialBookId } : {}),
+              })
+            }
             onJumpToShelf={onJumpToShelf}
+          />
+        </Suspense>
+      )}
+      {modal.kind === 'shelf-batch-note' && batchNoteTargetShelf && (
+        <Suspense fallback={null}>
+          <LazyShelfBatchNoteModal
+            shelf={batchNoteTargetShelf}
+            currentAltTitles={shelfAltTitles?.[batchNoteTargetShelf.key]}
+            currentTags={shelfTags?.[batchNoteTargetShelf.key]}
+            initialAniListOpen={Boolean(modal.openAniList)}
+            onClose={onClose}
+            onBooksUpdated={(updatedBooks) => onBooksUpdated?.(updatedBooks)}
+            onAltTitlesSaved={onShelfAltTitlesChanged}
+            onTagsSaved={onShelfTagsChanged}
+            onApiError={onApiError}
+            onNotify={onNotify}
           />
         </Suspense>
       )}
