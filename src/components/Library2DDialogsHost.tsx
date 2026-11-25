@@ -49,6 +49,7 @@ export interface Library2DDialogsHostProps {
   onManageBookAccess?: (book: Book) => void;
   onOpenLibraryHealth?: () => void;
   onOpenCacheManager?: () => void;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
 
 export function Library2DDialogsHost({
@@ -85,6 +86,7 @@ export function Library2DDialogsHost({
   onManageBookAccess,
   onOpenLibraryHealth,
   onOpenCacheManager,
+  onApiError,
 }: Library2DDialogsHostProps) {
   return (
     <>
@@ -116,6 +118,7 @@ export function Library2DDialogsHost({
         onClose={onCloseStats}
         onOpenBook={onOpenBook}
         onOpenCacheManager={onOpenCacheManager}
+        onApiError={onApiError}
       />
 
       {paletteOpen && onClosePalette && (
@@ -139,6 +142,7 @@ export function Library2DDialogsHost({
             onOpenLibraryHealth={onOpenLibraryHealth}
             onOpenCacheManager={onOpenCacheManager}
             onUploadClick={onUploadClick}
+            onApiError={onApiError}
           />
         </Suspense>
       )}

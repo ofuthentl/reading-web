@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2,
   ChevronDown,
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { AdminUsageGuestDetailPanel } from '@/components/AdminUsageGuestDetailPanel';
 import { normalizeSearchText } from '@/hooks/useLibraryViewState';
+import { isAuthError } from '@/lib/authSession';
 import { formatReadingDuration } from '@/lib/readingStreak';
 import {
   type AdminGuestUsageDetail,
@@ -23,11 +24,13 @@ type GuestFilterMode = 'all' | 'active' | 'strikes' | 'banned';
 export interface AdminUsageGuestTableProps {
   guests: readonly AdminUsageGuestRow[];
   formatRelativeTime: (timestampMs: number | null) => string;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
 
 export function AdminUsageGuestTable({
   guests,
   formatRelativeTime,
+  onApiError,
 }: AdminUsageGuestTableProps) {
   const [guestQuery, setGuestQuery] = useState('');
   const [guestFilter, setGuestFilter] = useState<GuestFilterMode>('all');
@@ -36,6 +39,18 @@ export function AdminUsageGuestTable({
   const [loadingUserId, setLoadingUserId] = useState<string | null>(null);
   const [detailErrors, setDetailErrors] = useState<Record<string, string>>({});
   const abortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
+  const detailCacheRef = useRef(detailCache);
+  detailCacheRef.current = detailCache;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+      abortRef.current = null;
+    };
+  }, []);
 
   const normalizedQuery = useMemo(() => normalizeSearchText(guestQuery), [guestQuery]);
 
@@ -53,7 +68,7 @@ export function AdminUsageGuestTable({
   }, [guestFilter, guests, normalizedQuery]);
 
   const loadGuestDetail = useCallback(async (discordUserId: string, force = false) => {
-    if (!force && detailCache[discordUserId]) return;
+    if (!force && detailCacheRef.current[discordUserId]) return;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -66,19 +81,25 @@ export function AdminUsageGuestTable({
 
     try {
       const detail = await fetchAdminGuestUsageDetail(discordUserId, controller.signal);
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && mountedRef.current) {
         setDetailCache((prev) => ({ ...prev, [discordUserId]: detail }));
       }
     } catch (err) {
       if (controller.signal.aborted) return;
+      if (isAuthError(err)) {
+        onApiError?.(err, 'Phiên quản trị đã hết hạn.');
+        return;
+      }
+      if (!mountedRef.current) return;
       const msg = err instanceof Error ? err.message : 'Không thể tải lịch sử đọc.';
       setDetailErrors((prev) => ({ ...prev, [discordUserId]: msg }));
     } finally {
-      if (!controller.signal.aborted) {
+      if (abortRef.current === controller) abortRef.current = null;
+      if (!controller.signal.aborted && mountedRef.current) {
         setLoadingUserId((prev) => (prev === discordUserId ? null : prev));
       }
     }
-  }, [detailCache]);
+  }, [onApiError]);
 
   const handleToggleRow = useCallback(
     (discordUserId: string) => {

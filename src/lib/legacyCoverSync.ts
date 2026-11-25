@@ -36,7 +36,7 @@ function saveSkippedBookIds(ids: ReadonlySet<string>): void {
 }
 
 export function needsLegacyCoverSync(book: Book): boolean {
-  return Boolean(book.file_key) && !book.cover_key?.endsWith('-v2.jpg');
+  return Boolean(book.file_key && book.cover_key && !book.cover_key.endsWith('-v2.jpg'));
 }
 
 async function uploadPrecompressedCover(

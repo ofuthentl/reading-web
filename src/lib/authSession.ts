@@ -144,10 +144,12 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   return response;
 }
 
-export async function checkHealth(): Promise<{ ok: boolean; authRequired: boolean }> {
+export async function checkHealth(
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; authRequired: boolean }> {
   assertApiConfigured();
   if (!isCloudMode) return { ok: true, authRequired: false };
-  const response = await fetch(`${API_BASE}/api/health`);
+  const response = await fetch(`${API_BASE}/api/health`, { signal });
   if (!response.ok) throw new Error('Không thể kết nối máy chủ Cloudflare Worker.');
   return (await response.json()) as { ok: boolean; authRequired: boolean };
 }

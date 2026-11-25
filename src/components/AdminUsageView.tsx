@@ -457,6 +457,7 @@ export function AdminUsageView({
             <AdminUsageGuestTable
               guests={report.guestActivity}
               formatRelativeTime={formatRelativeTime}
+              onApiError={onApiError}
             />
           </>
         ) : (

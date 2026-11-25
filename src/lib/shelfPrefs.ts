@@ -132,6 +132,14 @@ export function writeLocalShelfPrefs(prefs: ShelfPrefsState): void {
   }
 }
 
+export function clearLocalShelfPrefs(): void {
+  try {
+    localStorage.removeItem(SHELF_PREFS_STORAGE_KEY);
+  } catch {
+    // Ignore private-mode / storage errors
+  }
+}
+
 export function patchShelfCover(
   prev: ShelfPrefsState,
   shelfName: string,
@@ -293,6 +301,44 @@ export function pruneMovedBooksFromShelfCovers(
     }
   }
   return changed ? { ...prev, covers } : prev;
+}
+
+export function pruneOrphanShelfPrefs(
+  prev: ShelfPrefsState,
+  aliveShelfKeys: ReadonlySet<string>,
+): ShelfPrefsState {
+  let changed = false;
+
+  const filterRecord = <T,>(rec: Record<string, T> | undefined): Record<string, T> | undefined => {
+    if (!rec) return rec;
+    let recChanged = false;
+    const out: Record<string, T> = {};
+    for (const [k, v] of Object.entries(rec)) {
+      if (aliveShelfKeys.has(k)) out[k] = v;
+      else recChanged = true;
+    }
+    if (recChanged) {
+      changed = true;
+      return out;
+    }
+    return rec;
+  };
+
+  const covers = filterRecord(prev.covers) ?? prev.covers;
+  const favorites = prev.favorites.filter((k) => aliveShelfKeys.has(k));
+  if (favorites.length !== prev.favorites.length) changed = true;
+  const tags = filterRecord(prev.tags);
+  const altTitles = filterRecord(prev.altTitles);
+  const access = filterRecord(prev.access);
+
+  if (!changed) return prev;
+  return {
+    covers,
+    favorites,
+    ...(tags ? { tags } : {}),
+    ...(altTitles ? { altTitles } : {}),
+    ...(access ? { access } : {}),
+  };
 }
 
 export function sortShelvesFavoriteFirst(

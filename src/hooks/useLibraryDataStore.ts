@@ -10,14 +10,18 @@ import type {
   ShelfRelation,
   StorageStats,
 } from '@/types';
-import { fetchLibraryState, sortBooksByTitle } from '@/lib/api';
+import { fetchLibraryState, isCloudMode, sortBooksByTitle } from '@/lib/api';
 import {
   type IdleWindow,
   canPreloadOnIdle,
+  getAliveShelfKeys,
   mergeBookPreservingFlags,
   mergeShelfRatingsOnRename,
   mergeShelfRelationsOnRename,
+  mergeUploadStorageStats,
   pruneDeletedBookAccess,
+  pruneOrphanCollectionShelves,
+  pruneOrphanPlanToReadShelves,
   pruneOrphanShelfRatings,
   pruneOrphanShelfRelations,
   removeShelfRelationPair,
@@ -26,12 +30,14 @@ import {
 } from '@/lib/libraryStoreHelpers';
 import {
   type ShelfPrefsState,
+  clearLocalShelfPrefs,
   patchShelfAccessSummary,
   patchShelfAltTitles,
   patchShelfCover,
   patchShelfTags,
   pruneDeletedBooksFromPrefs,
   pruneMovedBooksFromShelfCovers,
+  pruneOrphanShelfPrefs,
   readLocalShelfPrefs,
   renameShelfPrefs,
   toShelfPrefKey,
@@ -158,7 +164,7 @@ export function useLibraryDataStore({
             }
           });
         }
-        if (state.books.some((b) => Boolean(b.file_key) && !b.cover_key?.endsWith('-v2.jpg'))) {
+        if (state.books.some((b) => Boolean(b.file_key && b.cover_key && !b.cover_key.endsWith('-v2.jpg')))) {
           if (legacyCoverTimerRef.current !== null) {
             window.clearTimeout(legacyCoverTimerRef.current);
           }
@@ -193,6 +199,9 @@ export function useLibraryDataStore({
       legacyCoverTimerRef.current = null;
     }
     toggleVerRef.current.clear();
+    if (isCloudMode) {
+      clearLocalShelfPrefs();
+    }
     setLoading(false);
     setHasLoadedOnce(false);
     setBooks([]);
@@ -210,7 +219,6 @@ export function useLibraryDataStore({
 
   const userActions = useLibraryUserActions({
     sessionRole: session.role,
-    progress,
     progressRef,
     toggleVerRef,
     setProgress,
@@ -224,20 +232,31 @@ export function useLibraryDataStore({
 
   const handleBookUploaded = useCallback((book: Book, nextStorage: StorageStats) => {
     setBooks((prev) => sortBooksByTitle([...prev.filter((item) => item.id !== book.id), book]));
+    setStorage((prev) => mergeUploadStorageStats(prev, nextStorage));
+  }, []);
+
+  const handleStorageSynced = useCallback((nextStorage: StorageStats) => {
     setStorage(nextStorage);
   }, []);
 
   const handleBookUpdated = useCallback((updatedBook: Book, nextStorage?: StorageStats) => {
-    setBooks((prev) =>
-      sortBooksByTitle(
-        prev.map((item) =>
-          item.id === updatedBook.id ? mergeBookPreservingFlags(item, updatedBook) : item,
-        ),
+    const nextBooks = sortBooksByTitle(
+      booksRef.current.map((item) =>
+        item.id === updatedBook.id ? mergeBookPreservingFlags(item, updatedBook) : item,
       ),
     );
+    const aliveShelfKeys = getAliveShelfKeys(nextBooks);
+    setBooks(nextBooks);
     setShelfPrefs((prev) =>
-      pruneMovedBooksFromShelfCovers(prev, new Set([updatedBook.id]), updatedBook.shelf),
+      pruneOrphanShelfPrefs(
+        pruneMovedBooksFromShelfCovers(prev, new Set([updatedBook.id]), updatedBook.shelf),
+        aliveShelfKeys,
+      ),
     );
+    setShelfRatings((prev) => pruneOrphanShelfRatings(prev, nextBooks));
+    setShelfRelations((prev) => pruneOrphanShelfRelations(prev, nextBooks));
+    setPlanToReadShelfKeys((prev) => pruneOrphanPlanToReadShelves(prev, aliveShelfKeys));
+    setCollections((prev) => pruneOrphanCollectionShelves(prev, aliveShelfKeys));
     if (nextStorage) setStorage(nextStorage);
   }, []);
 
@@ -362,23 +381,38 @@ export function useLibraryDataStore({
     const updatedBooks = booksRef.current.map((item) =>
       idSet.has(item.id) ? { ...item, shelf: targetShelf } : item,
     );
+    const aliveShelfKeys = getAliveShelfKeys(updatedBooks);
     setBooks(updatedBooks);
-    setShelfPrefs((prev) => pruneMovedBooksFromShelfCovers(prev, idSet, targetShelf));
+    setShelfPrefs((prev) =>
+      pruneOrphanShelfPrefs(
+        pruneMovedBooksFromShelfCovers(prev, idSet, targetShelf),
+        aliveShelfKeys,
+      ),
+    );
+    setShelfRatings((prev) => pruneOrphanShelfRatings(prev, updatedBooks));
     setShelfRelations((prev) => pruneOrphanShelfRelations(prev, updatedBooks));
+    setPlanToReadShelfKeys((prev) => pruneOrphanPlanToReadShelves(prev, aliveShelfKeys));
+    setCollections((prev) => pruneOrphanCollectionShelves(prev, aliveShelfKeys));
     setSelectionResetKey((prev) => prev + 1);
   }, []);
 
   const handleBooksDeleted = useCallback((deletedIds: string[], nextStorage: StorageStats) => {
     const idSet = new Set(deletedIds);
     const remaining = booksRef.current.filter((item) => !idSet.has(item.id));
+    const aliveShelfKeys = getAliveShelfKeys(remaining);
     setBooks((prev) => prev.filter((item) => !idSet.has(item.id)));
+    setWeeklyPopularIds((prev) => prev.filter((id) => !idSet.has(id)));
     setShelfRatings((prevRatings) => pruneOrphanShelfRatings(prevRatings, remaining));
     setShelfRelations((prevRels) => pruneOrphanShelfRelations(prevRels, remaining));
     setBookAccess((prevAccess) => pruneDeletedBookAccess(prevAccess, idSet));
     setProgress((prev) =>
       Object.fromEntries(Object.entries(prev).filter(([id]) => !idSet.has(id))),
     );
-    setShelfPrefs((prev) => pruneDeletedBooksFromPrefs(prev, idSet));
+    setShelfPrefs((prev) =>
+      pruneOrphanShelfPrefs(pruneDeletedBooksFromPrefs(prev, idSet), aliveShelfKeys),
+    );
+    setPlanToReadShelfKeys((prev) => pruneOrphanPlanToReadShelves(prev, aliveShelfKeys));
+    setCollections((prev) => pruneOrphanCollectionShelves(prev, aliveShelfKeys));
     setPlanToReadBookIds((prev) => {
       const next = new Set(Array.from(prev).filter((id) => !idSet.has(id)));
       return next.size === prev.size ? prev : next;
@@ -407,6 +441,7 @@ export function useLibraryDataStore({
     clearStoreOnLogout,
     ...userActions,
     handleBookUploaded,
+    handleStorageSynced,
     handleBookUpdated,
     handleBooksBatchUpdated,
     handleBookPackSynced,

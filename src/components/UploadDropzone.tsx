@@ -6,10 +6,10 @@ import {
   formatBytes,
   groupBooksIntoShelves,
 } from '@/lib/api';
-import { bookDuplicateKey } from '@/lib/seriesShelfExtractor';
 import { inferBatchCommonShelf } from '@/lib/shelfUploadPlanner';
 import {
   ACCEPTED_UPLOAD_EXTENSIONS,
+  buildLibraryDuplicateKeys,
   createUploadQueueItems,
   executeSequentialUploadBatch,
   triggerDiscordReleaseAnnouncement,
@@ -29,6 +29,7 @@ interface UploadDropzoneProps {
   onClose: () => void;
   onBookUploaded: (book: Book, storage: StorageStats) => void;
   onBookUpdated: (book: Book, storage?: StorageStats) => void;
+  onStorageSynced?: (storage: StorageStats) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
   onNotify: (message: string, type?: ToastType) => void;
 }
@@ -40,6 +41,7 @@ export function UploadDropzone({
   onClose,
   onBookUploaded,
   onBookUpdated,
+  onStorageSynced,
   onApiError,
   onNotify,
 }: UploadDropzoneProps) {
@@ -83,10 +85,7 @@ export function UploadDropzone({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, uploading, onClose]);
 
-  const libraryKeys = useMemo(
-    () => new Set(books.map((book) => bookDuplicateKey(book.title, book.author))),
-    [books],
-  );
+  const libraryKeys = useMemo(() => buildLibraryDuplicateKeys(books), [books]);
 
   const existingShelves = useMemo(
     () => groupBooksIntoShelves(books).map((shelf) => shelf.name),
@@ -171,7 +170,7 @@ export function UploadDropzone({
     setProgressState({ completed: 0, total: targets.length, currentTitle: targets[0].title });
 
     const shouldAnnounceDiscord = announceDiscord;
-    const { successCount, failCount, authFailed, uploadedBookIds } =
+    const { successCount, failCount, warningCount, quotaExceeded, authFailed, uploadedBookIds } =
       await executeSequentialUploadBatch({
         targets,
         existingBooks: books,
@@ -182,6 +181,7 @@ export function UploadDropzone({
         onItemPatch: updateItem,
         onBookUploaded,
         onBookUpdated,
+        onStorageSynced,
         onApiError,
       });
 
@@ -195,15 +195,25 @@ export function UploadDropzone({
       return;
     }
 
-    if (stopRequestedRef.current) {
+    if (quotaExceeded) {
+      onNotify(
+        `Kho đã chạm giới hạn 9.0 GB khi lưu bìa/gói khách (${successCount} cuốn đã lên, đã dừng tải tiếp).`,
+        'warning',
+      );
+    } else if (stopRequestedRef.current) {
       onNotify(
         successCount > 0
           ? `Đã dừng tải lên sau khi hoàn tất ${successCount} cuốn.`
           : 'Đã dừng hàng đợi tải lên.',
         'info',
       );
-    } else if (successCount > 0 && failCount === 0) {
+    } else if (successCount > 0 && failCount === 0 && warningCount === 0) {
       onNotify(`Đã tải lên thành công ${successCount} cuốn sách.`, 'success');
+    } else if (successCount > 0 && failCount === 0 && warningCount > 0) {
+      onNotify(
+        `Đã tải lên ${successCount} cuốn, nhưng ${warningCount} cuốn có cảnh báo ảnh bìa/gói khách.`,
+        'warning',
+      );
     } else if (successCount > 0 && failCount > 0) {
       onNotify(`Đã tải lên ${successCount} cuốn, ${failCount} tệp gặp lỗi.`, 'warning');
     } else if (failCount > 0) {
@@ -211,7 +221,7 @@ export function UploadDropzone({
     }
 
     if (shouldAnnounceDiscord && uploadedBookIds.length > 0 && mountedRef.current) {
-      if (!stopRequestedRef.current && failCount === 0) {
+      if (!stopRequestedRef.current && failCount === 0 && !quotaExceeded) {
         await triggerDiscordReleaseAnnouncement(uploadedBookIds, onNotify, onApiError);
       } else {
         setPendingDiscordIds(uploadedBookIds);
@@ -262,7 +272,7 @@ export function UploadDropzone({
                 Tải sách vào thư viện
               </h2>
               <p className="text-xs text-ink-muted">
-                Hỗ trợ EPUB, DOCX · Tối đa 350 MB/tệp · Tải tuần tự từng cuốn
+                Hỗ trợ EPUB, DOCX · Tối đa 350 MB/tệp · Tải song song thích ứng (tối đa 2 cuốn)
               </p>
             </div>
           </div>
@@ -474,7 +484,7 @@ export function UploadDropzone({
                 className="inline-flex items-center gap-1.5 rounded-xl border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-subtle disabled:opacity-50"
               >
                 <Square className="h-3.5 w-3.5" />
-                {stopRequested ? 'Đang dừng sau tệp này...' : 'Dừng tải lên'}
+                {stopRequested ? 'Đang dừng sau các tệp đang tải...' : 'Dừng tải lên'}
               </button>
             ) : (
               <>

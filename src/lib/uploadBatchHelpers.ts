@@ -1,9 +1,15 @@
 import type { Book, StorageStats } from '@/types';
 import { updateBookMetadata, uploadBook } from '@/lib/api';
-import { announceDiscordReleasesApi } from '@/lib/apiAdminMutations';
-import { isAuthError } from '@/lib/authSession';
+import { announceDiscordReleasesApi, fetchLatestStorageStats } from '@/lib/apiAdminMutations';
+import { isAuthError, isCloudMode } from '@/lib/authSession';
 import { stripDiacriticsLower } from '@/lib/authorHeuristics';
-import { bookDuplicateKey, extractSeriesName, parseFileMetadata } from '@/lib/seriesShelfExtractor';
+import { getBookSortTitle } from '@/lib/bookMetadata';
+import {
+  bookDuplicateKey,
+  extractSeriesName,
+  normalizeBookTitleDuplicateKey,
+  parseFileMetadata,
+} from '@/lib/seriesShelfExtractor';
 import { isKnownAuthor, normalizeShelfPlacementKey } from '@/lib/shelfPlacement';
 import {
   normalizeShelfMatchKey,
@@ -17,6 +23,14 @@ export const MAX_SINGLE_FILE_BYTES = 350 * 1024 * 1024;
 export const ACCEPTED_UPLOAD_EXTENSIONS = '.epub,.docx';
 
 const UNKNOWN_AUTHOR = 'Không rõ tác giả';
+const UNCLASSIFIED_SHELF = 'Kho chưa phân loại';
+const UNTITLED_BOOK_NORM = 'sách chưa đặt tên';
+const TITLE_DUP_PREFIX = '__title__::';
+
+function toTitleDuplicateKey(title: string): string | null {
+  const norm = normalizeBookTitleDuplicateKey(title);
+  return norm && norm !== UNTITLED_BOOK_NORM ? `${TITLE_DUP_PREFIX}${norm}` : null;
+}
 
 /**
  * Trong cùng 1 lô tải lên nhiều tập cùng bộ, nếu mỗi tập mang 1 chuỗi hậu tố `author` khác nhau
@@ -68,15 +82,20 @@ export function createUploadQueueItems(
   libraryKeys: Set<string>,
   existingQueue: UploadQueueItem[],
 ): UploadQueueItem[] {
-  const queuedKeys = new Set(
-    existingQueue.filter((item) => item.status !== 'invalid').map((item) => item.duplicateKey),
-  );
+  const queuedKeys = new Set<string>();
+  for (const item of existingQueue) {
+    if (item.status === 'invalid') continue;
+    queuedKeys.add(item.duplicateKey);
+    const titleKey = toTitleDuplicateKey(item.title);
+    if (titleKey) queuedKeys.add(titleKey);
+  }
 
   const parsedEntries = files.map((file) => ({ file, ...parseFileMetadata(file.name) }));
   healBatchParsedMetadata(parsedEntries);
 
   return parsedEntries.map(({ file, ...parsed }) => {
     const duplicateKey = bookDuplicateKey(parsed.title, parsed.author);
+    const titleKey = toTitleDuplicateKey(parsed.title);
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const base = {
       id,
@@ -93,18 +112,27 @@ export function createUploadQueueItems(
       return { ...base, status: 'invalid', errorMessage: 'Tệp vượt quá giới hạn tối đa 350 MB.' };
     }
 
-    const duplicateReason = libraryKeys.has(duplicateKey)
-      ? 'library'
-      : queuedKeys.has(duplicateKey)
-        ? 'queue'
-        : null;
+    const isLibraryDup =
+      libraryKeys.has(duplicateKey) || Boolean(titleKey && libraryKeys.has(titleKey));
+    const isQueueDup =
+      queuedKeys.has(duplicateKey) || Boolean(titleKey && queuedKeys.has(titleKey));
+    const duplicateReason = isLibraryDup ? 'library' : isQueueDup ? 'queue' : null;
     queuedKeys.add(duplicateKey);
+    if (titleKey) queuedKeys.add(titleKey);
     return { ...base, duplicateReason, status: duplicateReason ? 'skipped' : 'queued' };
   });
 }
 
 export function buildLibraryDuplicateKeys(books: readonly Book[]): Set<string> {
-  return new Set(books.map((book) => bookDuplicateKey(book.title, book.author)));
+  const keys = new Set<string>();
+  for (const book of books) {
+    keys.add(bookDuplicateKey(book.title, book.author));
+    const rawTitleKey = toTitleDuplicateKey(book.title);
+    if (rawTitleKey) keys.add(rawTitleKey);
+    const sortTitleKey = toTitleDuplicateKey(getBookSortTitle(book));
+    if (sortTitleKey) keys.add(sortTitleKey);
+  }
+  return keys;
 }
 
 const MAX_DISCORD_IDS_PER_CALL = 50;
@@ -173,6 +201,7 @@ export interface ExecuteUploadBatchOptions {
   onItemPatch: (id: string, patch: Partial<UploadQueueItem>) => void;
   onBookUploaded: (book: Book, storage: StorageStats) => void;
   onBookUpdated: (book: Book, storage?: StorageStats) => void;
+  onStorageSynced?: (storage: StorageStats) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
 }
 
@@ -184,64 +213,38 @@ export async function executeSequentialUploadBatch(
 ): Promise<{
   successCount: number;
   failCount: number;
+  warningCount: number;
+  quotaExceeded: boolean;
   authFailed: boolean;
   uploadedBookIds: string[];
 }> {
   const {
     targets, existingBooks, batchShelfForRun, isStopped, isMounted,
-    onProgress, onItemPatch, onBookUploaded, onBookUpdated, onApiError,
+    onProgress, onItemPatch, onBookUploaded, onBookUpdated, onStorageSynced, onApiError,
   } = options;
 
   let successCount = 0;
   let failCount = 0;
+  let warningCount = 0;
   let completedCount = 0;
   let authFailed = false;
+  let quotaExceeded = false;
   const uploadedBookIds: string[] = [];
   const workingBooks = [...existingBooks];
   const activePromises = new Set<Promise<void>>();
+  const activeStandalonePromises = new Set<Promise<void>>();
   const activeStandaloneAuthorPromises = new Map<string, Promise<void>>();
+  const activeNewShelfPromises = new Map<string, Promise<void>>();
+  let activeAuthorlessStandalone: Promise<void> | null = null;
   let heavyInFlight: Promise<void> | null = null;
+  const unclassifiedMatchKey = normalizeShelfMatchKey(UNCLASSIFIED_SHELF);
 
-  const getStandaloneAuthorKey = (item: UploadQueueItem): string | null => {
-    if (extractSeriesName(item.title) !== null) return null;
-    if (!isKnownAuthor(item.author)) return null;
-    return normalizeShelfPlacementKey(item.author) || null;
-  };
-
-  for (let index = 0; index < targets.length; index += 1) {
-    if (isStopped() || !isMounted() || authFailed) break;
-    const current = targets[index];
-    const isHeavy = current.file.size > HEAVY_UPLOAD_THRESHOLD_BYTES;
-    const standaloneAuthorKey = getStandaloneAuthorKey(current);
-
-    // Chờ luồng nặng hoàn tất trước khi khởi chạy tệp mới; nếu chính tệp hiện tại nặng (> 40 MB) thì xả sạch các luồng đang chạy
-    if (heavyInFlight) {
-      await heavyInFlight;
-    }
-    if (isHeavy) {
-      while (activePromises.size > 0) {
-        await Promise.race(activePromises);
-      }
-    } else {
-      // Tránh race condition gom kệ lẻ cùng tác giả (D-044): nếu đang tải 1 cuốn lẻ cùng tác giả thì chờ cuốn đó xong trước
-      if (standaloneAuthorKey && activeStandaloneAuthorPromises.has(standaloneAuthorKey)) {
-        await activeStandaloneAuthorPromises.get(standaloneAuthorKey);
-      }
-      while (activePromises.size >= MAX_BATCH_UPLOAD_CONCURRENCY) {
-        await Promise.race(activePromises);
-      }
-    }
-
-    if (isStopped() || !isMounted() || authFailed) break;
-
-    onProgress({ completed: completedCount, total: targets.length, currentTitle: current.title });
-    onItemPatch(current.id, { status: 'uploading', errorMessage: undefined });
-
+  const computePlanFor = (item: UploadQueueItem) => {
     const autoPlan = resolveUploadShelfPlan(
-      { title: current.title, author: current.author },
+      { title: item.title, author: item.author },
       workingBooks,
     );
-    const plan = batchShelfForRun
+    return batchShelfForRun
       ? {
           shelf: batchShelfForRun,
           booksToRegroup:
@@ -250,6 +253,66 @@ export async function executeSequentialUploadBatch(
               : ([] as Book[]),
         }
       : autoPlan;
+  };
+
+  for (let index = 0; index < targets.length; index += 1) {
+    if (isStopped() || !isMounted() || authFailed || quotaExceeded) break;
+    const current = targets[index];
+    const isHeavy = current.file.size > HEAVY_UPLOAD_THRESHOLD_BYTES;
+    const isStandalone = !batchShelfForRun && extractSeriesName(current.title) === null;
+    const standaloneAuthorKey =
+      isStandalone && isKnownAuthor(current.author)
+        ? normalizeShelfPlacementKey(current.author) || null
+        : null;
+    const isAuthorlessStandalone = isStandalone && !standaloneAuthorKey;
+
+    // Chờ các rào cản đồng bộ: tệp nặng (> 40 MB), tập lẻ chưa rõ tác giả/cùng tác giả,
+    // hoặc cuốn thứ 2 thuộc cùng 1 bộ MỚI chưa có trên kệ (để kế thừa đúng <dc:creator> từ cuốn đầu).
+    while (!isStopped() && isMounted() && !authFailed && !quotaExceeded) {
+      if (heavyInFlight) {
+        await heavyInFlight;
+        continue;
+      }
+      if (isHeavy && activePromises.size > 0) {
+        await Promise.race(activePromises);
+        continue;
+      }
+      if (isAuthorlessStandalone && activeStandalonePromises.size > 0) {
+        await Promise.race(activeStandalonePromises);
+        continue;
+      }
+      if (isStandalone && activeAuthorlessStandalone) {
+        await activeAuthorlessStandalone;
+        continue;
+      }
+      if (standaloneAuthorKey && activeStandaloneAuthorPromises.has(standaloneAuthorKey)) {
+        await activeStandaloneAuthorPromises.get(standaloneAuthorKey);
+        continue;
+      }
+      const prelimShelfKey = normalizeShelfMatchKey(computePlanFor(current).shelf);
+      if (prelimShelfKey && activeNewShelfPromises.has(prelimShelfKey)) {
+        await activeNewShelfPromises.get(prelimShelfKey);
+        continue;
+      }
+      if (!isHeavy && activePromises.size >= MAX_BATCH_UPLOAD_CONCURRENCY) {
+        await Promise.race(activePromises);
+        continue;
+      }
+      break;
+    }
+
+    if (isStopped() || !isMounted() || authFailed || quotaExceeded) break;
+
+    onProgress({ completed: completedCount, total: targets.length, currentTitle: current.title });
+    onItemPatch(current.id, { status: 'uploading', errorMessage: undefined, warningMessage: undefined });
+
+    const plan = computePlanFor(current);
+    const planShelfKey = normalizeShelfMatchKey(plan.shelf);
+    const isNewShelf = Boolean(
+      planShelfKey &&
+        planShelfKey !== unclassifiedMatchKey &&
+        !workingBooks.some((b) => normalizeShelfMatchKey(b.shelf || '') === planShelfKey),
+    );
     const preferredShelfAuthor = resolveShelfConsistentAuthor(plan.shelf, workingBooks);
 
     const task: Promise<void> = (async () => {
@@ -263,12 +326,39 @@ export async function executeSequentialUploadBatch(
         if (!isMounted()) return;
         successCount += 1;
         uploadedBookIds.push(result.book.id);
-        workingBooks.push(result.book);
-        onBookUploaded(result.book, result.storage);
 
-        for (const peer of plan.booksToRegroup) {
+        const booksBeforeSelf = workingBooks.slice();
+        let savedBook = result.book;
+        workingBooks.push(savedBook);
+        onBookUploaded(savedBook, result.storage);
+
+        const peersToRegroup = [...plan.booksToRegroup];
+        let finalShelf = plan.shelf;
+        // Nếu tập lẻ ban đầu không có tác giả trên tên file nhưng đã trích được <dc:creator>,
+        // tính lại kế hoạch gom kệ lẻ cùng tác giả để gom nhóm nhất quán (D-044).
+        if (isAuthorlessStandalone && isKnownAuthor(savedBook.author)) {
+          const postPlan = resolveUploadShelfPlan(
+            { title: savedBook.title, author: savedBook.author },
+            booksBeforeSelf,
+          );
+          if (normalizeShelfMatchKey(postPlan.shelf) !== normalizeShelfMatchKey(savedBook.shelf)) {
+            finalShelf = postPlan.shelf;
+            try {
+              const movedSelf = await updateBookMetadata(savedBook.id, { shelf: postPlan.shelf });
+              savedBook = movedSelf;
+              const selfIdx = workingBooks.findIndex((b) => b.id === movedSelf.id);
+              if (selfIdx >= 0) workingBooks[selfIdx] = movedSelf;
+              if (isMounted()) onBookUpdated(movedSelf);
+              peersToRegroup.push(...postPlan.booksToRegroup);
+            } catch (selfMoveErr) {
+              if (isAuthError(selfMoveErr)) throw selfMoveErr;
+            }
+          }
+        }
+
+        for (const peer of peersToRegroup) {
           try {
-            const moved = await updateBookMetadata(peer.id, { shelf: plan.shelf });
+            const moved = await updateBookMetadata(peer.id, { shelf: finalShelf });
             const idx = workingBooks.findIndex((b) => b.id === moved.id);
             if (idx >= 0) workingBooks[idx] = moved;
             if (isMounted()) onBookUpdated(moved);
@@ -277,11 +367,17 @@ export async function executeSequentialUploadBatch(
           }
         }
 
+        const warningMessage =
+          result.warnings && result.warnings.length > 0 ? result.warnings.join(' · ') : undefined;
+        if (warningMessage) warningCount += 1;
+        if (result.quotaExceeded) quotaExceeded = true;
+
         onItemPatch(current.id, {
           status: 'done',
-          author: result.book.author,
-          shelf: result.book.shelf,
+          author: savedBook.author,
+          shelf: savedBook.shelf,
           errorMessage: undefined,
+          warningMessage,
         });
       } catch (err) {
         if (!isMounted()) return;
@@ -306,13 +402,21 @@ export async function executeSequentialUploadBatch(
 
     activePromises.add(task);
     if (isHeavy) heavyInFlight = task;
+    if (isStandalone) activeStandalonePromises.add(task);
+    if (isAuthorlessStandalone) activeAuthorlessStandalone = task;
     if (standaloneAuthorKey) activeStandaloneAuthorPromises.set(standaloneAuthorKey, task);
+    if (isNewShelf && planShelfKey) activeNewShelfPromises.set(planShelfKey, task);
 
     void task.finally(() => {
       activePromises.delete(task);
+      activeStandalonePromises.delete(task);
       if (heavyInFlight === task) heavyInFlight = null;
+      if (activeAuthorlessStandalone === task) activeAuthorlessStandalone = null;
       if (standaloneAuthorKey && activeStandaloneAuthorPromises.get(standaloneAuthorKey) === task) {
         activeStandaloneAuthorPromises.delete(standaloneAuthorKey);
+      }
+      if (isNewShelf && planShelfKey && activeNewShelfPromises.get(planShelfKey) === task) {
+        activeNewShelfPromises.delete(planShelfKey);
       }
     });
   }
@@ -321,5 +425,18 @@ export async function executeSequentialUploadBatch(
     await Promise.allSettled(activePromises);
   }
 
-  return { successCount, failCount, authFailed, uploadedBookIds };
+  // Đồng bộ lại dung lượng chuẩn từ máy chủ sau lô song song nhiều cuốn (tránh sai số nhỏ giữa cover/pack)
+  if (successCount > 1 && isCloudMode && !authFailed && isMounted() && onStorageSynced) {
+    try {
+      const latest = await fetchLatestStorageStats();
+      if (latest && isMounted()) onStorageSynced(latest);
+    } catch (err) {
+      if (isAuthError(err)) {
+        authFailed = true;
+        onApiError(err, 'Phiên đăng nhập đã hết hạn.');
+      }
+    }
+  }
+
+  return { successCount, failCount, warningCount, quotaExceeded, authFailed, uploadedBookIds };
 }

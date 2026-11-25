@@ -65,6 +65,18 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(authReason ?? null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const mountedRef = useRef(true);
+  const verifySeqRef = useRef(0);
+  const verifyAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      verifyAbortRef.current?.abort();
+      verifyAbortRef.current = null;
+    };
+  }, []);
 
   useEffect(() => subscribeGateRoute(() => setRoute(getCurrentGateRoute())), []);
 
@@ -81,12 +93,20 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
   const verifyServer = useCallback(async () => {
     if (isMissingProductionApi) return;
 
+    verifyAbortRef.current?.abort();
+    const controller = new AbortController();
+    verifyAbortRef.current = controller;
+    const seq = ++verifySeqRef.current;
+    const isStale = () =>
+      !mountedRef.current || controller.signal.aborted || verifySeqRef.current !== seq;
+
     const currentRoute = getCurrentGateRoute();
     setStatus('checking');
     setErrorMessage(authReason ?? null);
 
     try {
-      const health = await checkHealth();
+      const health = await checkHealth(controller.signal);
+      if (isStale()) return;
 
       if (!health.authRequired) {
         replaceGateRoute(currentRoute === 'usage' ? 'usage' : 'root');
@@ -102,12 +122,16 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
         if (stored.status === 'active' && !authReason) {
           if (stored.session.role === 'owner') {
             try {
-              const sessionRes = await apiFetch('/api/auth/session');
+              const sessionRes = await apiFetch('/api/auth/session', {
+                signal: controller.signal,
+              });
+              if (isStale()) return;
               const sessionBody = (await sessionRes.json().catch(() => ({}))) as {
                 ok?: boolean;
                 role?: string;
                 expiresAt?: number | null;
               };
+              if (isStale()) return;
               if (sessionRes.ok && sessionBody.ok && sessionBody.role === 'owner') {
                 onAuthenticated({
                   role: 'owner',
@@ -124,6 +148,7 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
                 return;
               }
             } catch (sessionErr) {
+              if (isStale()) return;
               if (!isAuthError(sessionErr)) {
                 setErrorMessage(
                   sessionErr instanceof Error
@@ -134,6 +159,7 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
                 return;
               }
             }
+            if (isStale()) return;
             setAuthToken(null);
             replaceGateRoute('locked');
             setRoute('locked');
@@ -173,10 +199,15 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
 
       setStatus('ready');
     } catch (err) {
+      if (isStale()) return;
       setErrorMessage(
         err instanceof Error ? err.message : 'Không thể kết nối máy chủ thư viện.',
       );
       setStatus('error');
+    } finally {
+      if (verifyAbortRef.current === controller) {
+        verifyAbortRef.current = null;
+      }
     }
   }, [authReason, onAuthenticated]);
 
@@ -216,13 +247,15 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
     setErrorMessage(null);
     try {
       const session = await loginWithPasscode(trimmed);
+      if (!mountedRef.current) return;
       setPasscode('');
       replaceGateRoute('root');
       onAuthenticated(session);
     } catch (err) {
+      if (!mountedRef.current) return;
       setErrorMessage(err instanceof Error ? err.message : 'Chìa khoá không hợp lệ.');
     } finally {
-      setSubmitting(false);
+      if (mountedRef.current) setSubmitting(false);
     }
   };
 
@@ -454,7 +487,7 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
 
                 <div className="mt-6 flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.18em] text-ink-faint select-none">
                   <span className="h-1.5 w-1.5 rounded-full bg-ink-faint/60" />
-                  <span>Phiên đọc 24 giờ · Chế độ 2D</span>
+                  <span>Phiên đọc 24 giờ · Quyền chỉ đọc</span>
                 </div>
               </>
             )}

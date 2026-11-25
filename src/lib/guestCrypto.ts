@@ -246,8 +246,10 @@ export async function fetchGuestMediaBitmap(
   }
 }
 
-export async function fetchAdminDiscordGuests(): Promise<DiscordGuestRecord[]> {
-  const res = await apiFetch('/api/admin/discord-guests');
+export async function fetchAdminDiscordGuests(
+  signal?: AbortSignal,
+): Promise<DiscordGuestRecord[]> {
+  const res = await apiFetch('/api/admin/discord-guests', { signal });
   const data = (await res.json().catch(() => ({}))) as {
     guests?: DiscordGuestRecord[];
     error?: string;

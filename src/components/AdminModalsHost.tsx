@@ -61,6 +61,7 @@ interface AdminModalsHostProps {
   onRequestDelete: (book: Book) => void;
   onBookUploaded: (book: Book, storage: StorageStats) => void;
   onBookUpdated: (book: Book, storage?: StorageStats) => void;
+  onStorageSynced?: (storage: StorageStats) => void;
   onBookPackSynced: (bookId: string, storage?: StorageStats) => void;
   onBookAccessSaved: (bookId: string, summary: BookAccessSummary | null) => void;
   onShelfRenamed: (oldName: string, newName: string) => void;
@@ -85,6 +86,7 @@ export function AdminModalsHost({
   onRequestDelete,
   onBookUploaded,
   onBookUpdated,
+  onStorageSynced,
   onBookPackSynced,
   onBookAccessSaved,
   onShelfRenamed,
@@ -109,6 +111,7 @@ export function AdminModalsHost({
             onClose={onClose}
             onBookUploaded={onBookUploaded}
             onBookUpdated={onBookUpdated}
+            onStorageSynced={onStorageSynced}
             onApiError={onApiError}
             onNotify={onNotify}
           />

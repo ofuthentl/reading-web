@@ -3,6 +3,7 @@ import {
   cleanAuthorCandidate,
   isNonAuthorMetadataNoise,
   isPlausibleAuthorValue,
+  isReleaseMetadataNoise,
   isTranslatedSubtitleForSeries,
 } from '@/lib/authorHeuristics';
 import {
@@ -89,7 +90,7 @@ export function splitMisplacedTitleAndAuthor(
   let cursor = 0;
   if (lastVolIdx >= 0) {
     for (let i = 0; i <= lastVolIdx; i += 1) {
-      if (!isNonAuthorMetadataNoise(parts[i]) || isVolumeOrSubtitleSegment(parts[i])) {
+      if (!isReleaseMetadataNoise(parts[i]) || isVolumeOrSubtitleSegment(parts[i])) {
         moved.push(parts[i]);
       }
     }
@@ -101,7 +102,7 @@ export function splitMisplacedTitleAndAuthor(
   const remainingAuthorParts: string[] = [];
   for (let i = 0; i < rest.length; i += 1) {
     const seg = rest[i];
-    if (isNonAuthorMetadataNoise(seg)) continue;
+    if (isReleaseMetadataNoise(seg)) continue;
     const prevEnd = moved.length > 0 ? moved[moved.length - 1] : cleanTitle;
     const afterBareVol = Boolean(prevEnd && titleEndsWithBareVolume(prevEnd));
     const isLast = i === rest.length - 1;
@@ -109,8 +110,10 @@ export function splitMisplacedTitleAndAuthor(
       remainingAuthorParts.length === 0 &&
       ((afterBareVol &&
         (!isLast ||
+          isNonAuthorMetadataNoise(seg) ||
           isLikelyVolumeSubtitle(seg) ||
           isTranslatedSubtitleForSeries(prevEnd, seg))) ||
+        isNonAuthorMetadataNoise(seg) ||
         isLikelyVolumeSubtitle(seg) ||
         !isPlausibleAuthorValue(seg))
     ) {

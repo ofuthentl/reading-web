@@ -304,11 +304,16 @@ export default function App() {
   const isReaderOpen = Boolean(reader.activeBook && (reader.parsedBook || reader.guestSession));
 
   const renamingShelfName = modal.kind === 'rename-shelf' ? modal.shelfName : null;
-  const renamingShelfKey = renamingShelfName?.trim().toLocaleLowerCase('vi') ?? null;
+  const renamingShelfKey = renamingShelfName
+    ? renamingShelfName.normalize('NFC').trim().toLocaleLowerCase('vi')
+    : null;
   const renamingShelfCount = renamingShelfKey
     ? store.books.filter(
         (book) =>
-          (book.shelf || 'Kho chưa phân loại').trim().toLocaleLowerCase('vi') === renamingShelfKey,
+          (book.shelf || 'Kho chưa phân loại')
+            .normalize('NFC')
+            .trim()
+            .toLocaleLowerCase('vi') === renamingShelfKey,
       ).length
     : 0;
 
@@ -436,8 +441,9 @@ export default function App() {
             onOpenStats={() => { closeBook(); setStatsOpen(true); }}
             onOpenBook={(book, jumpTarget) => void reader.openBook(book, jumpTarget)}
             onJumpToShelf={(shelfKey) => { closeBook(); handleJumpToShelf(shelfKey); }}
-            onSelectAuthor={(author) => { closeBook(); setActiveTab('home'); libraryViewState.filterByAuthor(author); }}
+            onSelectAuthor={(author) => { closeBook(); libraryViewState.filterByAuthor(author); }}
             onSelectCollection={(colId) => { closeBook(); setActiveTab('library'); libraryViewState.closeLibraryShelf(); libraryViewState.setActiveCollectionId(colId); }}
+            onApiError={handleApiError}
             onCycleTheme={cycleTheme}
             onUploadClick={isOwner ? () => { closeBook(); setModal({ kind: 'upload' }); } : undefined}
             onMarkCompleted={store.handleMarkBookCompleted}
@@ -475,6 +481,7 @@ export default function App() {
             onRequestDelete={(book) => setModal({ kind: 'delete', books: [book] })}
             onBookUploaded={store.handleBookUploaded}
             onBookUpdated={store.handleBookUpdated}
+            onStorageSynced={store.handleStorageSynced}
             onBookPackSynced={store.handleBookPackSynced}
             onBookAccessSaved={store.handleBookAccessChanged}
             onShelfRenamed={handleShelfRenamed}
