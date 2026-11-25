@@ -227,9 +227,11 @@ function buildLocalFallbackReport(
       if (!b) return null;
       const pct = p.completed
         ? 100
-        : p.totalChapters && p.totalChapters > 0
-          ? Math.round(Math.min(100, ((p.chapterIndex + p.scrollRatio) * 100) / p.totalChapters))
-          : Math.round(Math.min(100, p.scrollRatio * 100));
+        : typeof p.bookPercent === 'number' && Number.isFinite(p.bookPercent)
+          ? Math.min(100, Math.max(0, Math.round(p.bookPercent)))
+          : p.totalChapters && p.totalChapters > 0
+            ? Math.round(Math.min(100, ((p.chapterIndex + p.scrollRatio) * 100) / p.totalChapters))
+            : Math.round(Math.min(100, p.scrollRatio * 100));
       return {
         id: b.id,
         title: b.title,

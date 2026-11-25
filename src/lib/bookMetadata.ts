@@ -185,6 +185,9 @@ export function computeBookProgressPercent(
 ): number | null {
   if (!progress) return null;
   if (progress.completed) return 100;
+  if (typeof progress.bookPercent === 'number' && Number.isFinite(progress.bookPercent)) {
+    return Math.min(100, Math.max(0, Math.round(progress.bookPercent)));
+  }
   const clamped = Math.min(1, Math.max(0, progress.scrollRatio || 0));
   if (progress.totalChapters && progress.totalChapters > 0) {
     return Math.min(

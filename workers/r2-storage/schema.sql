@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS reading_progress (
   scroll_ratio REAL NOT NULL DEFAULT 0,
   scroll_top REAL NOT NULL DEFAULT 0,
   completed INTEGER NOT NULL DEFAULT 0,
+  book_percent REAL,
   reading_seconds INTEGER NOT NULL DEFAULT 0,
   reread_count INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL
@@ -64,6 +65,7 @@ CREATE TABLE IF NOT EXISTS guest_reading_progress (
   scroll_ratio REAL NOT NULL DEFAULT 0,
   scroll_top REAL NOT NULL DEFAULT 0,
   completed INTEGER NOT NULL DEFAULT 0,
+  book_percent REAL,
   reading_seconds INTEGER NOT NULL DEFAULT 0,
   reread_count INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL,

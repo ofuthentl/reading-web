@@ -1,6 +1,6 @@
 # Arcane Library (`ofu.lol`)
 
-Web đọc sách cá nhân (EPUB, MOBI, PDF, CBZ) xây bằng React + Vite + TypeScript, backend chạy trên Cloudflare Workers + D1 + R2 (giới hạn an toàn 9.0 GiB free tier), cache đọc tức thì qua IndexedDB và deploy GitHub Pages tại `https://ofu.lol`.
+Web đọc sách cá nhân (**EPUB, DOCX** — đã gỡ hoàn toàn PDF/MOBI/CBZ theo `D-009`/`D-033`) xây bằng React + Vite + TypeScript (font tiếng Việt tự lưu trữ 0 CDN, PWA app shell siêu mỏng), backend chạy trên Cloudflare Workers + D1 + R2 (giới hạn an toàn **9.0 GiB** Free Tier), hỗ trợ chia sẻ quyền chỉ đọc 24 giờ qua Discord Bot Key với 4 lớp chống cào (`D-026`/`D-028`), cache đọc tức thì qua IndexedDB và deploy GitHub Pages tại `https://ofu.lol`.
 
 ## Chạy phát triển (Local Dev)
 
@@ -16,7 +16,9 @@ Kiểm tra nhanh trước khi commit:
 ```bash
 npm run typecheck
 npm run lint
-npm run build
+npm test
+VITE_BASE_PATH=/ npm run build
+npm run check:bundle
 ```
 
 ### 2. Cloudflare Worker (Local)
@@ -27,6 +29,7 @@ npm run db:init:local
 # Tạo file .dev.vars (KHÔNG commit) với:
 # ACCESS_PASSCODE=your-passcode
 # AUTH_SECRET=random-long-secret
+npx tsc --noEmit
 npm run dev
 ```
 
@@ -57,7 +60,7 @@ npm run deploy
 
 1. Vào **GitHub Repo → Settings → Secrets and variables → Actions → New repository secret**.
 2. Tạo secret `VITE_API_URL` với giá trị là URL Worker sau khi deploy (ví dụ `https://arcane-library-api.<subdomain>.workers.dev`).
-3. Khi Pull Request được merge vào `main`, workflow `.github/workflows/deploy.yml` sẽ tự động chạy `typecheck` → `lint` → `build` và deploy lên `ofu.lol`.
+3. Khi Pull Request được merge vào `main`, workflow `.github/workflows/deploy.yml` sẽ tự động chạy `typecheck` → `lint` → `test` → `build` → `check:bundle` (`index-*.js <= 86.04 kB` gzip) và deploy lên `ofu.lol`.
 
 ## Tài liệu dự án
 
@@ -66,4 +69,4 @@ npm run deploy
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — Bản đồ module, API Worker, schema D1, biến môi trường, hàm tiện ích đã có.
 - [docs/DECISIONS.md](docs/DECISIONS.md) — Sổ quyết định kiến trúc đã chốt (ADR).
 - [docs/PROMPTS.md](docs/PROMPTS.md) — Prompt nhanh để bàn giao khi đổi phiên / sắp hết quota.
-- [docs/plans/phase-3-2d.md](docs/plans/phase-3-2d.md) — Kế hoạch triển khai Phase 3 (giao diện 2D & deploy).
+- [docs/plans/v5-bugfixes-and-upgrades.md](docs/plans/v5-bugfixes-and-upgrades.md) — Kế hoạch Vá lỗi Toàn diện & Nâng cấp v5 (3 Wave).

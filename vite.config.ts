@@ -50,7 +50,13 @@ export default defineConfig({
     dedupe: ['react', 'react-dom'],
   },
   build: {
-    assetsInlineLimit: (filePath) => (filePath.endsWith('.woff2') ? false : undefined),
+    assetsInlineLimit: (filePath) => {
+      const normalized = filePath.replace(/\\/g, '/');
+      if (normalized.endsWith('.woff2') || normalized.includes('/assets/cursors/')) {
+        return false;
+      }
+      return undefined;
+    },
   },
   optimizeDeps: {
     exclude: ['lucide-react'],

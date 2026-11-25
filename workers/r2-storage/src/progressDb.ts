@@ -13,6 +13,7 @@ export interface ProgressRow {
   scroll_ratio: number;
   scroll_top: number;
   completed: number;
+  book_percent?: number | null;
   reading_seconds?: number;
   reread_count?: number;
   updated_at: number;
@@ -47,6 +48,14 @@ async function ensureProgressExtraColumns(
       if (!msg.toLowerCase().includes('duplicate column')) throw err;
     }
   }
+  if (!names.has('book_percent')) {
+    try {
+      await db.prepare(`ALTER TABLE ${table} ADD COLUMN book_percent REAL`).run();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.toLowerCase().includes('duplicate column')) throw err;
+    }
+  }
 }
 
 export async function ensureGuestProgressTable(env: Env): Promise<void> {
@@ -63,6 +72,7 @@ export async function ensureGuestProgressTable(env: Env): Promise<void> {
            scroll_ratio REAL NOT NULL DEFAULT 0,
            scroll_top REAL NOT NULL DEFAULT 0,
            completed INTEGER NOT NULL DEFAULT 0,
+           book_percent REAL,
            reading_seconds INTEGER NOT NULL DEFAULT 0,
            reread_count INTEGER NOT NULL DEFAULT 0,
            updated_at INTEGER NOT NULL,
@@ -116,6 +126,7 @@ export async function upsertReadingProgress(
     scrollRatio?: unknown;
     scrollTop?: unknown;
     completed?: unknown;
+    bookPercent?: unknown;
     updatedAt?: unknown;
     readingDeltaSec?: unknown;
     rereadCount?: unknown;
@@ -156,6 +167,18 @@ export async function upsertReadingProgress(
     ? Math.min(10_000_000, Math.max(0, rawScrollTop))
     : 0;
   const completed = body.completed === true ? 1 : 0;
+  const rawBookPercent =
+    typeof body.bookPercent === 'number'
+      ? body.bookPercent
+      : typeof body.bookPercent === 'string' && body.bookPercent.trim() !== ''
+        ? Number(body.bookPercent)
+        : Number.NaN;
+  const bookPercent =
+    completed === 1
+      ? 100
+      : Number.isFinite(rawBookPercent)
+        ? Math.round(Math.min(100, Math.max(0, rawBookPercent)) * 10) / 10
+        : null;
   const chapterTitle =
     typeof body.chapterTitle === 'string' && body.chapterTitle.trim()
       ? body.chapterTitle.trim().slice(0, 200)
@@ -190,8 +213,8 @@ export async function upsertReadingProgress(
   if (auth.role === 'owner') {
     await ensureProgressReadingTimeColumns(env);
     await env.DB.prepare(
-      `INSERT INTO reading_progress (book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, reread_count, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO reading_progress (book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, book_percent, reading_seconds, reread_count, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(book_id) DO UPDATE SET
          chapter_id = excluded.chapter_id,
          chapter_index = excluded.chapter_index,
@@ -200,6 +223,7 @@ export async function upsertReadingProgress(
          scroll_ratio = excluded.scroll_ratio,
          scroll_top = excluded.scroll_top,
          completed = excluded.completed,
+         book_percent = excluded.book_percent,
          reading_seconds = COALESCE(reading_progress.reading_seconds, 0) + excluded.reading_seconds,
          reread_count = MAX(COALESCE(reading_progress.reread_count, 0), excluded.reread_count),
          updated_at = MAX(reading_progress.updated_at, excluded.updated_at)`,
@@ -213,6 +237,7 @@ export async function upsertReadingProgress(
         scrollRatio,
         scrollTop,
         completed,
+        bookPercent,
         readingDeltaAccepted,
         incomingRereadCount,
         updatedAt,
@@ -221,8 +246,8 @@ export async function upsertReadingProgress(
   } else {
     await ensureGuestProgressTable(env);
     await env.DB.prepare(
-      `INSERT INTO guest_reading_progress (discord_user_id, book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, reread_count, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO guest_reading_progress (discord_user_id, book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, book_percent, reading_seconds, reread_count, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(discord_user_id, book_id) DO UPDATE SET
          chapter_id = excluded.chapter_id,
          chapter_index = excluded.chapter_index,
@@ -231,6 +256,7 @@ export async function upsertReadingProgress(
          scroll_ratio = excluded.scroll_ratio,
          scroll_top = excluded.scroll_top,
          completed = excluded.completed,
+         book_percent = excluded.book_percent,
          reading_seconds = COALESCE(guest_reading_progress.reading_seconds, 0) + excluded.reading_seconds,
          reread_count = MAX(COALESCE(guest_reading_progress.reread_count, 0), excluded.reread_count),
          updated_at = MAX(guest_reading_progress.updated_at, excluded.updated_at)`,
@@ -245,6 +271,7 @@ export async function upsertReadingProgress(
         scrollRatio,
         scrollTop,
         completed,
+        bookPercent,
         readingDeltaAccepted,
         incomingRereadCount,
         updatedAt,

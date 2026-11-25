@@ -171,7 +171,7 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     auth.role === 'owner'
       ? env.DB.prepare('SELECT * FROM reading_progress').all<ProgressRow>()
       : env.DB.prepare(
-          `SELECT book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, reread_count, updated_at
+          `SELECT book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, book_percent, reading_seconds, reread_count, updated_at
            FROM guest_reading_progress
            WHERE discord_user_id = ?`,
         )
@@ -269,6 +269,7 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
       scrollRatio: number;
       scrollTop: number;
       completed: boolean;
+      bookPercent?: number;
       readingSeconds?: number;
       rereadCount?: number;
       updatedAt: number;
@@ -287,6 +288,9 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
       scrollRatio: row.scroll_ratio,
       scrollTop: row.scroll_top,
       completed: row.completed === 1,
+      ...(typeof row.book_percent === 'number' && Number.isFinite(row.book_percent)
+        ? { bookPercent: Math.round(Math.min(100, Math.max(0, row.book_percent)) * 10) / 10 }
+        : {}),
       ...(typeof row.reading_seconds === 'number' && row.reading_seconds > 0
         ? { readingSeconds: row.reading_seconds }
         : {}),

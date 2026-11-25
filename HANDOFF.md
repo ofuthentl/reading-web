@@ -1,10 +1,11 @@
 # HANDOFF
-Cập nhật: 2026-11-25 15:52 | Nhánh: fix/v5-wave1-mobile-audit-and-bundle | Build: 🟢 XANH (`index-*.js = 76.00 kB` gzip `<< 86.04 kB`)
-Nhiệm vụ hiện tại: **Đợt Vá Lỗi Toàn Diện & Nâng Cấp v5 — Wave 1 (`D-046` — chốt `1A`, `2A`, `3A`, `4A`, `5A`, bỏ qua mục macOS NFD)**.
+Cập nhật: 2026-11-25 16:57 | Nhánh: fix/v5-wave1-mobile-audit-and-bundle | Build: 🟢 XANH (`index-*.js = 53.67 kB` gzip `<< 86.04 kB`, `npm test` 25/25)
+Nhiệm vụ hiện tại: **Đợt Vá Lỗi Toàn Diện & Nâng Cấp v5 — Wave 1 (`D-046` — chốt `1A`, `2A`, `3A`, `4A`, `5A` + `bookPercent` PA-A, bỏ qua macOS NFD)**.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/v5-bugfixes-and-upgrades.md
 
 ## Đang làm dở
-- Đã hoàn tất & kiểm chứng xanh **Wave 1 — Phase 1.1, Phase 1.2, Phase 1.3 và Phase 1.4** (`workers/r2-storage` `tsc --noEmit`, root `typecheck`, `lint` 0/0 mọi tệp `<= 500` dòng, `build` xanh, toàn bộ assertions SQLite thực tế Phase 1.4 pass 100%). Chưa deploy Worker (sẽ deploy cùng cuối Wave 1 ở Phase 1.5).
+- **Wave 1 (Phase 1.1 → 1.5) ĐÃ HOÀN TẤT 100% VÀ KIỂM CHỨNG XANH** (`typecheck`, `lint` 0/0 mọi tệp `<= 500` dòng, `npm test` 25/25 pass, `VITE_BASE_PATH=/ npm run build` đạt `53.67 kB` gzip, `npm run check:bundle`, Worker `tsc --noEmit`, kiểm thử trình duyệt thật Desktop `1280×800` + Mobile `390×844` với `0` lỗi console/page).
+- Đang chờ người dùng xác nhận để chạy `npx wrangler deploy` (deploy Worker Wave 1 lên production) và `git push -u origin fix/v5-wave1-mobile-audit-and-bundle` tạo PR Wave 1 vào `main`.
 
 ## Xong trong nhánh này
 ### Phase 1.1 — Vá 2 lỗi iPhone & RAM/Cache Mobile (`QĐ-2A`, `QĐ-3A`)
@@ -20,17 +21,18 @@ Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · d
 - Vá heuristics `D-044` (`isReleaseMetadataNoise` vs phụ đề hợp lệ, không nối rác/tác giả thật vào `book.title`, bảo toàn đồng tác giả, fallback `'kho chưa phân loại'`, chặn cắt nhầm `"Man I"`/`"Book a"`), vá store/lọc/dọn orphan/abort+401 trên toàn bộ modal & `AuthGate`.
 
 ### Phase 1.4 — Vá Backend Cloudflare Worker (`workers/r2-storage/src/`, `0` migration D1)
-1. **Chống cache stampede & tối ưu Guest (`guestAccessBatchDb`, `guestIllustrations`, `guestSearch`, `bookChapterAccessDb`):**
-   - Thêm single-flight `inFlightLegacyPackMap` + LRU theo `(packKey, lockedKeys)`, chỉ giải nén chương mở có giới hạn an toàn & bỏ qua `JSON.parse` chương không có ảnh; fail-closed `404` khi `bookRow === null`; chuyển `guestIllustrations`/`guestSearch` sang `loadGuestBookAccessAndPackBatch` + đường nhanh `media[i].ch` (`0` R2 read); xoá hàm chết `assertGuestMediaInUnlockedChapters`.
-2. **Upload nguyên tử R2/D1 & `/toc?includeChapter=` (`bookUploadRoutes`, `guestPackUpload`, `guestPack`, `guestRoutes`):**
-   - Gắn hậu tố ngẫu nhiên 8 ký tự cho `fileKey`/`coverKey`/`packKey`; dùng `INSERT`/`UPDATE ... WHERE quota <= limit RETURNING` nguyên tử trong `db.batch` + đọc `actualPrev` đúng trước khi ghi và xác minh `committed` an toàn khi lỗi D1; `/toc?includeChapter=` không nuốt `401` strike-10 và ghi đủ `rate_limit_hits` khi `429`.
-3. **Phân quyền, đồng hồ đọc, rate-limit & toàn vẹn D1 (`booksDb`, `progressDb`, `usageRecorder`, `bookmarksDb`, `highlightsDb`, `rateLimitDb`, `index`, `shelfRelationsDb`, `shelfMutationsDb`, `communityDb`, `communityRoutes`, `discordRelease`, `discordReleaseFormat`, `discord`, `forensicWatermark`, `bookChapterAccessAdminDb`):**
-   - Lọc bỏ `progress` sách khoá cho Guest trong `GET /api/books`; thêm `assertGuestChapterAccess` vào `PUT /progress`, tách đồng hồ đọc `claimReadingTimeBudget` (`usage_daily_readers.last_reading_sync_at`) để `readingDeltaSec = 0` không đẩy lùi đồng hồ & chặn bơm khống đa sách; chuẩn hoá NFC + cắt `120` trước `assertGuestChapterAccess` ở `bookmarksDb`/`highlightsDb`.
-   - Sửa `DECAYED_STRIKE_AT_SQL` cho dòng strike trước `0017` và thay kiểm tra login thành `consumeLoginAttempt` nguyên tử chống TOCTOU; sửa `mergeShelfRelationsOnRename` & `upsertShelfRelation` (chống cạnh ngược chiều, giữ chuẩn `same_universe`, kiểm tra cả 2 đầu & cho sửa cạnh ở trần 30); hạ chunk `cleanupOrphanShelves` xuống `40` (`<= 80` params); đồng bộ nâng `chapter_number` reply con khi sửa bình luận gốc (tách `communityRoutes.ts` giữ `<= 500` dòng); hạ `MAX_GROUPS_PER_ANNOUNCE = 12`; sửa tính dư `remaining` khi nhãn trùng; thêm `AbortController` `2.2s` cho `/setup-bell`, siết cooldown 15s nguyên tử & đổi copy `(quyền chỉ đọc)`; sửa đối xứng `< 3` ký tự ở `forensicWatermark.ts`.
+- Thêm single-flight `inFlightLegacyPackMap` + LRU theo `(packKey, lockedKeys)`, fail-closed `404`, chuyển `guestIllustrations`/`guestSearch` sang `loadGuestBookAccessAndPackBatch` + đường nhanh `media[i].ch`; hậu tố ngẫu nhiên 8 ký tự + upload nguyên tử R2/D1; `/toc?includeChapter=` không nuốt `401` & ghi `rate_limit_hits`.
+- Lọc bỏ `progress` sách khoá cho Guest, thêm `assertGuestChapterAccess` vào `PUT /progress`, tách đồng hồ đọc `claimReadingTimeBudget`, chuẩn hoá NFC trước check quyền ở `bookmarksDb`/`highlightsDb`, vá `DECAYED_STRIKE_AT_SQL` + `consumeLoginAttempt` chống TOCTOU, sửa `mergeShelfRelationsOnRename`/`upsertShelfRelation`, hạ chunk `cleanupOrphanShelves = 40`, đồng bộ `chapter_number` reply con (`communityRoutes.ts`), hạ `MAX_GROUPS_PER_ANNOUNCE = 12`, sửa `remaining`, timeout `2.2s` `/setup-bell` + cooldown 15s nguyên tử, sửa đối xứng `< 3` ký tự `forensicWatermark`.
+
+### Phase 1.5 — `%` trọng số chương (PA-A), Hạ Entry `53.67 kB`, PWA `SKIP_WAITING`, Unit Tests & CI
+- Thêm `bookPercent` PA-A (`computeWeightedBookPercent` + `computeGuestChapterWeights` trừ 180 B vỏ gzip + cột additive `book_percent REAL` ở D1, chặn trần `99%` trước chương cuối, `0 B` re-pack R2, tương thích ngược bản ghi cũ).
+- Tách `AuthenticatedLibraryShell.tsx` nạp lười khỏi `App.tsx`, dời `reader.css` sang trình đọc (đồng bộ `font-mono` cho `AuthGate`), tắt base64-inline con trỏ trong `vite.config.ts` (`0` ảnh inline trong CSS entry), đổi favicon sang `logo-128.png` → hạ `index-*.js` xuống **`53.67 kB` gzip**.
+- Vá `.catch(() => Response.error())` nhánh CacheFirst ở `public/sw.js` & nối Toast cập nhật PWA 1 chạm `SKIP_WAITING` (`pwaRegister.ts`, `useToast.ts`, `ToastContainer.tsx`, `App.tsx`).
+- Bổ sung bộ Unit Test tự động (`npm test`: 25/25 pass, `0 B` runtime), cổng `npm run check:bundle`, nâng cấp `.github/workflows/{ci,deploy}.yml` (Node 24, `VITE_BASE_PATH=/`, `actions-gh-pages@v4`), cập nhật `README.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` (`D-046`).
 
 ## Bước tiếp theo
-1. Tiếp tục **Wave 1 — Phase 1.5** (`AuthenticatedLibraryShell` hạ entry `~55–60 kB` gzip, PWA `SKIP_WAITING`, bộ unit test Node/TS + cổng CI, cập nhật tài liệu, deploy Worker & mở PR Wave 1).
-2. Sau khi Wave 1 merge vào `main`, tách nhánh cho **Wave 2** rồi **Wave 3**.
+1. Chờ người dùng xác nhận → chạy `npx wrangler deploy` (trong `workers/r2-storage`) và `git push -u origin fix/v5-wave1-mobile-audit-and-bundle` để tạo Pull Request Wave 1 vào `main`.
+2. Sau khi Wave 1 merge vào `main`, tách nhánh mới `feat/v5-wave2-admin-storage-and-catalog` cho **Wave 2**.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn. Giữ nguyên không đụng 3 tệp/thư mục chưa theo dõi sẵn ở thư mục gốc (`Gemini_Generated_Image_*.png`, `IMG_4018.JPG`, `hatsune-miku_.../`).

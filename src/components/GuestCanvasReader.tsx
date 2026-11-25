@@ -1,3 +1,4 @@
+import '@/styles/reader.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, ShieldCheck } from 'lucide-react';
 import type {
@@ -35,7 +36,11 @@ import { buildGuestChapterFootnoteMap } from '@/lib/epubFootnotes';
 import { collectVisibleGuestParagraphOptions } from '@/lib/highlightsApi';
 import { buildCanonicalChapterNumbering } from '@/lib/readerChapterNumbers';
 import { READER_THEME_STYLES } from '@/lib/readerConfig';
-import { countWordsInGuestBlocks, estimateGuestLaterBookWords } from '@/lib/readingEstimate';
+import {
+  computeGuestChapterWeights,
+  countWordsInGuestBlocks,
+  estimateGuestLaterBookWords,
+} from '@/lib/readingEstimate';
 
 export interface GuestCanvasReaderProps {
   book: Book;
@@ -81,17 +86,23 @@ export function GuestCanvasReader({
     [initialProgress, tocChapters],
   );
 
+  const guestChapterWeights = useMemo(
+    () => computeGuestChapterWeights(tocChapters),
+    [tocChapters],
+  );
+
   const [streamTimerEnabled, setStreamTimerEnabled] = useState(false);
 
   const {
     ctrl, chapterIndex, chapterScrollRatio, setChapterScrollRatio,
     paginatedStartRatio, searchTarget,
-    restoreTargetRatioRef, suppressSaveRef, overallPercent, syncChapterWords,
+    restoreTargetRatioRef, suppressSaveRef, overallPercent, computeBookPercent, syncChapterWords,
     computeRemainingEstimate, handleUpdateSettings,
     goToChapter, goPrevChapter, goNextChapter,
     handlePaginatedRatioChange, handleJumpToSearchResult, completeBook, restartBookReread,
   } = useReaderChapterProgress({
     chapters: tocChapters,
+    chapterWeights: guestChapterWeights,
     initialProgress: effectiveInitialProgress,
     settings,
     isPaginated,
@@ -241,14 +252,16 @@ export function GuestCanvasReader({
       {
         chapterId: currentTocItem.id, chapterIndex, chapterTitle: currentTocItem.title,
         totalChapters: tocChapters.length, scrollRatio: ratio, scrollTop: currentTop,
-        completed: completedRef.current, updatedAt: Date.now(),
+        completed: completedRef.current,
+        bookPercent: computeBookPercent(chapterIndex, ratio, completedRef.current),
+        updatedAt: Date.now(),
       },
       reachedEndOfBook,
     );
   }, [
-    chapterIndex, completedRef, currentTocItem, isPaginated, layout, paintVisibleSlice,
-    queueProgressSave, setChapterScrollRatio, suppressSaveRef, syncedChapterData, tocChapters.length,
-    updateImmersiveOnScroll,
+    chapterIndex, completedRef, computeBookPercent, currentTocItem, isPaginated, layout,
+    paintVisibleSlice, queueProgressSave, setChapterScrollRatio, suppressSaveRef,
+    syncedChapterData, tocChapters.length, updateImmersiveOnScroll,
   ]);
   handleScrollRef.current = handleScroll;
 

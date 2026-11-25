@@ -29,6 +29,7 @@ export default {
       fontFamily: {
         sans: ['"Be Vietnam Pro"', 'system-ui', '-apple-system', '"Segoe UI"', 'sans-serif'],
         display: ['"Literata"', 'Georgia', '"Times New Roman"', 'serif'],
+        mono: ['"JetBrains Mono"', '"Cascadia Code"', 'ui-monospace', 'monospace'],
       },
     },
   },

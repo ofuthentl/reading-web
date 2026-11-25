@@ -12,6 +12,67 @@ const FONT_WEIGHT_CSS_MAP: Record<ReaderFontWeight, number> = {
 
 const CJK_CHAR_RE = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g;
 const DEFAULT_WORDS_PER_GZIP_BYTE = 0.38;
+const GUEST_GZIP_ENVELOPE_OVERHEAD_BYTES = 180;
+
+export function computeGuestChapterWeights(tocChapters: readonly GuestTocItem[]): number[] {
+  if (tocChapters.length === 0) return [];
+  const netWeights = tocChapters.map((ch) => {
+    const raw =
+      typeof ch.compressedBytes === 'number' && Number.isFinite(ch.compressedBytes)
+        ? ch.compressedBytes
+        : 0;
+    return Math.max(0, raw - GUEST_GZIP_ENVELOPE_OVERHEAD_BYTES);
+  });
+  if (netWeights.some((w) => w > 0)) return netWeights;
+
+  const rawWeights = tocChapters.map((ch) =>
+    typeof ch.compressedBytes === 'number' &&
+    Number.isFinite(ch.compressedBytes) &&
+    ch.compressedBytes > 0
+      ? ch.compressedBytes
+      : 0,
+  );
+  if (rawWeights.some((w) => w > 0)) return rawWeights;
+
+  return tocChapters.map(() => 0);
+}
+
+export function computeWeightedBookPercent(
+  weights: readonly number[],
+  chapterIndex: number,
+  scrollRatio: number,
+  completed = false,
+): number {
+  if (completed) return 100;
+  const totalChapters = weights.length;
+  if (totalChapters === 0) return 0;
+
+  const rawIdx = Number.isFinite(chapterIndex) ? Math.floor(chapterIndex) : 0;
+  const safeIdx = Math.max(0, Math.min(rawIdx, totalChapters - 1));
+  const safeRatio = Number.isFinite(scrollRatio) ? Math.min(1, Math.max(0, scrollRatio)) : 0;
+
+  let totalWeight = 0;
+  let beforeWeight = 0;
+  let currentWeight = 0;
+  for (let i = 0; i < totalChapters; i += 1) {
+    const rawW = weights[i];
+    const w = typeof rawW === 'number' && Number.isFinite(rawW) && rawW > 0 ? rawW : 0;
+    totalWeight += w;
+    if (i < safeIdx) beforeWeight += w;
+    else if (i === safeIdx) currentWeight = w;
+  }
+
+  const rawPercent =
+    totalWeight > 0
+      ? ((beforeWeight + currentWeight * safeRatio) / totalWeight) * 100
+      : ((safeIdx + safeRatio) / totalChapters) * 100;
+
+  const rounded = Math.round(Math.min(100, Math.max(0, rawPercent)) * 10) / 10;
+  if (safeIdx < totalChapters - 1 && rounded > 99) {
+    return 99;
+  }
+  return rounded;
+}
 
 export function countWordsInPlainText(text: string | null | undefined): number {
   if (!text) return 0;

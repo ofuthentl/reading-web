@@ -48,6 +48,7 @@ export type ReadingProgress = {
   scrollRatio: number;
   scrollTop: number;
   completed: boolean;
+  bookPercent?: number;
   readingSeconds?: number;
   rereadCount?: number;
   updatedAt: number;

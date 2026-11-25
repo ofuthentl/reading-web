@@ -78,6 +78,7 @@ export interface GuestBookHistoryRow {
   total_chapters: number | null;
   scroll_ratio: number;
   completed: number;
+  book_percent?: number | null;
   reading_seconds: number;
   bookmark_count: number;
   updated_at: number;
@@ -98,6 +99,7 @@ export function queryGuestBookHistoryRows(db: D1Database, discordUserId: string)
          gp.total_chapters,
          gp.scroll_ratio,
          gp.completed,
+         gp.book_percent,
          COALESCE(gp.reading_seconds, 0) AS reading_seconds,
          COALESCE(bm.bookmark_count, 0) AS bookmark_count,
          gp.updated_at
@@ -135,6 +137,7 @@ export async function queryTopBooksAndShelves(db: D1Database, windowCutoffMs: nu
          ROUND(AVG(
            CASE
              WHEN p.completed = 1 THEN 100
+             WHEN p.book_percent IS NOT NULL THEN MIN(100, MAX(0, p.book_percent))
              WHEN COALESCE(p.total_chapters, 0) > 0 THEN MIN(100, MAX(0, ((p.chapter_index + p.scroll_ratio) * 100.0) / p.total_chapters))
              ELSE MIN(100, MAX(0, p.scroll_ratio * 100.0))
            END
@@ -142,10 +145,10 @@ export async function queryTopBooksAndShelves(db: D1Database, windowCutoffMs: nu
          COALESCE(SUM(p.reading_seconds), 0) AS reading_seconds_total,
          MAX(p.updated_at) AS last_read_at
        FROM (
-         SELECT book_id, chapter_index, total_chapters, scroll_ratio, completed, COALESCE(reading_seconds, 0) AS reading_seconds, updated_at, 0 AS is_guest
+         SELECT book_id, chapter_index, total_chapters, scroll_ratio, completed, book_percent, COALESCE(reading_seconds, 0) AS reading_seconds, updated_at, 0 AS is_guest
          FROM reading_progress
          UNION ALL
-         SELECT book_id, chapter_index, total_chapters, scroll_ratio, completed, COALESCE(reading_seconds, 0) AS reading_seconds, updated_at, 1 AS is_guest
+         SELECT book_id, chapter_index, total_chapters, scroll_ratio, completed, book_percent, COALESCE(reading_seconds, 0) AS reading_seconds, updated_at, 1 AS is_guest
          FROM guest_reading_progress
        ) p
        INNER JOIN books b ON b.id = p.book_id

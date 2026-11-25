@@ -379,7 +379,7 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
                       Chìa khoá truy cập
                     </label>
                     {passcode.length > 0 && (
-                      <span className="font-reader-mono tracking-wider">
+                      <span className="font-mono tracking-wider">
                         {passcode.length} ký tự
                       </span>
                     )}
@@ -403,7 +403,7 @@ export function AuthGate({ onAuthenticated, authReason, theme, onCycleTheme }: A
                       spellCheck={false}
                       disabled={submitting}
                       aria-label="Chìa khoá truy cập thư viện"
-                      className="h-12 w-full rounded-xl border border-line-strong bg-surface/80 pl-4 pr-11 font-reader-mono text-sm tracking-wider text-ink shadow-sm backdrop-blur-sm transition-colors placeholder:font-sans placeholder:tracking-normal placeholder:text-ink-faint focus:border-amber-600/75 focus:bg-surface/95 focus:outline-none disabled:opacity-60 dark:focus:border-amber-300/70"
+                      className="h-12 w-full rounded-xl border border-line-strong bg-surface/80 pl-4 pr-11 font-mono text-sm tracking-wider text-ink shadow-sm backdrop-blur-sm transition-colors placeholder:font-sans placeholder:tracking-normal placeholder:text-ink-faint focus:border-amber-600/75 focus:bg-surface/95 focus:outline-none disabled:opacity-60 dark:focus:border-amber-300/70"
                     />
                     <button
                       type="button"

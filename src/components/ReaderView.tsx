@@ -1,3 +1,4 @@
+import '@/styles/reader.css';
 import { type MouseEvent as ReactMouseEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { HardDrive, Sparkles } from 'lucide-react';
 import type { Book, ParsedBook, ReaderSettings, ReadingProgress, SaveProgressOptions } from '@/types';
@@ -62,15 +63,21 @@ export function ReaderView({
   const flashCleanupRef = useRef<(() => void) | null>(null);
   const appliedSearchNonceRef = useRef(0);
 
+  const chapterWordCounts = useMemo(
+    () => chapters.map((ch) => countWordsInPlainText(ch.content)),
+    [chapters],
+  );
+
   const {
     ctrl, chapterIndex, chapterScrollRatio, setChapterScrollRatio,
     paginatedStartRatio, searchTarget,
-    restoreTargetRatioRef, suppressSaveRef, overallPercent, syncChapterWords,
+    restoreTargetRatioRef, suppressSaveRef, overallPercent, computeBookPercent, syncChapterWords,
     computeRemainingEstimate, handleUpdateSettings,
     goToChapter, goPrevChapter, goNextChapter,
     handlePaginatedRatioChange, handleJumpToSearchResult, completeBook, restartBookReread,
   } = useReaderChapterProgress({
     chapters,
+    chapterWeights: chapterWordCounts,
     initialProgress,
     settings,
     isPaginated,
@@ -207,13 +214,15 @@ export function ReaderView({
         scrollRatio: ratio,
         scrollTop: currentTop,
         completed: completedRef.current,
+        bookPercent: computeBookPercent(chapterIndex, ratio, completedRef.current),
         updatedAt: Date.now(),
       },
       reachedEndOfBook,
     );
   }, [
-    chapterIndex, chapters.length, completedRef, currentChapter, hasPendingLazyMedia, isPaginated,
-    queueProgressSave, setChapterScrollRatio, suppressSaveRef, updateImmersiveOnScroll,
+    chapterIndex, chapters.length, completedRef, computeBookPercent, currentChapter,
+    hasPendingLazyMedia, isPaginated, queueProgressSave, setChapterScrollRatio,
+    suppressSaveRef, updateImmersiveOnScroll,
   ]);
   handleScrollRef.current = handleScroll;
 
@@ -358,10 +367,6 @@ export function ReaderView({
     [chapterIndex, chapters, features],
   );
 
-  const chapterWordCounts = useMemo(
-    () => chapters.map((ch) => countWordsInPlainText(ch.content)),
-    [chapters],
-  );
   const chapterWords = chapterWordCounts[chapterIndex] ?? 0;
   useEffect(() => {
     syncChapterWords(chapterWords);

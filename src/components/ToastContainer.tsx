@@ -53,7 +53,21 @@ export function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
             className={`moonlit-card pointer-events-auto flex items-start gap-2.5 rounded-xl border px-3.5 py-3 shadow-lg fade-in ${container}`}
           >
             <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${iconClass}`} />
-            <p className="flex-1 break-words text-sm leading-snug">{toast.message}</p>
+            <div className="flex-1 break-words text-sm leading-snug">
+              <p>{toast.message}</p>
+              {toast.action && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    toast.action?.onClick();
+                    onDismiss(toast.id);
+                  }}
+                  className="mt-2 inline-flex items-center rounded-lg bg-accent px-2.5 py-1 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
+                >
+                  {toast.action.label}
+                </button>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => onDismiss(toast.id)}
