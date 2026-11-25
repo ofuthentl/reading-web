@@ -4,8 +4,8 @@ Nhiệm vụ hiện tại: **Đợt Vá Lỗi Toàn Diện & Nâng Cấp v5 — 
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/v5-bugfixes-and-upgrades.md
 
 ## Đang làm dở
-- **Wave 2 (Phase 2.1 → 2.4) ĐÃ HOÀN TẤT 100% & KIỂM THỬ THỰC TẾ TRÊN TRÌNH DUYỆT XANH** (`typecheck`, `lint` 0/0 mọi tệp `<= 500` dòng, `npm test` 31/31 pass, `VITE_BASE_PATH=/ npm run build` đạt `53.94 kB` gzip, `npm run check:bundle`, Worker `tsc --noEmit`, kiểm thử E2E trình duyệt thật nối Worker local với `0` lỗi console/page).
-- Đang chờ xác nhận từ người dùng trước khi chạy `npx wrangler deploy` (Worker) và `git push -u origin feat/v5-wave2-admin-storage-and-catalog`.
+- **Wave 2 (Phase 2.1 → 2.4) ĐÃ HOÀN TẤT 100%, ĐÃ DEPLOY WORKER LÊN PRODUCTION & ĐÃ PUSH NHÁNH** (`typecheck`, `lint` 0/0 mọi tệp `<= 500` dòng, `npm test` 31/31 pass, `VITE_BASE_PATH=/ npm run build` đạt `53.94 kB` gzip, `npm run check:bundle`, Worker `tsc --noEmit`, kiểm thử E2E trình duyệt thật nối Worker local với `0` lỗi console/page).
+- Sẵn sàng mở Pull Request từ `feat/v5-wave2-admin-storage-and-catalog` vào `main` để GitHub Actions CI kiểm tra và tự deploy Frontend lên `ofu.lol`.
 
 ## Xong trong nhánh này
 ### Phase 2.1 — Thay tệp EPUB/DOCX tại chỗ giữ tiến độ, bình luận & phân quyền (`QĐ-4A`)
@@ -26,8 +26,8 @@ Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · d
 - Unit Tests (`tests/wave2AdminAndEtag.test.ts`, `scripts/run-tests.mjs`): bổ sung 6 test Wave 2 (tổng 31/31 pass) + cập nhật `docs/ARCHITECTURE.md`, `docs/plans/v5-bugfixes-and-upgrades.md`.
 
 ## Bước tiếp theo
-1. Chờ người dùng xác nhận để deploy Worker (`cd workers/r2-storage && npx wrangler deploy`) và push nhánh (`git push -u origin feat/v5-wave2-admin-storage-and-catalog`).
-2. Mở & merge Pull Request Wave 2 vào `main` sau khi CI xanh; kế tiếp triển khai **Wave 3** trên nhánh mới `feat/v5-wave3-reader-ux-security-discord`.
+1. Mở & merge Pull Request Wave 2 (`feat/v5-wave2-admin-storage-and-catalog` → `main`) sau khi CI xanh để auto-deploy Frontend lên `ofu.lol`.
+2. Sau khi Wave 2 merge vào `main`, tách nhánh mới `feat/v5-wave3-reader-ux-security-discord` cho **Wave 3** (1 migration cộng thêm `0019`).
 
 ## Lỗi / chặn
 - Không có lỗi/chặn. Giữ nguyên không đụng 3 tệp/thư mục chưa theo dõi sẵn ở thư mục gốc (`Gemini_Generated_Image_*.png`, `IMG_4018.JPG`, `hatsune-miku_.../`).
