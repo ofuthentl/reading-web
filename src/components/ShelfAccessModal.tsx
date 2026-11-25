@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Globe, Loader2, Lock, X } from 'lucide-react';
 import type {
   ShelfAccessMode,
@@ -7,6 +6,7 @@ import type {
   ShelfAccessSummary,
   ShelfGroup,
 } from '@/types';
+import { ModalShell } from '@/components/ModalShell';
 import {
   type SelectedMemberMeta,
   ShelfAccessMemberList,
@@ -99,15 +99,6 @@ export function ShelfAccessModal({
       cancelled = true;
     };
   }, [onApiError, shelfKey]);
-
-  useEffect(() => {
-    if (!shelf) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !saving) onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose, saving, shelf]);
 
   const knownGuestIds = useMemo(() => new Set(guests.map((g) => g.discordUserId)), [guests]);
 
@@ -218,20 +209,15 @@ export function ShelfAccessModal({
     }
   };
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="shelf-access-modal-title"
-      onClick={() => {
-        if (!saving) onClose();
-      }}
+  return (
+    <ModalShell
+      open
+      onClose={onClose}
+      closeDisabled={saving}
+      ariaLabelledBy="shelf-access-modal-title"
+      zIndexClass="z-50"
+      panelClassName="moonlit-card fade-in flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
     >
-      <div
-        className="moonlit-card fade-in flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-crimson-accent">
@@ -355,8 +341,6 @@ export function ShelfAccessModal({
             </button>
           </div>
         </div>
-      </div>
-    </div>,
-    document.body,
+    </ModalShell>
   );
 }

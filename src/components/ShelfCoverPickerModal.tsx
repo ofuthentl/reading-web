@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Check, Image, Loader2, Sparkles, X } from 'lucide-react';
 import type { Book, ShelfGroup } from '@/types';
+import { ModalShell } from '@/components/ModalShell';
 import { getBookSortTitle, pickClothCoverColor } from '@/lib/bookMetadata';
 import { setShelfCoverBook } from '@/lib/shelfPrefs';
 import { pickShelfCoverBook } from '@/lib/shelfSummary';
@@ -102,15 +102,6 @@ export function ShelfCoverPickerModal({
 }: ShelfCoverPickerModalProps) {
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (!shelf) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !saving) onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [shelf, saving, onClose]);
-
   const booksWithCover = useMemo(
     () => (shelf ? shelf.books.filter((book) => Boolean(book.cover_key)) : []),
     [shelf],
@@ -149,20 +140,15 @@ export function ShelfCoverPickerModal({
     }
   };
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 !m-0 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="shelf-cover-picker-title"
-      onClick={() => {
-        if (!saving) onClose();
-      }}
+  return (
+    <ModalShell
+      open
+      onClose={onClose}
+      closeDisabled={saving}
+      ariaLabelledBy="shelf-cover-picker-title"
+      zIndexClass="z-50"
+      panelClassName="moonlit-card fade-in flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
     >
-      <div
-        className="moonlit-card fade-in flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
-        onClick={(event) => event.stopPropagation()}
-      >
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div className="flex min-w-0 flex-1 items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
@@ -239,8 +225,6 @@ export function ShelfCoverPickerModal({
             </div>
           )}
         </div>
-      </div>
-    </div>,
-    document.body,
+    </ModalShell>
   );
 }

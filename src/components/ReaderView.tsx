@@ -433,6 +433,7 @@ export function ReaderView({
             ref={paginatedRef}
             bookId={book.id} bookTitle={book.title} chapter={currentChapter}
             chapterIndex={chapterIndex} totalChapters={chapters.length}
+            chapters={chapters} chapterScrollRatio={chapterScrollRatio} overallPercent={overallPercent}
             currentChapterNumber={currentChapterNumber} readerMaxChapterNumber={readerMaxChapterNumber}
             chapterOptions={chapterNumbering.options} initialRatio={paginatedStartRatio} nextBook={nextBook}
             settings={settings} palette={palette} immersiveHidden={immersiveHidden}
@@ -448,6 +449,7 @@ export function ReaderView({
             onRatioChange={handlePaginatedRatioChange}
             onPrevChapterEnd={() => { if (chapterIndex > 0) goToChapter(chapterIndex - 1, 1); }}
             onNextChapterStart={() => { if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1, 0); }}
+            onJumpToChapterRatio={goToChapter}
             onCompleteBook={completeBook}
             onOpenImage={(src, alt) => setLightboxTarget({ kind: 'dom', src, alt })}
             onPageTurn={immersion.triggerPageTurnSound}
@@ -464,46 +466,33 @@ export function ReaderView({
       ) : (
         <>
           <ReaderDomScrollStage
-            bookId={book.id}
-            bookTitle={book.title}
-            currentChapter={currentChapter}
-            chapterIndex={chapterIndex}
-            totalChapters={chapters.length}
-            currentChapterNumber={currentChapterNumber}
-            readerMaxChapterNumber={readerMaxChapterNumber}
-            maxCanonicalChapterNumber={chapterNumbering.maxChapterNumber}
-            chapterOptions={chapterNumbering.options}
-            nextBook={nextBook}
-            settings={settings}
-            palette={palette}
-            settingsOpen={settingsOpen || immersion.soundOpen}
-            immersiveHidden={immersiveHidden}
-            autoScrollOpen={immersion.autoScrollOpen}
-            scrollContainerRef={scrollContainerRef}
-            onScroll={handleScroll}
-            onSelectionEnd={handleContentSelectionEnd}
+            bookId={book.id} bookTitle={book.title} currentChapter={currentChapter}
+            chapterIndex={chapterIndex} totalChapters={chapters.length}
+            currentChapterNumber={currentChapterNumber} readerMaxChapterNumber={readerMaxChapterNumber}
+            maxCanonicalChapterNumber={chapterNumbering.maxChapterNumber} chapterOptions={chapterNumbering.options}
+            nextBook={nextBook} settings={settings} palette={palette}
+            settingsOpen={settingsOpen || immersion.soundOpen} immersiveHidden={immersiveHidden}
+            autoScrollOpen={immersion.autoScrollOpen} scrollContainerRef={scrollContainerRef}
+            onScroll={handleScroll} onSelectionEnd={handleContentSelectionEnd}
             onContentInteractionClick={handleContentInteractionClick}
             onClosePopovers={() => { setSettingsOpen(false); immersion.setSoundOpen(false); }}
             onToggleAutoScrollPlay={() => immersion.setAutoScrollPlaying((v) => !v)}
             onRevealToolbar={() => setImmersiveHidden(false)}
             onPrevChapter={() => { immersion.triggerPageTurnSound(); goPrevChapter(); }}
             onNextChapter={() => { immersion.triggerPageTurnSound(); goNextChapter(); }}
-            onCompleteBook={completeBook}
-            onStartReread={restartBookReread}
+            onCompleteBook={completeBook} onStartReread={restartBookReread}
             onOpenDomImage={(src, alt) => setLightboxTarget({ kind: 'dom', src, alt })}
             onApiError={onApiError}
           />
 
           <ReaderFooterStatusBar
-            chapterIndex={chapterIndex}
-            totalChapters={chapters.length}
-            overallPercent={overallPercent}
-            remainingEstimate={remainingEstimate}
-            immersiveHidden={immersiveHidden}
-            palette={palette}
-            eyeBreakDue={ctrl.eyeBreakDue}
-            eyeBreakMinutes={settings.eyeBreakMinutes}
+            chapterIndex={chapterIndex} totalChapters={chapters.length}
+            chapters={chapters} chapterScrollRatio={chapterScrollRatio}
+            overallPercent={overallPercent} remainingEstimate={remainingEstimate}
+            immersiveHidden={immersiveHidden} palette={palette}
+            eyeBreakDue={ctrl.eyeBreakDue} eyeBreakMinutes={settings.eyeBreakMinutes}
             onAcknowledgeEyeBreak={ctrl.acknowledgeEyeBreak}
+            onJumpToChapterRatio={goToChapter}
           />
         </>
       )}

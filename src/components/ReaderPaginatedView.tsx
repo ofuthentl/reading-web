@@ -12,6 +12,7 @@ import {
 } from 'react';
 import type { Book, BookHighlight, Chapter, ReaderSettings } from '@/types';
 import { ReaderPaginatedFooter } from '@/components/ReaderPaginatedFooter';
+import type { QuickScrubberChapterItem } from '@/components/ReaderQuickScrubberPopover';
 import { useDomPaginatedReadingRuler } from '@/hooks/usePaginatedReadingRuler';
 import { applyChapterDomHighlights } from '@/lib/domHighlights';
 import type { CanvasLayoutItem } from '@/lib/guestCanvasLayout';
@@ -37,6 +38,9 @@ interface ReaderPaginatedViewProps {
   chapter: Chapter;
   chapterIndex: number;
   totalChapters: number;
+  chapters?: readonly QuickScrubberChapterItem[];
+  chapterScrollRatio?: number;
+  overallPercent?: number;
   currentChapterNumber?: number;
   readerMaxChapterNumber?: number;
   chapterOptions?: readonly CanonicalChapterOption[];
@@ -55,6 +59,7 @@ interface ReaderPaginatedViewProps {
   onRatioChange: (ratio: number, isEndOfChapter: boolean) => void;
   onPrevChapterEnd: () => void;
   onNextChapterStart: () => void;
+  onJumpToChapterRatio?: (chapterIdx: number, ratio: number) => void;
   onCompleteBook: (nextBook?: Book) => void;
   onOpenImage: (src: string, alt: string) => void;
   onPageTurn?: () => void;
@@ -64,33 +69,12 @@ interface ReaderPaginatedViewProps {
 export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPaginatedViewProps>(
   function ReaderPaginatedView(
     {
-      bookId,
-      bookTitle,
-      chapter,
-      chapterIndex,
-      totalChapters,
-      currentChapterNumber,
-      readerMaxChapterNumber,
-      chapterOptions,
-      initialRatio,
-      nextBook,
-      settings,
-      palette,
-      immersiveHidden,
-      remainingEstimate,
-      searchTarget = null,
-      chapterHighlights = [],
-      onContentInteractionClick,
-      onSelectionEnd,
-      onToggleImmersive,
-      onCloseSettings,
-      onRatioChange,
-      onPrevChapterEnd,
-      onNextChapterStart,
-      onCompleteBook,
-      onOpenImage,
-      onPageTurn,
-      onApiError,
+      bookId, bookTitle, chapter, chapterIndex, totalChapters, chapters, chapterScrollRatio,
+      overallPercent, currentChapterNumber, readerMaxChapterNumber, chapterOptions, initialRatio,
+      nextBook, settings, palette, immersiveHidden, remainingEstimate, searchTarget = null,
+      chapterHighlights = [], onContentInteractionClick, onSelectionEnd, onToggleImmersive,
+      onCloseSettings, onRatioChange, onPrevChapterEnd, onNextChapterStart, onJumpToChapterRatio,
+      onCompleteBook, onOpenImage, onPageTurn, onApiError,
     },
     ref,
   ) {
@@ -225,19 +209,10 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
         }
       };
     }, [
-      chapter.id,
-      chapter.content_html,
-      geometry.colWidth,
-      geometry.pageHeight,
-      hasPendingLazyMedia,
-      measurePages,
-      settings.font,
-      settings.fontWeight,
-      settings.fontSizePx,
-      settings.lineHeight,
-      settings.paragraphIndent,
-      settings.paragraphSpacing,
-      settings.textAlign,
+      chapter.id, chapter.content_html, geometry.colWidth, geometry.pageHeight,
+      hasPendingLazyMedia, measurePages, settings.font, settings.fontWeight,
+      settings.fontSizePx, settings.lineHeight, settings.paragraphIndent,
+      settings.paragraphSpacing, settings.textAlign,
     ]);
 
     const safePageIndex = Math.max(0, Math.min(pageIndex, totalPages - 1));
@@ -525,11 +500,12 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
 
         <ReaderPaginatedFooter
           bookId={bookId} bookTitle={bookTitle} chapterIndex={chapterIndex} totalChapters={totalChapters}
+          chapters={chapters} chapterScrollRatio={chapterScrollRatio} overallPercent={overallPercent}
           currentChapterNumber={currentChapterNumber} readerMaxChapterNumber={readerMaxChapterNumber}
           chapterOptions={chapterOptions} currentPage={safePageIndex + 1} totalPages={totalPages}
           isFirstSpread={isFirstSpread} isLastChapter={isLastChapter} isLastSpread={isLastSpread}
           remainingEstimate={remainingEstimate} nextBook={nextBook} palette={palette}
-          onStepPrev={stepPrev} onStepNext={stepNext} onCompleteBook={onCompleteBook} onApiError={onApiError}
+          onStepPrev={stepPrev} onStepNext={stepNext} onJumpToChapterRatio={onJumpToChapterRatio} onCompleteBook={onCompleteBook} onApiError={onApiError}
         />
       </div>
     );

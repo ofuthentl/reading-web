@@ -10,6 +10,7 @@ import {
 } from 'react';
 import type { Book, GuestChapterPayload, HighlightColor, ReaderSettings } from '@/types';
 import { ReaderPaginatedFooter } from '@/components/ReaderPaginatedFooter';
+import type { QuickScrubberChapterItem } from '@/components/ReaderQuickScrubberPopover';
 import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
 import { useCanvasPaginatedReadingRuler } from '@/hooks/usePaginatedReadingRuler';
 import { useReaderCanvasFontVersion } from '@/hooks/useReaderCanvasFontVersion';
@@ -38,6 +39,9 @@ interface GuestCanvasPaginatedViewProps {
   expectedChapterId?: string;
   chapterIndex: number;
   totalChapters: number;
+  chapters?: readonly QuickScrubberChapterItem[];
+  chapterScrollRatio?: number;
+  overallPercent?: number;
   tocTitles?: readonly string[];
   currentChapterNumber?: number;
   readerMaxChapterNumber?: number;
@@ -60,6 +64,7 @@ interface GuestCanvasPaginatedViewProps {
   onRatioChange: (ratio: number, isEndOfChapter: boolean) => void;
   onPrevChapterEnd: () => void;
   onNextChapterStart: () => void;
+  onJumpToChapterRatio?: (chapterIdx: number, ratio: number) => void;
   onCompleteBook: (nextBook?: Book) => void;
   onOpenGuestImage: (bitmap: ImageBitmap, alt: string) => void;
   onOpenFootnote?: (footnote: ResolvedFootnoteItem) => void;
@@ -76,6 +81,9 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       expectedChapterId,
       chapterIndex,
       totalChapters,
+      chapters,
+      chapterScrollRatio,
+      overallPercent,
       tocTitles,
       currentChapterNumber,
       readerMaxChapterNumber,
@@ -98,6 +106,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       onRatioChange,
       onPrevChapterEnd,
       onNextChapterStart,
+      onJumpToChapterRatio,
       onCompleteBook,
       onOpenGuestImage,
       onOpenFootnote,
@@ -465,11 +474,12 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
 
         <ReaderPaginatedFooter
           bookId={bookId} bookTitle={bookTitle} chapterIndex={chapterIndex} totalChapters={totalChapters}
+          chapters={chapters} chapterScrollRatio={chapterScrollRatio} overallPercent={overallPercent}
           currentChapterNumber={currentChapterNumber} readerMaxChapterNumber={readerMaxChapterNumber}
           chapterOptions={chapterOptions} currentPage={safeSpreadIndex + 1} totalPages={totalSpreads}
           isFirstSpread={isFirstSpread} isLastChapter={isLastChapter} isLastSpread={isLastSpread}
           remainingEstimate={remainingEstimate} nextBook={nextBook} palette={palette}
-          onStepPrev={stepPrev} onStepNext={stepNext} onCompleteBook={onCompleteBook} onApiError={onApiError}
+          onStepPrev={stepPrev} onStepNext={stepNext} onJumpToChapterRatio={onJumpToChapterRatio} onCompleteBook={onCompleteBook} onApiError={onApiError}
         />
       </div>
     );

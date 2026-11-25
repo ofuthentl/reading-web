@@ -1,6 +1,11 @@
-import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
 import type { Book } from '@/types';
 import { ReaderBookCommunityModalButton } from '@/components/ReaderBookCommunityBlock';
+import {
+  type QuickScrubberChapterItem,
+  ReaderQuickScrubberPopover,
+} from '@/components/ReaderQuickScrubberPopover';
 import { getBookSortTitle } from '@/lib/bookMetadata';
 import type { CanonicalChapterOption } from '@/lib/readerChapterNumbers';
 import type { ReaderThemePalette } from '@/lib/readerConfig';
@@ -10,6 +15,9 @@ export interface ReaderPaginatedFooterProps {
   bookTitle: string;
   chapterIndex: number;
   totalChapters: number;
+  chapters?: readonly QuickScrubberChapterItem[];
+  chapterScrollRatio?: number;
+  overallPercent?: number;
   currentChapterNumber?: number;
   readerMaxChapterNumber?: number;
   chapterOptions?: readonly CanonicalChapterOption[];
@@ -23,6 +31,7 @@ export interface ReaderPaginatedFooterProps {
   palette: ReaderThemePalette;
   onStepPrev: () => void;
   onStepNext: () => void;
+  onJumpToChapterRatio?: (chapterIdx: number, ratio: number) => void;
   onCompleteBook: (nextBook?: Book) => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
@@ -32,6 +41,9 @@ export function ReaderPaginatedFooter({
   bookTitle,
   chapterIndex,
   totalChapters,
+  chapters,
+  chapterScrollRatio = 0,
+  overallPercent = 0,
   currentChapterNumber,
   readerMaxChapterNumber,
   chapterOptions,
@@ -45,9 +57,11 @@ export function ReaderPaginatedFooter({
   palette,
   onStepPrev,
   onStepNext,
+  onJumpToChapterRatio,
   onCompleteBook,
   onApiError,
 }: ReaderPaginatedFooterProps) {
+  const [scrubberOpen, setScrubberOpen] = useState(false);
   const showCompletionActions = isLastChapter && isLastSpread;
   const effectiveCurrentChapter = currentChapterNumber;
   const effectiveMaxChapter = readerMaxChapterNumber ?? currentChapterNumber ?? chapterIndex + 1;
@@ -55,10 +69,23 @@ export function ReaderPaginatedFooter({
 
   return (
     <footer
-      className={`flex shrink-0 items-center justify-between gap-1.5 border-t px-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 text-xs sm:gap-2 sm:px-6 ${
+      className={`relative flex shrink-0 items-center justify-between gap-1.5 border-t px-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 text-xs sm:gap-2 sm:px-6 ${
         showCompletionActions ? 'flex-wrap' : 'flex-nowrap'
       } ${palette.border} ${palette.headerBg}`}
     >
+      {onJumpToChapterRatio && (
+        <ReaderQuickScrubberPopover
+          open={scrubberOpen}
+          chapterIndex={chapterIndex}
+          totalChapters={totalChapters}
+          chapterScrollRatio={chapterScrollRatio}
+          overallPercent={overallPercent}
+          chapters={chapters}
+          palette={palette}
+          onJumpToChapterRatio={onJumpToChapterRatio}
+          onClose={() => setScrubberOpen(false)}
+        />
+      )}
       <button
         type="button"
         onClick={onStepPrev}
@@ -105,21 +132,52 @@ export function ReaderPaginatedFooter({
         <div
           className={`flex min-w-0 items-center justify-center gap-x-1.5 whitespace-nowrap tabular-nums sm:gap-x-2 ${palette.textSecondary}`}
         >
-          <span className="truncate">
-            <span className="hidden sm:inline">Trang </span>
-            <strong className={palette.textPrimary}>{currentPage}</strong>
-            <span className="sm:hidden">/{totalPages}</span>
-            <span className="hidden sm:inline"> / {totalPages}</span>
-          </span>
-          <span aria-hidden="true">·</span>
-          <span className="truncate">
-            <span className="sm:hidden">Ch.{chapterIndex + 1}/{totalChapters}</span>
-            <span className="hidden sm:inline">Chương {chapterIndex + 1}/{totalChapters}</span>
-          </span>
-          {remainingEstimate && (
+          {onJumpToChapterRatio ? (
+            <button
+              type="button"
+              onClick={() => setScrubberOpen((v) => !v)}
+              aria-expanded={scrubberOpen}
+              title="Chạm để tua nhanh chương & vị trí đọc"
+              className={`inline-flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1 transition ${palette.hover}`}
+            >
+              <SlidersHorizontal className={`h-3 w-3 shrink-0 opacity-75 ${scrubberOpen ? palette.accentText : ''}`} />
+              <span className="truncate">
+                <span className="hidden sm:inline">Trang </span>
+                <strong className={palette.textPrimary}>{currentPage}</strong>
+                <span className="sm:hidden">/{totalPages}</span>
+                <span className="hidden sm:inline"> / {totalPages}</span>
+              </span>
+              <span aria-hidden="true">·</span>
+              <span className="truncate">
+                <span className="sm:hidden">Ch.{chapterIndex + 1}/{totalChapters}</span>
+                <span className="hidden sm:inline">Chương {chapterIndex + 1}/{totalChapters}</span>
+              </span>
+              {remainingEstimate && (
+                <>
+                  <span aria-hidden="true" className="hidden sm:inline">·</span>
+                  <span className="hidden sm:inline">{remainingEstimate}</span>
+                </>
+              )}
+            </button>
+          ) : (
             <>
-              <span aria-hidden="true" className="hidden sm:inline">·</span>
-              <span className="hidden sm:inline">{remainingEstimate}</span>
+              <span className="truncate">
+                <span className="hidden sm:inline">Trang </span>
+                <strong className={palette.textPrimary}>{currentPage}</strong>
+                <span className="sm:hidden">/{totalPages}</span>
+                <span className="hidden sm:inline"> / {totalPages}</span>
+              </span>
+              <span aria-hidden="true">·</span>
+              <span className="truncate">
+                <span className="sm:hidden">Ch.{chapterIndex + 1}/{totalChapters}</span>
+                <span className="hidden sm:inline">Chương {chapterIndex + 1}/{totalChapters}</span>
+              </span>
+              {remainingEstimate && (
+                <>
+                  <span aria-hidden="true" className="hidden sm:inline">·</span>
+                  <span className="hidden sm:inline">{remainingEstimate}</span>
+                </>
+              )}
             </>
           )}
           <ReaderBookCommunityModalButton

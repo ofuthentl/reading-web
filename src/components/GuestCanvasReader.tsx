@@ -378,6 +378,7 @@ export function GuestCanvasReader({
             bookId={book.id} bookTitle={book.title} chapterData={syncedChapterData}
             expectedChapterId={expectedChapterId}
             chapterIndex={chapterIndex} totalChapters={tocChapters.length} tocTitles={tocTitles}
+            chapters={tocChapters} chapterScrollRatio={chapterScrollRatio} overallPercent={overallPercent}
             currentChapterNumber={currentChapterNumber} readerMaxChapterNumber={readerMaxChapterNumber}
             chapterOptions={chapterNumbering.options} initialRatio={paginatedStartRatio} watermarkLabel={effectiveWatermark}
             imageSizes={imageSizes} bitmapsRef={bitmapsRef}
@@ -393,6 +394,7 @@ export function GuestCanvasReader({
             onRatioChange={handlePaginatedRatioChange}
             onPrevChapterEnd={() => { if (chapterIndex > 0) goToChapter(chapterIndex - 1, 1); }}
             onNextChapterStart={() => { if (chapterIndex < tocChapters.length - 1) goToChapter(chapterIndex + 1, 0); }}
+            onJumpToChapterRatio={goToChapter}
             onCompleteBook={completeBook}
             onOpenGuestImage={(bitmap, alt) =>
               setLightboxTarget({ kind: 'guest-bitmap', bitmap, watermarkLabel: effectiveWatermark, alt })
@@ -438,10 +440,12 @@ export function GuestCanvasReader({
 
           <ReaderFooterStatusBar
             chapterIndex={chapterIndex} totalChapters={tocChapters.length}
+            chapters={tocChapters} chapterScrollRatio={chapterScrollRatio}
             overallPercent={overallPercent} remainingEstimate={remainingEstimate}
             immersiveHidden={immersiveHidden} palette={palette}
             eyeBreakDue={ctrl.eyeBreakDue} eyeBreakMinutes={settings.eyeBreakMinutes}
             onAcknowledgeEyeBreak={ctrl.acknowledgeEyeBreak}
+            onJumpToChapterRatio={goToChapter}
           />
         </>
       )}

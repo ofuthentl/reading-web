@@ -222,6 +222,13 @@
     animation: readerSearchFlashPulse 2.2s ease-out forwards;
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    .reader-search-flash {
+      animation: none !important;
+      background-color: rgba(245, 158, 11, 0.28);
+    }
+  }
+
   /* Highlight bôi màu trích dẫn (D-036 Mục 5) */
   .reading-content mark.reader-hl {
     color: inherit;

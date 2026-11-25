@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Check, Loader2, Plus, Save, Search, Tag, Wand2, X } from 'lucide-react';
 import type { AniListNovelCandidate, ShelfGroup } from '@/types';
 import { AniListSuggestPanel } from '@/components/AniListSuggestPanel';
+import { ModalShell } from '@/components/ModalShell';
 import { setShelfAltTitles } from '@/lib/catalogApi';
 import { normalizeClientAltTitles } from '@/lib/shelfPrefs';
 import {
@@ -58,15 +58,6 @@ export function ShelfTagsModal({
     setCustomInput('');
     setSaving(false);
   }, [shelfKey]);
-
-  useEffect(() => {
-    if (!shelf) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !saving) onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose, saving, shelf]);
 
   const selectedKeys = useMemo(
     () => new Set(selectedTags.map(toTagLookupKey)),
@@ -184,20 +175,16 @@ export function ShelfTagsModal({
     }
   };
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 !m-0 flex items-center justify-center bg-black/60 p-3 backdrop-blur-sm sm:p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="shelf-tags-modal-title"
-      onClick={() => {
-        if (!saving) onClose();
-      }}
+  return (
+    <ModalShell
+      open
+      onClose={onClose}
+      closeDisabled={saving}
+      ariaLabelledBy="shelf-tags-modal-title"
+      zIndexClass="z-50"
+      backdropClassName="items-center justify-center p-3 sm:p-4"
+      panelClassName="moonlit-card fade-in flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
     >
-      <div
-        className="moonlit-card fade-in flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div className="flex min-w-0 flex-1 items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
@@ -412,8 +399,6 @@ export function ShelfTagsModal({
             )}
           </button>
         </div>
-      </div>
-    </div>,
-    document.body,
+    </ModalShell>
   );
 }

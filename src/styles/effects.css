@@ -80,3 +80,11 @@
     transform: translateX(0);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in,
+  .slide-in,
+  .micro-pop {
+    animation: none !important;
+  }
+}
