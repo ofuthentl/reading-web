@@ -37,6 +37,7 @@ interface GuestCanvasPaginatedViewProps {
   chapterData: GuestChapterPayload;
   chapterIndex: number;
   totalChapters: number;
+  tocTitles?: readonly string[];
   currentChapterNumber?: number;
   readerMaxChapterNumber?: number;
   chapterOptions?: readonly CanonicalChapterOption[];
@@ -73,6 +74,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       chapterData,
       chapterIndex,
       totalChapters,
+      tocTitles,
       currentChapterNumber,
       readerMaxChapterNumber,
       chapterOptions,
@@ -168,6 +170,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
         containerWidth: geometry.columnWidth,
         imageSizes,
         blockHighlightColors,
+        tocTitles,
       });
       return {
         layoutItems: layout.items,
@@ -182,6 +185,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       geometry.pageHeight,
       imageSizes,
       settings,
+      tocTitles,
       totalChapters,
     ]);
 

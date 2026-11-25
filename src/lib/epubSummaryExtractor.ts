@@ -1,5 +1,6 @@
 import type { Book } from '@/types';
 import { fetchBookBlobCached } from '@/lib/api';
+import { splitNormalizedAuthors } from '@/lib/authorHeuristics';
 
 function resolveZipPath(baseDir: string, relativeHref: string): string {
   const cleanHref = relativeHref.replace(/^\//, '');
@@ -139,10 +140,20 @@ export async function extractBookAutoAuthor(book: Book): Promise<string | null> 
     ...Array.from(pkgDoc.getElementsByTagName('dc:creator')),
     ...Array.from(pkgDoc.getElementsByTagName('creator')),
   ];
-  const creators = creatorNodes
-    .map((n) => (n.textContent || '').replace(/\s+/g, ' ').trim())
-    .filter((name) => name.length >= 2 && !/^unknown|không rõ/i.test(name));
+  const creators: string[] = [];
+  const seen = new Set<string>();
+  for (const node of creatorNodes) {
+    const raw = (node.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!raw) continue;
+    for (const clean of splitNormalizedAuthors(raw)) {
+      const key = clean.toLocaleLowerCase('vi');
+      if (!seen.has(key)) {
+        seen.add(key);
+        creators.push(clean);
+      }
+    }
+  }
 
   if (creators.length === 0) return null;
-  return Array.from(new Set(creators)).join(', ');
+  return creators.join(', ');
 }

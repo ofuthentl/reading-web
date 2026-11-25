@@ -8,7 +8,11 @@ import {
 } from 'lucide-react';
 import type { Book, BookFileType } from '@/types';
 import { formatBytes } from '@/lib/api';
-import { resolvePreviewShelfName } from '@/lib/shelfUploadPlanner';
+import { isKnownAuthor } from '@/lib/shelfPlacement';
+import {
+  resolvePreviewShelfName,
+  resolveShelfConsistentAuthor,
+} from '@/lib/shelfUploadPlanner';
 
 export type QueueItemStatus = 'queued' | 'skipped' | 'uploading' | 'done' | 'error' | 'invalid';
 
@@ -105,6 +109,11 @@ export function UploadQueueList({
             item.status === 'done'
               ? item.shelf
               : trimmedOverride || resolvePreviewShelfName(item, activePreviewItems, books);
+          const inheritedAuthor =
+            item.status === 'done'
+              ? item.author
+              : resolveShelfConsistentAuthor(displayShelf, books) ||
+                (isKnownAuthor(item.author) ? item.author : 'Không rõ tác giả');
 
           return (
             <li
@@ -126,7 +135,7 @@ export function UploadQueueList({
                     )}
                   </div>
                   <p className="truncate text-xs text-ink-muted">
-                    {item.author} · Kệ: {displayShelf} · {formatBytes(item.file.size)}
+                    {inheritedAuthor} · Kệ: {displayShelf} · {formatBytes(item.file.size)}
                   </p>
                   <QueueItemStatusNote item={item} />
                 </div>

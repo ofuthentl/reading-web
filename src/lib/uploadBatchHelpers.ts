@@ -2,13 +2,66 @@ import type { Book, StorageStats } from '@/types';
 import { updateBookMetadata, uploadBook } from '@/lib/api';
 import { announceDiscordReleasesApi } from '@/lib/apiAdminMutations';
 import { isAuthError } from '@/lib/authSession';
-import { bookDuplicateKey, parseFileMetadata } from '@/lib/bookMetadata';
-import { resolveUploadShelfPlan } from '@/lib/shelfUploadPlanner';
+import { stripDiacriticsLower } from '@/lib/authorHeuristics';
+import { bookDuplicateKey, extractSeriesName, parseFileMetadata } from '@/lib/seriesShelfExtractor';
+import { isKnownAuthor } from '@/lib/shelfPlacement';
+import {
+  normalizeShelfMatchKey,
+  resolveShelfConsistentAuthor,
+  resolveUploadShelfPlan,
+} from '@/lib/shelfUploadPlanner';
 import type { UploadQueueItem } from '@/components/UploadQueueList';
 import type { ToastType } from '@/hooks/useToast';
 
 export const MAX_SINGLE_FILE_BYTES = 350 * 1024 * 1024;
 export const ACCEPTED_UPLOAD_EXTENSIONS = '.epub,.docx';
+
+const UNKNOWN_AUTHOR = 'Không rõ tác giả';
+
+/**
+ * Trong cùng 1 lô tải lên nhiều tập cùng bộ, nếu mỗi tập mang 1 chuỗi hậu tố `author` khác nhau
+ * (count === 1 trên >= 2 chuỗi khác nhau) thì đó là tiêu đề phụ từng tập → nối trả lại về `title`.
+ */
+export function healBatchParsedMetadata(
+  entries: Array<{
+    file: File;
+    title: string;
+    author: string;
+    shelf: string;
+    extension: ReturnType<typeof parseFileMetadata>['extension'];
+  }>,
+): void {
+  const bySeries = new Map<string, typeof entries>();
+  for (const entry of entries) {
+    if (!entry.extension) continue;
+    const series = extractSeriesName(entry.title);
+    if (!series) continue;
+    const key = normalizeShelfMatchKey(series);
+    const list = bySeries.get(key);
+    if (list) list.push(entry);
+    else bySeries.set(key, [entry]);
+  }
+
+  for (const group of bySeries.values()) {
+    if (group.length < 2) continue;
+    const authorCounts = new Map<string, number>();
+    for (const item of group) {
+      if (!isKnownAuthor(item.author)) continue;
+      const aKey = stripDiacriticsLower(item.author);
+      authorCounts.set(aKey, (authorCounts.get(aKey) ?? 0) + 1);
+    }
+    if (authorCounts.size < 2) continue;
+
+    for (const item of group) {
+      if (!isKnownAuthor(item.author)) continue;
+      const aKey = stripDiacriticsLower(item.author);
+      if ((authorCounts.get(aKey) ?? 0) === 1) {
+        item.title = `${item.title} - ${item.author}`;
+        item.author = UNKNOWN_AUTHOR;
+      }
+    }
+  }
+}
 
 export function createUploadQueueItems(
   files: File[],
@@ -19,8 +72,10 @@ export function createUploadQueueItems(
     existingQueue.filter((item) => item.status !== 'invalid').map((item) => item.duplicateKey),
   );
 
-  return files.map((file) => {
-    const parsed = parseFileMetadata(file.name);
+  const parsedEntries = files.map((file) => ({ file, ...parseFileMetadata(file.name) }));
+  healBatchParsedMetadata(parsedEntries);
+
+  return parsedEntries.map(({ file, ...parsed }) => {
     const duplicateKey = bookDuplicateKey(parsed.title, parsed.author);
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const base = {
@@ -161,10 +216,12 @@ export async function executeSequentialUploadBatch(
                 : ([] as Book[]),
           }
         : autoPlan;
+      const preferredShelfAuthor = resolveShelfConsistentAuthor(plan.shelf, workingBooks);
       const result = await uploadBook(current.file, {
         title: current.title,
         author: current.author,
         shelf: plan.shelf,
+        preferredShelfAuthor,
       });
       if (!isMounted()) break;
       successCount += 1;
@@ -183,7 +240,12 @@ export async function executeSequentialUploadBatch(
         }
       }
 
-      onItemPatch(current.id, { status: 'done', shelf: result.book.shelf, errorMessage: undefined });
+      onItemPatch(current.id, {
+        status: 'done',
+        author: result.book.author,
+        shelf: result.book.shelf,
+        errorMessage: undefined,
+      });
     } catch (err) {
       if (!isMounted()) break;
       if (isAuthError(err)) {

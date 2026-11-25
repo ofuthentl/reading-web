@@ -154,7 +154,7 @@ export type GuestBlock =
   | { kind: 'h'; level: 1 | 2 | 3; spans: GuestInlineSpan[] }
   | { kind: 'p'; spans: GuestInlineSpan[] }
   | { kind: 'quote'; spans: GuestInlineSpan[] }
-  | { kind: 'list'; ordered?: 1; items: GuestInlineSpan[][] }
+  | { kind: 'list'; ordered?: 1; plain?: 1; depths?: number[]; items: GuestInlineSpan[][] }
   | { kind: 'hr' }
   | { kind: 'img'; mediaIndex: number; alt?: string };
 

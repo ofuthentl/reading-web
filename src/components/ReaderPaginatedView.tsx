@@ -22,6 +22,7 @@ import {
 } from '@/lib/readerConfig';
 import { buildReaderTypographyStyle } from '@/lib/readingEstimate';
 import { type ReaderSearchJumpTarget, findDomBlockForSearchQuery, flashDomSearchElement } from '@/lib/readerSearchJump';
+import { isTocChapterTitle, stripDuplicateLeadingTocHeadingHtml } from '@/lib/tocFormat';
 
 export interface PaginatedStageHandle {
   stepPrev: () => void;
@@ -349,6 +350,11 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
     const isLastChapter = chapterIndex >= totalChapters - 1;
     const isLastSpread = safePageIndex >= totalPages - 1;
     const isFirstSpread = safePageIndex === 0 && chapterIndex === 0;
+    const isTocChapter = isTocChapterTitle(chapter.title);
+    const chapterHtml = useMemo(
+      () => (chapter.content_html && isTocChapter ? stripDuplicateLeadingTocHeadingHtml(chapter.content_html, chapter.title) : chapter.content_html),
+      [chapter.content_html, chapter.title, isTocChapter],
+    );
     const rulerDepsKey = `${chapter.id}:${safePageIndex}:${totalPages}:${geometry.columns}:${geometry.colWidth}:${geometry.pageHeight}:${settings.fontSizePx}:${settings.lineHeight}:${imagesSettled}`;
     const { updateFromClientPoint } = useDomPaginatedReadingRuler({
       enabled: settings.readingRuler, columns: geometry.columns, pageIndex: safePageIndex,
@@ -494,11 +500,11 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
                 </header>
 
                 <div
-                  className={`reading-content ${READER_FONT_CLASS[settings.font]}`}
+                  className={`reading-content ${isTocChapter ? 'reading-content-toc ' : ''}${READER_FONT_CLASS[settings.font]}`}
                   style={buildReaderTypographyStyle(settings)}
                 >
-                  {chapter.content_html ? (
-                    <div dangerouslySetInnerHTML={{ __html: chapter.content_html }} />
+                  {chapterHtml ? (
+                    <div dangerouslySetInnerHTML={{ __html: chapterHtml }} />
                   ) : (
                     chapter.content.split('\n\n').map((para, i) => <p key={i}>{para}</p>)
                   )}

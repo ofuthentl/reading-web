@@ -27,6 +27,7 @@ export interface UseGuestCanvasViewportOptions {
   chapterData: GuestChapterPayload | null;
   chapterIndex: number;
   totalChapters: number;
+  tocTitles?: readonly string[];
   settings: ReaderSettings;
   isPaginated: boolean;
   showScrollStage: boolean;
@@ -50,6 +51,7 @@ export function useGuestCanvasViewport({
   chapterData,
   chapterIndex,
   totalChapters,
+  tocTitles,
   settings,
   isPaginated,
   showScrollStage,
@@ -126,6 +128,7 @@ export function useGuestCanvasViewport({
       containerWidth: stageBox.width,
       imageSizes,
       blockHighlightColors,
+      tocTitles,
     });
   }, [
     blockHighlightColors,
@@ -136,6 +139,7 @@ export function useGuestCanvasViewport({
     isPaginated,
     settings,
     stageBox.width,
+    tocTitles,
     totalChapters,
   ]);
 

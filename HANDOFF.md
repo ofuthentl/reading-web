@@ -1,23 +1,23 @@
 # HANDOFF
-Cập nhật: 2026-11-25 00:55 | Nhánh: fix/spine-bookshelf-rows | Build: 🟢 XANH (`index-*.js = 84.78 kB` gzip <= `86.04 kB`)
-Nhiệm vụ hiện tại: **Tinh chỉnh giao diện v4: Tủ Gáy Sách chia nhiều tầng, bố cục biên tập `Cùng vũ trụ` / `Cùng gu đọc`, độ tương phản nhãn trên bìa sáng & đồng màu icon Header**.
-Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/v4-spine-shelf-and-catalog.md
+Cập nhật: 2026-11-25 12:10 | Nhánh: feat/upgrade-author-and-shelf-matching | Build: 🟢 XANH (`index-*.js = 85.80 kB` gzip <= `86.04 kB`)
+Nhiệm vụ hiện tại: **Nâng cấp tách/lọc tên tác giả & tự động chọn kệ (`D-044` — chốt `1A`, `2A`, `3A`, tách từ `fix/toc-layout-and-numbering` đã gồm `D-043`)**.
+Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/upgrade-author-and-shelf-matching.md
 
 ## Đang làm dở
-- Không có — toàn bộ bản tinh chỉnh giao diện đã kiểm thử trực quan trên trình duyệt thật và sẵn sàng merge vào `main`.
+- Không có — toàn bộ tính năng đã qua 35+ test tự động, `typecheck`, `lint`, `build` và kiểm thử trình duyệt thật (`0` lỗi console), sẵn sàng push/mở PR merge vào `main`.
 
 ## Xong trong nhánh này
-1. **Chia hàng nhiều tầng & sửa phối cảnh 3D cho Tủ Gáy Sách (`SpineBookshelfView.tsx`, `SpineBookshelfSlot.tsx`, `src/styles/bookshelf.css`):**
-   - Tăng tỷ lệ gáy sách chuẩn Light Novel theo `sqrt(số tập)` (`54..76px` trên Desktop, `38..50px` trên Mobile), giới hạn tối đa `12` bộ/tầng trên Desktop trong khung `max-width: 1120px` (29 bộ chia thành 3 tầng `12 + 12 + 5`).
-   - Chuyển `perspective: 1050px` xuống từng `.book-slot` để triệt tiêu hoàn toàn lỗi lộ bìa nghiêng ở nửa bên phải kệ.
-2. **Bố cục biên tập & độ tương phản nhãn cho `Cùng vũ trụ` / `Cùng gu đọc` (`ShelfDetailView.tsx`, `ShelfRelatedStrip.tsx`, `BookCard.tsx`):**
-   - Dời `ShelfLinkedUniverseStrip` xuống bên dưới `Danh sách tập`, dùng lưới bìa dọc 6 cột (`aspect-[7/10]`) kèm tiêu đề biên tập đánh số (`02`, `03`).
-   - Đổi toàn bộ độ mờ Tailwind sang bội số của 5 (`/95`, `/90`, `/85`, `/80`) để không bị mất `background-color` trên bìa sáng màu, và dời dòng lý do `Action · Drama` xuống dưới tên tác giả để mặt bìa sạch thoáng.
-3. **Đồng bộ màu icon Header (`LibraryHeader.tsx`):**
-   - Đổi icon `HeartPulse` (`Sức khoẻ kho sách`) từ `text-crimson-accent` sang `text-accent` đồng bộ 100% với `Shield`, `Activity` và `Database`.
+1. **Lõi lọc rác tác giả & phân tích tên tệp nạp lười (`src/lib/authorHeuristics.ts`, `src/lib/seriesShelfExtractor.ts`, `src/lib/shelfPlacement.ts`, `src/lib/bookMetadata.ts`):**
+   - Lọc sạch nhãn nhóm dịch/nguồn/định dạng/calibre (`[Hako]`, `Sonako`, `Full`...), chặn tiêu đề phụ tiếng Việt trên bộ tên ngoại ngữ và gộp trọn các vế tới nhãn tập cuối cùng (`Mushoku Tensei - Thất Nghiệp Chuyển Sinh - Tập 1`).
+   - Tách `seriesShelfExtractor.ts` sang chunk nạp lười giữ `index-*.js = 85.80 kB` gzip (`<= 86.04 kB`, `D-013`).
+2. **Sửa triệt để tự động chọn kệ (`src/lib/shelfUploadPlanner.ts`):**
+   - Khớp chính xác (`normalizeShelfMatchKey` bỏ dấu câu thừa 2 đầu) luôn thắng tuyệt đối, không bị kệ `isRenamed` đè lên; tách bạch 2 chiều bộ chính (`Unnamed Memory`, `Mushoku Tensei`) với hậu truyện/ngoại truyện nhiều tập (`Unnamed Memory -after the end-`, `Mushoku Tensei - Redundancy` / `Ngoại Truyện`), đồng thời vẫn khớp an toàn kệ đổi tên song ngữ duy nhất (`Mushoku Tensei - Thất Nghiệp Chuyển Sinh`).
+3. **Luồng Upload thông minh & Bộ lọc Tác giả đồng bộ theo kệ (`parsers.ts`, `apiAdminMutations.ts`, `uploadBatchHelpers.ts`, `UploadQueueList.tsx`, `libraryFiltering.ts`, `useLibraryViewState.ts`, `shelfSummary.ts`, `libraryHealthAudit.ts`, `epubSummaryExtractor.ts`):**
+   - Đọc kèm `<dc:creator>` sạch ngay trong lần mở ZIP trích bìa (`extractUploadMetadata`, `0` lần mở ZIP thêm), ưu tiên kế thừa tác giả thống nhất của kệ đích (`resolveShelfConsistentAuthor`) và tự gom trả tiêu đề phụ riêng từng tập cùng lô (`healBatchParsedMetadata`).
+   - Đồng bộ `buildShelfAuthorContext` & `splitNormalizedAuthors` cho Bộ lọc Tác giả (`collectAvailableAuthors`, `matchesBookAuthor`) và Kiểm tra sức khoẻ kho sách (không tự ghi đè D1).
 
 ## Bước tiếp theo
-1. Merge Pull Request từ nhánh `fix/spine-bookshelf-rows` vào `main` trên GitHub để tự động deploy frontend lên `https://ofu.lol`.
+1. Push nhánh `feat/upgrade-author-and-shelf-matching` (hoặc merge PR `fix/toc-layout-and-numbering` trước rồi mở PR cho nhánh này) vào `main` để tự động deploy frontend lên `https://ofu.lol` (không cần re-deploy Worker hay migration D1/R2).
 
 ## Lỗi / chặn
 - Không có lỗi/chặn. Giữ nguyên không đụng 3 tệp/thư mục chưa theo dõi sẵn ngoài Git ở thư mục gốc.

@@ -9,7 +9,7 @@ export type WatermarkBlock =
   | { kind: 'h'; level: 1 | 2 | 3; spans: WatermarkInlineSpan[] }
   | { kind: 'p'; spans: WatermarkInlineSpan[] }
   | { kind: 'quote'; spans: WatermarkInlineSpan[] }
-  | { kind: 'list'; ordered?: 1; items: WatermarkInlineSpan[][] }
+  | { kind: 'list'; ordered?: 1; plain?: 1; depths?: number[]; items: WatermarkInlineSpan[][] }
   | { kind: 'hr' }
   | { kind: 'img'; mediaIndex: number; alt?: string };
 
