@@ -1,6 +1,12 @@
 import type { Book, ShelfGroup } from '@/types';
 import { isCloudMode } from '@/lib/api';
-import { getDisplayAuthor, groupBooksIntoShelves, isVolumeOrSubtitleSegment } from '@/lib/bookMetadata';
+import { buildShelfAuthorContext } from '@/lib/authorHeuristics';
+import {
+  getDisplayAuthor,
+  groupBooksIntoShelves,
+  isVolumeOrSubtitleSegment,
+  titleEndsWithBareVolume,
+} from '@/lib/bookMetadata';
 import { normalizeSearchText } from '@/lib/libraryFiltering';
 import { isKnownAuthor } from '@/lib/shelfPlacement';
 
@@ -42,6 +48,12 @@ export function auditLibraryHealth(
   const missingCover: Book[] = [];
   const incompleteMetadata: IncompleteBookAuditItem[] = [];
 
+  const effectiveAuthorByBookId = buildShelfAuthorContext(
+    books,
+    getDisplayAuthor,
+    titleEndsWithBareVolume,
+  );
+
   for (const book of books) {
     if (
       isCloudMode &&
@@ -54,7 +66,7 @@ export function auditLibraryHealth(
       missingCover.push(book);
     }
 
-    const displayAuthor = getDisplayAuthor(book.author, book.title);
+    const displayAuthor = effectiveAuthorByBookId.get(book.id) ?? getDisplayAuthor(book.author, book.title);
     const missingAuthor =
       !isKnownAuthor(displayAuthor) || isVolumeOrSubtitleSegment(displayAuthor);
     const missingDescription = !book.description?.trim();

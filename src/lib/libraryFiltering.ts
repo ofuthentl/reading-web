@@ -8,28 +8,35 @@ import type {
   ShelfRatingSummary,
   TagMatchMode,
 } from '@/types';
-import { getDisplayAuthor, isVolumeOrSubtitleSegment } from '@/lib/bookMetadata';
+import {
+  buildShelfAuthorContext,
+  splitNormalizedAuthors,
+  stripDiacriticsLower,
+} from '@/lib/authorHeuristics';
+import { getDisplayAuthor, isVolumeOrSubtitleSegment, titleEndsWithBareVolume } from '@/lib/bookMetadata';
 import { isKnownAuthor } from '@/lib/shelfPlacement';
 import { sortShelvesFavoriteFirst, toShelfPrefKey } from '@/lib/shelfPrefs';
 
 export function normalizeSearchText(input: string): string {
-  return input
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/gi, 'd')
-    .toLocaleLowerCase('vi')
-    .trim();
+  return stripDiacriticsLower(input);
 }
 
 export function normalizeTagFilterKey(tag: string): string {
   return tag.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi');
 }
 
-export function matchesBookAuthor(book: Book, normalizedAuthor: string): boolean {
+export function matchesBookAuthor(
+  book: Book,
+  normalizedAuthor: string,
+  effectiveAuthorByBookId?: ReadonlyMap<string, string>,
+): boolean {
   if (!normalizedAuthor) return true;
-  const displayAuthor = getDisplayAuthor(book.author, book.title);
+  const displayAuthor = effectiveAuthorByBookId?.get(book.id) ?? getDisplayAuthor(book.author, book.title);
   if (!isKnownAuthor(displayAuthor) || isVolumeOrSubtitleSegment(displayAuthor)) return false;
-  return normalizeSearchText(displayAuthor).includes(normalizedAuthor);
+  if (normalizeSearchText(displayAuthor).includes(normalizedAuthor)) return true;
+  return splitNormalizedAuthors(displayAuthor).some((part) =>
+    normalizeSearchText(part).includes(normalizedAuthor),
+  );
 }
 
 export function matchesShelfTagFilters(
@@ -86,17 +93,34 @@ export function matchesBookSearchQuery(
   return haystack.includes(normalizedQuery);
 }
 
-export function collectAvailableAuthors(books: readonly Book[]): string[] {
-  const byKey = new Map<string, string>();
+export function collectAvailableAuthors(
+  books: readonly Book[],
+  effectiveAuthorByBookId?: ReadonlyMap<string, string>,
+): string[] {
+  const authorMap =
+    effectiveAuthorByBookId ??
+    buildShelfAuthorContext(books, getDisplayAuthor, titleEndsWithBareVolume);
+  const byKey = new Map<string, { label: string; count: number }>();
+
   for (const book of books) {
-    const resolved = getDisplayAuthor(book.author, book.title);
+    const resolved = authorMap.get(book.id) ?? getDisplayAuthor(book.author, book.title);
     if (!isKnownAuthor(resolved) || isVolumeOrSubtitleSegment(resolved)) continue;
-    const key = normalizeSearchText(resolved);
-    if (key && !byKey.has(key)) byKey.set(key, resolved);
+    const parts = splitNormalizedAuthors(resolved);
+    const names = parts.length > 0 ? parts : [resolved];
+    for (const name of names) {
+      const key = normalizeSearchText(name);
+      if (!key) continue;
+      const prev = byKey.get(key);
+      if (prev) {
+        prev.count += 1;
+      } else {
+        byKey.set(key, { label: name, count: 1 });
+      }
+    }
   }
-  return Array.from(byKey.values()).sort((a, b) =>
-    a.localeCompare(b, 'vi', { sensitivity: 'base' }),
-  );
+  return Array.from(byKey.values())
+    .map((entry) => entry.label)
+    .sort((a, b) => a.localeCompare(b, 'vi', { sensitivity: 'base' }));
 }
 
 export function selectContinueReadingBooks(

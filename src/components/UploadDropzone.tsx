@@ -6,7 +6,7 @@ import {
   formatBytes,
   groupBooksIntoShelves,
 } from '@/lib/api';
-import { bookDuplicateKey } from '@/lib/bookMetadata';
+import { bookDuplicateKey } from '@/lib/seriesShelfExtractor';
 import { inferBatchCommonShelf } from '@/lib/shelfUploadPlanner';
 import {
   ACCEPTED_UPLOAD_EXTENSIONS,

@@ -1,10 +1,14 @@
-import type { AuthRole, Book, BookFileType, ReadingProgress, ShelfGroup } from '@/types';
+import type { AuthRole, Book, ReadingProgress, ShelfGroup } from '@/types';
+import {
+  cleanAuthorCandidate,
+  isNonAuthorMetadataNoise,
+  isPlausibleAuthorValue,
+  isTranslatedSubtitleForSeries,
+} from '@/lib/authorHeuristics';
 import {
   TITLE_ENDS_WITH_BARE_VOL_RE,
   VOLUME_SEGMENT_RE,
   VOLUME_WITH_SUBTITLE_RE,
-  cleanShelfLabel,
-  inferSingleBookShelf,
   isLikelyVolumeSubtitle,
   isVolumeOrSubtitleSegment,
   titleEndsWithBareVolume,
@@ -72,25 +76,52 @@ export function splitMisplacedTitleAndAuthor(
     return { extraTitle: null, realAuthor: UNKNOWN_AUTHOR };
   }
 
-  const moved: string[] = [];
-
-  // 1. Nhặt toàn bộ các vế đầu là nhãn tập (`Quyển i`, `Tập 1`, `I`, `After the End`...)
-  while (parts.length > 0 && isVolumeOrSubtitleSegment(parts[0])) {
-    moved.push(parts.shift()!);
+  // 1. Nếu còn nhãn tập nằm ở vế bất kỳ trong `author` (VD `Thất Nghiệp Chuyển Sinh - Tập 1`),
+  // toàn bộ các vế từ đầu tới nhãn tập cuối cùng chắc chắn thuộc về tiêu đề sách.
+  let lastVolIdx = -1;
+  for (let i = 0; i < parts.length; i += 1) {
+    if (isVolumeOrSubtitleSegment(parts[i]) || titleEndsWithBareVolume(parts[i])) {
+      lastVolIdx = i;
+    }
   }
 
-  // 2. Nếu vừa nhặt nhãn tập trơn (hoặc `title` vốn kết thúc bằng nhãn tập trơn) và còn vế sau là tiêu đề phụ
-  const prevEnd = moved.length > 0 ? moved[moved.length - 1] : cleanTitle;
-  const afterBareVol = Boolean(prevEnd && titleEndsWithBareVolume(prevEnd));
-  if (parts.length > 0 && afterBareVol && (parts.length > 1 || isLikelyVolumeSubtitle(parts[0]))) {
-    moved.push(parts.shift()!);
-  } else if (moved.length === 0 && parts.length > 0 && isLikelyVolumeSubtitle(parts[0])) {
-    // 3. Kể cả khi `title` không có chữ `Tập/Quyển` (VD `Unnamed Memory`), nếu `parts[0]` rõ ràng là câu tiêu đề phụ
-    moved.push(parts.shift()!);
+  const moved: string[] = [];
+  let cursor = 0;
+  if (lastVolIdx >= 0) {
+    for (let i = 0; i <= lastVolIdx; i += 1) {
+      if (!isNonAuthorMetadataNoise(parts[i]) || isVolumeOrSubtitleSegment(parts[i])) {
+        moved.push(parts[i]);
+      }
+    }
+    cursor = lastVolIdx + 1;
+  }
+
+  const rest = parts.slice(cursor);
+  // 2. Bỏ sạch rác nhóm dịch/định dạng ở phần còn lại; các vế tiêu đề phụ trả lại về `extraTitle`
+  const remainingAuthorParts: string[] = [];
+  for (let i = 0; i < rest.length; i += 1) {
+    const seg = rest[i];
+    if (isNonAuthorMetadataNoise(seg)) continue;
+    const prevEnd = moved.length > 0 ? moved[moved.length - 1] : cleanTitle;
+    const afterBareVol = Boolean(prevEnd && titleEndsWithBareVolume(prevEnd));
+    const isLast = i === rest.length - 1;
+    if (
+      remainingAuthorParts.length === 0 &&
+      ((afterBareVol &&
+        (!isLast ||
+          isLikelyVolumeSubtitle(seg) ||
+          isTranslatedSubtitleForSeries(prevEnd, seg))) ||
+        isLikelyVolumeSubtitle(seg) ||
+        !isPlausibleAuthorValue(seg))
+    ) {
+      moved.push(seg);
+    } else if (isPlausibleAuthorValue(seg)) {
+      remainingAuthorParts.push(cleanAuthorCandidate(seg));
+    }
   }
 
   const extraTitle = moved.length > 0 ? moved.join(' - ') : null;
-  const remaining = parts.join(' - ').trim();
+  const remaining = remainingAuthorParts.join(' - ').trim();
   return {
     extraTitle,
     realAuthor: remaining || UNKNOWN_AUTHOR,
@@ -143,52 +174,6 @@ export function pickCoverColor(seed: string): string {
 
 export function pickClothCoverColor(seed: string): string {
   return CLOTH_COVER_PALETTE[hashSeed(seed) % CLOTH_COVER_PALETTE.length];
-}
-
-export function inferShelfName(title: string, author: string): string {
-  return inferSingleBookShelf(title, author);
-}
-
-export function parseFileMetadata(fileName: string): {
-  title: string;
-  author: string;
-  shelf: string;
-  extension: BookFileType | null;
-} {
-  const extMatch = fileName.match(/\.(epub|docx)$/i);
-  const extension = extMatch ? (extMatch[1].toLowerCase() as BookFileType) : null;
-  const baseLabel = fileName.replace(/\.(epub|docx)$/i, '').trim() || 'Sách chưa đặt tên';
-  const segments = baseLabel
-    .split(/\s+[-–—―−]\s+/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-  const titleParts = segments.length > 0 ? [cleanShelfLabel(segments[0]) || segments[0]] : [baseLabel];
-  let authorIndex = 1;
-  while (authorIndex < segments.length && isVolumeOrSubtitleSegment(segments[authorIndex])) {
-    titleParts.push(segments[authorIndex]);
-    authorIndex += 1;
-  }
-  const lastTitlePart = titleParts[titleParts.length - 1] || '';
-  if (
-    authorIndex < segments.length &&
-    ((titleEndsWithBareVolume(lastTitlePart) &&
-      (authorIndex < segments.length - 1 || isLikelyVolumeSubtitle(segments[authorIndex]))) ||
-      isLikelyVolumeSubtitle(segments[authorIndex]))
-  ) {
-    titleParts.push(segments[authorIndex]);
-    authorIndex += 1;
-  }
-  const title = titleParts.join(' - ').trim() || baseLabel;
-  const author = segments.slice(authorIndex).join(' - ').trim() || UNKNOWN_AUTHOR;
-  const shelf = inferShelfName(title, author);
-  return { title, author, shelf, extension };
-}
-
-export function bookDuplicateKey(title: string, author: string): string {
-  return `${title.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi')}::${author
-    .trim()
-    .replace(/\s+/g, ' ')
-    .toLocaleLowerCase('vi')}`;
 }
 
 export function computeBookProgressPercent(

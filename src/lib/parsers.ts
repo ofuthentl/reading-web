@@ -1,5 +1,6 @@
 import type JSZip from 'jszip';
 import type { Book, BookFileType, ParsedBook } from '@/types';
+import { splitNormalizedAuthors } from '@/lib/authorHeuristics';
 import { isChunkLoadError, recoverFromChunkError } from '@/lib/chunkReload';
 import { compressCoverBlob } from '@/lib/coverImage';
 import { extractDocxCover, parseDocxZip } from '@/lib/docxParser';
@@ -96,11 +97,37 @@ function resolveZipFilePath(
   return null;
 }
 
+function extractCleanCreatorsFromXmlDoc(xmlDoc: Document): string | null {
+  const nodes = [
+    ...Array.from(xmlDoc.getElementsByTagName('dc:creator')),
+    ...Array.from(xmlDoc.getElementsByTagName('creator')),
+  ];
+  const collected: string[] = [];
+  const seen = new Set<string>();
+  for (const node of nodes) {
+    const raw = (node.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!raw) continue;
+    for (const part of splitNormalizedAuthors(raw)) {
+      const key = part.toLocaleLowerCase('vi');
+      if (!seen.has(key)) {
+        seen.add(key);
+        collected.push(part);
+      }
+    }
+  }
+  return collected.length > 0 ? collected.join(', ') : null;
+}
+
 /**
- * Extracts and compresses a lightweight (~35-60KB) JPEG cover ONCE at upload time,
- * so the library view never has to download full book files just to show thumbnails.
+ * Trích ảnh bìa nhẹ (~35–60KB JPEG) VÀ tên tác giả sạch (`<dc:creator>`) trong CÙNG 1 lần mở ZIP
+ * lúc tải lên (0 lần giải nén lại) cho cả EPUB lẫn DOCX.
  */
-export async function extractCoverAtUpload(file: File, fileType: BookFileType): Promise<Blob | null> {
+export async function extractUploadMetadata(
+  file: File,
+  fileType: BookFileType,
+): Promise<{ coverBlob: Blob | null; author: string | null }> {
+  let coverBlob: Blob | null = null;
+  let author: string | null = null;
   try {
     if (fileType === 'epub') {
       const JSZip = await loadJSZip();
@@ -108,15 +135,16 @@ export async function extractCoverAtUpload(file: File, fileType: BookFileType): 
       const zipLowerLookup = buildCaseInsensitiveZipLookup(zip);
       const containerPath = resolveZipFilePath(zip, zipLowerLookup, ['META-INF/container.xml']);
       const containerXml = containerPath ? await zip.file(containerPath)?.async('string') : null;
-      if (!containerXml) return null;
+      if (!containerXml) return { coverBlob: null, author: null };
       const container = new DOMParser().parseFromString(containerXml, 'application/xml');
       const rootFile = container.querySelector('rootfile')?.getAttribute('full-path');
-      if (!rootFile) return null;
+      if (!rootFile) return { coverBlob: null, author: null };
       const resolvedRoot = resolveZipFilePath(zip, zipLowerLookup, [rootFile, safeDecodeUri(rootFile)]);
       const packageXml = resolvedRoot ? await zip.file(resolvedRoot)?.async('string') : null;
-      if (!packageXml || !resolvedRoot) return null;
+      if (!packageXml || !resolvedRoot) return { coverBlob: null, author: null };
 
       const pkg = new DOMParser().parseFromString(packageXml, 'application/xml');
+      author = extractCleanCreatorsFromXmlDoc(pkg);
       const pkgDir = resolvedRoot.includes('/') ? resolvedRoot.slice(0, resolvedRoot.lastIndexOf('/')) : '';
 
       const coverMetaId = pkg.querySelector('metadata meta[name="cover"]')?.getAttribute('content');
@@ -148,24 +176,44 @@ export async function extractCoverAtUpload(file: File, fileType: BookFileType): 
         if (!entry) continue;
         try {
           const rawBlob = await entry.async('blob');
-          return await compressCoverBlob(new Blob([rawBlob], { type: mediaType || rawBlob.type || 'image/jpeg' }));
+          coverBlob = await compressCoverBlob(
+            new Blob([rawBlob], { type: mediaType || rawBlob.type || 'image/jpeg' }),
+          );
+          break;
         } catch {
           // Bỏ qua ứng viên bìa hỏng/không decode được để thử ứng viên tiếp theo
         }
       }
-      return null;
+      return { coverBlob, author };
     }
 
     if (fileType === 'docx') {
       const JSZip = await loadJSZip();
       const zip = await JSZip.loadAsync(await file.arrayBuffer());
-      return await extractDocxCover(zip);
+      const zipLowerLookup = buildCaseInsensitiveZipLookup(zip);
+      const corePath = resolveZipFilePath(zip, zipLowerLookup, ['docProps/core.xml']);
+      const coreXml = corePath ? await zip.file(corePath)?.async('string') : null;
+      if (coreXml) {
+        const coreDoc = new DOMParser().parseFromString(coreXml, 'application/xml');
+        author = extractCleanCreatorsFromXmlDoc(coreDoc);
+      }
+      coverBlob = await extractDocxCover(zip);
+      return { coverBlob, author };
     }
   } catch (err) {
     if (isChunkLoadError(err)) throw err;
-    return null;
+    return { coverBlob, author };
   }
-  return null;
+  return { coverBlob: null, author: null };
+}
+
+/**
+ * Extracts and compresses a lightweight (~35-60KB) JPEG cover ONCE at upload time,
+ * so the library view never has to download full book files just to show thumbnails.
+ */
+export async function extractCoverAtUpload(file: File, fileType: BookFileType): Promise<Blob | null> {
+  const { coverBlob } = await extractUploadMetadata(file, fileType);
+  return coverBlob;
 }
 
 function getFilenameChapterTitle(path: string): string | null {

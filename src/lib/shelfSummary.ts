@@ -13,7 +13,9 @@ import {
   isVolumeOrSubtitleSegment,
   titleEndsWithBareVolume,
 } from '@/lib/bookMetadata';
-import { extractSeriesName, isKnownAuthor } from '@/lib/shelfPlacement';
+import { splitNormalizedAuthors } from '@/lib/authorHeuristics';
+import { extractSeriesName } from '@/lib/seriesShelfExtractor';
+import { isKnownAuthor } from '@/lib/shelfPlacement';
 
 export { computeBookProgressPercent };
 
@@ -326,7 +328,16 @@ function buildAuthorInfo(
     return b.count - a.count;
   });
 
-  const authors = ordered.map(([, entry]) => entry.label);
+  const authorSet = new Map<string, string>();
+  for (const [, entry] of ordered) {
+    const parts = splitNormalizedAuthors(entry.label);
+    const list = parts.length > 0 ? parts : [entry.label];
+    for (const part of list) {
+      const pKey = normalizeKey(part);
+      if (pKey && !authorSet.has(pKey)) authorSet.set(pKey, part);
+    }
+  }
+  const authors = Array.from(authorSet.values());
   const primary = authors[0] || UNKNOWN_AUTHOR;
   const authorLabel = authors.length > 1 ? `${primary} +${authors.length - 1}` : primary;
   return { authorLabel, authors };

@@ -12,7 +12,8 @@ import type {
   TagMatchMode,
 } from '@/types';
 import { groupBooksIntoShelves } from '@/lib/api';
-import { computeBookProgressPercent } from '@/lib/bookMetadata';
+import { buildShelfAuthorContext } from '@/lib/authorHeuristics';
+import { computeBookProgressPercent, getDisplayAuthor, titleEndsWithBareVolume } from '@/lib/bookMetadata';
 import {
   collectAvailableAuthors,
   matchesBookAuthor,
@@ -256,7 +257,14 @@ export function useLibraryViewState(
   const normalizedAuthor = useMemo(() => normalizeSearchText(authorFilter), [authorFilter]);
   const includedTagKeys = useMemo(() => includedTags.map(normalizeTagFilterKey), [includedTags]);
   const excludedTagKeys = useMemo(() => excludedTags.map(normalizeTagFilterKey), [excludedTags]);
-  const availableAuthors = useMemo(() => collectAvailableAuthors(books), [books]);
+  const effectiveAuthorByBookId = useMemo(
+    () => buildShelfAuthorContext(books, getDisplayAuthor, titleEndsWithBareVolume),
+    [books],
+  );
+  const availableAuthors = useMemo(
+    () => collectAvailableAuthors(books, effectiveAuthorByBookId),
+    [books, effectiveAuthorByBookId],
+  );
 
   const cycleTagFilter = useCallback((rawTag: string) => {
     const clean = rawTag.trim().replace(/\s+/g, ' ');
@@ -342,14 +350,17 @@ export function useLibraryViewState(
       ) {
         return false;
       }
-      if (normalizedAuthor && !shelf.books.some((b) => matchesBookAuthor(b, normalizedAuthor))) {
+      if (
+        normalizedAuthor &&
+        !shelf.books.some((b) => matchesBookAuthor(b, normalizedAuthor, effectiveAuthorByBookId))
+      ) {
         return false;
       }
       return matchesShelfSearchQuery(shelf, normalizedQuery, shelfTags, shelfAltTitles);
     });
     return sortShelvesByMode(matched, sortMode, progress, favoriteShelfKeys, shelfRatings);
   }, [
-    activeCollectionShelfSet, allShelves, excludedTagKeys, favoriteShelfKeys,
+    activeCollectionShelfSet, allShelves, effectiveAuthorByBookId, excludedTagKeys, favoriteShelfKeys,
     includedTagKeys, normalizedAuthor, normalizedQuery, planToReadBookIds,
     planToReadShelfKeys, progress, shelfAltTitles, shelfRatings, shelfTags,
     sortMode, statusFilter, tagMatchMode,
@@ -373,11 +384,11 @@ export function useLibraryViewState(
       ) {
         return false;
       }
-      if (!matchesBookAuthor(book, normalizedAuthor)) return false;
+      if (!matchesBookAuthor(book, normalizedAuthor, effectiveAuthorByBookId)) return false;
       return matchesBookSearchQuery(book, shelfKey, normalizedQuery, shelfTags, shelfAltTitles);
     });
   }, [
-    activeShelfKey, books, excludedTagKeys, includedTagKeys, normalizedAuthor,
+    activeShelfKey, books, effectiveAuthorByBookId, excludedTagKeys, includedTagKeys, normalizedAuthor,
     normalizedQuery, planToReadBookIds, planToReadShelfKeys, progress,
     shelfAltTitles, shelfTags, statusFilter, tagMatchMode,
   ]);

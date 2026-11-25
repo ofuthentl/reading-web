@@ -1,6 +1,7 @@
 import type { Book, BookFileType, StorageStats } from '@/types';
 import { apiFetch, assertApiConfigured, isCloudMode } from '@/lib/authSession';
-import { parseFileMetadata, pickCoverColor } from '@/lib/bookMetadata';
+import { pickCoverColor } from '@/lib/bookMetadata';
+import { parseFileMetadata } from '@/lib/seriesShelfExtractor';
 import {
   deleteCachedBookBlob,
   deleteCachedCoverBlob,
@@ -12,6 +13,7 @@ import {
   setCachedCoverBlob,
 } from '@/lib/cache';
 import { isChunkLoadError } from '@/lib/chunkReload';
+import { isKnownAuthor } from '@/lib/shelfPlacement';
 import {
   pruneDeletedBooksFromPrefs,
   pruneMovedBooksFromShelfCovers,
@@ -36,7 +38,7 @@ async function computeLocalStorageStats(books: Book[]): Promise<StorageStats> {
 
 export async function uploadBook(
   file: File,
-  overrides?: { title?: string; author?: string; shelf?: string },
+  overrides?: { title?: string; author?: string; shelf?: string; preferredShelfAuthor?: string | null },
 ): Promise<{ book: Book; storage: StorageStats }> {
   assertApiConfigured();
   const parsed = parseFileMetadata(file.name);
@@ -49,15 +51,16 @@ export async function uploadBook(
 
   const bookId = crypto.randomUUID().replace(/-/g, '');
   const title = overrides?.title?.trim() || parsed.title;
-  const author = overrides?.author?.trim() || parsed.author;
   const shelf = (overrides?.shelf?.trim() || parsed.shelf).slice(0, MAX_SHELF_NAME_LENGTH);
-  const coverColor = pickCoverColor(`${title}-${author}`);
   const fileType: BookFileType = parsed.extension;
 
   let coverBlob: Blob | null = null;
+  let extractedAuthor: string | null = null;
   try {
-    const { extractCoverAtUpload } = await import('@/lib/parsers');
-    coverBlob = await extractCoverAtUpload(file, fileType);
+    const { extractUploadMetadata } = await import('@/lib/parsers');
+    const extracted = await extractUploadMetadata(file, fileType);
+    coverBlob = extracted.coverBlob;
+    extractedAuthor = extracted.author;
   } catch (err) {
     if (isChunkLoadError(err)) {
       throw new Error(
@@ -65,7 +68,18 @@ export async function uploadBook(
       );
     }
     coverBlob = null;
+    extractedAuthor = null;
   }
+
+  // QĐ-1A: ưu tiên (1) tác giả thống nhất của kệ đích → (2) <dc:creator> sạch trong EPUB/DOCX
+  // → (3) tác giả hợp lệ tách từ tên file → (4) Không rõ tác giả
+  const preferredShelfAuthor = overrides?.preferredShelfAuthor?.trim() || '';
+  const fallbackFileAuthor = overrides?.author?.trim() || parsed.author;
+  const author =
+    (preferredShelfAuthor && isKnownAuthor(preferredShelfAuthor) ? preferredShelfAuthor : '') ||
+    (extractedAuthor && isKnownAuthor(extractedAuthor) ? extractedAuthor : '') ||
+    (isKnownAuthor(fallbackFileAuthor) ? fallbackFileAuthor : 'Không rõ tác giả');
+  const coverColor = pickCoverColor(`${title}-${author}`);
 
   if (!isCloudMode) {
     const existingBooks = await getLocalBooks();
