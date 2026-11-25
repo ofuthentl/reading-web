@@ -125,6 +125,8 @@ export function GuestCanvasReader({
   } = useGuestChapterStream({
     bookId: book.id,
     chapterIndex,
+    tocChapters,
+    scrollRatio: chapterScrollRatio,
     isChapterLocked: Boolean(currentTocItem?.locked),
     initialChapter,
     onApiError,

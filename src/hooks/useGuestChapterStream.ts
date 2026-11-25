@@ -9,6 +9,89 @@ import {
 const MAX_RAM_CHAPTERS = 12;
 const MAX_RAM_BITMAPS = 24;
 const GUEST_MEDIA_FETCH_CONCURRENCY = 3;
+export const GUEST_PREFETCH_RATIO_THRESHOLD = 0.78;
+export const GUEST_PREFETCH_RATE_LIMIT_COOLDOWN_MS = 60_000;
+
+export interface GuestPrefetchGuardInput {
+  chapterIndex: number;
+  scrollRatio: number;
+  tocChapters: readonly GuestTocItem[];
+  isCurrentChapterLocked: boolean;
+  isLoadingCurrentChapter: boolean;
+  hasCurrentChapterError: boolean;
+  hasCurrentChapterData: boolean;
+  isNextChapterCached: boolean;
+  nowMs: number;
+  rateLimitCooldownUntilMs: number;
+  alreadyAttemptedForTarget: boolean;
+}
+
+/**
+ * Xác định chỉ số chương kế tiếp đủ điều kiện tải trước ngầm cho Khách Discord (Phase 3.1):
+ * - Khách đã đọc qua >= 78% chương hiện tại (cả cuộn dọc lẫn lật trang).
+ * - Chỉ tải đúng 1 chương kế (`chapterIndex + 1`), bỏ qua chương bị khoá (`D-042`),
+ *   bỏ qua nếu đã nằm trong RAM cache hoặc vừa chạm `429` gần đây để giữ trọn Token Bucket (`D-028`).
+ */
+export function shouldPrefetchNextGuestChapter(input: GuestPrefetchGuardInput): number | null {
+  if (
+    input.isCurrentChapterLocked ||
+    input.isLoadingCurrentChapter ||
+    input.hasCurrentChapterError ||
+    !input.hasCurrentChapterData
+  ) {
+    return null;
+  }
+  if (!Number.isFinite(input.scrollRatio) || input.scrollRatio < GUEST_PREFETCH_RATIO_THRESHOLD) {
+    return null;
+  }
+  const nextIndex = input.chapterIndex + 1;
+  if (nextIndex <= 0 || nextIndex >= input.tocChapters.length) {
+    return null;
+  }
+  const nextChapter = input.tocChapters[nextIndex];
+  if (!nextChapter || nextChapter.locked) {
+    return null;
+  }
+  if (input.isNextChapterCached || input.alreadyAttemptedForTarget) {
+    return null;
+  }
+  if (input.nowMs < input.rateLimitCooldownUntilMs) {
+    return null;
+  }
+  return nextIndex;
+}
+
+function putChapterInRamCache(
+  cache: Map<number, GuestChapterPayload>,
+  index: number,
+  payload: GuestChapterPayload,
+  protectedIndex?: number,
+): void {
+  if (cache.has(index)) {
+    cache.delete(index);
+  }
+  while (cache.size >= MAX_RAM_CHAPTERS) {
+    let evicted = false;
+    for (const key of cache.keys()) {
+      if (key !== protectedIndex) {
+        cache.delete(key);
+        evicted = true;
+        break;
+      }
+    }
+    if (!evicted) break;
+  }
+  cache.set(index, payload);
+}
+
+function computeRateLimitCooldownUntil(err: unknown, nowMs: number): number {
+  const retryAfterSec = (err as { retryAfterSec?: number } | null)?.retryAfterSec;
+  const retryMs =
+    typeof retryAfterSec === 'number' && Number.isFinite(retryAfterSec) && retryAfterSec > 0
+      ? retryAfterSec * 1000
+      : 0;
+  return nowMs + Math.max(GUEST_PREFETCH_RATE_LIMIT_COOLDOWN_MS, retryMs);
+}
 
 export function resolveGuestUnlockedInitialProgress(
   tocChapters: readonly GuestTocItem[],
@@ -45,6 +128,8 @@ export function resolveGuestUnlockedInitialProgress(
 interface UseGuestChapterStreamOptions {
   bookId: string;
   chapterIndex: number;
+  tocChapters?: readonly GuestTocItem[];
+  scrollRatio?: number;
   isChapterLocked?: boolean;
   initialChapter?: { chapterIndex: number; data: GuestChapterPayload };
   onApiError: (err: unknown, fallbackMessage: string) => void;
@@ -53,6 +138,8 @@ interface UseGuestChapterStreamOptions {
 export function useGuestChapterStream({
   bookId,
   chapterIndex,
+  tocChapters = [],
+  scrollRatio = 0,
   isChapterLocked = false,
   initialChapter,
   onApiError,
@@ -90,6 +177,9 @@ export function useGuestChapterStream({
     chapterCacheRef.current = initialMap;
   }
   const bitmapsRef = useRef<Map<number, ImageBitmap>>(new Map());
+  const rateLimitCooldownUntilRef = useRef(0);
+  const prefetchAbortRef = useRef<AbortController | null>(null);
+  const attemptedPrefetchKeyRef = useRef<string | null>(null);
 
   const currentKey = `${bookId}:${chapterIndex}`;
   const isSameCacheBook = cacheBookIdRef.current === bookId;
@@ -147,6 +237,7 @@ export function useGuestChapterStream({
 
     const cached = cache.get(chapterIndex);
     if (cached) {
+      putChapterInRamCache(cache, chapterIndex, cached, chapterIndex);
       setStreamState({
         key: reqKey,
         chapterData: cached,
@@ -169,11 +260,7 @@ export function useGuestChapterStream({
     void fetchGuestChapterDecrypted(bookId, chapterIndex, controller.signal)
       .then((decrypted) => {
         if (controller.signal.aborted) return;
-        if (cache.size >= MAX_RAM_CHAPTERS) {
-          const oldestKey = cache.keys().next().value;
-          if (oldestKey !== undefined) cache.delete(oldestKey);
-        }
-        cache.set(chapterIndex, decrypted);
+        putChapterInRamCache(cache, chapterIndex, decrypted, chapterIndex);
         setStreamState({
           key: reqKey,
           chapterData: decrypted,
@@ -189,6 +276,12 @@ export function useGuestChapterStream({
           return;
         }
         const status = (err as { status?: number } | null)?.status;
+        if (status === 429) {
+          rateLimitCooldownUntilRef.current = Math.max(
+            rateLimitCooldownUntilRef.current,
+            computeRateLimitCooldownUntil(err, Date.now()),
+          );
+        }
         if (status === 403) {
           setStreamState({
             key: reqKey,
@@ -210,6 +303,78 @@ export function useGuestChapterStream({
 
     return () => controller.abort();
   }, [bookId, chapterIndex, initialChapter, isChapterLocked, onApiError, retryNonce]);
+
+  // Huỷ ngay tải trước chương kế khi đổi chương, đổi sách hoặc đóng trình đọc (Phase 3.1)
+  useEffect(() => {
+    attemptedPrefetchKeyRef.current = null;
+    return () => {
+      prefetchAbortRef.current?.abort();
+      prefetchAbortRef.current = null;
+    };
+  }, [bookId, chapterIndex]);
+
+  // Tải trước ngầm đúng 1 chương kế tiếp khi khách đọc qua >= 78% chương hiện tại (giữ trọn D-028 & thuỷ vân)
+  useEffect(() => {
+    const cache = chapterCacheRef.current;
+    if (!cache || cacheBookIdRef.current !== bookId) return;
+    const candidateNextIndex = chapterIndex + 1;
+    const targetKey = `${bookId}:${chapterIndex}->${candidateNextIndex}`;
+
+    const nextIndex = shouldPrefetchNextGuestChapter({
+      chapterIndex,
+      scrollRatio,
+      tocChapters,
+      isCurrentChapterLocked: effectiveChapterLocked,
+      isLoadingCurrentChapter: effectiveLoadingChapter,
+      hasCurrentChapterError: Boolean(effectiveChapterError),
+      hasCurrentChapterData: Boolean(effectiveChapterData),
+      isNextChapterCached: cache.has(candidateNextIndex),
+      nowMs: Date.now(),
+      rateLimitCooldownUntilMs: rateLimitCooldownUntilRef.current,
+      alreadyAttemptedForTarget: attemptedPrefetchKeyRef.current === targetKey,
+    });
+    if (nextIndex === null) return;
+
+    attemptedPrefetchKeyRef.current = targetKey;
+    prefetchAbortRef.current?.abort();
+    const controller = new AbortController();
+    prefetchAbortRef.current = controller;
+
+    void fetchGuestChapterDecrypted(bookId, nextIndex, controller.signal)
+      .then((decrypted) => {
+        if (controller.signal.aborted || cacheBookIdRef.current !== bookId) return;
+        putChapterInRamCache(cache, nextIndex, decrypted, chapterIndex);
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        if (isAuthError(err)) {
+          onApiError(err, 'Phiên truy cập đã hết hiệu lực.');
+          return;
+        }
+        const status = (err as { status?: number } | null)?.status;
+        if (status === 429) {
+          rateLimitCooldownUntilRef.current = Math.max(
+            rateLimitCooldownUntilRef.current,
+            computeRateLimitCooldownUntil(err, Date.now()),
+          );
+        }
+      })
+      .finally(() => {
+        if (prefetchAbortRef.current === controller) {
+          prefetchAbortRef.current = null;
+        }
+      });
+  }, [
+    bookId,
+    chapterIndex,
+    effectiveChapterData,
+    effectiveChapterError,
+    effectiveChapterLocked,
+    effectiveLoadingChapter,
+    onApiError,
+    scrollRatio,
+    tocChapters,
+  ]);
 
   // Nạp & giải mã trực tiếp các ảnh minh hoạ trong chương sang ImageBitmap (0 blob: URL, giới hạn LRU GPU H-04)
   useEffect(() => {
@@ -316,6 +481,13 @@ export function useGuestChapterStream({
           pendingSizes.set(mediaIndex, { width: bmp.width, height: bmp.height });
           scheduleFlushSizes();
         } catch (err) {
+          const status = (err as { status?: number } | null)?.status;
+          if (status === 429) {
+            rateLimitCooldownUntilRef.current = Math.max(
+              rateLimitCooldownUntilRef.current,
+              computeRateLimitCooldownUntil(err, Date.now()),
+            );
+          }
           if (isAuthError(err)) {
             if (!authErrorReported) {
               authErrorReported = true;

@@ -206,8 +206,13 @@ export async function fetchGuestChapterDecrypted(
   if (!res.ok || !body.iv || !body.nonce || !body.data) {
     const err = new Error(body.error || 'Không thể tải nội dung chương.') as Error & {
       status?: number;
+      retryAfterSec?: number;
     };
     err.status = res.status;
+    const retryAfter = Number(res.headers.get('Retry-After'));
+    if (Number.isFinite(retryAfter) && retryAfter > 0) {
+      err.retryAfterSec = retryAfter;
+    }
     throw err;
   }
 
@@ -225,7 +230,16 @@ export async function fetchGuestMediaBitmap(
   );
   if (!res.ok) {
     const errBody = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(errBody.error || 'Không thể tải minh hoạ chương.');
+    const err = new Error(errBody.error || 'Không thể tải minh hoạ chương.') as Error & {
+      status?: number;
+      retryAfterSec?: number;
+    };
+    err.status = res.status;
+    const retryAfter = Number(res.headers.get('Retry-After'));
+    if (Number.isFinite(retryAfter) && retryAfter > 0) {
+      err.retryAfterSec = retryAfter;
+    }
+    throw err;
   }
   const iv = res.headers.get('X-Guest-Iv');
   const nonce = res.headers.get('X-Guest-Nonce');
