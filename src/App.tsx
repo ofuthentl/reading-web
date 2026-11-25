@@ -189,6 +189,7 @@ export default function App() {
             onBackToLibrary={() => navigateGateRoute('root')}
             onLogout={handleLogout}
             onApiError={handleApiError}
+            onNotify={addToast}
           />
         </Suspense>
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />

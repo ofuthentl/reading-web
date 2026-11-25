@@ -1,58 +1,64 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  CheckCircle2, Fingerprint, Loader2, RefreshCw, Shield, ShieldAlert, Square, Users, X,
-} from 'lucide-react';
+import { Fingerprint, Loader2, Shield, ShieldAlert, Users, X } from 'lucide-react';
 import type { Book, StorageStats } from '@/types';
 import { AdminDiscordGuestsPanel } from '@/components/AdminDiscordGuestsPanel';
-import { fetchBookBlobCached, formatBytes, isAuthError, isCloudMode } from '@/lib/api';
+import { AdminProtectionSyncTab } from '@/components/AdminProtectionSyncTab';
+import { isAuthError, isCloudMode } from '@/lib/api';
 import {
-  type DiscordGuestRecord, type ForensicSuspectItem,
-  fetchAdminDiscordGuests, runAdminForensicWatermarkCheck, setAdminDiscordGuestBan,
+  type DiscordGuestRecord,
+  type ForensicSuspectItem,
+  fetchAdminDiscordGuests,
+  runAdminForensicWatermarkCheck,
+  setAdminDiscordGuestBan,
 } from '@/lib/guestCrypto';
-import { buildAndUploadGuestPack } from '@/lib/guestPackBuilder';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import type { ToastType } from '@/hooks/useToast';
 
 type ProtectionTab = 'sync' | 'forensic' | 'guests';
 
-interface AdminProtectionModalProps {
+export interface AdminProtectionModalProps {
   open: boolean;
   books: Book[];
+  initialShelfKey?: string;
+  initialBookId?: string;
   onClose: () => void;
   onBookPackSynced: (bookId: string, storage?: StorageStats) => void;
+  onStorageSynced?: (storage: StorageStats) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
   onNotify: (message: string, type?: ToastType) => void;
 }
 
 export function AdminProtectionModal({
-  open, books, onClose, onBookPackSynced, onApiError, onNotify,
+  open,
+  books,
+  initialShelfKey,
+  initialBookId,
+  onClose,
+  onBookPackSynced,
+  onStorageSynced,
+  onApiError,
+  onNotify,
 }: AdminProtectionModalProps) {
   const [activeTab, setActiveTab] = useState<ProtectionTab>('sync');
-
-  // State đồng bộ gói đọc khách cho sách EPUB/DOCX
   const [syncing, setSyncing] = useState(false);
-  const [syncProgress, setSyncProgress] = useState<{
-    done: number;
-    total: number;
-    currentTitle: string;
-    stepLabel?: string;
-  } | null>(null);
+
   const mountedRef = useRef(true);
-  const stopSyncRef = useRef(false);
-  const syncAbortRef = useRef<AbortController | null>(null);
   const guestsAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      stopSyncRef.current = true;
-      syncAbortRef.current?.abort();
-      syncAbortRef.current = null;
       guestsAbortRef.current?.abort();
       guestsAbortRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (open && (initialShelfKey || initialBookId)) {
+      setActiveTab('sync');
+    }
+  }, [initialBookId, initialShelfKey, open]);
 
   // State truy vết rò rỉ văn bản 32-bit
   const [sampleText, setSampleText] = useState('');
@@ -125,93 +131,13 @@ export function AdminProtectionModal({
 
   if (!open) return null;
 
-  const handleBatchSync = async (targets: Book[]) => {
-    if (targets.length === 0 || syncing) return;
-    if (!isCloudMode) {
-      onNotify('Đồng bộ gói bảo mật chỉ hoạt động khi kết nối Cloudflare Worker.', 'info');
-      return;
-    }
-
-    stopSyncRef.current = false;
-    setSyncing(true);
-    setSyncProgress({ done: 0, total: targets.length, currentTitle: targets[0].title });
-
-    let successCount = 0;
-    let failCount = 0;
-    let authFailed = false;
-
-    try {
-      for (let i = 0; i < targets.length; i += 1) {
-        if (stopSyncRef.current) break;
-        const target = targets[i];
-        const controller = new AbortController();
-        syncAbortRef.current = controller;
-        setSyncProgress({
-          done: i,
-          total: targets.length,
-          currentTitle: target.title,
-          stepLabel: `Đang tải tệp (${formatBytes(target.file_size)})...`,
-        });
-        try {
-          const { blob } = await fetchBookBlobCached(target, {
-            cacheOnFetch: false,
-            signal: controller.signal,
-          });
-          if (stopSyncRef.current) break;
-          setSyncProgress({
-            done: i,
-            total: targets.length,
-            currentTitle: target.title,
-            stepLabel: 'Đang nén & tải gói bảo mật...',
-          });
-          const res = await buildAndUploadGuestPack(blob, target);
-          if (mountedRef.current) {
-            onBookPackSynced(target.id, res.storage);
-          }
-          successCount += 1;
-          if (stopSyncRef.current) break;
-        } catch (err) {
-          if (isAuthError(err)) {
-            stopSyncRef.current = true;
-            authFailed = true;
-            onApiError(err, 'Phiên quản trị đã hết hạn.');
-            return;
-          }
-          if (stopSyncRef.current || !mountedRef.current) break;
-          failCount += 1;
-          console.warn(`Lỗi tạo gói khách cho "${target.title}":`, err);
-        }
-      }
-    } finally {
-      syncAbortRef.current = null;
-      if (mountedRef.current) {
-        setSyncing(false);
-        setSyncProgress(null);
-      }
-    }
-
-    if (authFailed || !mountedRef.current) return;
-    if (stopSyncRef.current && successCount === 0 && failCount === 0) {
-      onNotify('Đã dừng đồng bộ gói bảo mật.', 'info');
-      return;
-    }
-
-    if (successCount > 0) {
-      onNotify(
-        failCount > 0
-          ? `Đã bật bảo mật cho ${successCount} sách (${failCount} sách lỗi).`
-          : `Đã bật bảo mật chế độ khách cho ${successCount} sách!`,
-        failCount > 0 ? 'warning' : 'success',
-      );
-    } else if (failCount > 0) {
-      onNotify('Không thể đồng bộ gói bảo mật. Vui lòng thử lại.', 'error');
-    }
-  };
-
   const handleForensicScan = async () => {
     const clean = sampleText.trim();
     if (clean.length < 80) {
-      onNotify('Hãy dán đoạn văn dài ít nhất 80 ký tự (tốt nhất là nửa chương hoặc cả chương).', 'warning');
+      onNotify(
+        'Hãy dán đoạn văn dài ít nhất 80 ký tự (tốt nhất là nửa chương hoặc cả chương).',
+        'warning',
+      );
       return;
     }
     setCheckingForensic(true);
@@ -272,7 +198,6 @@ export function AdminProtectionModal({
         onClick={(e) => e.stopPropagation()}
         className="moonlit-card fade-in flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface text-ink shadow-2xl dark:border-line-strong/70"
       >
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-line px-5 py-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
@@ -281,7 +206,7 @@ export function AdminProtectionModal({
             <div>
               <h2 className="font-display text-base font-semibold">Bảo mật Nội dung Khách (D-028)</h2>
               <p className="text-xs text-ink-muted">
-                Chống tải file gốc, đọc Canvas nhiễu nền & truy vết thuỷ vân Discord 32-bit
+                Chống tải file gốc, đọc Canvas nhiễu nền &amp; truy vết thuỷ vân Discord 32-bit
               </p>
             </div>
           </div>
@@ -296,7 +221,6 @@ export function AdminProtectionModal({
           </button>
         </div>
 
-        {/* Thanh chuyển Tab */}
         <div className="grid grid-cols-3 gap-1.5 border-b border-line bg-canvas/70 px-5 py-2.5">
           {(
             [
@@ -308,8 +232,9 @@ export function AdminProtectionModal({
             <button
               key={id}
               type="button"
+              disabled={syncing && id !== 'sync'}
               onClick={() => setActiveTab(id)}
-              className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition ${
+              className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition disabled:opacity-45 ${
                 activeTab === id
                   ? 'bg-surface text-ink shadow-sm ring-1 ring-line-strong/80'
                   : 'text-ink-muted hover:bg-subtle/70 hover:text-ink'
@@ -321,85 +246,21 @@ export function AdminProtectionModal({
           ))}
         </div>
 
-        {/* Nội dung từng Tab */}
         <div className="scrollbar-thin flex-1 space-y-4 overflow-y-auto p-5">
           {activeTab === 'sync' && (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-line bg-canvas p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold">
-                      Đã chuẩn hoá {readyCount} / {eligibleBooks.length} sách EPUB &amp; DOCX
-                    </p>
-                    <p className="mt-1 text-xs text-ink-muted">
-                      Sách tải lên mới sẽ tự động tạo gói bảo mật (~0.5% dung lượng, 0 byte nhân bản
-                      ảnh). Với các sách tải lên từ trước, bấm nút bên dưới để đồng bộ 1 lần.
-                    </p>
-                  </div>
-                  {missingBooks.length === 0 && eligibleBooks.length > 0 && (
-                    <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-500" />
-                  )}
-                </div>
-
-                {syncProgress && (
-                  <div className="mt-4 space-y-2 rounded-lg border border-line bg-surface p-3">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="truncate font-medium">
-                        {syncProgress.currentTitle}
-                        {syncProgress.stepLabel ? ` — ${syncProgress.stepLabel}` : ''}
-                      </span>
-                      <span className="shrink-0 tabular-nums text-ink-muted">
-                        {syncProgress.done} / {syncProgress.total}
-                      </span>
-                    </div>
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-subtle">
-                      <div
-                        className="h-full bg-accent transition-all"
-                        style={{
-                          width: `${Math.round((syncProgress.done / Math.max(1, syncProgress.total)) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-4 flex flex-wrap items-center gap-2.5">
-                  {syncing ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        stopSyncRef.current = true;
-                        syncAbortRef.current?.abort();
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-600 dark:text-red-300"
-                    >
-                      <Square className="h-3.5 w-3.5" />
-                      Dừng đồng bộ
-                    </button>
-                  ) : missingBooks.length > 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => void handleBatchSync(missingBooks)}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-xs font-semibold text-accent-foreground hover:bg-accent-hover"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      Đồng bộ {missingBooks.length} sách chưa có gói
-                    </button>
-                  ) : (
-                    eligibleBooks.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => void handleBatchSync(eligibleBooks)}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-surface px-3.5 py-2 text-xs font-medium text-ink-muted hover:border-line-strong hover:text-ink"
-                      >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                        Tạo lại toàn bộ gói ({eligibleBooks.length})
-                      </button>
-                    )
-                  )}
-                </div>
-              </div>
-            </div>
+            <AdminProtectionSyncTab
+              eligibleBooks={eligibleBooks}
+              missingBooks={missingBooks}
+              readyCount={readyCount}
+              initialShelfKey={initialShelfKey}
+              initialBookId={initialBookId}
+              syncing={syncing}
+              onSyncingChange={setSyncing}
+              onBookPackSynced={onBookPackSynced}
+              onStorageSynced={onStorageSynced}
+              onApiError={onApiError}
+              onNotify={onNotify}
+            />
           )}
 
           {activeTab === 'forensic' && (

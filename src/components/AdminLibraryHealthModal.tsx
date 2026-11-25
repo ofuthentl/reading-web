@@ -8,16 +8,22 @@ import {
   HeartPulse,
   ImageOff,
   Pencil,
+  RefreshCw,
   ShieldAlert,
   Tag,
+  Wand2,
   X,
 } from 'lucide-react';
 import type { Book } from '@/types';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import { getBookSortTitle } from '@/lib/bookMetadata';
 import { auditLibraryHealth } from '@/lib/libraryHealthAudit';
+import { toShelfPrefKey } from '@/lib/shelfPrefs';
 
 type HealthFilterTab = 'all' | 'pack' | 'cover' | 'meta' | 'tags' | 'dup';
+type PaginatedSectionKey = 'pack' | 'dup' | 'cover' | 'tags' | 'meta';
+
+const SECTION_PAGE_SIZE = 25;
 
 export interface AdminLibraryHealthModalProps {
   open: boolean;
@@ -25,9 +31,50 @@ export interface AdminLibraryHealthModalProps {
   shelfTags?: Readonly<Record<string, string[]>>;
   onClose: () => void;
   onEditBook: (book: Book) => void;
+  onOpenShelfMetadata: (shelfKey: string, openAniList?: boolean) => void;
   onRenameShelf: (shelfName: string) => void;
-  onOpenProtection: () => void;
+  onOpenProtection: (options?: { initialShelfKey?: string; initialBookId?: string }) => void;
   onJumpToShelf: (shelfKey: string) => void;
+}
+
+function PaginationBar({
+  shown,
+  total,
+  onMore,
+  onAll,
+}: {
+  shown: number;
+  total: number;
+  onMore: () => void;
+  onAll: () => void;
+}) {
+  if (shown >= total) return null;
+  const remaining = total - shown;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px]">
+      <span className="text-ink-muted tabular-nums">
+        Đang hiện {shown} / {total} mục
+      </span>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onMore}
+          className="rounded-lg border border-line bg-surface px-2.5 py-1 font-medium text-ink transition hover:border-line-strong hover:bg-subtle"
+        >
+          Xem thêm (+{Math.min(SECTION_PAGE_SIZE, remaining)})
+        </button>
+        {remaining > SECTION_PAGE_SIZE && (
+          <button
+            type="button"
+            onClick={onAll}
+            className="rounded-lg border border-line bg-surface px-2.5 py-1 font-medium text-ink-muted transition hover:text-ink"
+          >
+            Hiện tất cả ({total})
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function AdminLibraryHealthModal({
@@ -36,12 +83,31 @@ export function AdminLibraryHealthModal({
   shelfTags,
   onClose,
   onEditBook,
+  onOpenShelfMetadata,
   onRenameShelf,
   onOpenProtection,
   onJumpToShelf,
 }: AdminLibraryHealthModalProps) {
   const [tab, setTab] = useState<HealthFilterTab>('all');
+  const [limits, setLimits] = useState<Record<PaginatedSectionKey, number>>({
+    pack: SECTION_PAGE_SIZE,
+    dup: SECTION_PAGE_SIZE,
+    cover: SECTION_PAGE_SIZE,
+    tags: SECTION_PAGE_SIZE,
+    meta: SECTION_PAGE_SIZE,
+  });
   useBodyScrollLock(open);
+
+  useEffect(() => {
+    if (!open) return;
+    setLimits({
+      pack: SECTION_PAGE_SIZE,
+      dup: SECTION_PAGE_SIZE,
+      cover: SECTION_PAGE_SIZE,
+      tags: SECTION_PAGE_SIZE,
+      meta: SECTION_PAGE_SIZE,
+    });
+  }, [open, tab]);
 
   useEffect(() => {
     if (!open) return;
@@ -58,6 +124,11 @@ export function AdminLibraryHealthModal({
   );
 
   if (!open || !report || typeof document === 'undefined') return null;
+
+  const showMore = (key: PaginatedSectionKey) =>
+    setLimits((prev) => ({ ...prev, [key]: prev[key] + SECTION_PAGE_SIZE }));
+  const showAll = (key: PaginatedSectionKey, total: number) =>
+    setLimits((prev) => ({ ...prev, [key]: total }));
 
   const tabs: Array<{ id: HealthFilterTab; label: string; count: number }> = [
     { id: 'all', label: 'Tất cả', count: report.totalIssues },
@@ -113,7 +184,8 @@ export function AdminLibraryHealthModal({
                 </span>
               </div>
               <p className="text-xs text-ink-muted">
-                Rà soát tức thì trên trình duyệt · {report.totalIssues} mục cần bổ sung
+                Hiển thị đầy đủ toàn bộ {report.totalIssues} mục cần bổ sung · mở thẳng sửa metadata
+                hoặc AniList
               </p>
             </div>
           </div>
@@ -180,15 +252,34 @@ export function AdminLibraryHealthModal({
                     </button>
                   </div>
                   <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-canvas text-xs">
-                    {report.missingGuestPack.slice(0, 20).map((b) => (
+                    {report.missingGuestPack.slice(0, limits.pack).map((b) => (
                       <li key={b.id} className="flex items-center justify-between gap-2 px-3.5 py-2">
-                        <span className="truncate font-medium text-ink">{getBookSortTitle(b)}</span>
-                        <span className="shrink-0 text-[11px] text-ink-muted">
-                          {b.shelf || 'Kho chưa phân loại'}
-                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-ink">{getBookSortTitle(b)}</p>
+                          <p className="truncate text-[11px] text-ink-muted">
+                            {b.shelf || 'Kho chưa phân loại'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onOpenProtection({ initialBookId: b.id });
+                          }}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-line bg-surface px-2.5 py-1 font-medium text-ink transition hover:border-line-strong hover:bg-subtle"
+                        >
+                          <RefreshCw className="h-3 w-3 text-accent" />
+                          <span>Đồng bộ</span>
+                        </button>
                       </li>
                     ))}
                   </ul>
+                  <PaginationBar
+                    shown={Math.min(limits.pack, report.missingGuestPack.length)}
+                    total={report.missingGuestPack.length}
+                    onMore={() => showMore('pack')}
+                    onAll={() => showAll('pack', report.missingGuestPack.length)}
+                  />
                 </section>
               )}
 
@@ -199,7 +290,7 @@ export function AdminLibraryHealthModal({
                     <span>Kệ sách nghi trùng lặp ({report.duplicateShelfPairs.length})</span>
                   </h3>
                   <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-canvas text-xs">
-                    {report.duplicateShelfPairs.map((pair, idx) => (
+                    {report.duplicateShelfPairs.slice(0, limits.dup).map((pair, idx) => (
                       <li
                         key={`${pair.shelfA.key}-${pair.shelfB.key}-${idx}`}
                         className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5"
@@ -224,6 +315,12 @@ export function AdminLibraryHealthModal({
                       </li>
                     ))}
                   </ul>
+                  <PaginationBar
+                    shown={Math.min(limits.dup, report.duplicateShelfPairs.length)}
+                    total={report.duplicateShelfPairs.length}
+                    onMore={() => showMore('dup')}
+                    onAll={() => showAll('dup', report.duplicateShelfPairs.length)}
+                  />
                 </section>
               )}
 
@@ -234,7 +331,7 @@ export function AdminLibraryHealthModal({
                     <span>Tập sách thiếu ảnh bìa ({report.missingCover.length})</span>
                   </h3>
                   <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-canvas text-xs">
-                    {report.missingCover.slice(0, 30).map((b) => (
+                    {report.missingCover.slice(0, limits.cover).map((b) => (
                       <li key={b.id} className="flex items-center justify-between gap-2 px-3.5 py-2">
                         <div className="min-w-0">
                           <p className="truncate font-medium text-ink">{getBookSortTitle(b)}</p>
@@ -256,6 +353,12 @@ export function AdminLibraryHealthModal({
                       </li>
                     ))}
                   </ul>
+                  <PaginationBar
+                    shown={Math.min(limits.cover, report.missingCover.length)}
+                    total={report.missingCover.length}
+                    onMore={() => showMore('cover')}
+                    onAll={() => showAll('cover', report.missingCover.length)}
+                  />
                 </section>
               )}
 
@@ -266,25 +369,44 @@ export function AdminLibraryHealthModal({
                     <span>Bộ truyện chưa gắn thể loại ({report.untaggedShelves.length})</span>
                   </h3>
                   <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-canvas text-xs">
-                    {report.untaggedShelves.slice(0, 30).map((s) => (
-                      <li key={s.key} className="flex items-center justify-between gap-2 px-3.5 py-2">
+                    {report.untaggedShelves.slice(0, limits.tags).map((s) => (
+                      <li key={s.key} className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2">
                         <span className="truncate font-medium text-ink">
                           {s.name}{' '}
                           <span className="font-normal text-ink-muted">({s.books.length} tập)</span>
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onClose();
-                            onJumpToShelf(s.key);
-                          }}
-                          className="shrink-0 rounded-lg border border-line bg-surface px-2.5 py-1 font-medium text-accent transition hover:border-line-strong hover:bg-subtle"
-                        >
-                          Mở kệ gắn nhãn
-                        </button>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onClose();
+                              onOpenShelfMetadata(s.key, true);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-crimson-accent/40 bg-surface px-2.5 py-1 font-medium text-crimson-accent transition hover:bg-crimson-accent/10"
+                          >
+                            <Wand2 className="h-3 w-3" />
+                            <span>AniList</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onClose();
+                              onJumpToShelf(s.key);
+                            }}
+                            className="rounded-lg border border-line bg-surface px-2.5 py-1 font-medium text-accent transition hover:border-line-strong hover:bg-subtle"
+                          >
+                            Mở kệ
+                          </button>
+                        </div>
                       </li>
                     ))}
                   </ul>
+                  <PaginationBar
+                    shown={Math.min(limits.tags, report.untaggedShelves.length)}
+                    total={report.untaggedShelves.length}
+                    onMore={() => showMore('tags')}
+                    onAll={() => showAll('tags', report.untaggedShelves.length)}
+                  />
                 </section>
               )}
 
@@ -295,33 +417,58 @@ export function AdminLibraryHealthModal({
                     <span>Thiếu tác giả hoặc giới thiệu ({report.incompleteMetadata.length})</span>
                   </h3>
                   <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-canvas text-xs">
-                    {report.incompleteMetadata.slice(0, 30).map(({ book: b, missingAuthor, missingDescription }) => (
-                      <li key={b.id} className="flex items-center justify-between gap-2 px-3.5 py-2">
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-ink">{getBookSortTitle(b)}</p>
-                          <p className="truncate text-[11px] text-ink-muted">
-                            {[
-                              missingAuthor ? 'Thiếu tác giả' : null,
-                              missingDescription ? 'Thiếu mô tả' : null,
-                            ]
-                              .filter(Boolean)
-                              .join(' · ')}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onClose();
-                            onEditBook(b);
-                          }}
-                          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-line bg-surface px-2.5 py-1 font-medium text-ink transition hover:border-line-strong hover:bg-subtle"
+                    {report.incompleteMetadata
+                      .slice(0, limits.meta)
+                      .map(({ book: b, missingAuthor, missingDescription }) => (
+                        <li
+                          key={b.id}
+                          className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2"
                         >
-                          <Pencil className="h-3 w-3" />
-                          <span>Bổ sung</span>
-                        </button>
-                      </li>
-                    ))}
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-ink">{getBookSortTitle(b)}</p>
+                            <p className="truncate text-[11px] text-ink-muted">
+                              {[
+                                missingAuthor ? 'Thiếu tác giả' : null,
+                                missingDescription ? 'Thiếu mô tả' : null,
+                                b.shelf || 'Kho chưa phân loại',
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onClose();
+                                onOpenShelfMetadata(toShelfPrefKey(b.shelf), true);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-crimson-accent/40 bg-surface px-2.5 py-1 font-medium text-crimson-accent transition hover:bg-crimson-accent/10"
+                            >
+                              <Wand2 className="h-3 w-3" />
+                              <span>AniList bộ</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onClose();
+                                onEditBook(b);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-line bg-surface px-2.5 py-1 font-medium text-ink transition hover:border-line-strong hover:bg-subtle"
+                            >
+                              <Pencil className="h-3 w-3" />
+                              <span>Sửa tập</span>
+                            </button>
+                          </div>
+                        </li>
+                      ))}
                   </ul>
+                  <PaginationBar
+                    shown={Math.min(limits.meta, report.incompleteMetadata.length)}
+                    total={report.incompleteMetadata.length}
+                    onMore={() => showMore('meta')}
+                    onAll={() => showAll('meta', report.incompleteMetadata.length)}
+                  />
                 </section>
               )}
             </>

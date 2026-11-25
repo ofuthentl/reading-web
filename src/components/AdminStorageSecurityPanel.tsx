@@ -1,12 +1,18 @@
-import { HardDrive, ShieldAlert } from 'lucide-react';
+import { HardDrive, SearchCheck, ShieldAlert } from 'lucide-react';
 import { formatBytes } from '@/lib/api';
 import type { AdminUsageReport } from '@/lib/usageApi';
+
+export interface StorageAndSecurityPanelProps
+  extends Pick<AdminUsageReport, 'storage' | 'security' | 'overview'> {
+  onOpenReconcile?: () => void;
+}
 
 export function StorageAndSecurityPanel({
   storage,
   security,
   overview,
-}: Pick<AdminUsageReport, 'storage' | 'security' | 'overview'>) {
+  onOpenReconcile,
+}: StorageAndSecurityPanelProps) {
   const limit = Math.max(1, storage.limitBytes);
   const usedPct = Math.min(100, (storage.usedBytes / limit) * 100);
   const filePct = (storage.fileBytes / limit) * 100;
@@ -82,6 +88,16 @@ export function StorageAndSecurityPanel({
               {formatBytes(storage.remainingBytes)} / {formatBytes(storage.limitBytes)}
             </span>
           </div>
+          {onOpenReconcile && (
+            <button
+              type="button"
+              onClick={onOpenReconcile}
+              className="mt-1 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-line bg-canvas px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-line-strong hover:bg-subtle"
+            >
+              <SearchCheck className="h-3.5 w-3.5 text-accent" />
+              <span>Đối soát kho R2 thực tế</span>
+            </button>
+          )}
         </div>
       </div>
 

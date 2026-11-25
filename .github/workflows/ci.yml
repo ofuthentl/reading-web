@@ -8,7 +8,7 @@ on:
 
 jobs:
   frontend:
-    name: Frontend (typecheck, lint, test, build, bundle budget)
+    name: Frontend (typecheck, lint, build)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

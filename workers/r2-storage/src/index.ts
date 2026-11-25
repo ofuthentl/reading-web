@@ -6,6 +6,7 @@ import {
   verifyAuth,
 } from './auth';
 import { tryHandleAdminRoutes } from './adminRoutes';
+import { handleBookFileReplace } from './bookReplaceRoute';
 import {
   handleBookCoverUpload,
   handleBookFileUpload,
@@ -26,6 +27,7 @@ import {
   upsertShelfCover,
   upsertShelfFavorite,
 } from './booksDb';
+import { computeWeakBooksEtag, matchesIfNoneMatch } from './booksEtag';
 import {
   createBookBookmark,
   deleteBookBookmark,
@@ -86,7 +88,12 @@ function applyCors(headers: Headers, origin: string | null) {
     'Content-Length, Content-Range, Accept-Ranges, ETag, X-Guest-Iv, X-Guest-Nonce, X-Guest-Mime, Retry-After',
   );
   headers.set('Access-Control-Max-Age', '86400');
-  headers.set('Vary', 'Origin');
+  const existingVary = headers.get('Vary');
+  if (!existingVary) {
+    headers.set('Vary', 'Origin');
+  } else if (!existingVary.toLowerCase().includes('origin')) {
+    headers.set('Vary', `${existingVary}, Origin`);
+  }
 }
 
 function jsonResponse(
@@ -202,10 +209,30 @@ async function handleApi(
     return jsonResponse(storage, 200, origin);
   }
 
-  // List books + isolated user progress + storage
+  // List books + isolated user progress + storage (Weak ETag / 304 Not Modified, D-046 Phase 2.4)
   if (normalizedPath === '/api/books' && request.method === 'GET') {
     const state = await listBooksAndProgress(env, auth);
-    return jsonResponse(state, 200, origin);
+    const { session, ...etagData } = state;
+    const etag = await computeWeakBooksEtag(
+      JSON.stringify({
+        ...etagData,
+        sessionRole: session.role,
+        watermarkLabel: 'watermarkLabel' in session ? (session.watermarkLabel ?? null) : null,
+      }),
+      auth.role,
+      auth.userId,
+    );
+    const headers = new Headers({
+      'Cache-Control': 'private, no-cache',
+      ETag: etag,
+      Vary: 'Authorization',
+    });
+    applyCors(headers, origin);
+    if (matchesIfNoneMatch(request.headers.get('If-None-Match'), etag)) {
+      return new Response(null, { status: 304, headers });
+    }
+    headers.set('Content-Type', 'application/json; charset=utf-8');
+    return new Response(JSON.stringify(state), { status: 200, headers });
   }
 
   // Upload indexed Guest Chapter Pack for EPUB/DOCX (Owner only, D-028)
@@ -286,6 +313,14 @@ async function handleApi(
     requireOwner(auth);
     const result = await handleBookFileUpload(request, env, fileUploadMatch[1]);
     return jsonResponse(result, 201, origin);
+  }
+
+  // Replace an existing EPUB/DOCX file in place preserving book ID, progress, comments & access (Owner only, QĐ-4A)
+  const fileReplaceMatch = normalizedPath.match(/^\/api\/books\/([^/]+)\/replace-file$/);
+  if (fileReplaceMatch && request.method === 'PUT') {
+    requireOwner(auth);
+    const result = await handleBookFileReplace(request, env, fileReplaceMatch[1]);
+    return jsonResponse(result, 200, origin);
   }
 
   // Stream upload/replace a compressed cover JPEG (Owner only)

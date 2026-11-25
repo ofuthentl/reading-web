@@ -43,6 +43,11 @@ import {
   setCachedBookBlob,
   setCachedCoverBlob,
 } from '@/lib/cache';
+import {
+  deriveTokenScopeKey,
+  readCachedBooksResponse,
+  writeCachedBooksResponse,
+} from '@/lib/libraryStateCache';
 import { type ShelfPrefsState, readLocalShelfPrefs, writeLocalShelfPrefs } from '@/lib/shelfPrefs';
 
 export const HARD_LIMIT_BYTES = 9 * 1024 * 1024 * 1024; // 9.0 GiB
@@ -182,8 +187,7 @@ export async function fetchLibraryState(): Promise<{
     };
   }
 
-  const response = await apiFetch('/api/books');
-  const data = (await response.json().catch(() => ({}))) as {
+  type RawBooksApiPayload = {
     books?: Book[];
     progress?: Record<string, ReadingProgress>;
     weeklyPopular?: string[];
@@ -202,8 +206,39 @@ export async function fetchLibraryState(): Promise<{
     session?: { role?: AuthRole; expiresAt?: number | null; watermarkLabel?: string | null };
     error?: string;
   };
-  if (!response.ok) {
-    throw new Error(data.error || 'Không thể tải dữ liệu thư viện.');
+
+  const scopeKey = deriveTokenScopeKey(getAuthToken());
+  const cachedEntry = readCachedBooksResponse<RawBooksApiPayload>(scopeKey);
+  const reqHeaders = new Headers();
+  if (cachedEntry?.etag) {
+    reqHeaders.set('If-None-Match', cachedEntry.etag);
+  }
+
+  let response = await apiFetch('/api/books', { headers: reqHeaders });
+  let data: RawBooksApiPayload;
+
+  if (response.status === 304) {
+    if (cachedEntry?.payload) {
+      data = cachedEntry.payload;
+      const refreshedEtag = response.headers.get('ETag') || cachedEntry.etag;
+      writeCachedBooksResponse(scopeKey, refreshedEtag, data);
+    } else {
+      // Dự phòng nếu nhận 304 mà không có bản nhớ cục bộ
+      response = await apiFetch('/api/books', { cache: 'no-store' });
+      data = (await response.json().catch(() => ({}))) as RawBooksApiPayload;
+      if (!response.ok) {
+        throw new Error(data.error || 'Không thể tải dữ liệu thư viện.');
+      }
+      const nextEtag = response.headers.get('ETag');
+      if (nextEtag) writeCachedBooksResponse(scopeKey, nextEtag, data);
+    }
+  } else {
+    data = (await response.json().catch(() => ({}))) as RawBooksApiPayload;
+    if (!response.ok) {
+      throw new Error(data.error || 'Không thể tải dữ liệu thư viện.');
+    }
+    const nextEtag = response.headers.get('ETag');
+    if (nextEtag) writeCachedBooksResponse(scopeKey, nextEtag, data);
   }
   const fallbackSession = getActiveAuthSession();
   const resolvedSession: AuthSessionInfo = {

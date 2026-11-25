@@ -1,6 +1,11 @@
 import type { Book, StorageStats } from '@/types';
 import { apiFetch, assertApiConfigured, isCloudMode } from '@/lib/authSession';
 import {
+  type ReplaceBookFileOptions,
+  type ReplaceBookFileResult,
+  replaceBookFile,
+} from '@/lib/bookReplaceClient';
+import {
   HARD_LIMIT_BYTES,
   MAX_SHELF_NAME_LENGTH,
   type UploadBookResult,
@@ -25,7 +30,13 @@ import {
   writeLocalShelfPrefs,
 } from '@/lib/shelfPrefs';
 
-export { uploadBook, type UploadBookResult };
+export {
+  replaceBookFile,
+  uploadBook,
+  type ReplaceBookFileOptions,
+  type ReplaceBookFileResult,
+  type UploadBookResult,
+};
 
 export async function fetchLatestStorageStats(): Promise<StorageStats | null> {
   assertApiConfigured();

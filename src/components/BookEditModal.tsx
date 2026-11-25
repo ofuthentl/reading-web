@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BookMarked,
   ImagePlus,
@@ -9,7 +9,13 @@ import {
   X,
 } from 'lucide-react';
 import type { Book, StorageStats } from '@/types';
-import { formatBytes, updateBookCover, updateBookMetadata } from '@/lib/api';
+import { BookReplaceFileSection } from '@/components/BookReplaceFileSection';
+import { formatBytes } from '@/lib/api';
+import {
+  type ReplaceBookFileResult,
+  updateBookCover,
+  updateBookMetadata,
+} from '@/lib/apiAdminMutations';
 import { getBookSortTitle, getDisplayAuthor } from '@/lib/bookMetadata';
 import { useCoverUrl } from '@/hooks/useCoverUrl';
 import type { ToastType } from '@/hooks/useToast';
@@ -36,6 +42,11 @@ export function BookEditModal({
   onNotify,
 }: BookEditModalProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const prevBookIdRef = useRef<string | null>(null);
+  const pendingReplaceRunnerRef = useRef<
+    ((targetBook: Book) => Promise<ReplaceBookFileResult | null>) | null
+  >(null);
+
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [shelf, setShelf] = useState('');
@@ -43,15 +54,26 @@ export function BookEditModal({
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null);
   const [coverError, setCoverError] = useState<string | null>(null);
+  const [replacingFile, setReplacingFile] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Đồng bộ form mỗi khi đổi cuốn sách đang sửa
+  const registerPendingReplaceRunner = useCallback(
+    (runner: ((targetBook: Book) => Promise<ReplaceBookFileResult | null>) | null) => {
+      pendingReplaceRunnerRef.current = runner;
+    },
+    [],
+  );
+
+  // Đồng bộ form mỗi khi đổi cuốn sách đang sửa (giữ nguyên bản nháp khi chỉ vừa thay tệp cùng ID)
   useEffect(() => {
     if (!book) {
+      prevBookIdRef.current = null;
       setCoverFile(null);
       setCoverError(null);
       return;
     }
+    if (prevBookIdRef.current === book.id) return;
+    prevBookIdRef.current = book.id;
     setTitle(getBookSortTitle(book));
     setAuthor(getDisplayAuthor(book.author, book.title));
     setShelf(book.shelf);
@@ -73,16 +95,16 @@ export function BookEditModal({
     };
   }, [coverFile]);
 
+  const busy = saving || replacingFile;
+
   useEffect(() => {
     if (!book) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !saving) {
-        onClose();
-      }
+      if (event.key === 'Escape' && !busy) onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [book, saving, onClose]);
+  }, [book, busy, onClose]);
 
   const currentCoverUrl = useCoverUrl(book?.cover_key ?? null, Boolean(book && !coverFile));
 
@@ -94,7 +116,6 @@ export function BookEditModal({
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-
     if (!file.type.startsWith('image/')) {
       setCoverError('Vui lòng chọn tệp hình ảnh (JPG, PNG, WebP...).');
       return;
@@ -109,7 +130,7 @@ export function BookEditModal({
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (saving) return;
+    if (busy) return;
 
     const nextTitle = title.trim();
     if (!nextTitle) {
@@ -126,7 +147,8 @@ export function BookEditModal({
       nextShelf !== book.shelf ||
       nextDescription !== (book.description ?? null);
 
-    if (!metadataChanged && !coverFile) {
+    const pendingReplaceRunner = pendingReplaceRunnerRef.current;
+    if (!metadataChanged && !coverFile && !pendingReplaceRunner) {
       onClose();
       return;
     }
@@ -134,6 +156,7 @@ export function BookEditModal({
     setSaving(true);
     let latestBook = book;
     let updatedStorage: StorageStats | undefined;
+    let replaceWarnings: string[] = [];
 
     try {
       if (metadataChanged) {
@@ -145,6 +168,15 @@ export function BookEditModal({
         });
       }
 
+      if (pendingReplaceRunner) {
+        const replaceRes = await pendingReplaceRunner(latestBook);
+        if (replaceRes) {
+          latestBook = replaceRes.book;
+          updatedStorage = replaceRes.storage;
+          replaceWarnings = replaceRes.warnings ?? [];
+        }
+      }
+
       if (coverFile) {
         const coverResult = await updateBookCover(latestBook, coverFile);
         latestBook = coverResult.book;
@@ -152,17 +184,24 @@ export function BookEditModal({
       }
 
       onUpdated(latestBook, updatedStorage);
-      onNotify(
-        coverFile && !metadataChanged
-          ? `Đã cập nhật ảnh bìa cho "${latestBook.title}".`
-          : `Đã lưu thay đổi cho "${latestBook.title}".`,
-        'success',
-      );
+      if (replaceWarnings.length > 0) {
+        onNotify(
+          `Đã lưu & thay tệp cho "${latestBook.title}" (lưu ý: ${replaceWarnings.join('; ')}).`,
+          'warning',
+        );
+      } else {
+        onNotify(
+          pendingReplaceRunner
+            ? `Đã lưu & thay tệp cho "${latestBook.title}" (giữ nguyên tiến độ, bình luận & phân quyền).`
+            : coverFile && !metadataChanged
+              ? `Đã cập nhật ảnh bìa cho "${latestBook.title}".`
+              : `Đã lưu thay đổi cho "${latestBook.title}".`,
+          'success',
+        );
+      }
       onClose();
     } catch (err) {
-      if (latestBook !== book) {
-        onUpdated(latestBook, updatedStorage);
-      }
+      if (latestBook !== book) onUpdated(latestBook, updatedStorage);
       onApiError(err, 'Không thể cập nhật thông tin sách.');
     } finally {
       setSaving(false);
@@ -180,14 +219,13 @@ export function BookEditModal({
       aria-modal="true"
       aria-labelledby="edit-book-modal-title"
       onClick={() => {
-        if (!saving) onClose();
+        if (!busy) onClose();
       }}
     >
       <div
         className="moonlit-card fade-in flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
         onClick={(event) => event.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
@@ -205,7 +243,7 @@ export function BookEditModal({
           <button
             type="button"
             onClick={onClose}
-            disabled={saving}
+            disabled={busy}
             aria-label="Đóng cửa sổ chỉnh sửa"
             className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-subtle hover:text-ink disabled:opacity-40"
           >
@@ -213,11 +251,9 @@ export function BookEditModal({
           </button>
         </div>
 
-        {/* Form */}
         <form onSubmit={(event) => void handleSubmit(event)} className="flex min-h-0 flex-1 flex-col">
           <div className="flex-1 overflow-y-auto px-5 py-5 scrollbar-thin">
             <div className="grid gap-5 sm:grid-cols-[9.5rem_1fr]">
-              {/* Cột ảnh bìa */}
               <div className="flex flex-col items-center gap-2.5">
                 <div className="relative aspect-[7/10] w-36 overflow-hidden rounded-xl border border-line bg-subtle shadow-sm sm:w-full">
                   {displayedCoverUrl ? (
@@ -254,7 +290,7 @@ export function BookEditModal({
 
                 <button
                   type="button"
-                  disabled={saving}
+                  disabled={busy}
                   onClick={() => fileInputRef.current?.click()}
                   className="inline-flex w-36 items-center justify-center gap-1.5 rounded-xl border border-line bg-canvas px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-line-strong hover:bg-subtle disabled:opacity-50 sm:w-full"
                 >
@@ -265,7 +301,7 @@ export function BookEditModal({
                 {coverFile && (
                   <button
                     type="button"
-                    disabled={saving}
+                    disabled={busy}
                     onClick={() => {
                       setCoverFile(null);
                       setCoverError(null);
@@ -287,7 +323,6 @@ export function BookEditModal({
                 </p>
               </div>
 
-              {/* Cột metadata */}
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <label htmlFor="edit-book-title" className="block text-xs font-medium text-ink-muted">
@@ -299,7 +334,7 @@ export function BookEditModal({
                     required
                     value={title}
                     onChange={(event) => setTitle(event.target.value)}
-                    disabled={saving}
+                    disabled={busy}
                     placeholder="Nhập tên sách..."
                     className="w-full rounded-xl border border-line bg-canvas px-3.5 py-2 text-sm text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-accent disabled:opacity-60"
                   />
@@ -313,7 +348,7 @@ export function BookEditModal({
                     {author.trim() && author.trim() !== 'Không rõ tác giả' && (
                       <button
                         type="button"
-                        disabled={saving}
+                        disabled={busy}
                         onClick={() => {
                           setTitle(`${title.trim()} - ${author.trim()}`);
                           setAuthor('Không rõ tác giả');
@@ -329,7 +364,7 @@ export function BookEditModal({
                     type="text"
                     value={author}
                     onChange={(event) => setAuthor(event.target.value)}
-                    disabled={saving}
+                    disabled={busy}
                     placeholder="Không rõ tác giả"
                     className="w-full rounded-xl border border-line bg-canvas px-3.5 py-2 text-sm text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-accent disabled:opacity-60"
                   />
@@ -345,7 +380,7 @@ export function BookEditModal({
                     list="existing-shelves-datalist"
                     value={shelf}
                     onChange={(event) => setShelf(event.target.value)}
-                    disabled={saving}
+                    disabled={busy}
                     placeholder="Kho chưa phân loại"
                     className="w-full rounded-xl border border-line bg-canvas px-3.5 py-2 text-sm text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-accent disabled:opacity-60"
                   />
@@ -361,7 +396,7 @@ export function BookEditModal({
                         <button
                           key={shelfOption}
                           type="button"
-                          disabled={saving}
+                          disabled={busy}
                           onClick={() => setShelf(shelfOption)}
                           className="rounded-full border border-line bg-canvas px-2.5 py-0.5 text-[11px] text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink disabled:opacity-50"
                         >
@@ -384,20 +419,30 @@ export function BookEditModal({
                     rows={3}
                     value={description}
                     onChange={(event) => setDescription(event.target.value)}
-                    disabled={saving}
+                    disabled={busy}
                     placeholder="Thêm tóm tắt nội dung hoặc ghi chú cá nhân..."
                     className="w-full resize-none rounded-xl border border-line bg-canvas px-3.5 py-2 text-sm text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-accent disabled:opacity-60"
                   />
                 </div>
               </div>
             </div>
+
+            <BookReplaceFileSection
+              book={book}
+              hasManualCoverSelected={Boolean(coverFile)}
+              disabled={saving}
+              onReplacingChange={setReplacingFile}
+              onReplaced={onUpdated}
+              onRegisterPendingRunner={registerPendingReplaceRunner}
+              onApiError={onApiError}
+              onNotify={onNotify}
+            />
           </div>
 
-          {/* Footer */}
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-canvas/60 px-5 py-3.5">
             <button
               type="button"
-              disabled={saving}
+              disabled={busy}
               onClick={() => onRequestDelete(book)}
               className="inline-flex items-center gap-1.5 rounded-xl border border-red-700/30 bg-red-600/10 px-3 py-2 text-xs font-medium text-red-800 transition-colors hover:bg-red-600/20 disabled:opacity-45 dark:border-red-400/30 dark:text-red-300"
             >
@@ -409,14 +454,14 @@ export function BookEditModal({
               <button
                 type="button"
                 onClick={onClose}
-                disabled={saving}
+                disabled={busy}
                 className="rounded-xl border border-line bg-surface px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:border-line-strong hover:bg-subtle hover:text-ink disabled:opacity-45"
               >
                 Huỷ
               </button>
               <button
                 type="submit"
-                disabled={saving || !title.trim()}
+                disabled={busy || !title.trim()}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-all hover:bg-accent-hover disabled:opacity-45 dark:shadow-[0_0_20px_-6px_rgba(244,244,245,0.26)]"
               >
                 {saving ? (
