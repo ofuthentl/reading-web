@@ -1,1 +1,0 @@
-import{r as c}from"./index-DJ6GhJU4.js";import{K as o}from"./api-DBI9cVVx.js";function i(t,u=!0){const[f,e]=c.useState(null);return c.useEffect(()=>{if(!t||!u){e(null);return}let l=!1,r=null;return e(null),o(t).then(n=>{if(!l){if(!n){e(null);return}r=URL.createObjectURL(n),e(r)}}).catch(()=>{l||e(null)}),()=>{l=!0,r&&(URL.revokeObjectURL(r),r=null)}},[t,u]),f}export{i as u};
