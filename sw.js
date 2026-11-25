@@ -1,5 +1,5 @@
 /* Ofu's Library — Ultra-thin PWA App Shell Service Worker (D-036 QĐ-D) */
-const CACHE_NAME = 'ofu-shell-mwuzyyk3';
+const CACHE_NAME = 'ofu-shell-mwvobtti';
 const CACHE_PREFIX = 'ofu-shell-';
 
 const STATIC_ROOT_FILES = new Set([
