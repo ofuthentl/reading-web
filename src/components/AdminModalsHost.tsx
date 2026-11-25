@@ -1,5 +1,5 @@
 import { Suspense, lazy, useMemo } from 'react';
-import type { Book, BookAccessSummary, ShelfGroup, StorageStats } from '@/types';
+import type { AuthSessionInfo, Book, BookAccessSummary, ShelfGroup, StorageStats } from '@/types';
 import { BookEditModal } from '@/components/BookEditModal';
 import { BulkShelfModal } from '@/components/BulkShelfModal';
 import { DeleteConfirmModal } from '@/components/DeleteConfirmModal';
@@ -78,6 +78,8 @@ interface AdminModalsHostProps {
   onShelfRenamed: (oldName: string, newName: string) => void;
   onBooksShelfMoved: (bookIds: string[], targetShelf: string) => void;
   onBooksDeleted: (deletedIds: string[], nextStorage: StorageStats) => void;
+  onLogout?: () => void;
+  onSessionReissued?: (nextSession: AuthSessionInfo) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
   onNotify: (message: string, type?: ToastType) => void;
 }
@@ -107,6 +109,8 @@ export function AdminModalsHost({
   onShelfRenamed,
   onBooksShelfMoved,
   onBooksDeleted,
+  onLogout,
+  onSessionReissued,
   onApiError,
   onNotify,
 }: AdminModalsHostProps) {
@@ -149,6 +153,8 @@ export function AdminModalsHost({
             onClose={onClose}
             onBookPackSynced={onBookPackSynced}
             onStorageSynced={onStorageSynced}
+            onLogout={onLogout}
+            onSessionReissued={onSessionReissued}
             onApiError={onApiError}
             onNotify={onNotify}
           />

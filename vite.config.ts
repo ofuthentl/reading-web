@@ -4,17 +4,31 @@ import { resolve } from 'node:path';
 import { URL, fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { type Plugin, defineConfig } from 'vite';
+import { buildContentSecurityPolicy } from './src/lib/cspPolicy';
 
 /**
- * Xuất bản sao tĩnh của index.html cho /entrance, /locked, /usage & 404.html
+ * Xuất bản sao tĩnh của index.html cho /entrance, /locked, /usage & 404.html,
+ * đồng bộ CSP theo VITE_API_URL (strict ở prod, mở HMR riêng ở dev)
  * và đóng dấu phiên bản build vào dist/sw.js để Service Worker tự dọn cache cũ sau deploy.
  */
 function staticGateRoutesPlugin(): Plugin {
   let outDir = 'dist';
+  let apiUrl = '';
   return {
     name: 'static-gate-routes',
     configResolved(config) {
       outDir = config.build.outDir;
+      apiUrl = (config.env?.VITE_API_URL || process.env.VITE_API_URL || '').trim();
+    },
+    transformIndexHtml(html, ctx) {
+      const csp = buildContentSecurityPolicy({
+        apiUrl,
+        isDev: Boolean(ctx.server),
+      });
+      return html.replace(
+        /<meta\s+http-equiv="Content-Security-Policy"\s+content="[^"]*"\s*\/>/i,
+        `<meta http-equiv="Content-Security-Policy" content="${csp}" />`,
+      );
     },
     closeBundle() {
       const rootDir = fileURLToPath(new URL('.', import.meta.url));

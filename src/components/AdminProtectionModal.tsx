@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Fingerprint, Loader2, Shield, ShieldAlert, Users, X } from 'lucide-react';
-import type { Book, StorageStats } from '@/types';
+import type { AuthSessionInfo, Book, StorageStats } from '@/types';
 import { AdminDiscordGuestsPanel } from '@/components/AdminDiscordGuestsPanel';
 import { AdminProtectionSyncTab } from '@/components/AdminProtectionSyncTab';
+import { AdminRevokeSessionsAction } from '@/components/AdminRevokeSessionsAction';
+import { ModalShell } from '@/components/ModalShell';
 import { isAuthError, isCloudMode } from '@/lib/api';
 import {
   type DiscordGuestRecord,
@@ -11,7 +13,6 @@ import {
   runAdminForensicWatermarkCheck,
   setAdminDiscordGuestBan,
 } from '@/lib/guestCrypto';
-import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import type { ToastType } from '@/hooks/useToast';
 
 type ProtectionTab = 'sync' | 'forensic' | 'guests';
@@ -24,6 +25,8 @@ export interface AdminProtectionModalProps {
   onClose: () => void;
   onBookPackSynced: (bookId: string, storage?: StorageStats) => void;
   onStorageSynced?: (storage: StorageStats) => void;
+  onLogout?: () => void;
+  onSessionReissued?: (nextSession: AuthSessionInfo) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
   onNotify: (message: string, type?: ToastType) => void;
 }
@@ -36,6 +39,8 @@ export function AdminProtectionModal({
   onClose,
   onBookPackSynced,
   onStorageSynced,
+  onLogout,
+  onSessionReissued,
   onApiError,
   onNotify,
 }: AdminProtectionModalProps) {
@@ -118,17 +123,6 @@ export function AdminProtectionModal({
     }
   }, [activeTab, loadGuests, open]);
 
-  useBodyScrollLock(open);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !syncing) onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose, open, syncing]);
-
   if (!open) return null;
 
   const handleForensicScan = async () => {
@@ -185,19 +179,14 @@ export function AdminProtectionModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      onClick={() => {
-        if (!syncing) onClose();
-      }}
+    <ModalShell
+      open
+      onClose={onClose}
+      closeDisabled={syncing}
+      ariaLabel="Bảo mật nội dung chế độ khách"
+      zIndexClass="z-50"
+      panelClassName="moonlit-card fade-in flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface text-ink shadow-2xl dark:border-line-strong/70"
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Bảo mật nội dung chế độ khách"
-        onClick={(e) => e.stopPropagation()}
-        className="moonlit-card fade-in flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface text-ink shadow-2xl dark:border-line-strong/70"
-      >
         <div className="flex items-center justify-between border-b border-line px-5 py-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
@@ -375,7 +364,26 @@ export function AdminProtectionModal({
             />
           )}
         </div>
-      </div>
-    </div>
+
+        {isCloudMode && (
+          <div className="border-t border-line bg-canvas/70 px-5 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[11px] text-ink-muted">
+                Nghi ngờ lộ phiên quản trị? Thu hồi ngay toàn bộ token Admin cũ trên mọi thiết bị.
+              </p>
+              <AdminRevokeSessionsAction
+                disabled={syncing}
+                onRevokedLogout={() => {
+                  onClose();
+                  onLogout?.();
+                }}
+                onSessionReissued={onSessionReissued}
+                onApiError={onApiError}
+                onNotify={onNotify}
+              />
+            </div>
+          </div>
+        )}
+    </ModalShell>
   );
 }

@@ -1,10 +1,17 @@
 import { HardDrive, SearchCheck, ShieldAlert } from 'lucide-react';
+import type { AuthSessionInfo } from '@/types';
+import { AdminRevokeSessionsAction } from '@/components/AdminRevokeSessionsAction';
 import { formatBytes } from '@/lib/api';
 import type { AdminUsageReport } from '@/lib/usageApi';
+import type { ToastType } from '@/hooks/useToast';
 
 export interface StorageAndSecurityPanelProps
   extends Pick<AdminUsageReport, 'storage' | 'security' | 'overview'> {
   onOpenReconcile?: () => void;
+  onRevokedLogout?: () => void;
+  onSessionReissued?: (nextSession: AuthSessionInfo) => void;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
+  onNotify?: (message: string, type?: ToastType) => void;
 }
 
 export function StorageAndSecurityPanel({
@@ -12,6 +19,10 @@ export function StorageAndSecurityPanel({
   security,
   overview,
   onOpenReconcile,
+  onRevokedLogout,
+  onSessionReissued,
+  onApiError,
+  onNotify,
 }: StorageAndSecurityPanelProps) {
   const limit = Math.max(1, storage.limitBytes);
   const usedPct = Math.min(100, (storage.usedBytes / limit) * 100);
@@ -132,6 +143,17 @@ export function StorageAndSecurityPanel({
             </p>
           </div>
         </div>
+        {onApiError && (
+          <div className="mt-2.5 border-t border-line/70 pt-2.5">
+            <AdminRevokeSessionsAction
+              compact
+              onRevokedLogout={onRevokedLogout}
+              onSessionReissued={onSessionReissued}
+              onApiError={onApiError}
+              onNotify={onNotify}
+            />
+          </div>
+        )}
       </div>
     </section>
   );

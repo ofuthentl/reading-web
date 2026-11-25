@@ -1,5 +1,5 @@
 import { searchAniListLightNovels } from './anilistProxy';
-import { type AuthContext, HttpError, requireOwner } from './auth';
+import { type AuthContext, HttpError, createAuthToken, requireOwner } from './auth';
 import { exportOwnerBackup, handleImportOwnerBackupRequest } from './backupRoute';
 import {
   getAdminBookAccessDetail,
@@ -12,6 +12,7 @@ import {
   runAdminForensicCheck,
   setDiscordGuestBan,
 } from './guestPack';
+import { revokeOwnerSessionsBefore } from './securityStateDb';
 import {
   getAdminShelfAccessOverview,
   putAdminShelfAccessConfig,
@@ -148,6 +149,26 @@ export async function tryHandleAdminRoutes(
       'Cache-Control': 'no-store, private',
       'X-Robots-Tag': 'noindex, nofollow',
     });
+  }
+
+  if (normalizedPath === '/api/admin/sessions/revoke-owner' && request.method === 'POST') {
+    const body = (await request.json().catch(() => null)) as { reissueCurrent?: unknown } | null;
+    const reissueCurrent = body?.reissueCurrent === true;
+    const revokedBefore = await revokeOwnerSessionsBefore(env.DB);
+    const nextSession = reissueCurrent ? await createAuthToken(env, revokedBefore) : undefined;
+    return jsonResponse(
+      {
+        ok: true,
+        revokedBefore,
+        ...(nextSession ? { session: nextSession } : {}),
+      },
+      200,
+      origin,
+      {
+        'Cache-Control': 'no-store, private',
+        'X-Robots-Tag': 'noindex, nofollow',
+      },
+    );
   }
 
   return null;

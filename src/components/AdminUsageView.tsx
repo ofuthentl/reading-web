@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Users,
 } from 'lucide-react';
+import type { AuthSessionInfo } from '@/types';
 import { formatBytes, isCloudMode } from '@/lib/api';
 import { formatReadingDuration } from '@/lib/readingStreak';
 import {
@@ -43,6 +44,7 @@ export interface AdminUsageViewProps {
   onCycleTheme: (origin?: { x: number; y: number }) => void;
   onBackToLibrary: () => void;
   onLogout: () => void;
+  onSessionReissued?: (nextSession: AuthSessionInfo) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
   onNotify?: (message: string, type?: ToastType) => void;
 }
@@ -65,6 +67,7 @@ export function AdminUsageView({
   onCycleTheme,
   onBackToLibrary,
   onLogout,
+  onSessionReissued,
   onApiError,
   onNotify,
 }: AdminUsageViewProps) {
@@ -372,6 +375,10 @@ export function AdminUsageView({
                     .getElementById('r2-storage-reconcile')
                     ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }}
+                onRevokedLogout={onLogout}
+                onSessionReissued={onSessionReissued}
+                onApiError={onApiError}
+                onNotify={onNotify}
               />
             </div>
 

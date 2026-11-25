@@ -3,6 +3,7 @@ import {
   DECAYED_STRIKE_AT_SQL,
   buildStrikeDecayBindParams,
 } from './rateLimitDb';
+import { getOwnerMinIat } from './securityStateDb';
 
 export const OWNER_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 export const GUEST_SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -38,6 +39,7 @@ export interface LoginSessionResult {
 interface TokenClaims {
   sub?: string;
   role?: string;
+  iat?: number;
   exp?: number;
   sid?: string;
 }
@@ -219,29 +221,19 @@ export async function ensureDiscordAccessTable(db: D1Database): Promise<void> {
   // Tự động bổ sung cột mới cho bảng discord_access cũ tạo từ migration 0003 (chạy từng ALTER riêng tránh huỷ cả batch)
   const info = await db.prepare('PRAGMA table_info(discord_access)').all<{ name: string }>();
   const cols = new Set((info.results || []).map((c) => c.name));
-  const alterSqls: string[] = [];
-  if (!cols.has('ua_hash')) alterSqls.push('ALTER TABLE discord_access ADD COLUMN ua_hash TEXT');
-  if (!cols.has('rl_tokens')) {
-    alterSqls.push('ALTER TABLE discord_access ADD COLUMN rl_tokens REAL NOT NULL DEFAULT 10');
-  }
-  if (!cols.has('rl_updated_at')) {
-    alterSqls.push('ALTER TABLE discord_access ADD COLUMN rl_updated_at INTEGER NOT NULL DEFAULT 0');
-  }
-  if (!cols.has('rl_strikes')) {
-    alterSqls.push('ALTER TABLE discord_access ADD COLUMN rl_strikes INTEGER NOT NULL DEFAULT 0');
-  }
-  if (!cols.has('rl_last_strike_at')) {
-    alterSqls.push('ALTER TABLE discord_access ADD COLUMN rl_last_strike_at INTEGER NOT NULL DEFAULT 0');
-  }
-  if (!cols.has('is_banned')) {
-    alterSqls.push('ALTER TABLE discord_access ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0');
-  }
-  if (!cols.has('ban_reason')) {
-    alterSqls.push('ALTER TABLE discord_access ADD COLUMN ban_reason TEXT');
-  }
-  for (const sql of alterSqls) {
+  const extraCols: readonly [string, string][] = [
+    ['ua_hash', 'TEXT'],
+    ['rl_tokens', 'REAL NOT NULL DEFAULT 10'],
+    ['rl_updated_at', 'INTEGER NOT NULL DEFAULT 0'],
+    ['rl_strikes', 'INTEGER NOT NULL DEFAULT 0'],
+    ['rl_last_strike_at', 'INTEGER NOT NULL DEFAULT 0'],
+    ['is_banned', 'INTEGER NOT NULL DEFAULT 0'],
+    ['ban_reason', 'TEXT'],
+  ];
+  for (const [col, colDef] of extraCols) {
+    if (cols.has(col)) continue;
     try {
-      await db.prepare(sql).run();
+      await db.prepare(`ALTER TABLE discord_access ADD COLUMN ${col} ${colDef}`).run();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.toLowerCase().includes('duplicate column')) throw err;
@@ -263,9 +255,16 @@ export async function signPayload(payload: string, secret: string): Promise<stri
   return toBase64Url(String.fromCharCode(...new Uint8Array(sig)));
 }
 
+export function resolveOwnerTokenIssuedAt(claims: { iat?: unknown; exp: number }): number {
+  if (typeof claims.iat === 'number' && Number.isFinite(claims.iat) && claims.iat > 0) {
+    return Math.floor(claims.iat);
+  }
+  return Math.floor(claims.exp - OWNER_TOKEN_TTL_MS);
+}
+
 export async function createSignedToken(
   env: AuthEnv,
-  claims: { sub: string; role: AuthRole; exp: number; sid?: string },
+  claims: { sub: string; role: AuthRole; iat?: number; exp: number; sid?: string },
 ): Promise<string> {
   if (!env.ACCESS_PASSCODE?.trim()) {
     throw new HttpError('Máy chủ chưa cấu hình ACCESS_PASSCODE.', 503);
@@ -276,9 +275,21 @@ export async function createSignedToken(
   return `${payload}.${sig}`;
 }
 
-export async function createAuthToken(env: AuthEnv): Promise<LoginSessionResult> {
-  const expiresAt = Date.now() + OWNER_TOKEN_TTL_MS;
-  const token = await createSignedToken(env, { sub: 'owner', role: 'owner', exp: expiresAt });
+export async function createAuthToken(
+  env: AuthEnv,
+  issuedAtOverride?: number,
+): Promise<LoginSessionResult> {
+  const issuedAt =
+    typeof issuedAtOverride === 'number' && Number.isFinite(issuedAtOverride)
+      ? Math.floor(issuedAtOverride)
+      : Date.now();
+  const expiresAt = issuedAt + OWNER_TOKEN_TTL_MS;
+  const token = await createSignedToken(env, {
+    sub: 'owner',
+    role: 'owner',
+    iat: issuedAt,
+    exp: expiresAt,
+  });
   return { token, role: 'owner', expiresAt };
 }
 
@@ -447,8 +458,24 @@ export async function verifyAuth(
     );
   }
 
-  // Backward-compatible with existing owner tokens ({ sub: 'owner', exp })
+  // Backward-compatible with existing owner tokens ({ sub: 'owner', exp }) & enforce owner_min_iat (Wave 3 Phase 3.3)
   if (decoded.sub === 'owner' && (!decoded.role || decoded.role === 'owner')) {
+    let ownerMinIat = 0;
+    try {
+      ownerMinIat = await getOwnerMinIat(db, now);
+    } catch {
+      throw new HttpError(
+        'Dịch vụ xác thực đang tạm gián đoạn. Vui lòng thử lại sau giây lát.',
+        503,
+      );
+    }
+    const tokenIat = resolveOwnerTokenIssuedAt({ iat: decoded.iat, exp: decoded.exp });
+    if (ownerMinIat > 0 && tokenIat < ownerMinIat) {
+      throw new HttpError(
+        'Phiên quản trị đã bị thu hồi từ một thiết bị khác. Vui lòng đăng nhập lại.',
+        401,
+      );
+    }
     return {
       role: 'owner',
       userId: 'owner',

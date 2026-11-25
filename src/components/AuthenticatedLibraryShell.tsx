@@ -421,6 +421,8 @@ export function AuthenticatedLibraryShell({
             onShelfRenamed={handleShelfRenamed}
             onBooksShelfMoved={store.handleBooksShelfMoved}
             onBooksDeleted={store.handleBooksDeleted}
+            onLogout={onLogout}
+            onSessionReissued={setSession}
             onApiError={onApiError}
             onNotify={addToast}
           />
