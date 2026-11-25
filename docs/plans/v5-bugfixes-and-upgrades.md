@@ -168,7 +168,7 @@
   - Mở sách EPUB (cả Cuộn dọc + Lật trang 2 cột): tải mượt, ảnh bung `blob:` đúng chương, `%` đọc tính chuẩn theo trọng số độ dài chương (`bookPercent` PA-A — cuối `Mở đầu` không nhảy `40%`), không đánh dấu hoàn thành sớm, phím `M` bật/tắt mục lục ổn định, `0` lỗi console/page.
   - Menu gọn `⋯` trên mobile mở được *Bộ nhớ đệm thiết bị*, *Sức khoẻ kho sách* (và *Bảo mật* ở Cloud mode).
   - EPUB có thẻ tự đóng non-void (`<a id="fn1"/>`, `<div/>`, `<b/>`, `<script/>`) & `<frameset>` hiển thị đủ chữ (`<b></b>` đóng gọn không làm đậm đoạn sau), sạch XSS, không crash (đã xác minh cả trên trình duyệt thật & `tests/sanitizeHtml.test.ts`).
-  - Guest Canvas, Upload song song, `D-044` & Worker: kiểm chứng toàn bộ qua `tests/*.test.ts` (25/25 pass, bao gồm real SQLite D1 & JSDOM `DOMPurify`) + kiểm chứng trình duyệt upload `Unnamed Memory - Tập 1 - [Hako].epub` tách chuẩn `[Hako]` & `<dc:creator>`. *(Chờ xác nhận người dùng trước khi `wrangler deploy` Worker & push tạo PR Wave 1).*
+  - Guest Canvas, Upload song song, `D-044` & Worker: kiểm chứng toàn bộ qua `tests/*.test.ts` (25/25 pass, bao gồm real SQLite D1 & JSDOM `DOMPurify`) + kiểm chứng trình duyệt upload `Unnamed Memory - Tập 1 - [Hako].epub` tách chuẩn `[Hako]` & `<dc:creator>` + đã deploy Worker Wave 1 sạch lên production.
 - [x] Cập nhật `README.md`, `docs/DECISIONS.md`, `docs/ARCHITECTURE.md`, `HANDOFF.md` trong cùng commit cuối Wave 1.
 
 ### Wave 2

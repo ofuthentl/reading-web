@@ -4,8 +4,8 @@ Nhiệm vụ hiện tại: **Đợt Vá Lỗi Toàn Diện & Nâng Cấp v5 — 
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/v5-bugfixes-and-upgrades.md
 
 ## Đang làm dở
-- **Wave 1 (Phase 1.1 → 1.5) ĐÃ HOÀN TẤT 100% VÀ KIỂM CHỨNG XANH** (`typecheck`, `lint` 0/0 mọi tệp `<= 500` dòng, `npm test` 25/25 pass, `VITE_BASE_PATH=/ npm run build` đạt `53.67 kB` gzip, `npm run check:bundle`, Worker `tsc --noEmit`, kiểm thử trình duyệt thật Desktop `1280×800` + Mobile `390×844` với `0` lỗi console/page).
-- Đang chờ người dùng xác nhận để chạy `npx wrangler deploy` (deploy Worker Wave 1 lên production) và `git push -u origin fix/v5-wave1-mobile-audit-and-bundle` tạo PR Wave 1 vào `main`.
+- **Wave 1 (Phase 1.1 → 1.5) ĐÃ HOÀN TẤT 100%, ĐÃ DEPLOY WORKER LÊN PRODUCTION & ĐÃ PUSH NHÁNH** (`typecheck`, `lint` 0/0 mọi tệp `<= 500` dòng, `npm test` 25/25 pass, `VITE_BASE_PATH=/ npm run build` đạt `53.67 kB` gzip, `npm run check:bundle`, Worker `tsc --noEmit`, kiểm thử trình duyệt thật Desktop `1280×800` + Mobile `390×844` với `0` lỗi console/page).
+- Sẵn sàng mở Pull Request từ `fix/v5-wave1-mobile-audit-and-bundle` vào `main` để GitHub Actions CI kiểm tra và tự deploy Frontend lên `ofu.lol`.
 
 ## Xong trong nhánh này
 ### Phase 1.1 — Vá 2 lỗi iPhone & RAM/Cache Mobile (`QĐ-2A`, `QĐ-3A`)
@@ -31,7 +31,7 @@ Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · d
 - Bổ sung bộ Unit Test tự động (`npm test`: 25/25 pass, `0 B` runtime), cổng `npm run check:bundle`, nâng cấp `.github/workflows/{ci,deploy}.yml` (Node 24, `VITE_BASE_PATH=/`, `actions-gh-pages@v4`), cập nhật `README.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` (`D-046`).
 
 ## Bước tiếp theo
-1. Chờ người dùng xác nhận → chạy `npx wrangler deploy` (trong `workers/r2-storage`) và `git push -u origin fix/v5-wave1-mobile-audit-and-bundle` để tạo Pull Request Wave 1 vào `main`.
+1. Mở & merge Pull Request Wave 1 (`fix/v5-wave1-mobile-audit-and-bundle` → `main`) sau khi CI xanh để auto-deploy Frontend lên `ofu.lol`.
 2. Sau khi Wave 1 merge vào `main`, tách nhánh mới `feat/v5-wave2-admin-storage-and-catalog` cho **Wave 2**.
 
 ## Lỗi / chặn
