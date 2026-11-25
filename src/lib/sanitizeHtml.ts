@@ -24,6 +24,25 @@ const FORBIDDEN_BOOK_TAGS = [
 
 const FORBIDDEN_BOOK_ATTRS = ['style', 'srcset', 'poster'];
 
+const BOOK_SANITIZE_CONFIG = {
+  FORBID_TAGS: FORBIDDEN_BOOK_TAGS,
+  FORBID_ATTR: FORBIDDEN_BOOK_ATTRS,
+  ADD_TAGS: ['ruby', 'rt', 'rp', 'rb'],
+  ADD_ATTR: ['epub:type', 'role'],
+};
+
+/**
+ * Parses and sanitizes raw EPUB/DOCX HTML in a single DOMPurify pass (`RETURN_DOM: true`),
+ * avoiding redundant innerHTML serialize/re-parse round-trips on the main thread.
+ * Must run BEFORE replacing image sources with blob: URLs because DOMPurify strips blob: URIs.
+ */
+export function sanitizeHtmlToBody(rawHtml: string): HTMLElement {
+  return DOMPurify.sanitize(rawHtml, {
+    ...BOOK_SANITIZE_CONFIG,
+    RETURN_DOM: true,
+  }) as HTMLElement;
+}
+
 /**
  * Sanitizes parsed EPUB/DOCX HTML before rendering via dangerouslySetInnerHTML.
  * Must run BEFORE replacing image sources with blob: URLs because DOMPurify
@@ -31,12 +50,7 @@ const FORBIDDEN_BOOK_ATTRS = ['style', 'srcset', 'poster'];
  */
 export function sanitizeBookDocument(doc: Document): void {
   if (!doc.body) return;
-  doc.body.innerHTML = DOMPurify.sanitize(doc.body.innerHTML, {
-    FORBID_TAGS: FORBIDDEN_BOOK_TAGS,
-    FORBID_ATTR: FORBIDDEN_BOOK_ATTRS,
-    ADD_TAGS: ['ruby', 'rt', 'rp', 'rb'],
-    ADD_ATTR: ['epub:type', 'role'],
-  });
+  doc.body.innerHTML = DOMPurify.sanitize(doc.body.innerHTML, BOOK_SANITIZE_CONFIG);
 }
 
 /**

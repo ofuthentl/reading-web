@@ -21,9 +21,22 @@ import {
   resolveHeadingFromStyle,
 } from '@/lib/docxXml';
 import { sanitizeSvgBlob } from '@/lib/sanitizeHtml';
+import {
+  LAZY_MEDIA_PLACEHOLDER_SRC,
+  createLazyZipMediaController,
+  resolveInitialChapterIndex,
+} from '@/lib/zipMediaCache';
+
+export interface ParseDocxOptions {
+  skipMediaBlobs?: boolean;
+  lazyMedia?: boolean;
+  initialChapterId?: string;
+  initialChapterIndex?: number;
+}
 
 interface DocxRenderContext {
   zip: JSZip;
+  zipLowerLookup: Map<string, string>;
   rels: Map<string, DocxRel>;
   styles: Map<string, StyleMeta>;
   numberingKinds: Map<string, 'ul' | 'ol'>;
@@ -34,6 +47,7 @@ interface DocxRenderContext {
   createdUrls: string[];
   placeholderSeq: number;
   skipMediaBlobs: boolean;
+  lazyMedia: boolean;
 }
 
 async function resolveImagePlaceholder(ctx: DocxRenderContext, relId: string): Promise<string | null> {
@@ -48,7 +62,7 @@ async function resolveImagePlaceholder(ctx: DocxRenderContext, relId: string): P
     let resolvedZipPath = zipPath;
     let entry = ctx.zip.file(zipPath);
     if (!entry) {
-      const ciKey = Object.keys(ctx.zip.files).find((k) => k.toLowerCase() === cacheKey);
+      const ciKey = ctx.zipLowerLookup.get(cacheKey);
       if (ciKey) {
         entry = ctx.zip.file(ciKey);
         resolvedZipPath = ciKey;
@@ -58,6 +72,8 @@ async function resolveImagePlaceholder(ctx: DocxRenderContext, relId: string): P
     let blobUrl: string;
     if (ctx.skipMediaBlobs) {
       blobUrl = 'data:,';
+    } else if (ctx.lazyMedia) {
+      blobUrl = LAZY_MEDIA_PLACEHOLDER_SRC;
     } else {
       const rawBlob = await entry.async('blob');
       const mime = guessImageMimeType(resolvedZipPath);
@@ -371,13 +387,14 @@ export async function extractDocxCover(zip: JSZip): Promise<Blob | null> {
 export async function parseDocxZip(
   zip: JSZip,
   book: Book,
-  options?: { skipMediaBlobs?: boolean },
+  options?: ParseDocxOptions,
 ): Promise<ParsedBook> {
   const createdUrls: string[] = [];
-  const dispose = () => {
+  const disposeEager = () => {
     for (const url of createdUrls) URL.revokeObjectURL(url);
     createdUrls.length = 0;
   };
+  const useLazyMedia = Boolean(options?.lazyMedia && !options?.skipMediaBlobs);
 
   try {
     const documentXml = await zip.file('word/document.xml')?.async('string');
@@ -395,8 +412,15 @@ export async function parseDocxZip(
     const bodyEl = Array.from(doc.getElementsByTagName('*')).find((el) => el.localName === 'body');
     if (!bodyEl) throw new Error('Tệp DOCX không có nội dung văn bản.');
 
+    const zipLowerLookup = new Map<string, string>();
+    for (const name of Object.keys(zip.files)) {
+      const lower = name.toLowerCase();
+      if (!zipLowerLookup.has(lower)) zipLowerLookup.set(lower, name);
+    }
+
     const ctx: DocxRenderContext = {
       zip,
+      zipLowerLookup,
       rels,
       styles,
       numberingKinds,
@@ -407,6 +431,7 @@ export async function parseDocxZip(
       createdUrls,
       placeholderSeq: 0,
       skipMediaBlobs: Boolean(options?.skipMediaBlobs),
+      lazyMedia: useLazyMedia,
     };
 
     const blocks: DocxBlock[] = [];
@@ -431,9 +456,30 @@ export async function parseDocxZip(
     const chapters = buildDocxChapters(blocks, book, ctx.placeholderToImage);
     if (chapters.length === 0) throw new Error('DOCX không có nội dung để đọc.');
 
-    return { chapters, dispose };
+    if (useLazyMedia) {
+      const mediaCtrl = createLazyZipMediaController(zip);
+      try {
+        const initialIdx = resolveInitialChapterIndex(
+          chapters,
+          options?.initialChapterId,
+          options?.initialChapterIndex,
+        );
+        await mediaCtrl.ensureChapterMedia(chapters, initialIdx);
+        return {
+          chapters,
+          ensureChapterMedia: (idx) => mediaCtrl.ensureChapterMedia(chapters, idx),
+          resolveMediaUrl: mediaCtrl.resolveMediaUrl,
+          dispose: mediaCtrl.dispose,
+        };
+      } catch (err) {
+        mediaCtrl.dispose();
+        throw err;
+      }
+    }
+
+    return { chapters, dispose: disposeEager };
   } catch (err) {
-    dispose();
+    disposeEager();
     throw err;
   }
 }

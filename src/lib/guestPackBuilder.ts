@@ -1,3 +1,4 @@
+import type JSZip from 'jszip';
 import type { Book, GuestBlock, StorageStats } from '@/types';
 import { apiFetch } from '@/lib/authSession';
 import { extractChapterFootnotesForGuestPack } from '@/lib/epubFootnotes';
@@ -9,6 +10,13 @@ import { parseBookBlob } from '@/lib/parsers';
 import { parseZipEntryOffsets } from '@/lib/zipDirectory';
 
 const GUEST_PACK_MAGIC_BYTES = [0x4f, 0x46, 0x47, 0x50]; // "OFGP"
+const GZIP_CONCURRENCY = 6;
+const MAX_MEDIA_CHAPTER_KEYS = 200;
+
+export interface GuestPackPreloadedZip {
+  arrayBuffer?: ArrayBuffer;
+  zip?: JSZip;
+}
 
 interface PackManifestChapter {
   id: string;
@@ -78,48 +86,127 @@ async function gzipCompressBytes(raw: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(ab);
 }
 
-export async function buildGuestPackEnvelope(blob: Blob, book: Book): Promise<Uint8Array> {
+async function compressSegmentsInParallel(
+  payloads: readonly Uint8Array[],
+  concurrency: number,
+): Promise<Uint8Array[]> {
+  if (payloads.length === 0) return [];
+  const results = new Array<Uint8Array>(payloads.length);
+  let cursor = 0;
+  const workerCount = Math.min(concurrency, payloads.length);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (cursor < payloads.length) {
+        const idx = cursor;
+        cursor += 1;
+        results[idx] = await gzipCompressBytes(payloads[idx]);
+      }
+    }),
+  );
+  return results;
+}
+
+function toCanonicalChapterKey(chapterId: string): string {
+  return chapterId.normalize('NFC').trim().replace(/-p\d+$/i, '');
+}
+
+export async function buildGuestPackEnvelope(
+  blob: Blob,
+  book: Book,
+  preloaded?: GuestPackPreloadedZip,
+): Promise<Uint8Array> {
   if (book.file_type !== 'epub' && book.file_type !== 'docx') {
     throw new Error('Chỉ hỗ trợ tạo gói bảo mật khách cho EPUB và DOCX.');
   }
 
-  const arrayBuffer = await blob.arrayBuffer();
+  const arrayBuffer = preloaded?.arrayBuffer ?? (await blob.arrayBuffer());
   const zipMap = parseZipEntryOffsets(arrayBuffer);
   const parsed = await parseBookBlob(blob, book, {
     skipMediaBlobs: true,
     arrayBuffer,
+    preloadedZip: preloaded?.zip,
   });
 
   try {
+    const encoder = new TextEncoder();
     const mediaByZipPath = new Map<string, number>();
     const mediaList: PackManifestMedia[] = [];
-    const manifestChapters: PackManifestChapter[] = [];
-    const compressedChunks: Uint8Array[] = [];
-    let currentOffset = 0;
+    const mediaChapterKeys = new Map<number, Set<string>>();
+    const pendingSegments: Array<{ id: string; title: string; jsonBytes: Uint8Array }> = [];
 
     for (const chapter of parsed.chapters) {
-      const rawBlocks = convertChapterToGuestBlocks(chapter, zipMap, mediaByZipPath, mediaList);
-      const chapterFootnotes = extractChapterFootnotesForGuestPack(chapter, parsed.chapters);
-      const segments = splitOversizedChapter(chapter.id, chapter.title, rawBlocks);
+      // Parse HTML đúng 1 lần duy nhất cho cả chuyển đổi block và trích chú thích
+      const parsedDoc =
+        chapter.content_html && typeof DOMParser !== 'undefined'
+          ? new DOMParser().parseFromString(chapter.content_html, 'text/html')
+          : undefined;
+      const rawBlocks = convertChapterToGuestBlocks(
+        chapter,
+        zipMap,
+        mediaByZipPath,
+        mediaList,
+        parsedDoc,
+      );
+      const chapterFootnotes = extractChapterFootnotesForGuestPack(
+        chapter,
+        parsed.chapters,
+        parsedDoc,
+      );
+      const canonicalKey = toCanonicalChapterKey(chapter.id);
+      if (canonicalKey) {
+        for (const block of rawBlocks) {
+          if (block.kind !== 'img') continue;
+          let keySet = mediaChapterKeys.get(block.mediaIndex);
+          if (!keySet) {
+            keySet = new Set<string>();
+            mediaChapterKeys.set(block.mediaIndex, keySet);
+          }
+          keySet.add(canonicalKey);
+        }
+      }
 
+      const segments = splitOversizedChapter(chapter.id, chapter.title, rawBlocks);
       for (const seg of segments) {
-        const chapterJsonBytes = new TextEncoder().encode(
-          JSON.stringify({
-            title: seg.title,
-            blocks: seg.blocks,
-            ...(chapterFootnotes ? { footnotes: chapterFootnotes } : {}),
-          }),
-        );
-        const compressed = await gzipCompressBytes(chapterJsonBytes);
-        manifestChapters.push({
+        pendingSegments.push({
           id: seg.id,
           title: seg.title,
-          offset: currentOffset,
-          length: compressed.byteLength,
+          jsonBytes: encoder.encode(
+            JSON.stringify({
+              title: seg.title,
+              blocks: seg.blocks,
+              ...(chapterFootnotes ? { footnotes: chapterFootnotes } : {}),
+            }),
+          ),
         });
-        compressedChunks.push(compressed);
-        currentOffset += compressed.byteLength;
       }
+    }
+
+    // Ghi bảng ánh xạ `media.ch` (QĐ-3A) — bỏ qua nếu ảnh lặp > 200 chương để Worker tự fallback chính xác
+    for (let i = 0; i < mediaList.length; i += 1) {
+      const keys = mediaChapterKeys.get(i);
+      if (keys && keys.size > 0 && keys.size <= MAX_MEDIA_CHAPTER_KEYS) {
+        mediaList[i].ch = Array.from(keys);
+      }
+    }
+
+    // Nén gzip song song (tối đa 6 luồng) trong khi giữ nguyên thứ tự offset chương
+    const compressedChunks = await compressSegmentsInParallel(
+      pendingSegments.map((s) => s.jsonBytes),
+      GZIP_CONCURRENCY,
+    );
+
+    const manifestChapters: PackManifestChapter[] = [];
+    let currentOffset = 0;
+    for (let i = 0; i < pendingSegments.length; i += 1) {
+      const seg = pendingSegments[i];
+      const compressed = compressedChunks[i];
+      manifestChapters.push({
+        id: seg.id,
+        title: seg.title,
+        offset: currentOffset,
+        length: compressed.byteLength,
+      });
+      currentOffset += compressed.byteLength;
     }
 
     const manifest: PackManifest = {
@@ -127,7 +214,7 @@ export async function buildGuestPackEnvelope(blob: Blob, book: Book): Promise<Ui
       chapters: manifestChapters,
       media: mediaList,
     };
-    const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
+    const manifestBytes = encoder.encode(JSON.stringify(manifest));
 
     const totalEnvelopeSize = 8 + manifestBytes.byteLength + currentOffset;
     const envelope = new Uint8Array(totalEnvelopeSize);
@@ -146,12 +233,11 @@ export async function buildGuestPackEnvelope(blob: Blob, book: Book): Promise<Ui
   }
 }
 
-export async function buildAndUploadGuestPack(
-  blob: Blob,
-  book: Book,
+export async function uploadGuestPackEnvelope(
+  bookId: string,
+  envelope: Uint8Array,
 ): Promise<{ chapterCount: number; packSize: number; storage?: StorageStats }> {
-  const envelope = await buildGuestPackEnvelope(blob, book);
-  const res = await apiFetch(`/api/books/${book.id}/guest-pack`, {
+  const res = await apiFetch(`/api/books/${bookId}/guest-pack`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/octet-stream' },
     body: envelope as BodyInit,
@@ -170,4 +256,13 @@ export async function buildAndUploadGuestPack(
     packSize: data.packSize ?? envelope.byteLength,
     storage: data.storage,
   };
+}
+
+export async function buildAndUploadGuestPack(
+  blob: Blob,
+  book: Book,
+  preloaded?: GuestPackPreloadedZip,
+): Promise<{ chapterCount: number; packSize: number; storage?: StorageStats }> {
+  const envelope = await buildGuestPackEnvelope(blob, book, preloaded);
+  return uploadGuestPackEnvelope(book.id, envelope);
 }

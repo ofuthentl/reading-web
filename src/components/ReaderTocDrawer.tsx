@@ -21,6 +21,7 @@ interface ReaderTocDrawerProps {
   book: Book;
   chapters: Chapter[];
   parsedChapters?: Chapter[];
+  resolveOwnerMediaUrl?: (zipPath: string) => Promise<string | null>;
   activeIndex: number;
   maxUnlockedChapterIndex?: number;
   currentChapterId?: string;
@@ -52,6 +53,7 @@ export function ReaderTocDrawer({
   book,
   chapters,
   parsedChapters,
+  resolveOwnerMediaUrl,
   activeIndex,
   maxUnlockedChapterIndex = activeIndex,
   currentChapterId = '',
@@ -183,6 +185,7 @@ export function ReaderTocDrawer({
             <LazyReaderIllustrationGallery
               book={book}
               parsedChapters={parsedChapters}
+              resolveOwnerMediaUrl={resolveOwnerMediaUrl}
               activeIndex={activeIndex}
               maxUnlockedChapterIndex={maxUnlockedChapterIndex}
               watermarkLabel={watermarkLabel}

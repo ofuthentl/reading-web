@@ -282,7 +282,8 @@ export async function fetchBookBlobCached(
   }
   const blob = await res.blob();
   if (options?.cacheOnFetch !== false) {
-    await setCachedBookBlob(book.file_key, blob);
+    // Ghi bộ nhớ đệm IndexedDB ở nền để không chặn người dùng mở sách lần đầu
+    void setCachedBookBlob(book.file_key, blob).catch(() => undefined);
   }
   return { blob, fromCache: false };
 }

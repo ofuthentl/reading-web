@@ -124,6 +124,7 @@ export default function App() {
     appTheme: theme,
     sessionRole: session.role,
     authenticated,
+    progressMap: store.progress,
     onProgressUpdated: store.handleProgressUpdated,
     onApiError: handleApiError,
   });

@@ -1,4 +1,4 @@
-import { HttpError } from './auth';
+import { HttpError, ensureDiscordAccessTable } from './auth';
 import {
   ACCEPTED_FILE_TYPES,
   type BookRow,
@@ -11,7 +11,7 @@ import {
   MAX_TEXT_FIELD_LENGTH,
   assertQuota,
   clearStaleShelfCoverForBook,
-  getStorageStats,
+  getLimitBytes,
   isValidId,
   safeDecodeHeader,
 } from './booksDb';
@@ -26,13 +26,6 @@ export async function handleBookFileUpload(request: Request, env: Env, bookId: s
     throw new HttpError('Chỉ hỗ trợ định dạng EPUB hoặc DOCX.', 400);
   }
 
-  const existingBook = await env.DB.prepare('SELECT id FROM books WHERE id = ?')
-    .bind(bookId)
-    .first<{ id: string }>();
-  if (existingBook) {
-    throw new HttpError('Sách với ID này đã tồn tại.', 409);
-  }
-
   const declaredSize = Number(
     request.headers.get('X-File-Size') || request.headers.get('Content-Length') || 0,
   );
@@ -41,8 +34,23 @@ export async function handleBookFileUpload(request: Request, env: Env, bookId: s
   }
   if (!request.body) throw new HttpError('Thiếu nội dung tệp.', 400);
 
-  const storage = await getStorageStats(env);
-  assertQuota(storage.usedBytes, declaredSize, storage.limitBytes);
+  await ensureDiscordAccessTable(env.DB);
+  const [existingRes, booksSumRes, packsSumRes] = await env.DB.batch([
+    env.DB.prepare('SELECT id FROM books WHERE id = ?').bind(bookId),
+    env.DB.prepare(
+      'SELECT COALESCE(SUM(file_size + cover_size), 0) AS used_bytes, COUNT(*) AS book_count FROM books',
+    ),
+    env.DB.prepare('SELECT COALESCE(SUM(pack_size), 0) AS pack_bytes FROM book_guest_packs'),
+  ]);
+  if (existingRes.results?.[0]) {
+    throw new HttpError('Sách với ID này đã tồn tại.', 409);
+  }
+
+  const limitBytes = getLimitBytes(env);
+  const preUsedBytes =
+    Number((booksSumRes.results?.[0] as { used_bytes?: number } | undefined)?.used_bytes ?? 0) +
+    Number((packsSumRes.results?.[0] as { pack_bytes?: number } | undefined)?.pack_bytes ?? 0);
+  assertQuota(preUsedBytes, declaredSize, limitBytes);
 
   const title = safeDecodeHeader(
     request.headers.get('X-Book-Title'),
@@ -76,20 +84,24 @@ export async function handleBookFileUpload(request: Request, env: Env, bookId: s
     throw new HttpError('Kích thước tệp thực tế phải nằm trong khoảng 1 byte đến 350 MB.', 400);
   }
 
-  const freshStorage = await getStorageStats(env);
-  if (freshStorage.usedBytes + putResult.size > freshStorage.limitBytes) {
-    await env.BOOKS_BUCKET.delete(fileKey).catch(() => undefined);
-    assertQuota(freshStorage.usedBytes, putResult.size, freshStorage.limitBytes);
-  }
-
   const createdAt = new Date().toISOString();
+  let postBooksSum: { used_bytes?: number; book_count?: number } | undefined;
+  let postPacksSum: { pack_bytes?: number } | undefined;
   try {
-    await env.DB.prepare(
-      `INSERT INTO books (id, title, author, shelf, cover_color, file_key, file_type, file_size, cover_size, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-    )
-      .bind(bookId, title, author, shelf, coverColor, fileKey, fileType, putResult.size, createdAt)
-      .run();
+    const [, booksAfterRes, packsAfterRes] = await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO books (id, title, author, shelf, cover_color, file_key, file_type, file_size, cover_size, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+      ).bind(bookId, title, author, shelf, coverColor, fileKey, fileType, putResult.size, createdAt),
+      env.DB.prepare(
+        'SELECT COALESCE(SUM(file_size + cover_size), 0) AS used_bytes, COUNT(*) AS book_count FROM books',
+      ),
+      env.DB.prepare('SELECT COALESCE(SUM(pack_size), 0) AS pack_bytes FROM book_guest_packs'),
+    ]);
+    postBooksSum = booksAfterRes.results?.[0] as
+      | { used_bytes?: number; book_count?: number }
+      | undefined;
+    postPacksSum = packsAfterRes.results?.[0] as { pack_bytes?: number } | undefined;
   } catch (dbErr) {
     const committed = await env.DB.prepare('SELECT file_key FROM books WHERE id = ?')
       .bind(bookId)
@@ -101,20 +113,43 @@ export async function handleBookFileUpload(request: Request, env: Env, bookId: s
     throw dbErr;
   }
 
-  const createdBook = await env.DB.prepare('SELECT * FROM books WHERE id = ?')
-    .bind(bookId)
-    .first<BookRow>();
-  const updatedStorage = await getStorageStats(env);
-  return { book: createdBook, storage: updatedStorage };
+  const usedBytes = Number(postBooksSum?.used_bytes ?? 0) + Number(postPacksSum?.pack_bytes ?? 0);
+  if (usedBytes > limitBytes) {
+    await env.DB.prepare('DELETE FROM books WHERE id = ?')
+      .bind(bookId)
+      .run()
+      .catch(() => undefined);
+    await env.BOOKS_BUCKET.delete(fileKey).catch(() => undefined);
+    assertQuota(Math.max(0, usedBytes - putResult.size), putResult.size, limitBytes);
+  }
+
+  const createdBook: BookRow = {
+    id: bookId,
+    title,
+    author,
+    shelf,
+    description: null,
+    cover_color: coverColor,
+    cover_key: null,
+    file_key: fileKey,
+    file_type: fileType as 'epub' | 'docx',
+    file_size: putResult.size,
+    cover_size: 0,
+    created_at: createdAt,
+  };
+  return {
+    book: createdBook,
+    storage: {
+      usedBytes,
+      limitBytes,
+      remainingBytes: Math.max(0, limitBytes - usedBytes),
+      bookCount: Number(postBooksSum?.book_count ?? 0),
+    },
+  };
 }
 
 export async function handleBookCoverUpload(request: Request, env: Env, bookId: string) {
   if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
-
-  const existing = await env.DB.prepare('SELECT * FROM books WHERE id = ?')
-    .bind(bookId)
-    .first<BookRow>();
-  if (!existing) throw new HttpError('Không tìm thấy sách.', 404);
 
   const declaredSize = Number(
     request.headers.get('X-File-Size') || request.headers.get('Content-Length') || 0,
@@ -124,8 +159,22 @@ export async function handleBookCoverUpload(request: Request, env: Env, bookId: 
   }
   if (!request.body) throw new HttpError('Thiếu dữ liệu ảnh bìa.', 400);
 
-  const storage = await getStorageStats(env);
-  assertQuota(storage.usedBytes - existing.cover_size, declaredSize, storage.limitBytes);
+  await ensureDiscordAccessTable(env.DB);
+  const [existingRes, booksSumRes, packsSumRes] = await env.DB.batch([
+    env.DB.prepare('SELECT * FROM books WHERE id = ?').bind(bookId),
+    env.DB.prepare(
+      'SELECT COALESCE(SUM(file_size + cover_size), 0) AS used_bytes, COUNT(*) AS book_count FROM books',
+    ),
+    env.DB.prepare('SELECT COALESCE(SUM(pack_size), 0) AS pack_bytes FROM book_guest_packs'),
+  ]);
+  const existing = (existingRes.results?.[0] as BookRow | undefined) ?? null;
+  if (!existing) throw new HttpError('Không tìm thấy sách.', 404);
+
+  const limitBytes = getLimitBytes(env);
+  const preUsedBytes =
+    Number((booksSumRes.results?.[0] as { used_bytes?: number } | undefined)?.used_bytes ?? 0) +
+    Number((packsSumRes.results?.[0] as { pack_bytes?: number } | undefined)?.pack_bytes ?? 0);
+  assertQuota(preUsedBytes - existing.cover_size, declaredSize, limitBytes);
 
   const coverKey = `covers/${bookId}-${Date.now()}-v2.jpg`;
   const putResult = await env.BOOKS_BUCKET.put(coverKey, request.body, {
@@ -138,24 +187,26 @@ export async function handleBookCoverUpload(request: Request, env: Env, bookId: 
     throw new HttpError('Ảnh bìa phải nằm trong khoảng 1 byte đến 5 MB.', 400);
   }
 
-  const freshStorage = await getStorageStats(env);
-  if (freshStorage.usedBytes - existing.cover_size + putResult.size > freshStorage.limitBytes) {
-    await env.BOOKS_BUCKET.delete(coverKey).catch(() => undefined);
-    assertQuota(
-      freshStorage.usedBytes - existing.cover_size,
-      putResult.size,
-      freshStorage.limitBytes,
-    );
-  }
-
   let changes = 0;
+  let postBooksSum: { used_bytes?: number; book_count?: number } | undefined;
+  let postPacksSum: { pack_bytes?: number } | undefined;
   try {
-    const updateRes = await env.DB.prepare(
-      'UPDATE books SET cover_key = ?, cover_size = ? WHERE id = ?',
-    )
-      .bind(coverKey, putResult.size, bookId)
-      .run();
+    const [updateRes, booksAfterRes, packsAfterRes] = await env.DB.batch([
+      env.DB.prepare('UPDATE books SET cover_key = ?, cover_size = ? WHERE id = ?').bind(
+        coverKey,
+        putResult.size,
+        bookId,
+      ),
+      env.DB.prepare(
+        'SELECT COALESCE(SUM(file_size + cover_size), 0) AS used_bytes, COUNT(*) AS book_count FROM books',
+      ),
+      env.DB.prepare('SELECT COALESCE(SUM(pack_size), 0) AS pack_bytes FROM book_guest_packs'),
+    ]);
     changes = updateRes.meta?.changes ?? 0;
+    postBooksSum = booksAfterRes.results?.[0] as
+      | { used_bytes?: number; book_count?: number }
+      | undefined;
+    postPacksSum = packsAfterRes.results?.[0] as { pack_bytes?: number } | undefined;
   } catch (dbErr) {
     const committed = await env.DB.prepare('SELECT cover_key FROM books WHERE id = ?')
       .bind(bookId)
@@ -172,15 +223,34 @@ export async function handleBookCoverUpload(request: Request, env: Env, bookId: 
     throw new HttpError('Không tìm thấy sách.', 404);
   }
 
+  const usedBytes = Number(postBooksSum?.used_bytes ?? 0) + Number(postPacksSum?.pack_bytes ?? 0);
+  if (usedBytes > limitBytes) {
+    await env.DB.prepare('UPDATE books SET cover_key = ?, cover_size = ? WHERE id = ?')
+      .bind(existing.cover_key, existing.cover_size, bookId)
+      .run()
+      .catch(() => undefined);
+    await env.BOOKS_BUCKET.delete(coverKey).catch(() => undefined);
+    assertQuota(Math.max(0, usedBytes - putResult.size), putResult.size, limitBytes);
+  }
+
   if (existing.cover_key && existing.cover_key !== coverKey) {
     await env.BOOKS_BUCKET.delete(existing.cover_key).catch(() => undefined);
   }
 
-  const updatedBook = await env.DB.prepare('SELECT * FROM books WHERE id = ?')
-    .bind(bookId)
-    .first<BookRow>();
-  const updatedStorage = await getStorageStats(env);
-  return { book: updatedBook, storage: updatedStorage };
+  const updatedBook: BookRow = {
+    ...existing,
+    cover_key: coverKey,
+    cover_size: putResult.size,
+  };
+  return {
+    book: updatedBook,
+    storage: {
+      usedBytes,
+      limitBytes,
+      remainingBytes: Math.max(0, limitBytes - usedBytes),
+      bookCount: Number(postBooksSum?.book_count ?? 0),
+    },
+  };
 }
 
 export async function handleBookMetadataPatch(request: Request, env: Env, bookId: string) {

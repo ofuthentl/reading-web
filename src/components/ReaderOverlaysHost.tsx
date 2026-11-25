@@ -38,6 +38,7 @@ export interface ReaderOverlaysHostProps {
   allBooks: readonly Book[];
   chapters: Chapter[];
   parsedChapters?: Chapter[];
+  resolveOwnerMediaUrl?: (zipPath: string) => Promise<string | null>;
   chapterIndex: number;
   currentChapterId: string;
   currentChapterTitle: string;
@@ -69,6 +70,7 @@ export function ReaderOverlaysHost({
   allBooks,
   chapters,
   parsedChapters,
+  resolveOwnerMediaUrl,
   chapterIndex,
   currentChapterId,
   currentChapterTitle,
@@ -98,6 +100,7 @@ export function ReaderOverlaysHost({
             book={book}
             chapters={chapters}
             parsedChapters={parsedChapters}
+            resolveOwnerMediaUrl={resolveOwnerMediaUrl}
             activeIndex={chapterIndex}
             maxUnlockedChapterIndex={features.highestChapterReached}
             currentChapterId={currentChapterId}

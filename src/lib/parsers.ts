@@ -6,7 +6,12 @@ import { compressCoverBlob } from '@/lib/coverImage';
 import { extractDocxCover, parseDocxZip } from '@/lib/docxParser';
 import { buildEpubChapters, type RawEpubSection } from '@/lib/epubChapters';
 import { extractTextExcludingRubyAnnotations } from '@/lib/rubyText';
-import { sanitizeBookDocument, sanitizeSvgBlob } from '@/lib/sanitizeHtml';
+import { sanitizeHtmlToBody } from '@/lib/sanitizeHtml';
+import {
+  LAZY_MEDIA_PLACEHOLDER_SRC,
+  createLazyZipMediaController,
+  resolveInitialChapterIndex,
+} from '@/lib/zipMediaCache';
 
 type JSZipStatic = typeof JSZip;
 
@@ -43,26 +48,49 @@ function resolveZipPath(basePath: string, relativePath: string): string {
   return resolved.join('/');
 }
 
-function parseEpubXhtmlDocument(source: string): Document {
-  // Chuẩn hoá thẻ tự đóng kiểu XHTML hay làm vỡ HTML5 parser (vd `<title/>`, `<a id="fn1"/>`)
+const HTML_VOID_OR_SVG_LEAF_RE =
+  /^(?:area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr|image|path|rect|circle|line|polygon|polyline|ellipse|use|stop)$/i;
+const SELF_CLOSING_TAG_RE = /<([a-zA-Z][\w:-]*)(?:\s[^<>]*?)?\/>/g;
+const EMPTY_HEAD_RAWTEXT_RE = /<(title|style)(\s[^<>]*?)?\/>/gi;
+
+function hasNonVoidSelfClosingTag(source: string): boolean {
+  SELF_CLOSING_TAG_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = SELF_CLOSING_TAG_RE.exec(source)) !== null) {
+    if (!HTML_VOID_OR_SVG_LEAF_RE.test(match[1])) return true;
+  }
+  return false;
+}
+
+/**
+ * Parse và làm sạch XHTML của 1 chương EPUB trong 1 bước (`sanitizeHtmlToBody`):
+ * - Chuẩn hoá nhanh `<title/>`/`<style/>` rồi kiểm tra xem có thẻ tự đóng non-void (`<a id="fn1"/>`, `<div/>`...) hay không.
+ * - ~95%+ chương đi thẳng đường nhanh 1 lần parse duy nhất thay vì 5–6 vòng parse/serialize.
+ */
+function parseAndSanitizeEpubBody(source: string): HTMLElement {
+  const preNormalized = source.includes('/>')
+    ? source.replace(EMPTY_HEAD_RAWTEXT_RE, '<$1$2></$1>')
+    : source;
+
+  if (!preNormalized.includes('/>') || !hasNonVoidSelfClosingTag(preNormalized)) {
+    return sanitizeHtmlToBody(preNormalized);
+  }
+
   try {
     const xmlDoc = new DOMParser().parseFromString(source, 'application/xhtml+xml');
     if (!xmlDoc.querySelector('parsererror') && xmlDoc.body) {
-      const htmlDoc = document.implementation.createHTMLDocument('');
       const serialized = new XMLSerializer().serializeToString(xmlDoc.body);
-      const parsed = new DOMParser().parseFromString(serialized, 'text/html');
-      if (parsed.body && htmlDoc.body) {
-        htmlDoc.body.innerHTML = parsed.body.innerHTML;
-        return htmlDoc;
-      }
+      return sanitizeHtmlToBody(serialized);
     }
   } catch {
-    // Fallback to HTML5 parser below
+    // Fallback to regex normalization + HTML5 sanitizer below
   }
-  const normalized = source
-    .replace(/<title\s*\/>/gi, '<title></title>')
-    .replace(/<(a|span|div|p|h[1-6])\b([^>]*?)\/>/gi, '<$1$2></$1>');
-  return new DOMParser().parseFromString(normalized, 'text/html');
+
+  const fallbackNormalized = preNormalized.replace(
+    /<(a|span|div|p|h[1-6]|section|aside|blockquote|li|td|th)\b([^<>]*?)\/>/gi,
+    '<$1$2></$1>',
+  );
+  return sanitizeHtmlToBody(fallbackNormalized);
 }
 
 function safeDecodeUri(value: string): string {
@@ -118,30 +146,50 @@ function extractCleanCreatorsFromXmlDoc(xmlDoc: Document): string | null {
   return collected.length > 0 ? collected.join(', ') : null;
 }
 
+export interface UploadMetadataResult {
+  coverBlob: Blob | null;
+  author: string | null;
+  arrayBuffer?: ArrayBuffer;
+  zip?: JSZip;
+}
+
 /**
  * Trích ảnh bìa nhẹ (~35–60KB JPEG) VÀ tên tác giả sạch (`<dc:creator>`) trong CÙNG 1 lần mở ZIP
- * lúc tải lên (0 lần giải nén lại) cho cả EPUB lẫn DOCX.
+ * lúc tải lên; tuỳ chọn `keepZip: true` giữ lại `arrayBuffer` & `zip` để bước tạo `guest-pack` tái sử dụng (0 lần mở ZIP thứ 2).
  */
 export async function extractUploadMetadata(
   file: File,
   fileType: BookFileType,
-): Promise<{ coverBlob: Blob | null; author: string | null }> {
+  options?: { keepZip?: boolean },
+): Promise<UploadMetadataResult> {
   let coverBlob: Blob | null = null;
   let author: string | null = null;
+  let arrayBuffer: ArrayBuffer | undefined;
+  let zip: JSZip | undefined;
+  const keepZip = Boolean(options?.keepZip);
+
+  const packResult = (): UploadMetadataResult => ({
+    coverBlob,
+    author,
+    ...(keepZip && arrayBuffer ? { arrayBuffer } : {}),
+    ...(keepZip && zip ? { zip } : {}),
+  });
+
   try {
     if (fileType === 'epub') {
       const JSZip = await loadJSZip();
-      const zip = await JSZip.loadAsync(await file.arrayBuffer());
+      arrayBuffer = await file.arrayBuffer();
+      zip = await JSZip.loadAsync(arrayBuffer);
       const zipLowerLookup = buildCaseInsensitiveZipLookup(zip);
       const containerPath = resolveZipFilePath(zip, zipLowerLookup, ['META-INF/container.xml']);
       const containerXml = containerPath ? await zip.file(containerPath)?.async('string') : null;
-      if (!containerXml) return { coverBlob: null, author: null };
+      if (!containerXml) return packResult();
       const container = new DOMParser().parseFromString(containerXml, 'application/xml');
       const rootFile = container.querySelector('rootfile')?.getAttribute('full-path');
-      if (!rootFile) return { coverBlob: null, author: null };
+      if (!rootFile) return packResult();
       const resolvedRoot = resolveZipFilePath(zip, zipLowerLookup, [rootFile, safeDecodeUri(rootFile)]);
       const packageXml = resolvedRoot ? await zip.file(resolvedRoot)?.async('string') : null;
-      if (!packageXml || !resolvedRoot) return { coverBlob: null, author: null };
+      if (!packageXml || !resolvedRoot) return packResult();
 
       const pkg = new DOMParser().parseFromString(packageXml, 'application/xml');
       author = extractCleanCreatorsFromXmlDoc(pkg);
@@ -184,12 +232,13 @@ export async function extractUploadMetadata(
           // Bỏ qua ứng viên bìa hỏng/không decode được để thử ứng viên tiếp theo
         }
       }
-      return { coverBlob, author };
+      return packResult();
     }
 
     if (fileType === 'docx') {
       const JSZip = await loadJSZip();
-      const zip = await JSZip.loadAsync(await file.arrayBuffer());
+      arrayBuffer = await file.arrayBuffer();
+      zip = await JSZip.loadAsync(arrayBuffer);
       const zipLowerLookup = buildCaseInsensitiveZipLookup(zip);
       const corePath = resolveZipFilePath(zip, zipLowerLookup, ['docProps/core.xml']);
       const coreXml = corePath ? await zip.file(corePath)?.async('string') : null;
@@ -198,11 +247,11 @@ export async function extractUploadMetadata(
         author = extractCleanCreatorsFromXmlDoc(coreDoc);
       }
       coverBlob = await extractDocxCover(zip);
-      return { coverBlob, author };
+      return packResult();
     }
   } catch (err) {
     if (isChunkLoadError(err)) throw err;
-    return { coverBlob, author };
+    return packResult();
   }
   return { coverBlob: null, author: null };
 }
@@ -234,8 +283,14 @@ function getFilenameChapterTitle(path: string): string | null {
 export interface ParseBookOptions {
   /** Bỏ qua giải nén nhị phân ảnh sang Blob URL khi chỉ cần đọc chữ & đường dẫn `data-zip-path` */
   skipMediaBlobs?: boolean;
+  /** Chỉ giải nén ảnh cho chương mở đầu; các chương còn lại nạp lười khi lật tới (`QĐ-1A`) */
+  lazyMedia?: boolean;
+  initialChapterId?: string;
+  initialChapterIndex?: number;
   /** Truyền sẵn ArrayBuffer nếu caller đã đọc để tránh nhân đôi RAM (vá M-12) */
   arrayBuffer?: ArrayBuffer;
+  /** Truyền sẵn JSZip đã giải nén để tránh mở ZIP 2 lần lúc tải sách lên */
+  preloadedZip?: JSZip;
 }
 
 async function parseEpubBlob(
@@ -243,15 +298,18 @@ async function parseEpubBlob(
   book: Book,
   options?: ParseBookOptions,
 ): Promise<ParsedBook> {
-  const createdUrls: string[] = [];
+  const skipMedia = Boolean(options?.skipMediaBlobs);
+  const useLazyMedia = Boolean(options?.lazyMedia && !skipMedia);
+  let mediaCtrl: ReturnType<typeof createLazyZipMediaController> | null = null;
   const dispose = () => {
-    for (const url of createdUrls) URL.revokeObjectURL(url);
-    createdUrls.length = 0;
+    mediaCtrl?.dispose();
+    mediaCtrl = null;
   };
 
   try {
-    const JSZip = await loadJSZip();
-    const zip = await JSZip.loadAsync(options?.arrayBuffer ?? (await blob.arrayBuffer()));
+    const zip =
+      options?.preloadedZip ??
+      (await (await loadJSZip()).loadAsync(options?.arrayBuffer ?? (await blob.arrayBuffer())));
     const zipLowerLookup = buildCaseInsensitiveZipLookup(zip);
     const containerPath = resolveZipFilePath(zip, zipLowerLookup, ['META-INF/container.xml']);
     const containerXml = containerPath ? await zip.file(containerPath)?.async('string') : null;
@@ -270,14 +328,12 @@ async function parseEpubBlob(
 
     const manifest = new Map<string, { href: string; mediaType: string; properties: string }>();
     const manifestByPath = new Map<string, { mediaType: string }>();
-
     pkgDoc.querySelectorAll('manifest item').forEach((item) => {
       const id = item.getAttribute('id');
       const href = item.getAttribute('href');
       const mediaType = item.getAttribute('media-type');
       if (id && href && mediaType) {
-        const entry = { href, mediaType, properties: item.getAttribute('properties') || '' };
-        manifest.set(id, entry);
+        manifest.set(id, { href, mediaType, properties: item.getAttribute('properties') || '' });
         const decoded = resolveZipPath(pkgDir, safeDecodeUri(href.split('#')[0]));
         manifestByPath.set(decoded.toLowerCase(), { mediaType });
       }
@@ -342,8 +398,9 @@ async function parseEpubBlob(
     const spineItems = Array.from(pkgDoc.querySelectorAll('spine itemref'))
       .map((itemRef) => {
         const item = manifest.get(itemRef.getAttribute('idref') || '');
-        if (!item) return null;
-        if (!item.mediaType.includes('html') && !item.mediaType.includes('xml')) return null;
+        if (!item || (!item.mediaType.includes('html') && !item.mediaType.includes('xml'))) {
+          return null;
+        }
         const rawHref = item.href.split('#')[0];
         const resolved = resolveZipFilePath(zip, zipLowerLookup, [
           resolveZipPath(pkgDir, safeDecodeUri(rawHref)),
@@ -351,72 +408,44 @@ async function parseEpubBlob(
         ]);
         if (!resolved) return null;
         return {
-          item,
           path: resolved,
           tocKey: resolveZipPath(pkgDir, safeDecodeUri(rawHref)).toLowerCase(),
         };
       })
-      .filter(
-        (
-          entry,
-        ): entry is {
-          item: { href: string; mediaType: string; properties: string };
-          path: string;
-          tocKey: string;
-        } => Boolean(entry),
-      );
+      .filter((entry): entry is { path: string; tocKey: string } => Boolean(entry));
 
-    const imageUrlByZipPath = new Map<string, string>();
-
-    async function getZipImageEntry(
-      docPath: string,
-      rawSrc: string,
-    ): Promise<{ url: string; zipPath: string } | null> {
+    const resolveMatchedImageZipPath = (docPath: string, rawSrc: string): string | null => {
       const rawNoQuery = rawSrc.split('#')[0].split('?')[0];
       const cleanSrc = safeDecodeUri(rawNoQuery);
       const docDir = docPath.includes('/') ? docPath.slice(0, docPath.lastIndexOf('/')) : '';
-      const candidates = [
+      return resolveZipFilePath(zip, zipLowerLookup, [
         resolveZipPath(docDir, cleanSrc),
         resolveZipPath(docDir, rawNoQuery),
         `${docDir}/${cleanSrc}`.replace(/^\/+/, ''),
         cleanSrc.replace(/^(\.\.\/)+/, ''),
-      ];
-      const matchedPath = resolveZipFilePath(zip, zipLowerLookup, candidates);
-      if (!matchedPath) return null;
+      ]);
+    };
 
-      if (options?.skipMediaBlobs) {
-        return { url: 'data:,', zipPath: matchedPath };
-      }
-
-      const existingUrl = imageUrlByZipPath.get(matchedPath);
-      if (existingUrl) return { url: existingUrl, zipPath: matchedPath };
-
-      const zipFile = zip.file(matchedPath);
-      if (!zipFile) return null;
-      const imgBlob = await zipFile.async('blob');
-      const mediaType =
-        manifestByPath.get(matchedPath.toLowerCase())?.mediaType || imgBlob.type || 'image/jpeg';
-      const isSvg = mediaType === 'image/svg+xml' || /\.svg$/i.test(matchedPath);
-      const safeBlob = isSvg
-        ? await sanitizeSvgBlob(imgBlob)
-        : new Blob([imgBlob], { type: mediaType });
-      const url = URL.createObjectURL(safeBlob);
-      createdUrls.push(url);
-      imageUrlByZipPath.set(matchedPath, url);
-      return { url, zipPath: matchedPath };
+    if (!skipMedia) {
+      mediaCtrl = createLazyZipMediaController(zip, manifestByPath);
     }
 
+    // Giải nén song song toàn bộ tệp XHTML trong spine thay vì chờ tuần tự từng tệp
+    const spineSources = await Promise.all(
+      spineItems.map(({ path }) => zip.file(path)?.async('string') ?? Promise.resolve(null)),
+    );
+
+    const placeholderSrc = skipMedia ? 'data:,' : LAZY_MEDIA_PLACEHOLDER_SRC;
     const rawSections: RawEpubSection[] = [];
 
-    for (const { path, tocKey } of spineItems) {
-      const source = await zip.file(path)?.async('string');
+    for (let i = 0; i < spineItems.length; i += 1) {
+      const source = spineSources[i];
       if (!source) continue;
+      const { path, tocKey } = spineItems[i];
 
-      const doc = parseEpubXhtmlDocument(source);
-      // Must sanitize BEFORE replacing image paths with blob: URLs (DOMPurify strips blob: by default)
-      sanitizeBookDocument(doc);
+      const body = parseAndSanitizeEpubBody(source);
 
-      for (const img of Array.from(doc.querySelectorAll<HTMLImageElement>('img[src]'))) {
+      for (const img of Array.from(body.querySelectorAll<HTMLImageElement>('img[src]'))) {
         const src = img.getAttribute('src');
         if (!src) continue;
         img.removeAttribute('width');
@@ -424,38 +453,38 @@ async function parseEpubBlob(
         img.style.removeProperty('width');
         img.style.removeProperty('height');
         if (src.startsWith('data:')) continue;
-        const resolved = await getZipImageEntry(path, src);
-        if (resolved) {
-          img.src = resolved.url;
+        const matchedPath = resolveMatchedImageZipPath(path, src);
+        if (matchedPath) {
+          img.src = placeholderSrc;
           img.loading = 'lazy';
-          img.setAttribute('data-zip-path', resolved.zipPath);
+          img.setAttribute('data-zip-path', matchedPath);
         } else {
           img.remove();
         }
       }
 
-      for (const svgImg of Array.from(doc.querySelectorAll<SVGImageElement>('svg image'))) {
+      for (const svgImg of Array.from(body.querySelectorAll<SVGImageElement>('svg image'))) {
         const src = svgImg.getAttribute('href') || svgImg.getAttribute('xlink:href');
         if (!src || src.startsWith('data:')) continue;
-        const resolved = await getZipImageEntry(path, src);
-        if (resolved) {
-          svgImg.setAttribute('href', resolved.url);
-          svgImg.setAttribute('data-zip-path', resolved.zipPath);
+        const matchedPath = resolveMatchedImageZipPath(path, src);
+        if (matchedPath) {
+          svgImg.setAttribute('href', placeholderSrc);
+          svgImg.setAttribute('data-zip-path', matchedPath);
           svgImg.removeAttribute('xlink:href');
         } else {
           svgImg.remove();
         }
       }
 
-      const bodyHtml = (doc.body?.innerHTML?.trim() || '').normalize('NFC');
-      const plainText = extractTextExcludingRubyAnnotations(doc.body)
+      const bodyHtml = body.innerHTML.trim().normalize('NFC');
+      const plainText = extractTextExcludingRubyAnnotations(body)
         .replace(/\s+/g, ' ')
         .trim()
         .normalize('NFC');
-      const hasMedia = doc.querySelectorAll('img, svg image').length > 0;
+      const hasMedia = body.querySelector('img, svg image') !== null;
       if (!plainText && !hasMedia) continue;
 
-      const headingText = extractTextExcludingRubyAnnotations(doc.querySelector('h1, h2, h3'))
+      const headingText = extractTextExcludingRubyAnnotations(body.querySelector('h1, h2, h3'))
         .replace(/\s+/g, ' ')
         .trim()
         .normalize('NFC');
@@ -471,6 +500,28 @@ async function parseEpubBlob(
 
     const chapters = buildEpubChapters(rawSections, book.id);
     if (chapters.length === 0) throw new Error('EPUB không có nội dung để đọc.');
+
+    if (mediaCtrl) {
+      if (useLazyMedia) {
+        const initialIdx = resolveInitialChapterIndex(
+          chapters,
+          options?.initialChapterId,
+          options?.initialChapterIndex,
+        );
+        await mediaCtrl.ensureChapterMedia(chapters, initialIdx);
+        const ctrl = mediaCtrl;
+        return {
+          chapters,
+          ensureChapterMedia: (idx) => ctrl.ensureChapterMedia(chapters, idx),
+          resolveMediaUrl: ctrl.resolveMediaUrl,
+          dispose,
+        };
+      }
+      for (let idx = 0; idx < chapters.length; idx += 1) {
+        await mediaCtrl.ensureChapterMedia(chapters, idx);
+      }
+    }
+
     return { chapters, dispose };
   } catch (err) {
     dispose();
@@ -483,8 +534,9 @@ async function parseDocxBlob(
   book: Book,
   options?: ParseBookOptions,
 ): Promise<ParsedBook> {
-  const JSZip = await loadJSZip();
-  const zip = await JSZip.loadAsync(options?.arrayBuffer ?? (await blob.arrayBuffer()));
+  const zip =
+    options?.preloadedZip ??
+    (await (await loadJSZip()).loadAsync(options?.arrayBuffer ?? (await blob.arrayBuffer())));
   return parseDocxZip(zip, book, options);
 }
 

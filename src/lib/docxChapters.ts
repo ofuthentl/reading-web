@@ -1,6 +1,6 @@
 import type { Book, Chapter } from '@/types';
 import { escapeHtml } from '@/lib/docxXml';
-import { sanitizeBookDocument } from '@/lib/sanitizeHtml';
+import { sanitizeHtmlToBody } from '@/lib/sanitizeHtml';
 
 const CHAPTER_HEADING_TEXT_RE =
   /^(?:(?:chương|hồi|phần|quyển|tập|ngoại\s+truyện|phụ\s+lục|chapter|part|act|extra)\s*(?:\d+|[ivxlcdm]+(?:$|[\s:.\-–—])|[:\-–—.])|(?:mở\s+đầu|lời\s+mở\s+đầu|lời\s+nói\s+đầu|khúc\s+dạo\s+đầu|lời\s+kết|vĩ\s+thanh|prologue|epilogue|interlude)(?:$|[\s:.\-–—]))/i;
@@ -49,10 +49,9 @@ function sanitizeAndRestoreImages(
   rawHtml: string,
   placeholderToImage: Map<string, { blobUrl: string; zipPath: string }>,
 ): string {
-  const doc = new DOMParser().parseFromString(rawHtml, 'text/html');
-  // Must sanitize BEFORE replacing placeholder src with blob: URLs (DOMPurify strips blob: by default)
-  sanitizeBookDocument(doc);
-  for (const img of Array.from(doc.querySelectorAll<HTMLImageElement>('img[src]'))) {
+  // Single-pass parse + sanitize BEFORE replacing placeholder src with blob: URLs (DOMPurify strips blob: by default)
+  const body = sanitizeHtmlToBody(rawHtml);
+  for (const img of Array.from(body.querySelectorAll<HTMLImageElement>('img[src]'))) {
     const src = img.getAttribute('src') || '';
     const resolved = placeholderToImage.get(src);
     if (resolved) {
@@ -63,7 +62,7 @@ function sanitizeAndRestoreImages(
       img.remove();
     }
   }
-  return doc.body?.innerHTML?.trim() || '';
+  return body.innerHTML.trim();
 }
 
 export function buildDocxChapters(

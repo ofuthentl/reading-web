@@ -9,6 +9,8 @@ export interface PackManifestMedia {
   length: number;
   compression: 0 | 8;
   mime: string;
+  /** Danh sách canonical chapter keys chứa ảnh (QĐ-3A — giúp Worker kiểm tra khoá chương O(1)) */
+  ch?: string[];
 }
 
 const CONTAINER_BLOCK_TAGS = new Set([
@@ -106,6 +108,7 @@ export function convertChapterToGuestBlocks(
   zipMap: Map<string, ZipSliceInfo>,
   mediaByZipPath: Map<string, number>,
   mediaList: PackManifestMedia[],
+  preParsedDoc?: Document,
 ): GuestBlock[] {
   const blocks: GuestBlock[] = [];
   const isTocChapter = isTocChapterTitle(chapter.title);
@@ -137,7 +140,7 @@ export function convertChapterToGuestBlocks(
     return blocks;
   }
 
-  const doc = new DOMParser().parseFromString(chapter.content_html, 'text/html');
+  const doc = preParsedDoc ?? new DOMParser().parseFromString(chapter.content_html, 'text/html');
   let pendingSpans: GuestInlineSpan[] = [];
 
   const flushParagraph = (kind: 'p' | 'quote' = 'p') => {

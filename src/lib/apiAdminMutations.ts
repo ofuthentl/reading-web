@@ -56,11 +56,15 @@ export async function uploadBook(
 
   let coverBlob: Blob | null = null;
   let extractedAuthor: string | null = null;
+  let preloadedArrayBuffer: ArrayBuffer | undefined;
+  let preloadedZip: Awaited<ReturnType<typeof import('@/lib/parsers')['extractUploadMetadata']>>['zip'];
   try {
     const { extractUploadMetadata } = await import('@/lib/parsers');
-    const extracted = await extractUploadMetadata(file, fileType);
+    const extracted = await extractUploadMetadata(file, fileType, { keepZip: isCloudMode });
     coverBlob = extracted.coverBlob;
     extractedAuthor = extracted.author;
+    preloadedArrayBuffer = extracted.arrayBuffer;
+    preloadedZip = extracted.zip;
   } catch (err) {
     if (isChunkLoadError(err)) {
       throw new Error(
@@ -117,65 +121,135 @@ export async function uploadBook(
     return { book: newBook, storage: await computeLocalStorageStats(updatedBooks) };
   }
 
-  const uploadRes = await apiFetch(`/api/books/${bookId}/file`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': file.type || 'application/octet-stream',
-      'X-File-Type': fileType,
-      'X-File-Size': String(file.size),
-      'X-Book-Title': encodeURIComponent(title),
-      'X-Book-Author': encodeURIComponent(author),
-      'X-Book-Shelf': encodeURIComponent(shelf),
-      'X-Cover-Color': encodeURIComponent(coverColor),
-    },
-    body: file,
-  });
-  const uploadData = (await uploadRes.json().catch(() => ({}))) as {
-    book?: Book;
-    storage?: StorageStats;
-    error?: string;
+  const supportsGuestPack = fileType === 'epub' || fileType === 'docx';
+  const draftBookForPack: Book = {
+    id: bookId,
+    title,
+    author,
+    shelf,
+    description: null,
+    cover_color: coverColor,
+    cover_key: null,
+    file_key: `books/${bookId}.${fileType}`,
+    file_type: fileType,
+    file_size: file.size,
+    cover_size: 0,
+    created_at: new Date().toISOString(),
   };
-  if (!uploadRes.ok || !uploadData.book) {
-    throw new Error(uploadData.error || `Không thể tải ${file.name} lên R2.`);
+
+  // QĐ-2A: dựng gói khách trên CPU (tái sử dụng ZIP đã mở) song song với tải tệp gốc lên R2
+  const packBuilderModPromise = supportsGuestPack
+    ? import('@/lib/guestPackBuilder').catch(() => null)
+    : Promise.resolve(null);
+  const prebuiltPackPromise: Promise<Uint8Array | null> = supportsGuestPack
+    ? packBuilderModPromise
+        .then((mod) =>
+          mod
+            ? mod.buildGuestPackEnvelope(file, draftBookForPack, {
+                arrayBuffer: preloadedArrayBuffer,
+                zip: preloadedZip,
+              })
+            : null,
+        )
+        .catch(() => null)
+    : Promise.resolve(null);
+
+  let uploadData: { book?: Book; storage?: StorageStats; error?: string };
+  try {
+    const uploadRes = await apiFetch(`/api/books/${bookId}/file`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-File-Type': fileType,
+        'X-File-Size': String(file.size),
+        'X-Book-Title': encodeURIComponent(title),
+        'X-Book-Author': encodeURIComponent(author),
+        'X-Book-Shelf': encodeURIComponent(shelf),
+        'X-Cover-Color': encodeURIComponent(coverColor),
+      },
+      body: file,
+    });
+    uploadData = (await uploadRes.json().catch(() => ({}))) as {
+      book?: Book;
+      storage?: StorageStats;
+      error?: string;
+    };
+    if (!uploadRes.ok || !uploadData.book) {
+      throw new Error(uploadData.error || `Không thể tải ${file.name} lên R2.`);
+    }
+  } catch (err) {
+    // Giải phóng tham chiếu ZIP/ArrayBuffer ngay cả khi tải tệp gốc thất bại
+    void prebuiltPackPromise.finally(() => {
+      preloadedArrayBuffer = undefined;
+      preloadedZip = undefined;
+    });
+    throw err;
   }
 
   let finalBook = uploadData.book;
   let finalStorage = uploadData.storage!;
 
-  await setCachedBookBlob(finalBook.file_key, file);
+  // Ghi cache IndexedDB ở nền để không chặn lượt tải ảnh bìa & gói khách kế tiếp
+  void setCachedBookBlob(finalBook.file_key, file).catch(() => undefined);
 
-  if (coverBlob) {
-    try {
-      const coverRes = await apiFetch(`/api/books/${bookId}/cover`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'image/jpeg', 'X-File-Size': String(coverBlob.size) },
-        body: coverBlob,
-      });
-      const coverData = (await coverRes.json().catch(() => ({}))) as {
-        book?: Book;
-        storage?: StorageStats;
-      };
-      if (coverRes.ok && coverData.book) {
-        finalBook = coverData.book;
-        if (coverData.storage) finalStorage = coverData.storage;
-        if (finalBook.cover_key) await setCachedCoverBlob(finalBook.cover_key, coverBlob);
-      }
-    } catch {
-      // Non-fatal: book is already uploaded safely
-    }
+  // QĐ-2A: tải song song ảnh bìa VÀ gói bảo mật khách (cả hai đều độc lập trên Worker)
+  const coverTask = coverBlob
+    ? (async (): Promise<{ book?: Book; storage?: StorageStats } | null> => {
+        try {
+          const coverRes = await apiFetch(`/api/books/${bookId}/cover`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'image/jpeg', 'X-File-Size': String(coverBlob.size) },
+            body: coverBlob,
+          });
+          const coverData = (await coverRes.json().catch(() => ({}))) as {
+            book?: Book;
+            storage?: StorageStats;
+          };
+          if (coverRes.ok && coverData.book) {
+            if (coverData.book.cover_key) {
+              void setCachedCoverBlob(coverData.book.cover_key, coverBlob).catch(() => undefined);
+            }
+            return coverData;
+          }
+          return null;
+        } catch {
+          return null;
+        }
+      })()
+    : Promise.resolve(null);
+
+  const packTask = supportsGuestPack
+    ? (async (): Promise<{ ready: boolean; storage?: StorageStats }> => {
+        try {
+          const [mod, envelope] = await Promise.all([packBuilderModPromise, prebuiltPackPromise]);
+          preloadedArrayBuffer = undefined;
+          preloadedZip = undefined;
+          if (!mod || !envelope) return { ready: false };
+          const packRes = await mod.uploadGuestPackEnvelope(bookId, envelope);
+          return { ready: true, storage: packRes.storage };
+        } catch {
+          preloadedArrayBuffer = undefined;
+          preloadedZip = undefined;
+          return { ready: false };
+        }
+      })()
+    : Promise.resolve({ ready: false, storage: undefined as StorageStats | undefined });
+
+  const [coverResult, packResult] = await Promise.all([coverTask, packTask]);
+
+  if (coverResult?.book) {
+    finalBook = {
+      ...finalBook,
+      cover_key: coverResult.book.cover_key,
+      cover_size: coverResult.book.cover_size,
+    };
   }
+  finalBook = { ...finalBook, guest_ready: packResult.ready };
 
-  if (fileType === 'epub' || fileType === 'docx') {
-    try {
-      const { buildAndUploadGuestPack } = await import('@/lib/guestPackBuilder');
-      const packRes = await buildAndUploadGuestPack(file, finalBook);
-      finalBook = { ...finalBook, guest_ready: true };
-      if (packRes.storage) finalStorage = packRes.storage;
-    } catch {
-      finalBook = { ...finalBook, guest_ready: false };
+  for (const candidate of [coverResult?.storage, packResult.storage]) {
+    if (candidate && candidate.usedBytes >= finalStorage.usedBytes) {
+      finalStorage = candidate;
     }
-  } else {
-    finalBook = { ...finalBook, guest_ready: false };
   }
 
   return { book: finalBook, storage: finalStorage };
