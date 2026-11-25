@@ -1,33 +1,37 @@
 # HANDOFF
-Cập nhật: 2026-11-25 18:05 | Nhánh: feat/v5-wave2-admin-storage-and-catalog | Build: 🟢 XANH (`index-*.js = 53.94 kB` gzip `<< 86.04 kB`, `npm test` 31/31)
-Nhiệm vụ hiện tại: **Đợt Vá Lỗi Toàn Diện & Nâng Cấp v5 — Wave 2 (`D-046` — `QĐ-4A`, `0` migration D1)**.
+Cập nhật: 2026-11-25 19:08 | Nhánh: feat/v5-wave3-reader-ux-security-discord | Build: 🟢 XANH (`typecheck`, `lint`, `39/39` test, `build` `54.01 kB`, `check:bundle`, Worker `tsc`)
+Nhiệm vụ hiện tại: **Đợt Vá Lỗi Toàn Diện & Nâng Cấp v5 — Wave 3 (`D-046` — `QĐ-5A`, migration `0019`) — Đã áp migration `0019` remote D1, deploy Worker & push nhánh sẵn sàng tạo PR**.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/v5-bugfixes-and-upgrades.md
 
 ## Đang làm dở
-- **Wave 2 (Phase 2.1 → 2.4) ĐÃ HOÀN TẤT 100%, ĐÃ DEPLOY WORKER LÊN PRODUCTION & ĐÃ PUSH NHÁNH** (`typecheck`, `lint` 0/0 mọi tệp `<= 500` dòng, `npm test` 31/31 pass, `VITE_BASE_PATH=/ npm run build` đạt `53.94 kB` gzip, `npm run check:bundle`, Worker `tsc --noEmit`, kiểm thử E2E trình duyệt thật nối Worker local với `0` lỗi console/page).
-- Sẵn sàng mở Pull Request từ `feat/v5-wave2-admin-storage-and-catalog` vào `main` để GitHub Actions CI kiểm tra và tự deploy Frontend lên `ofu.lol`.
+- Không còn việc dở dang trong Wave 3; chỉ còn mở Pull Request từ `feat/v5-wave3-reader-ux-security-discord` vào `main` và merge khi CI xanh.
 
 ## Xong trong nhánh này
-### Phase 2.1 — Thay tệp EPUB/DOCX tại chỗ giữ tiến độ, bình luận & phân quyền (`QĐ-4A`)
-- Worker (`bookReplaceRoute.ts`, `index.ts`): `PUT /api/books/:id/replace-file` (`requireOwner`) ghi key version mới giữ tệp cũ sống suốt lúc tải, kiểm tra nguyên tử `9.0 GiB` trừ `old_file_size`, cập nhật D1 giữ `books.id`, xoá tệp R2 & `guest-pack` cũ sau commit và rollback xoá key mới nếu D1 lỗi.
-- Frontend (`bookReplaceClient.ts`, `apiAdminMutations.ts`, `BookReplaceFileSection.tsx`, `BookEditModal.tsx`, `AdminModalsHost.tsx`): `replaceBookFile()`, UI thay tệp kèm checkbox *"Cập nhật ảnh bìa từ tệp mới"* (mặc định tắt), tự dựng/tải lại `guest-pack`, xoá `file_key` cũ khỏi IndexedDB.
+### Migration D1 `0019_v5_security_and_presets.sql` (`QĐ-5A`)
+- Tạo `0019_v5_security_and_presets.sql` + đồng bộ `schema.sql` (`app_security_state`, `discord_access_presets`, `discord_access_preset_members`, backfill `rl_last_strike_at`, thêm index tra cứu mới & xoá 2 index dư thừa ở migration & runtime).
 
-### Phase 2.2 — Đối soát dung lượng R2 thực tế & Dọn file rác mồ côi `> 24h`
-- Worker (`storageReconcileRoute.ts`, `adminRoutes.ts`): `GET /api/admin/storage/reconcile` (phân trang `BOOKS_BUCKET.list()` tối đa 15 trang `< 50` subrequest, đối chiếu D1, gắn `safeToDelete: uploaded > 24h`) và `POST /api/admin/storage/reconcile/cleanup` (chỉ xoá tệp mồ côi thật `> 24h`).
-- Frontend (`storageReconcileApi.ts`, `AdminR2ReconcileCard.tsx`, `AdminStorageSecurityPanel.tsx`, `AdminUsageView.tsx`, `App.tsx`): thẻ nạp lười *"Đối soát kho R2 thực tế"* trên `/usage`.
+### Phase 3.1 — Tải trước chương kế tiếp cho Khách Discord (Speculative Prefetch)
+- `guestCrypto.ts`, `useGuestChapterStream.ts`, `GuestCanvasReader.tsx`: guard `shouldPrefetchNextGuestChapter` (`>= 78%`, bỏ qua chương khoá/đã cache/cooldown `429` 60s), `AbortController` riêng seed `chapterCacheRef` giữ trọn thuỷ vân & `D-028`.
 
-### Phase 2.3 — Nâng cấp *Sức khoẻ kho sách* & Đồng bộ gói khách chọn lọc
-- `AdminLibraryHealthModal.tsx`, `ShelfBatchNoteModal.tsx`, `AdminModalsHost.tsx`, `AuthenticatedLibraryShell.tsx`: bỏ `.slice(0, 20/30)`, thêm phân trang *"Xem thêm"* / *"Hiện tất cả"* và nút mở thẳng sửa tập / *Gợi ý AniList* bộ / đồng bộ tập.
-- `guestPackBatchSync.ts`, `AdminProtectionSyncTab.tsx`, `AdminProtectionModal.tsx`: lọc & đồng bộ chọn lọc theo bộ/tập với `concurrency = 2` (`<= 40 MB`, `1` nếu `> 40 MB`), sửa bug bấm *Dừng* vẫn cập nhật đúng sách đã xong & `storage`.
+### Phase 3.2 — Thanh tua `%` cuốn kiểu Kindle trong Mục lục, Phím tắt `?`, `<ModalShell>` & Nạp dần Trang chủ
+- `ReaderKindlePercentBar.tsx`, `readingEstimate.ts`, `ReaderTocDrawer.tsx`, `ReaderOverlaysHost.tsx`, `ReaderFooterStatusBar.tsx`, `ReaderPaginatedFooter.tsx`, `ReaderView.tsx`, `GuestCanvasReader.tsx`: thanh trượt & ô nhập `%` toàn cuốn kiểu Kindle (theo trọng số chương + vạch chia chương + xem trước chương đích) ghim đáy ngăn kéo `Mục lục`, chạm thanh chân trang mở thẳng ngăn kéo.
+- `KeyboardShortcutsModal.tsx`, `ModalShell.tsx` (chuẩn hoá 13 modal), `@media (prefers-reduced-motion: reduce)` và nạp dần theo lô kệ trong `LibraryHomeShelvesSection.tsx`.
 
-### Phase 2.4 — Sao lưu / Khôi phục JSON Owner & Tối ưu `GET /api/books` bằng ETag (`304`)
-- Worker (`backupSchema.ts`, `backupExport.ts`, `backupRoute.ts`, `adminRoutes.ts`): `GET /api/admin/backup/export` & `POST /api/admin/backup/import` (`requireOwner`, validate chặt schema v1, `0 B` R2, `merge`/`replace`, bỏ qua sách đã xoá tránh FK). Frontend (`backupApi.ts`, `AdminBackupCard.tsx`) nạp lười trên `/usage`.
-- Worker + Frontend (`booksEtag.ts`, `index.ts`, `libraryStateCache.ts`, `api.ts`, `authSession.ts`): `GET /api/books` sinh Weak ETag `W/"v1-<role>-<32hex>"` + `If-None-Match` → `304 Not Modified`; client cache RAM/`sessionStorage` theo phiên.
-- Unit Tests (`tests/wave2AdminAndEtag.test.ts`, `scripts/run-tests.mjs`): bổ sung 6 test Wave 2 (tổng 31/31 pass), giữ tên job CI `Frontend (typecheck, lint, build)` khớp Required check của `main` (vẫn chạy đủ `typecheck`, `lint`, `test`, `build`, `check:bundle`) + cập nhật `docs/ARCHITECTURE.md`, `docs/plans/v5-bugfixes-and-upgrades.md`.
+### Phase 3.3 — Security Headers Worker, CSP Frontend & *Đăng xuất mọi thiết bị Admin*
+- Worker (`securityHeaders.ts`, `index.ts`, `r2Files.ts`, `guestPack.ts`): gắn `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` trên mọi phản hồi.
+- Frontend (`public/theme-init.js`, `public/sw.js`, `cspPolicy.ts`, `index.html`, `vite.config.ts`): tách inline theme script & gắn CSP nghiêm ngặt (`script-src 'self'` ở prod) + `referrer` meta.
+- Worker + Frontend (`securityStateDb.ts`, `auth.ts`, `adminRoutes.ts`, `adminSecurityApi.ts`, `AdminRevokeSessionsAction.tsx`): nhúng `iat` Owner token + `owner_min_iat` (cache isolate `15s` + invalidate tức thì) + `POST /api/admin/sessions/revoke-owner` + nút xác nhận 2 bước.
+
+### Phase 3.4 — Discord Presets, Ma trận quyền, Kiểm duyệt `/usage` & Webhook Cảnh báo
+- Worker (`discordPresetsDb.ts`, `discordAccessMatrixDb.ts`, `usageRecentCommunityDb.ts`, `adminAlerts.ts`, `adminRoutes.ts`, `rateLimitDb.ts`, `guestRoutes.ts`, `index.ts`): CRUD `/api/admin/discord-presets`, `/api/admin/discord-guests/:id/access-matrix` + `/revoke-all`, `/api/admin/usage/recent-community`, cảnh báo tuỳ chọn `DISCORD_ADMIN_ALERT_WEBHOOK_URL` (`ctx.waitUntil`).
+- Frontend (`discordPresetsApi.ts`, `DiscordPresetPickerBar.tsx`, `AdminGuestAccessMatrixPanel.tsx`, `AdminRecentCommunityCard.tsx`, `ShelfAccessModal.tsx`, `BookAccessModal.tsx`, `AdminDiscordGuestsPanel.tsx`, `AdminUsageView.tsx`).
+
+### Nghiệm thu & Kiểm thử Wave 3
+- Bổ sung `tests/wave3SecurityPresetsAndPrefetch.test.ts` & test ánh xạ `%` Kindle (`39/39` unit test pass); kiểm thử E2E trình duyệt thật bản prod CSP + Worker cục bộ đạt `0` lỗi CSP/console across cả 7 hạng mục Wave 3; cập nhật `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` & checklist `docs/plans/v5-bugfixes-and-upgrades.md`.
 
 ## Bước tiếp theo
-1. Mở & merge Pull Request Wave 2 (`feat/v5-wave2-admin-storage-and-catalog` → `main`) sau khi CI xanh để auto-deploy Frontend lên `ofu.lol`.
-2. Sau khi Wave 2 merge vào `main`, tách nhánh mới `feat/v5-wave3-reader-ux-security-discord` cho **Wave 3** (1 migration cộng thêm `0019`).
+1. Mở Pull Request trên GitHub từ `feat/v5-wave3-reader-ux-security-discord` vào `main`, chờ CI xanh và merge để tự deploy Frontend lên `https://ofu.lol`.
+2. (Tuỳ chọn) Nếu muốn bật cảnh báo Discord cho Admin khi chạm strike 10 / khoá IP brute-force, cấu hình `npx wrangler secret put DISCORD_ADMIN_ALERT_WEBHOOK_URL` trong `workers/r2-storage`.
 
 ## Lỗi / chặn
-- Không có lỗi/chặn. Giữ nguyên không đụng 3 tệp/thư mục chưa theo dõi sẵn ở thư mục gốc (`Gemini_Generated_Image_*.png`, `IMG_4018.JPG`, `hatsune-miku_.../`).
+- Không có lỗi/chặn. Giữ nguyên 3 tệp/thư mục chưa theo dõi sẵn ở thư mục gốc (`Gemini_Generated_Image_*.png`, `IMG_4018.JPG`, `hatsune-miku_.../`).

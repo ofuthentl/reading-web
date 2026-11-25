@@ -74,6 +74,75 @@ export function computeWeightedBookPercent(
   return rounded;
 }
 
+export interface WeightedBookPercentTarget {
+  chapterIndex: number;
+  scrollRatio: number;
+}
+
+export function computeChapterStartPercents(weights: readonly number[]): number[] {
+  const totalChapters = weights.length;
+  if (totalChapters === 0) return [];
+  let totalWeight = 0;
+  for (let i = 0; i < totalChapters; i += 1) {
+    const w = weights[i];
+    if (typeof w === 'number' && Number.isFinite(w) && w > 0) totalWeight += w;
+  }
+  if (totalWeight <= 0) {
+    return weights.map((_, idx) => (idx / totalChapters) * 100);
+  }
+  const starts: number[] = [];
+  let acc = 0;
+  for (let i = 0; i < totalChapters; i += 1) {
+    starts.push((acc / totalWeight) * 100);
+    const w = weights[i];
+    if (typeof w === 'number' && Number.isFinite(w) && w > 0) acc += w;
+  }
+  return starts;
+}
+
+export function resolveWeightedBookPercentTarget(
+  weights: readonly number[],
+  targetPercent: number,
+): WeightedBookPercentTarget {
+  const totalChapters = weights.length;
+  if (totalChapters === 0) return { chapterIndex: 0, scrollRatio: 0 };
+
+  const clampedPct = Number.isFinite(targetPercent)
+    ? Math.min(100, Math.max(0, targetPercent))
+    : 0;
+  if (clampedPct <= 0) return { chapterIndex: 0, scrollRatio: 0 };
+  if (clampedPct >= 100) return { chapterIndex: totalChapters - 1, scrollRatio: 1 };
+
+  let totalWeight = 0;
+  for (let i = 0; i < totalChapters; i += 1) {
+    const w = weights[i];
+    if (typeof w === 'number' && Number.isFinite(w) && w > 0) totalWeight += w;
+  }
+
+  if (totalWeight <= 0) {
+    const pos = (clampedPct / 100) * totalChapters;
+    const chapterIndex = Math.min(totalChapters - 1, Math.floor(pos));
+    const scrollRatio = Math.min(1, Math.max(0, pos - chapterIndex));
+    return { chapterIndex, scrollRatio };
+  }
+
+  const targetWeight = (clampedPct / 100) * totalWeight;
+  let acc = 0;
+  let lastPositiveIdx = totalChapters - 1;
+  for (let i = 0; i < totalChapters; i += 1) {
+    const rawW = weights[i];
+    const w = typeof rawW === 'number' && Number.isFinite(rawW) && rawW > 0 ? rawW : 0;
+    if (w <= 0) continue;
+    lastPositiveIdx = i;
+    if (acc + w >= targetWeight - 1e-6) {
+      const ratio = Math.min(1, Math.max(0, (targetWeight - acc) / w));
+      return { chapterIndex: i, scrollRatio: Math.round(ratio * 1000) / 1000 };
+    }
+    acc += w;
+  }
+  return { chapterIndex: lastPositiveIdx, scrollRatio: 1 };
+}
+
 export function countWordsInPlainText(text: string | null | undefined): number {
   if (!text) return 0;
   const trimmed = text.trim();

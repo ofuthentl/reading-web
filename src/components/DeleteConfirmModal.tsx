@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AlertTriangle, Loader2, Trash2, X } from 'lucide-react';
 import type { Book, StorageStats } from '@/types';
+import { ModalShell } from '@/components/ModalShell';
 import { deleteBooks, formatBytes } from '@/lib/api';
 import type { ToastType } from '@/hooks/useToast';
 
@@ -22,17 +23,6 @@ export function DeleteConfirmModal({
   const [deleting, setDeleting] = useState(false);
 
   const isOpen = books.length > 0;
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !deleting) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, deleting, onClose]);
 
   const totalBytes = useMemo(
     () => books.reduce((sum, book) => sum + (book.file_size || 0) + (book.cover_size || 0), 0),
@@ -68,19 +58,14 @@ export function DeleteConfirmModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="delete-confirm-modal-title"
-      onClick={() => {
-        if (!deleting) onClose();
-      }}
+    <ModalShell
+      open
+      onClose={onClose}
+      closeDisabled={deleting}
+      ariaLabelledBy="delete-confirm-modal-title"
+      zIndexClass="z-[60]"
+      panelClassName="moonlit-card fade-in w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
     >
-      <div
-        className="moonlit-card fade-in w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
-        onClick={(event) => event.stopPropagation()}
-      >
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-red-700/30 bg-red-600/10 text-red-700 dark:border-red-400/30 dark:text-red-400">
@@ -164,7 +149,6 @@ export function DeleteConfirmModal({
             )}
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

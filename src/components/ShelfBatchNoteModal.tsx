@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { FileText, Languages, Loader2, Save, Sparkles, UserPen, Wand2, X } from 'lucide-react';
 import type { AniListNovelCandidate, Book, ShelfGroup } from '@/types';
 import { AniListSuggestPanel } from '@/components/AniListSuggestPanel';
+import { ModalShell } from '@/components/ModalShell';
 import {
   type ShelfBatchMode,
   ShelfBatchNoteFields,
@@ -116,15 +116,6 @@ export function ShelfBatchNoteModal({
     setSaving(false);
     setExtracting(false);
   }, [initialAniListOpen, shelfKey]);
-
-  useEffect(() => {
-    if (!shelf) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !saving && !extracting) onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [extracting, onClose, saving, shelf]);
 
   if (!shelf) return null;
 
@@ -314,20 +305,15 @@ export function ShelfBatchNoteModal({
 
   const HeaderIcon = mode === 'author' ? UserPen : mode === 'alt-titles' ? Languages : FileText;
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 !m-0 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="shelf-batch-note-title"
-      onClick={() => {
-        if (!saving && !extracting) onClose();
-      }}
+  return (
+    <ModalShell
+      open
+      onClose={onClose}
+      closeDisabled={saving || extracting}
+      ariaLabelledBy="shelf-batch-note-title"
+      zIndexClass="z-50"
+      panelClassName="moonlit-card fade-in flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
     >
-      <div
-        className="moonlit-card fade-in flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div className="flex min-w-0 flex-1 items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
@@ -516,8 +502,6 @@ export function ShelfBatchNoteModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>,
-    document.body,
+    </ModalShell>
   );
 }

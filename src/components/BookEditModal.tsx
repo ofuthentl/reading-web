@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { Book, StorageStats } from '@/types';
 import { BookReplaceFileSection } from '@/components/BookReplaceFileSection';
+import { ModalShell } from '@/components/ModalShell';
 import { formatBytes } from '@/lib/api';
 import {
   type ReplaceBookFileResult,
@@ -96,15 +97,6 @@ export function BookEditModal({
   }, [coverFile]);
 
   const busy = saving || replacingFile;
-
-  useEffect(() => {
-    if (!book) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [book, busy, onClose]);
 
   const currentCoverUrl = useCoverUrl(book?.cover_key ?? null, Boolean(book && !coverFile));
 
@@ -213,19 +205,14 @@ export function BookEditModal({
   );
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="edit-book-modal-title"
-      onClick={() => {
-        if (!busy) onClose();
-      }}
+    <ModalShell
+      open
+      onClose={onClose}
+      closeDisabled={busy}
+      ariaLabelledBy="edit-book-modal-title"
+      zIndexClass="z-50"
+      panelClassName="moonlit-card fade-in flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
     >
-      <div
-        className="moonlit-card fade-in flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
-        onClick={(event) => event.stopPropagation()}
-      >
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
@@ -479,7 +466,6 @@ export function BookEditModal({
             </div>
           </div>
         </form>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

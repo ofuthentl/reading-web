@@ -60,6 +60,7 @@ interface GuestCanvasPaginatedViewProps {
   onRatioChange: (ratio: number, isEndOfChapter: boolean) => void;
   onPrevChapterEnd: () => void;
   onNextChapterStart: () => void;
+  onOpenToc?: () => void;
   onCompleteBook: (nextBook?: Book) => void;
   onOpenGuestImage: (bitmap: ImageBitmap, alt: string) => void;
   onOpenFootnote?: (footnote: ResolvedFootnoteItem) => void;
@@ -98,6 +99,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       onRatioChange,
       onPrevChapterEnd,
       onNextChapterStart,
+      onOpenToc,
       onCompleteBook,
       onOpenGuestImage,
       onOpenFootnote,
@@ -469,7 +471,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
           chapterOptions={chapterOptions} currentPage={safeSpreadIndex + 1} totalPages={totalSpreads}
           isFirstSpread={isFirstSpread} isLastChapter={isLastChapter} isLastSpread={isLastSpread}
           remainingEstimate={remainingEstimate} nextBook={nextBook} palette={palette}
-          onStepPrev={stepPrev} onStepNext={stepNext} onCompleteBook={onCompleteBook} onApiError={onApiError}
+          onStepPrev={stepPrev} onStepNext={stepNext} onOpenToc={onOpenToc} onCompleteBook={onCompleteBook} onApiError={onApiError}
         />
       </div>
     );

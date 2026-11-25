@@ -23,6 +23,7 @@ export interface ReaderPaginatedFooterProps {
   palette: ReaderThemePalette;
   onStepPrev: () => void;
   onStepNext: () => void;
+  onOpenToc?: () => void;
   onCompleteBook: (nextBook?: Book) => void;
   onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
@@ -45,6 +46,7 @@ export function ReaderPaginatedFooter({
   palette,
   onStepPrev,
   onStepNext,
+  onOpenToc,
   onCompleteBook,
   onApiError,
 }: ReaderPaginatedFooterProps) {
@@ -53,9 +55,31 @@ export function ReaderPaginatedFooter({
   const effectiveMaxChapter = readerMaxChapterNumber ?? currentChapterNumber ?? chapterIndex + 1;
   const effectiveTotalChapters = chapterOptions?.length || totalChapters;
 
+  const progressText = (
+    <>
+      <span className="truncate">
+        <span className="hidden sm:inline">Trang </span>
+        <strong className={palette.textPrimary}>{currentPage}</strong>
+        <span className="sm:hidden">/{totalPages}</span>
+        <span className="hidden sm:inline"> / {totalPages}</span>
+      </span>
+      <span aria-hidden="true">·</span>
+      <span className="truncate">
+        <span className="sm:hidden">Ch.{chapterIndex + 1}/{totalChapters}</span>
+        <span className="hidden sm:inline">Chương {chapterIndex + 1}/{totalChapters}</span>
+      </span>
+      {remainingEstimate && (
+        <>
+          <span aria-hidden="true" className="hidden sm:inline">·</span>
+          <span className="hidden sm:inline">{remainingEstimate}</span>
+        </>
+      )}
+    </>
+  );
+
   return (
     <footer
-      className={`flex shrink-0 items-center justify-between gap-1.5 border-t px-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 text-xs sm:gap-2 sm:px-6 ${
+      className={`relative flex shrink-0 items-center justify-between gap-1.5 border-t px-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 text-xs sm:gap-2 sm:px-6 ${
         showCompletionActions ? 'flex-wrap' : 'flex-nowrap'
       } ${palette.border} ${palette.headerBg}`}
     >
@@ -105,22 +129,17 @@ export function ReaderPaginatedFooter({
         <div
           className={`flex min-w-0 items-center justify-center gap-x-1.5 whitespace-nowrap tabular-nums sm:gap-x-2 ${palette.textSecondary}`}
         >
-          <span className="truncate">
-            <span className="hidden sm:inline">Trang </span>
-            <strong className={palette.textPrimary}>{currentPage}</strong>
-            <span className="sm:hidden">/{totalPages}</span>
-            <span className="hidden sm:inline"> / {totalPages}</span>
-          </span>
-          <span aria-hidden="true">·</span>
-          <span className="truncate">
-            <span className="sm:hidden">Ch.{chapterIndex + 1}/{totalChapters}</span>
-            <span className="hidden sm:inline">Chương {chapterIndex + 1}/{totalChapters}</span>
-          </span>
-          {remainingEstimate && (
-            <>
-              <span aria-hidden="true" className="hidden sm:inline">·</span>
-              <span className="hidden sm:inline">{remainingEstimate}</span>
-            </>
+          {onOpenToc ? (
+            <button
+              type="button"
+              onClick={onOpenToc}
+              title="Mở mục lục & thanh tua % cuốn"
+              className={`inline-flex min-w-0 items-center gap-x-1.5 rounded-lg px-2 py-1 transition sm:gap-x-2 ${palette.hover}`}
+            >
+              {progressText}
+            </button>
+          ) : (
+            progressText
           )}
           <ReaderBookCommunityModalButton
             compact

@@ -347,7 +347,16 @@
       transition: none !important;
     }
 
-    .micro-pop {
+    .micro-pop,
+    .theme-icon-spin {
+      animation: none !important;
+    }
+
+    body {
+      transition: none !important;
+    }
+
+    :root[data-theme-switch]::view-transition-new(root) {
       animation: none !important;
     }
   }

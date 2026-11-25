@@ -26,6 +26,7 @@ import {
   uploadBookGuestPack,
 } from './guestPackUpload';
 import { consumeGuestRateToken } from './rateLimitDb';
+import { applySecurityHeaders } from './securityHeaders';
 
 export {
   GUEST_PACK_MAGIC,
@@ -336,6 +337,7 @@ export async function getGuestEncryptedMediaResponse(
     'X-Guest-Nonce': encrypted.nonceHex,
     'X-Guest-Mime': mediaMeta.mime,
   });
+  applySecurityHeaders(headers);
   corsApply(headers);
   return new Response(encrypted.ciphertext, { status: 200, headers });
 }

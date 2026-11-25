@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Check,
   FolderKanban,
@@ -12,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import type { CustomCollection, ShelfGroup } from '@/types';
+import { ModalShell } from '@/components/ModalShell';
 import { isAuthError } from '@/lib/authSession';
 import {
   createCustomCollection,
@@ -93,15 +93,6 @@ export function CollectionManagerModal({
     setDeletingId(null);
   }, [loadCollectionIntoEditor, open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !saving && !deletingId) onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [deletingId, onClose, open, saving]);
-
   const normalizedQuery = useMemo(() => normalizeSearchText(shelfSearch), [shelfSearch]);
   const visibleShelves = useMemo(() => {
     return allShelves.filter((shelf) => {
@@ -182,20 +173,16 @@ export function CollectionManagerModal({
     }
   };
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 !m-0 flex items-center justify-center bg-black/60 p-3 backdrop-blur-sm sm:p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="collection-manager-title"
-      onClick={() => {
-        if (!saving && !deletingId) onClose();
-      }}
+  return (
+    <ModalShell
+      open
+      onClose={onClose}
+      closeDisabled={saving || Boolean(deletingId)}
+      ariaLabelledBy="collection-manager-title"
+      zIndexClass="z-50"
+      backdropClassName="items-center justify-center p-3 sm:p-4"
+      panelClassName="moonlit-card fade-in flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
     >
-      <div
-        className="moonlit-card fade-in flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
@@ -457,8 +444,6 @@ export function CollectionManagerModal({
             </div>
           </form>
         </div>
-      </div>
-    </div>,
-    document.body,
+    </ModalShell>
   );
 }

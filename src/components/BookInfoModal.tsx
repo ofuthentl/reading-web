@@ -1,8 +1,9 @@
-import { type CSSProperties, useEffect, useState } from 'react';
+import { type CSSProperties, useState } from 'react';
 import {
   Bookmark, BookOpen, Calendar, CheckCircle2, HardDrive, Library, Lock, Pencil, RotateCcw, UserRound, X,
 } from 'lucide-react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
+import { ModalShell } from '@/components/ModalShell';
 import { formatBytes } from '@/lib/api';
 import {
   computeBookProgressPercent,
@@ -50,15 +51,6 @@ export function BookInfoModal({
   onEditBook,
   onManageBookAccess,
 }: BookInfoModalProps) {
-  useEffect(() => {
-    if (!book) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [book, onClose]);
-
   const [ptrPop, setPtrPop] = useState(false);
   const coverUrl = useCoverUrl(book?.cover_key ?? null, Boolean(book));
   const accentRgb = useCoverAccentColor(book?.cover_key ?? null, coverUrl);
@@ -89,18 +81,14 @@ export function BookInfoModal({
     : undefined;
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="book-info-modal-title"
-      onClick={onClose}
+    <ModalShell
+      open
+      onClose={onClose}
+      ariaLabelledBy="book-info-modal-title"
+      zIndexClass="z-50"
+      panelStyle={modalCardStyle}
+      panelClassName="moonlit-card fade-in relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
     >
-      <div
-        style={modalCardStyle}
-        className="moonlit-card fade-in relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
-        onClick={(event) => event.stopPropagation()}
-      >
         {coverUrl && (
           <div
             aria-hidden="true"
@@ -404,7 +392,6 @@ export function BookInfoModal({
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

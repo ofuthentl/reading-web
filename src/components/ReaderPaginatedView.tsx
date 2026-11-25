@@ -55,6 +55,7 @@ interface ReaderPaginatedViewProps {
   onRatioChange: (ratio: number, isEndOfChapter: boolean) => void;
   onPrevChapterEnd: () => void;
   onNextChapterStart: () => void;
+  onOpenToc?: () => void;
   onCompleteBook: (nextBook?: Book) => void;
   onOpenImage: (src: string, alt: string) => void;
   onPageTurn?: () => void;
@@ -64,33 +65,12 @@ interface ReaderPaginatedViewProps {
 export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPaginatedViewProps>(
   function ReaderPaginatedView(
     {
-      bookId,
-      bookTitle,
-      chapter,
-      chapterIndex,
-      totalChapters,
-      currentChapterNumber,
-      readerMaxChapterNumber,
-      chapterOptions,
-      initialRatio,
-      nextBook,
-      settings,
-      palette,
-      immersiveHidden,
-      remainingEstimate,
-      searchTarget = null,
-      chapterHighlights = [],
-      onContentInteractionClick,
-      onSelectionEnd,
-      onToggleImmersive,
-      onCloseSettings,
-      onRatioChange,
-      onPrevChapterEnd,
-      onNextChapterStart,
-      onCompleteBook,
-      onOpenImage,
-      onPageTurn,
-      onApiError,
+      bookId, bookTitle, chapter, chapterIndex, totalChapters,
+      currentChapterNumber, readerMaxChapterNumber, chapterOptions, initialRatio,
+      nextBook, settings, palette, immersiveHidden, remainingEstimate, searchTarget = null,
+      chapterHighlights = [], onContentInteractionClick, onSelectionEnd, onToggleImmersive,
+      onCloseSettings, onRatioChange, onPrevChapterEnd, onNextChapterStart, onOpenToc,
+      onCompleteBook, onOpenImage, onPageTurn, onApiError,
     },
     ref,
   ) {
@@ -225,19 +205,10 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
         }
       };
     }, [
-      chapter.id,
-      chapter.content_html,
-      geometry.colWidth,
-      geometry.pageHeight,
-      hasPendingLazyMedia,
-      measurePages,
-      settings.font,
-      settings.fontWeight,
-      settings.fontSizePx,
-      settings.lineHeight,
-      settings.paragraphIndent,
-      settings.paragraphSpacing,
-      settings.textAlign,
+      chapter.id, chapter.content_html, geometry.colWidth, geometry.pageHeight,
+      hasPendingLazyMedia, measurePages, settings.font, settings.fontWeight,
+      settings.fontSizePx, settings.lineHeight, settings.paragraphIndent,
+      settings.paragraphSpacing, settings.textAlign,
     ]);
 
     const safePageIndex = Math.max(0, Math.min(pageIndex, totalPages - 1));
@@ -529,7 +500,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
           chapterOptions={chapterOptions} currentPage={safePageIndex + 1} totalPages={totalPages}
           isFirstSpread={isFirstSpread} isLastChapter={isLastChapter} isLastSpread={isLastSpread}
           remainingEstimate={remainingEstimate} nextBook={nextBook} palette={palette}
-          onStepPrev={stepPrev} onStepNext={stepNext} onCompleteBook={onCompleteBook} onApiError={onApiError}
+          onStepPrev={stepPrev} onStepNext={stepNext} onOpenToc={onOpenToc} onCompleteBook={onCompleteBook} onApiError={onApiError}
         />
       </div>
     );

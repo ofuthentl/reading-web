@@ -5,6 +5,7 @@ import {
   requireOwner,
   verifyAuth,
 } from './auth';
+import { scheduleAdminSecurityAlert } from './adminAlerts';
 import { tryHandleAdminRoutes } from './adminRoutes';
 import { handleBookFileReplace } from './bookReplaceRoute';
 import {
@@ -47,6 +48,7 @@ import { clearLoginFailures, consumeLoginAttempt } from './rateLimitDb';
 import { getReaderActivityStats } from './readingActivityDb';
 import { getUserReaderPrefs, putUserReaderPrefs } from './readerPrefsDb';
 import { streamR2FileResponse } from './r2Files';
+import { applySecurityHeaders, withSecurityHeaders } from './securityHeaders';
 import { upsertShelfTags } from './shelfTagsDb';
 import { scheduleUsageEvent } from './usageDb';
 
@@ -109,6 +111,7 @@ function jsonResponse(
   if (extraHeaders) {
     for (const [k, v] of Object.entries(extraHeaders)) headers.set(k, v);
   }
+  applySecurityHeaders(headers);
   applyCors(headers, origin);
   return new Response(JSON.stringify(body), { status, headers });
 }
@@ -124,6 +127,7 @@ async function handleApi(
 
   if (request.method === 'OPTIONS') {
     const headers = new Headers();
+    applySecurityHeaders(headers);
     applyCors(headers, origin);
     return new Response(null, { status: 204, headers });
   }
@@ -159,7 +163,14 @@ async function handleApi(
       throw new HttpError('Vui lòng nhập chìa khoá truy cập hoặc mật mã.', 400);
     }
     try {
-      await consumeLoginAttempt(env.DB, clientIp);
+      await consumeLoginAttempt(env.DB, clientIp, (info) => {
+        scheduleAdminSecurityAlert(ctx, env, {
+          kind: 'login_ip_locked',
+          ipHashPrefix: info.ipHashPrefix,
+          failCount: info.failCount,
+          lockSeconds: info.lockSeconds,
+        });
+      });
     } catch (err) {
       if (err instanceof HttpError && err.status === 429) {
         scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
@@ -227,6 +238,7 @@ async function handleApi(
       ETag: etag,
       Vary: 'Authorization',
     });
+    applySecurityHeaders(headers);
     applyCors(headers, origin);
     if (matchesIfNoneMatch(request.headers.get('If-None-Match'), etag)) {
       return new Response(null, { status: 304, headers });
@@ -485,7 +497,8 @@ export default {
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     const origin = resolveAllowedOrigin(request, env);
     try {
-      return await handleApi(request, env, origin, ctx);
+      const response = await handleApi(request, env, origin, ctx);
+      return withSecurityHeaders(response);
     } catch (error) {
       if (error instanceof HttpError) {
         return jsonResponse({ error: error.message }, error.status, origin, error.extraHeaders);

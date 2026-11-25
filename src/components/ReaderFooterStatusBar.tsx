@@ -74,6 +74,7 @@ export interface ReaderFooterStatusBarProps {
   eyeBreakDue?: boolean;
   eyeBreakMinutes?: ReaderEyeBreakMinutes;
   onAcknowledgeEyeBreak?: () => void;
+  onOpenToc?: () => void;
 }
 
 export function ReaderFooterStatusBar({
@@ -87,31 +88,51 @@ export function ReaderFooterStatusBar({
   eyeBreakDue,
   eyeBreakMinutes,
   onAcknowledgeEyeBreak,
+  onOpenToc,
 }: ReaderFooterStatusBarProps) {
   return (
-    <div className="z-20 w-full shrink-0">
+    <div className="relative z-20 w-full shrink-0">
       <ReaderEyeBreakBanner
         due={eyeBreakDue}
         minutes={eyeBreakMinutes}
         palette={palette}
         onAcknowledge={onAcknowledgeEyeBreak}
       />
-      {!immersiveHidden && (
-        <div
-          className={`flex items-center justify-between gap-3 border-t px-3.5 py-1 text-[11px] tabular-nums sm:px-6 ${palette.border} ${palette.headerBg} ${palette.textSecondary}`}
-        >
-          <span className="truncate">
-            Chương {chapterIndex + 1}/{Math.max(1, totalChapters)} · {overallPercent}% cuốn
-            {modeBadge ? ` · ${modeBadge}` : ''}
-          </span>
-          {remainingEstimate && (
-            <span className="inline-flex shrink-0 items-center gap-1 font-medium">
-              <Clock className="h-3 w-3 opacity-75" />
-              <span>{remainingEstimate}</span>
+      {!immersiveHidden &&
+        (onOpenToc ? (
+          <button
+            type="button"
+            onClick={onOpenToc}
+            title="Mở mục lục & thanh tua % cuốn"
+            className={`flex w-full items-center justify-between gap-3 border-t px-3.5 py-1 text-left text-[11px] tabular-nums transition sm:px-6 ${palette.border} ${palette.headerBg} ${palette.textSecondary} ${palette.hover}`}
+          >
+            <span className="truncate">
+              Chương {chapterIndex + 1}/{Math.max(1, totalChapters)} · {overallPercent}% cuốn
+              {modeBadge ? ` · ${modeBadge}` : ''}
             </span>
-          )}
-        </div>
-      )}
+            {remainingEstimate && (
+              <span className="inline-flex shrink-0 items-center gap-1 font-medium">
+                <Clock className="h-3 w-3 opacity-75" />
+                <span>{remainingEstimate}</span>
+              </span>
+            )}
+          </button>
+        ) : (
+          <div
+            className={`flex items-center justify-between gap-3 border-t px-3.5 py-1 text-[11px] tabular-nums sm:px-6 ${palette.border} ${palette.headerBg} ${palette.textSecondary}`}
+          >
+            <span className="truncate">
+              Chương {chapterIndex + 1}/{Math.max(1, totalChapters)} · {overallPercent}% cuốn
+              {modeBadge ? ` · ${modeBadge}` : ''}
+            </span>
+            {remainingEstimate && (
+              <span className="inline-flex shrink-0 items-center gap-1 font-medium">
+                <Clock className="h-3 w-3 opacity-75" />
+                <span>{remainingEstimate}</span>
+              </span>
+            )}
+          </div>
+        ))}
       <div className="h-1 w-full bg-black/10">
         <div
           className={`h-full transition-all duration-150 ${palette.progressBar}`}

@@ -95,9 +95,6 @@ export async function ensureUsageTables(db: D1Database): Promise<void> {
          PRIMARY KEY (day_key, reader_scope)
        )`,
     ),
-    db.prepare(
-      'CREATE INDEX IF NOT EXISTS idx_usage_daily_readers_day ON usage_daily_readers(day_key)',
-    ),
   ]);
 
   await ensureColumnIfMissing(db, 'usage_daily_stats', 'owner_reading_seconds', 'INTEGER NOT NULL DEFAULT 0');

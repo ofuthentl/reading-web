@@ -125,6 +125,8 @@ export function GuestCanvasReader({
   } = useGuestChapterStream({
     bookId: book.id,
     chapterIndex,
+    tocChapters,
+    scrollRatio: chapterScrollRatio,
     isChapterLocked: Boolean(currentTocItem?.locked),
     initialChapter,
     onApiError,
@@ -391,6 +393,7 @@ export function GuestCanvasReader({
             onRatioChange={handlePaginatedRatioChange}
             onPrevChapterEnd={() => { if (chapterIndex > 0) goToChapter(chapterIndex - 1, 1); }}
             onNextChapterStart={() => { if (chapterIndex < tocChapters.length - 1) goToChapter(chapterIndex + 1, 0); }}
+            onOpenToc={() => { immersion.setSoundOpen(false); openDrawerTab('toc'); }}
             onCompleteBook={completeBook}
             onOpenGuestImage={(bitmap, alt) =>
               setLightboxTarget({ kind: 'guest-bitmap', bitmap, watermarkLabel: effectiveWatermark, alt })
@@ -440,6 +443,7 @@ export function GuestCanvasReader({
             immersiveHidden={immersiveHidden} palette={palette}
             eyeBreakDue={ctrl.eyeBreakDue} eyeBreakMinutes={settings.eyeBreakMinutes}
             onAcknowledgeEyeBreak={ctrl.acknowledgeEyeBreak}
+            onOpenToc={() => { immersion.setSoundOpen(false); openDrawerTab('toc'); }}
           />
         </>
       )}
@@ -456,6 +460,7 @@ export function GuestCanvasReader({
       <ReaderOverlaysHost
         role="guest"
         book={book} allBooks={allBooks} chapters={tocDrawerChapters}
+        chapterWeights={guestChapterWeights} overallPercent={overallPercent}
         chapterIndex={chapterIndex} currentChapterId={currentTocItem?.id || ''}
         currentChapterTitle={currentTocItem?.title || ''} chapterScrollRatio={chapterScrollRatio}
         watermarkLabel={effectiveWatermark} tocOpen={tocOpen} drawerTab={drawerTab}

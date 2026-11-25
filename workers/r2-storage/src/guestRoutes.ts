@@ -1,3 +1,4 @@
+import { scheduleAdminSecurityAlert } from './adminAlerts';
 import { type AuthContext, HttpError } from './auth';
 import type { Env } from './booksDb';
 import { getGuestBookIllustrations } from './guestIllustrations';
@@ -31,6 +32,24 @@ export async function tryHandleGuestRoutes(
     return null;
   }
 
+  const handleGuestRouteError = (err: unknown) => {
+    if (err instanceof HttpError && err.status === 429) {
+      scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
+    } else if (
+      err instanceof HttpError &&
+      err.alertCode === 'STRIKE_LOCKOUT' &&
+      auth.role === 'guest'
+    ) {
+      scheduleAdminSecurityAlert(ctx, env, {
+        kind: 'guest_strike_lockout',
+        discordUserId: auth.userId,
+        discordUsername: auth.discordUsername,
+        strikes: Number(err.alertMeta?.strikes) || 10,
+        endpoint: normalizedPath,
+      });
+    }
+  };
+
   const guestTocMatch = normalizedPath.match(/^\/api\/guest\/books\/([^/]+)\/toc$/);
   if (guestTocMatch) {
     const rawIncludeIdx = url.searchParams.get('includeChapter');
@@ -61,9 +80,7 @@ export async function tryHandleGuestRoutes(
       }
       return jsonResponse(toc, 200, origin);
     } catch (err) {
-      if (err instanceof HttpError && err.status === 429) {
-        scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
-      }
+      handleGuestRouteError(err);
       throw err;
     }
   }
@@ -76,9 +93,7 @@ export async function tryHandleGuestRoutes(
       const gallery = await getGuestBookIllustrations(env, auth, guestIllustrationsMatch[1]);
       return jsonResponse(gallery, 200, origin);
     } catch (err) {
-      if (err instanceof HttpError && err.status === 429) {
-        scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
-      }
+      handleGuestRouteError(err);
       throw err;
     }
   }
@@ -99,9 +114,7 @@ export async function tryHandleGuestRoutes(
       });
       return jsonResponse(chapter, 200, origin);
     } catch (err) {
-      if (err instanceof HttpError && err.status === 429) {
-        scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
-      }
+      handleGuestRouteError(err);
       throw err;
     }
   }
@@ -117,9 +130,7 @@ export async function tryHandleGuestRoutes(
         applyCorsToHeaders,
       );
     } catch (err) {
-      if (err instanceof HttpError && err.status === 429) {
-        scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
-      }
+      handleGuestRouteError(err);
       throw err;
     }
   }
@@ -140,9 +151,7 @@ export async function tryHandleGuestRoutes(
       });
       return jsonResponse(result, 200, origin);
     } catch (err) {
-      if (err instanceof HttpError && err.status === 429) {
-        scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
-      }
+      handleGuestRouteError(err);
       throw err;
     }
   }

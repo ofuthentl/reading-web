@@ -263,6 +263,28 @@ CREATE TABLE IF NOT EXISTS library_comment_reactions (
   PRIMARY KEY (comment_id, user_scope, emoji)
 );
 
+CREATE TABLE IF NOT EXISTS app_security_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  owner_min_iat INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS discord_access_presets (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS discord_access_preset_members (
+  preset_id TEXT NOT NULL REFERENCES discord_access_presets(id) ON DELETE CASCADE,
+  discord_user_id TEXT NOT NULL,
+  member_label TEXT,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (preset_id, discord_user_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_books_shelf ON books(shelf);
 CREATE INDEX IF NOT EXISTS idx_books_created_at ON books(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_progress_updated_at ON reading_progress(updated_at DESC);
@@ -273,7 +295,6 @@ CREATE INDEX IF NOT EXISTS idx_guest_progress_book_id ON guest_reading_progress(
 CREATE INDEX IF NOT EXISTS idx_bookmarks_user_book ON book_bookmarks(user_scope, book_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON book_bookmarks(book_id);
 CREATE INDEX IF NOT EXISTS idx_shelf_grants_user ON shelf_guest_grants(discord_user_id);
-CREATE INDEX IF NOT EXISTS idx_usage_daily_readers_day ON usage_daily_readers(day_key);
 CREATE INDEX IF NOT EXISTS idx_usage_daily_readers_scope_day ON usage_daily_readers(reader_scope, day_key);
 CREATE INDEX IF NOT EXISTS idx_highlights_user_book ON book_highlights(user_scope, book_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_highlights_user_created ON book_highlights(user_scope, created_at DESC);
@@ -285,7 +306,9 @@ CREATE INDEX IF NOT EXISTS idx_collection_shelves_shelf ON collection_shelves(sh
 CREATE INDEX IF NOT EXISTS idx_library_comments_target ON library_comments(target_type, target_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_library_comments_user_created ON library_comments(user_scope, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_library_comments_parent ON library_comments(parent_id) WHERE parent_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_comment_reactions_comment ON library_comment_reactions(comment_id);
+CREATE INDEX IF NOT EXISTS idx_library_comments_created ON library_comments(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_library_ratings_updated ON library_ratings(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_shelf_relations_target ON shelf_relations(target_shelf_key);
 CREATE INDEX IF NOT EXISTS idx_book_grants_user ON book_guest_grants(discord_user_id);
 CREATE INDEX IF NOT EXISTS idx_chapter_grants_user ON chapter_guest_grants(discord_user_id);
+CREATE INDEX IF NOT EXISTS idx_discord_preset_members_user ON discord_access_preset_members(discord_user_id);

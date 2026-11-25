@@ -53,12 +53,33 @@ export function AuthenticatedLibraryShell({
   const [inspectedBookId, setInspectedBookId] = useState<string | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setPaletteOpen((v) => !v);
+        return;
+      }
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === '?') {
+        const target = e.target as HTMLElement | null;
+        const isTyping =
+          target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement ||
+          target instanceof HTMLSelectElement ||
+          target?.isContentEditable;
+        if (isTyping) return;
+        const hasOtherDialog =
+          typeof document !== 'undefined' &&
+          Boolean(
+            document.querySelector(
+              '[role="dialog"]:not([data-shortcuts-modal]):not([data-reader-chrome-dialog])',
+            ),
+          );
+        if (hasOtherDialog) return;
+        e.preventDefault();
+        setShortcutsOpen((v) => !v);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -136,6 +157,7 @@ export function AuthenticatedLibraryShell({
       setInspectedBookId(null);
       setStatsOpen(false);
       setPaletteOpen(false);
+      setShortcutsOpen(false);
     });
     return () => onRegisterCleanup(null);
   }, [clearFilters, clearStoreOnLogout, closeBook, closeLibraryShelf, onRegisterCleanup]);
@@ -291,12 +313,14 @@ export function AuthenticatedLibraryShell({
         </Suspense>
       )}
 
-      {(inspectedBook || statsOpen || paletteOpen) && (
+      {(inspectedBook || statsOpen || paletteOpen || shortcutsOpen) && (
         <Suspense fallback={null}>
           <LazyLibrary2DDialogsHost
             inspectedBook={inspectedBook}
             statsOpen={statsOpen}
             paletteOpen={paletteOpen}
+            shortcutsOpen={shortcutsOpen}
+            shortcutsContext={isReaderOpen ? 'reader' : 'library'}
             books={store.books}
             shelves={libraryViewState.allShelves}
             authors={libraryViewState.availableAuthors}
@@ -312,6 +336,7 @@ export function AuthenticatedLibraryShell({
             onCloseInspect={() => setInspectedBookId(null)}
             onCloseStats={() => setStatsOpen(false)}
             onClosePalette={() => setPaletteOpen(false)}
+            onCloseShortcuts={() => setShortcutsOpen(false)}
             onOpenStats={() => {
               closeBook();
               setStatsOpen(true);
@@ -396,6 +421,8 @@ export function AuthenticatedLibraryShell({
             onShelfRenamed={handleShelfRenamed}
             onBooksShelfMoved={store.handleBooksShelfMoved}
             onBooksDeleted={store.handleBooksDeleted}
+            onLogout={onLogout}
+            onSessionReissued={setSession}
             onApiError={onApiError}
             onNotify={addToast}
           />

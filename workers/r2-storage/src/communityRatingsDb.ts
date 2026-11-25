@@ -108,8 +108,12 @@ export async function ensureCommunityTables(db: D1Database): Promise<void> {
        ON library_comments(parent_id) WHERE parent_id IS NOT NULL`,
     ),
     db.prepare(
-      `CREATE INDEX IF NOT EXISTS idx_comment_reactions_comment
-       ON library_comment_reactions(comment_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_library_comments_created
+       ON library_comments(created_at DESC)`,
+    ),
+    db.prepare(
+      `CREATE INDEX IF NOT EXISTS idx_library_ratings_updated
+       ON library_ratings(updated_at DESC)`,
     ),
   ]);
 

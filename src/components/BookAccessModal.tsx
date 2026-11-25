@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { BookOpen, Globe, Layers, ListChecks, Loader2, Lock, X } from 'lucide-react';
 import type {
   Book,
@@ -11,11 +10,12 @@ import {
   BookChapterLockList,
   type ChapterLockDraftState,
 } from '@/components/BookChapterLockList';
+import { DiscordPresetPickerBar } from '@/components/DiscordPresetPickerBar';
+import { ModalShell } from '@/components/ModalShell';
 import {
   type SelectedMemberMeta,
   ShelfAccessMemberList,
 } from '@/components/ShelfAccessMemberList';
-import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import type { ToastType } from '@/hooks/useToast';
 import { isCloudMode } from '@/lib/api';
 import {
@@ -24,6 +24,10 @@ import {
   saveAdminBookAccessConfig,
 } from '@/lib/bookAccessApi';
 import { getBookSortTitle } from '@/lib/bookMetadata';
+import {
+  type DiscordAccessPreset,
+  fetchAdminDiscordPresets,
+} from '@/lib/discordPresetsApi';
 import { type DiscordGuestRecord, fetchAdminDiscordGuests } from '@/lib/guestCrypto';
 import { normalizeSearchText } from '@/lib/libraryFiltering';
 import { fetchAdminShelfAccessRules } from '@/lib/shelfAccessApi';
@@ -56,6 +60,7 @@ export function BookAccessModal({
   const [shelfRestricted, setShelfRestricted] = useState(false);
   const [hasGuestPack, setHasGuestPack] = useState(false);
   const [guests, setGuests] = useState<DiscordGuestRecord[]>([]);
+  const [presets, setPresets] = useState<DiscordAccessPreset[]>([]);
   const [shelfRules, setShelfRules] = useState<ShelfAccessRuleDetail[]>([]);
   const [selectedBookMembers, setSelectedBookMembers] = useState<Map<string, SelectedMemberMeta>>(
     () => new Map(),
@@ -69,7 +74,6 @@ export function BookAccessModal({
   const [manualLabel, setManualLabel] = useState('');
 
   const bookId = book?.id ?? null;
-  useBodyScrollLock(Boolean(book));
 
   useEffect(() => {
     if (!bookId) return;
@@ -84,6 +88,7 @@ export function BookAccessModal({
       setShelfRestricted(false);
       setHasGuestPack(false);
       setGuests([]);
+      setPresets([]);
       setShelfRules([]);
       setSelectedBookMembers(new Map());
       setChapters([]);
@@ -96,13 +101,15 @@ export function BookAccessModal({
       fetchAdminBookAccessDetail(bookId, controller.signal),
       fetchAdminDiscordGuests(),
       fetchAdminShelfAccessRules(),
+      fetchAdminDiscordPresets(controller.signal).catch(() => [] as DiscordAccessPreset[]),
     ])
-      .then(([detail, guestList, rules]) => {
+      .then(([detail, guestList, rules, presetList]) => {
         if (controller.signal.aborted) return;
         setMode(detail.bookRule.mode);
         setShelfRestricted(detail.shelfRestricted);
         setHasGuestPack(detail.hasGuestPack);
         setGuests(guestList);
+        setPresets(presetList);
         setShelfRules(rules);
 
         const bookMemberMap = new Map<string, SelectedMemberMeta>();
@@ -140,15 +147,6 @@ export function BookAccessModal({
     return () => controller.abort();
   }, [bookId, onApiError]);
 
-  useEffect(() => {
-    if (!book) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !saving) onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [book, onClose, saving]);
-
   const knownGuestIds = useMemo(() => new Set(guests.map((g) => g.discordUserId)), [guests]);
   const preGrantedOnlyUsers = useMemo(
     () =>
@@ -169,7 +167,7 @@ export function BookAccessModal({
     );
   }, [guests, memberQuery]);
 
-  if (!book || typeof document === 'undefined') return null;
+  if (!book) return null;
 
   const lockedChapterCount = chapters.reduce(
     (acc, ch) => acc + (chapterDrafts.get(ch.chapterKey)?.locked ? 1 : 0),
@@ -208,20 +206,15 @@ export function BookAccessModal({
     }
   };
 
-  return createPortal(
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="book-access-modal-title"
-      onClick={() => {
-        if (!saving) onClose();
-      }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+  return (
+    <ModalShell
+      open
+      onClose={onClose}
+      closeDisabled={saving}
+      ariaLabelledBy="book-access-modal-title"
+      zIndexClass="z-50"
+      panelClassName="moonlit-card fade-in flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="moonlit-card fade-in flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
-      >
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-crimson-accent">
@@ -347,70 +340,87 @@ export function BookAccessModal({
               </div>
 
               {mode === 'restricted' && (
-                <ShelfAccessMemberList
-                  guests={guests}
-                  filteredGuests={filteredGuests}
-                  preGrantedOnlyUsers={preGrantedOnlyUsers}
-                  otherRulesWithUsers={rulesWithUsers}
-                  allShelfNames={allShelfNames}
-                  selectedMap={selectedBookMembers}
-                  memberQuery={memberQuery}
-                  manualId={manualId}
-                  manualLabel={manualLabel}
-                  onMemberQueryChange={setMemberQuery}
-                  onManualIdChange={setManualId}
-                  onManualLabelChange={setManualLabel}
-                  onToggleMember={(id, label) => {
-                    setSelectedBookMembers((prev) => {
-                      const next = new Map(prev);
-                      if (next.has(id)) next.delete(id);
-                      else next.set(id, { discordUserId: id, label });
-                      return next;
-                    });
-                  }}
-                  onSelectAllActiveGuests={() => {
-                    setSelectedBookMembers((prev) => {
-                      const next = new Map(prev);
-                      for (const g of guests) {
-                        if (!g.isBanned) {
-                          next.set(g.discordUserId, {
-                            discordUserId: g.discordUserId,
-                            label: g.discordUsername,
-                          });
-                        }
-                      }
-                      return next;
-                    });
-                  }}
-                  onClearAll={() => setSelectedBookMembers(new Map())}
-                  onCopyFromRule={(rule) => {
-                    const next = new Map<string, SelectedMemberMeta>();
-                    for (const u of rule.allowedUsers) {
-                      next.set(u.discordUserId, {
-                        discordUserId: u.discordUserId,
-                        label: u.discordUsername || u.label || null,
+                <div className="space-y-3.5">
+                  {isCloudMode && (
+                    <DiscordPresetPickerBar
+                      presets={presets}
+                      selectedMap={selectedBookMembers}
+                      disabled={saving}
+                      onApplyPreset={(preset, applyMode) => {
+                        setSelectedBookMembers((prev) => {
+                          const next =
+                            applyMode === 'merge' ? new Map(prev) : new Map<string, SelectedMemberMeta>();
+                          for (const m of preset.members) {
+                            next.set(m.discordUserId, {
+                              discordUserId: m.discordUserId,
+                              label: m.discordUsername || m.label || null,
+                            });
+                          }
+                          return next;
+                        });
+                        onNotify?.(
+                          applyMode === 'merge'
+                            ? `Đã cộng gộp ${preset.members.length} thành viên từ nhóm "${preset.name}".`
+                            : `Đã chọn ${preset.members.length} thành viên theo nhóm "${preset.name}".`,
+                          'info',
+                        );
+                      }}
+                      onPresetsChanged={setPresets}
+                      onApiError={onApiError}
+                      onNotify={onNotify}
+                    />
+                  )}
+                  <ShelfAccessMemberList
+                    guests={guests} filteredGuests={filteredGuests} preGrantedOnlyUsers={preGrantedOnlyUsers}
+                    otherRulesWithUsers={rulesWithUsers} allShelfNames={allShelfNames}
+                    selectedMap={selectedBookMembers} memberQuery={memberQuery}
+                    manualId={manualId} manualLabel={manualLabel}
+                    onMemberQueryChange={setMemberQuery} onManualIdChange={setManualId}
+                    onManualLabelChange={setManualLabel}
+                    onToggleMember={(id, label) => {
+                      setSelectedBookMembers((prev) => {
+                        const next = new Map(prev);
+                        if (next.has(id)) next.delete(id);
+                        else next.set(id, { discordUserId: id, label });
+                        return next;
                       });
-                    }
-                    setSelectedBookMembers(next);
-                    onNotify?.(`Đã sao chép ${next.size} thành viên.`, 'info');
-                  }}
-                  onAddManualId={() => {
-                    const cleanId = manualId.trim();
-                    if (!DISCORD_ID_RE.test(cleanId)) {
-                      onNotify?.('Discord User ID phải là dãy số hợp lệ.', 'warning');
-                      return;
-                    }
-                    const matched = guests.find((g) => g.discordUserId === cleanId);
-                    const label = matched?.discordUsername || manualLabel.trim() || null;
-                    setSelectedBookMembers((prev) => {
-                      const next = new Map(prev);
-                      next.set(cleanId, { discordUserId: cleanId, label });
-                      return next;
-                    });
-                    setManualId('');
-                    setManualLabel('');
-                  }}
-                />
+                    }}
+                    onSelectAllActiveGuests={() => {
+                      setSelectedBookMembers((prev) => {
+                        const next = new Map(prev);
+                        for (const g of guests) {
+                          if (!g.isBanned) next.set(g.discordUserId, { discordUserId: g.discordUserId, label: g.discordUsername });
+                        }
+                        return next;
+                      });
+                    }}
+                    onClearAll={() => setSelectedBookMembers(new Map())}
+                    onCopyFromRule={(rule) => {
+                      const next = new Map<string, SelectedMemberMeta>();
+                      for (const u of rule.allowedUsers) {
+                        next.set(u.discordUserId, { discordUserId: u.discordUserId, label: u.discordUsername || u.label || null });
+                      }
+                      setSelectedBookMembers(next);
+                      onNotify?.(`Đã sao chép ${next.size} thành viên.`, 'info');
+                    }}
+                    onAddManualId={() => {
+                      const cleanId = manualId.trim();
+                      if (!DISCORD_ID_RE.test(cleanId)) {
+                        onNotify?.('Discord User ID phải là dãy số hợp lệ.', 'warning');
+                        return;
+                      }
+                      const matched = guests.find((g) => g.discordUserId === cleanId);
+                      const label = matched?.discordUsername || manualLabel.trim() || null;
+                      setSelectedBookMembers((prev) => {
+                        const next = new Map(prev);
+                        next.set(cleanId, { discordUserId: cleanId, label });
+                        return next;
+                      });
+                      setManualId('');
+                      setManualLabel('');
+                    }}
+                  />
+                </div>
               )}
             </>
           ) : (
@@ -507,8 +517,6 @@ export function BookAccessModal({
             <span>{saving ? 'Đang lưu...' : 'Lưu phân quyền'}</span>
           </button>
         </div>
-      </div>
-    </div>,
-    document.body,
+    </ModalShell>
   );
 }

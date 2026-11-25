@@ -1,5 +1,6 @@
 import { type AuthContext, HttpError, requireOwner } from './auth';
 import type { Env } from './booksDb';
+import { applySecurityHeaders } from './securityHeaders';
 
 type ParsedByteRange =
   | { kind: 'valid'; start: number; length: number }
@@ -68,6 +69,7 @@ export async function streamR2FileResponse(
     headers.set('Accept-Ranges', 'bytes');
     headers.set('Cache-Control', 'private, max-age=31536000, immutable');
     headers.set('Content-Length', String(headObj.size));
+    applySecurityHeaders(headers);
     applyCors(headers);
     return new Response(null, { status: 200, headers });
   }
@@ -84,6 +86,7 @@ export async function streamR2FileResponse(
   headers.set('ETag', object.httpEtag);
   headers.set('Accept-Ranges', 'bytes');
   headers.set('Cache-Control', 'private, max-age=31536000, immutable');
+  applySecurityHeaders(headers);
   applyCors(headers);
 
   if (!('body' in object) || !object.body) {

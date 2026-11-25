@@ -188,6 +188,7 @@ export default function App() {
             onCycleTheme={cycleTheme}
             onBackToLibrary={() => navigateGateRoute('root')}
             onLogout={handleLogout}
+            onSessionReissued={setSession}
             onApiError={handleApiError}
             onNotify={addToast}
           />

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { FolderEdit, Info, Loader2, X } from 'lucide-react';
+import { ModalShell } from '@/components/ModalShell';
 import { renameShelfAll } from '@/lib/api';
 import type { ToastType } from '@/hooks/useToast';
 
@@ -35,17 +36,6 @@ export function ShelfRenameModal({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [shelfName]);
-
-  useEffect(() => {
-    if (!shelfName) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !saving) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [shelfName, saving, onClose]);
 
   if (!shelfName) return null;
 
@@ -87,19 +77,15 @@ export function ShelfRenameModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="rename-shelf-modal-title"
-      onClick={() => {
-        if (!saving) onClose();
-      }}
+    <ModalShell
+      open
+      onClose={onClose}
+      closeDisabled={saving}
+      ariaLabelledBy="rename-shelf-modal-title"
+      zIndexClass="z-50"
+      initialFocusRef={inputRef}
+      panelClassName="moonlit-card fade-in w-full max-w-md overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
     >
-      <div
-        className="moonlit-card fade-in w-full max-w-md overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl dark:border-line-strong/70"
-        onClick={(event) => event.stopPropagation()}
-      >
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-subtle text-accent">
@@ -185,7 +171,6 @@ export function ShelfRenameModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

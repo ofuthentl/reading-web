@@ -14,11 +14,18 @@ import type { BookOpenJumpTarget } from '@/hooks/useBookReader';
 const LazyCommandPaletteModal = lazy(() =>
   import('@/components/CommandPaletteModal').then((mod) => ({ default: mod.CommandPaletteModal })),
 );
+const LazyKeyboardShortcutsModal = lazy(() =>
+  import('@/components/KeyboardShortcutsModal').then((mod) => ({
+    default: mod.KeyboardShortcutsModal,
+  })),
+);
 
 export interface Library2DDialogsHostProps {
   inspectedBook: Book | null;
   statsOpen: boolean;
   paletteOpen?: boolean;
+  shortcutsOpen?: boolean;
+  shortcutsContext?: 'library' | 'reader';
   books: Book[];
   shelves?: readonly ShelfGroup[];
   authors?: readonly string[];
@@ -34,6 +41,7 @@ export interface Library2DDialogsHostProps {
   onCloseInspect: () => void;
   onCloseStats: () => void;
   onClosePalette?: () => void;
+  onCloseShortcuts?: () => void;
   onOpenStats?: () => void;
   onOpenBook: (book: Book, jumpTarget?: BookOpenJumpTarget) => void;
   onJumpToShelf: (shelfKey: string) => void;
@@ -56,6 +64,8 @@ export function Library2DDialogsHost({
   inspectedBook,
   statsOpen,
   paletteOpen = false,
+  shortcutsOpen = false,
+  shortcutsContext = 'library',
   books,
   shelves = [],
   authors = [],
@@ -71,6 +81,7 @@ export function Library2DDialogsHost({
   onCloseInspect,
   onCloseStats,
   onClosePalette,
+  onCloseShortcuts,
   onOpenStats,
   onOpenBook,
   onJumpToShelf,
@@ -143,6 +154,15 @@ export function Library2DDialogsHost({
             onOpenCacheManager={onOpenCacheManager}
             onUploadClick={onUploadClick}
             onApiError={onApiError}
+          />
+        </Suspense>
+      )}
+      {shortcutsOpen && onCloseShortcuts && (
+        <Suspense fallback={null}>
+          <LazyKeyboardShortcutsModal
+            open={shortcutsOpen}
+            context={shortcutsContext}
+            onClose={onCloseShortcuts}
           />
         </Suspense>
       )}

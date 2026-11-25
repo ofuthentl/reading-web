@@ -1,6 +1,31 @@
-import { BookMarked, FolderEdit, Library, Star } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { BookMarked, ChevronDown, FolderEdit, Library, Star } from 'lucide-react';
 import type { AuthRole, Book, BookAccessSummary, ReadingProgress, ShelfGroup } from '@/types';
 import { BookCard } from '@/components/BookCard';
+
+const INITIAL_HOME_BOOK_BUDGET = 36;
+const NEXT_HOME_BOOK_BUDGET = 48;
+const MAX_SHELVES_PER_BATCH = 6;
+const MIN_SHELVES_PER_BATCH = 2;
+
+function computeNextHomeShelfCount(
+  shelves: readonly ShelfGroup[],
+  currentCount: number,
+  bookBudget: number,
+): number {
+  if (currentCount >= shelves.length) return shelves.length;
+  let next = currentCount;
+  let addedShelves = 0;
+  let addedBooks = 0;
+  while (next < shelves.length) {
+    addedBooks += shelves[next].books.length;
+    addedShelves += 1;
+    next += 1;
+    if (addedShelves >= MAX_SHELVES_PER_BATCH) break;
+    if (addedShelves >= MIN_SHELVES_PER_BATCH && addedBooks >= bookBudget) break;
+  }
+  return next;
+}
 
 export interface LibraryHomeShelvesSectionProps {
   visibleShelves: ShelfGroup[];
@@ -45,6 +70,50 @@ export function LibraryHomeShelvesSection({
   onTogglePlanToReadBook,
   onClearFilters,
 }: LibraryHomeShelvesSectionProps) {
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const shelvesSignature = useMemo(() => {
+    const first = visibleShelves[0]?.key ?? '';
+    const last = visibleShelves[visibleShelves.length - 1]?.key ?? '';
+    return `${isFiltering ? 'f' : 'a'}:${visibleShelves.length}:${first}:${last}`;
+  }, [isFiltering, visibleShelves]);
+
+  const [renderedShelfCount, setRenderedShelfCount] = useState(() =>
+    computeNextHomeShelfCount(visibleShelves, 0, INITIAL_HOME_BOOK_BUDGET),
+  );
+
+  useEffect(() => {
+    setRenderedShelfCount(computeNextHomeShelfCount(visibleShelves, 0, INITIAL_HOME_BOOK_BUDGET));
+  }, [shelvesSignature, visibleShelves]);
+
+  const effectiveShelfCount = Math.min(renderedShelfCount, visibleShelves.length);
+  const hasMoreShelves = effectiveShelfCount < visibleShelves.length;
+
+  useEffect(() => {
+    if (!hasMoreShelves) return;
+    const node = sentinelRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        setRenderedShelfCount((prev) =>
+          computeNextHomeShelfCount(visibleShelves, prev, NEXT_HOME_BOOK_BUDGET),
+        );
+      },
+      { rootMargin: '420px 0px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMoreShelves, visibleShelves]);
+
+  const displayedShelves = useMemo(
+    () => visibleShelves.slice(0, effectiveShelfCount),
+    [effectiveShelfCount, visibleShelves],
+  );
+  const displayedBookCount = useMemo(
+    () => displayedShelves.reduce((sum, s) => sum + s.books.length, 0),
+    [displayedShelves],
+  );
+
   if (visibleShelves.length === 0) {
     return (
       <section className="moonlit-card mx-auto flex max-w-md flex-col items-center rounded-2xl border border-line bg-surface px-6 py-12 text-center shadow-sm dark:border-line-strong/60">
@@ -86,7 +155,7 @@ export function LibraryHomeShelvesSection({
       )}
 
       <div className="space-y-9">
-        {visibleShelves.map((shelf) => {
+        {displayedShelves.map((shelf) => {
           const isFav = Boolean(favoriteShelfKeys?.has(shelf.key));
           return (
             <section key={shelf.key} aria-label={`Kệ ${shelf.name}`} className="shelf-cv-auto space-y-4">
@@ -174,6 +243,39 @@ export function LibraryHomeShelvesSection({
           );
         })}
       </div>
+
+      {hasMoreShelves && (
+        <div
+          ref={sentinelRef}
+          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface/80 px-4 py-3 text-xs text-ink-muted"
+        >
+          <span>
+            Đang hiển thị <strong className="text-ink">{effectiveShelfCount}</strong>/{visibleShelves.length} kệ (
+            <strong className="text-ink">{displayedBookCount}</strong>/{totalBooksCount} cuốn)
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                setRenderedShelfCount((prev) =>
+                  computeNextHomeShelfCount(visibleShelves, prev, NEXT_HOME_BOOK_BUDGET),
+                )
+              }
+              className="inline-flex items-center gap-1 rounded-xl border border-line-strong bg-canvas px-3 py-1.5 font-medium text-ink transition-colors hover:bg-subtle"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+              <span>Tải thêm kệ</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRenderedShelfCount(visibleShelves.length)}
+              className="rounded-xl border border-transparent px-2.5 py-1.5 font-medium text-ink-muted transition-colors hover:border-line hover:bg-subtle hover:text-ink"
+            >
+              Hiện tất cả
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

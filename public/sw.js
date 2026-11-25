@@ -4,6 +4,7 @@ const CACHE_PREFIX = 'ofu-shell-';
 
 const STATIC_ROOT_FILES = new Set([
   '/manifest.webmanifest',
+  '/theme-init.js',
   '/logo-128.png',
   '/icon-192.png',
   '/icon-maskable-512.png',
