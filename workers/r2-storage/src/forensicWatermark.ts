@@ -122,7 +122,7 @@ export async function deriveUserWatermarkBits(secret: string, discordUserId: str
 }
 
 export function watermarkTextString(text: string, bits32: number): string {
-  if (!text || text.length < 3) return text;
+  if (!text) return text;
   const normalized = text.normalize('NFC');
   SLOT_REGEX.lastIndex = 0;
   return normalized.replace(SLOT_REGEX, (matched, offset: number) => {
@@ -226,7 +226,7 @@ export function extractForensicObservations(rawText: string): ExtractedObservati
   const observations: ExtractedObservation[] = [];
 
   for (const para of paragraphs) {
-    if (para.length < 3) continue;
+    if (!para) continue;
     SLOT_REGEX.lastIndex = 0;
     let match: RegExpExecArray | null;
     while ((match = SLOT_REGEX.exec(para)) !== null) {

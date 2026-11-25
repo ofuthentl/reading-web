@@ -388,11 +388,14 @@ export async function cleanupBookAccessRecords(
   bookIds: readonly string[],
 ): Promise<void> {
   if (bookIds.length === 0) return;
-  const placeholders = bookIds.map(() => '?').join(', ');
-  await Promise.all([
-    db.prepare(`DELETE FROM book_guest_grants WHERE book_id IN (${placeholders})`).bind(...bookIds).run().catch(() => undefined),
-    db.prepare(`DELETE FROM book_access_rules WHERE book_id IN (${placeholders})`).bind(...bookIds).run().catch(() => undefined),
-    db.prepare(`DELETE FROM chapter_guest_grants WHERE book_id IN (${placeholders})`).bind(...bookIds).run().catch(() => undefined),
-    db.prepare(`DELETE FROM chapter_access_rules WHERE book_id IN (${placeholders})`).bind(...bookIds).run().catch(() => undefined),
-  ]);
+  for (let i = 0; i < bookIds.length; i += 50) {
+    const chunk = bookIds.slice(i, i + 50);
+    const placeholders = chunk.map(() => '?').join(', ');
+    await Promise.all([
+      db.prepare(`DELETE FROM book_guest_grants WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
+      db.prepare(`DELETE FROM book_access_rules WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
+      db.prepare(`DELETE FROM chapter_guest_grants WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
+      db.prepare(`DELETE FROM chapter_access_rules WHERE book_id IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),
+    ]);
+  }
 }

@@ -239,43 +239,6 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     auth.role === 'owner' ? getStorageStats(env) : Promise.resolve(null),
   ]);
 
-  const progressMap: Record<
-    string,
-    {
-      chapterId: string;
-      chapterIndex: number;
-      chapterTitle?: string;
-      totalChapters?: number;
-      scrollRatio: number;
-      scrollTop: number;
-      completed: boolean;
-      readingSeconds?: number;
-      rereadCount?: number;
-      updatedAt: number;
-    }
-  > = {};
-
-  for (const row of progressRes.results || []) {
-    progressMap[row.book_id] = {
-      chapterId: row.chapter_id,
-      chapterIndex: row.chapter_index,
-      ...(row.chapter_title ? { chapterTitle: row.chapter_title } : {}),
-      ...(typeof row.total_chapters === 'number' && row.total_chapters > 0
-        ? { totalChapters: row.total_chapters }
-        : {}),
-      scrollRatio: row.scroll_ratio,
-      scrollTop: row.scroll_top,
-      completed: row.completed === 1,
-      ...(typeof row.reading_seconds === 'number' && row.reading_seconds > 0
-        ? { readingSeconds: row.reading_seconds }
-        : {}),
-      ...(typeof row.reread_count === 'number' && row.reread_count > 0
-        ? { rereadCount: row.reread_count }
-        : {}),
-      updatedAt: row.updated_at,
-    };
-  }
-
   const isGuest = auth.role === 'guest';
   const rawBooks = booksRes.results || [];
   const existingShelfKeys = new Set<string>();
@@ -295,6 +258,44 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
       ...(isGuestLocked ? { guest_locked: true } : {}),
     };
   });
+
+  const progressMap: Record<
+    string,
+    {
+      chapterId: string;
+      chapterIndex: number;
+      chapterTitle?: string;
+      totalChapters?: number;
+      scrollRatio: number;
+      scrollTop: number;
+      completed: boolean;
+      readingSeconds?: number;
+      rereadCount?: number;
+      updatedAt: number;
+    }
+  > = {};
+
+  for (const row of progressRes.results || []) {
+    if (isGuest && guestLockedBookIds.has(row.book_id)) continue;
+    progressMap[row.book_id] = {
+      chapterId: row.chapter_id,
+      chapterIndex: row.chapter_index,
+      ...(row.chapter_title ? { chapterTitle: row.chapter_title } : {}),
+      ...(typeof row.total_chapters === 'number' && row.total_chapters > 0
+        ? { totalChapters: row.total_chapters }
+        : {}),
+      scrollRatio: row.scroll_ratio,
+      scrollTop: row.scroll_top,
+      completed: row.completed === 1,
+      ...(typeof row.reading_seconds === 'number' && row.reading_seconds > 0
+        ? { readingSeconds: row.reading_seconds }
+        : {}),
+      ...(typeof row.reread_count === 'number' && row.reread_count > 0
+        ? { rereadCount: row.reread_count }
+        : {}),
+      updatedAt: row.updated_at,
+    };
+  }
 
   const guestLockedShelfKeys = isGuest
     ? computeGuestLockedShelfKeys(rawBooks, accessSnapshot, bookAccessSnapshot)

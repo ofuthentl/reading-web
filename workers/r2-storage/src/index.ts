@@ -32,7 +32,7 @@ import {
   listBookBookmarks,
 } from './bookmarksDb';
 import { tryHandleCatalogRoutes } from './catalogEnhancementsDb';
-import { tryHandleCommunityRoutes } from './communityDb';
+import { tryHandleCommunityRoutes } from './communityRoutes';
 import { uploadBookGuestPack } from './guestPack';
 import { tryHandleGuestRoutes } from './guestRoutes';
 import {
@@ -41,11 +41,7 @@ import {
   listHighlights,
   updateHighlight,
 } from './highlightsDb';
-import {
-  assertLoginNotRateLimited,
-  clearLoginFailures,
-  recordLoginFailure,
-} from './rateLimitDb';
+import { clearLoginFailures, consumeLoginAttempt } from './rateLimitDb';
 import { getReaderActivityStats } from './readingActivityDb';
 import { getUserReaderPrefs, putUserReaderPrefs } from './readerPrefsDb';
 import { streamR2FileResponse } from './r2Files';
@@ -147,19 +143,22 @@ async function handleApi(
     return handleDiscordInteraction(request, env, ctx);
   }
 
-  // Passcode (owner 30d) or Discord 12-char key (guest 24h) login + chống brute-force theo IP (M-8)
+  // Passcode (owner 30d) or Discord 12-char key (guest 24h) login + chống brute-force nguyên tử theo IP (M-8 & D-046)
   if (normalizedPath === '/api/auth/login' && request.method === 'POST') {
     const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const body = (await request.json().catch(() => null)) as { passcode?: unknown } | null;
+    const passcode = typeof body?.passcode === 'string' ? body.passcode : '';
+    if (!passcode.trim()) {
+      throw new HttpError('Vui lòng nhập chìa khoá truy cập hoặc mật mã.', 400);
+    }
     try {
-      await assertLoginNotRateLimited(env.DB, clientIp);
+      await consumeLoginAttempt(env.DB, clientIp);
     } catch (err) {
       if (err instanceof HttpError && err.status === 429) {
         scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
       }
       throw err;
     }
-    const body = (await request.json().catch(() => null)) as { passcode?: unknown } | null;
-    const passcode = typeof body?.passcode === 'string' ? body.passcode : '';
     const userAgent = request.headers.get('User-Agent') || '';
     try {
       const session = await authenticatePasscodeOrKey(passcode, env, env.DB, userAgent);
@@ -174,7 +173,6 @@ async function handleApi(
       return jsonResponse(session, 200, origin);
     } catch (err) {
       if (err instanceof HttpError && err.status === 401) {
-        await recordLoginFailure(env.DB, clientIp).catch(() => undefined);
         scheduleUsageEvent(ctx, env.DB, { metric: 'login_failures' });
       }
       throw err;
@@ -428,7 +426,9 @@ async function handleApi(
       ...(auth.role === 'owner' ? { metric: 'owner_progress_updates' as const } : {}),
       readerScope: auth.role === 'owner' ? 'owner' : `guest:${auth.userId}`,
       readerRole: auth.role,
-      readingSeconds: result.readingDeltaAccepted,
+      ...(result.readingDeltaAccepted > 0
+        ? { preCreditedReadingSeconds: result.readingDeltaAccepted }
+        : {}),
     });
     return jsonResponse(result, 200, origin);
   }

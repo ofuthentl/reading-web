@@ -71,7 +71,8 @@ export async function handleBookFileUpload(request: Request, env: Env, bookId: s
     .normalize('NFC')
     .slice(0, MAX_SHELF_NAME_LENGTH);
   const coverColor = safeDecodeHeader(request.headers.get('X-Cover-Color'), '#4f46e5').slice(0, 32);
-  const fileKey = `books/${bookId}.${fileType}`;
+  const randSuffix = crypto.randomUUID().slice(0, 8);
+  const fileKey = `books/${bookId}-${Date.now()}-${randSuffix}.${fileType}`;
   const contentType = CONTENT_TYPES[fileType] || 'application/octet-stream';
 
   const putResult = await env.BOOKS_BUCKET.put(fileKey, request.body, {
@@ -85,42 +86,74 @@ export async function handleBookFileUpload(request: Request, env: Env, bookId: s
   }
 
   const createdAt = new Date().toISOString();
+  let insertedFileKey: string | null = null;
+  let existingAfterId: string | null = null;
   let postBooksSum: { used_bytes?: number; book_count?: number } | undefined;
   let postPacksSum: { pack_bytes?: number } | undefined;
   try {
-    const [, booksAfterRes, packsAfterRes] = await env.DB.batch([
+    const [insertRes, existingAfterRes, booksAfterRes, packsAfterRes] = await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO books (id, title, author, shelf, cover_color, file_key, file_type, file_size, cover_size, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-      ).bind(bookId, title, author, shelf, coverColor, fileKey, fileType, putResult.size, createdAt),
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, 0, ?
+         WHERE NOT EXISTS (SELECT 1 FROM books WHERE id = ?)
+           AND (
+             (SELECT COALESCE(SUM(b2.file_size + b2.cover_size), 0) FROM books b2)
+             + (SELECT COALESCE(SUM(p2.pack_size), 0) FROM book_guest_packs p2)
+             + ?
+           ) <= ?
+         RETURNING file_key`,
+      ).bind(
+        bookId,
+        title,
+        author,
+        shelf,
+        coverColor,
+        fileKey,
+        fileType,
+        putResult.size,
+        createdAt,
+        bookId,
+        putResult.size,
+        limitBytes,
+      ),
+      env.DB.prepare('SELECT id FROM books WHERE id = ?').bind(bookId),
       env.DB.prepare(
         'SELECT COALESCE(SUM(file_size + cover_size), 0) AS used_bytes, COUNT(*) AS book_count FROM books',
       ),
       env.DB.prepare('SELECT COALESCE(SUM(pack_size), 0) AS pack_bytes FROM book_guest_packs'),
     ]);
+    insertedFileKey =
+      (insertRes.results?.[0] as { file_key?: string } | undefined)?.file_key ?? null;
+    existingAfterId =
+      (existingAfterRes.results?.[0] as { id?: string } | undefined)?.id ?? null;
     postBooksSum = booksAfterRes.results?.[0] as
       | { used_bytes?: number; book_count?: number }
       | undefined;
     postPacksSum = packsAfterRes.results?.[0] as { pack_bytes?: number } | undefined;
   } catch (dbErr) {
-    const committed = await env.DB.prepare('SELECT file_key FROM books WHERE id = ?')
-      .bind(bookId)
-      .first<{ file_key: string }>()
-      .catch(() => null);
-    if (!committed || committed.file_key !== fileKey) {
+    let shouldDeleteOrphan = false;
+    try {
+      const committed = await env.DB.prepare('SELECT file_key FROM books WHERE id = ?')
+        .bind(bookId)
+        .first<{ file_key: string }>();
+      shouldDeleteOrphan = !committed || committed.file_key !== fileKey;
+    } catch {
+      shouldDeleteOrphan = false;
+    }
+    if (shouldDeleteOrphan) {
       await env.BOOKS_BUCKET.delete(fileKey).catch(() => undefined);
     }
     throw dbErr;
   }
 
   const usedBytes = Number(postBooksSum?.used_bytes ?? 0) + Number(postPacksSum?.pack_bytes ?? 0);
-  if (usedBytes > limitBytes) {
-    await env.DB.prepare('DELETE FROM books WHERE id = ?')
-      .bind(bookId)
-      .run()
-      .catch(() => undefined);
+  if (insertedFileKey !== fileKey) {
     await env.BOOKS_BUCKET.delete(fileKey).catch(() => undefined);
-    assertQuota(Math.max(0, usedBytes - putResult.size), putResult.size, limitBytes);
+    if (existingAfterId) {
+      throw new HttpError('Sách với ID này đã tồn tại.', 409);
+    }
+    assertQuota(usedBytes, putResult.size, limitBytes);
+    throw new HttpError('Không thể lưu thông tin sách vào cơ sở dữ liệu.', 500);
   }
 
   const createdBook: BookRow = {
@@ -176,7 +209,7 @@ export async function handleBookCoverUpload(request: Request, env: Env, bookId: 
     Number((packsSumRes.results?.[0] as { pack_bytes?: number } | undefined)?.pack_bytes ?? 0);
   assertQuota(preUsedBytes - existing.cover_size, declaredSize, limitBytes);
 
-  const coverKey = `covers/${bookId}-${Date.now()}-v2.jpg`;
+  const coverKey = `covers/${bookId}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}-v2.jpg`;
   const putResult = await env.BOOKS_BUCKET.put(coverKey, request.body, {
     httpMetadata: { contentType: 'image/jpeg' },
   });
@@ -187,54 +220,66 @@ export async function handleBookCoverUpload(request: Request, env: Env, bookId: 
     throw new HttpError('Ảnh bìa phải nằm trong khoảng 1 byte đến 5 MB.', 400);
   }
 
-  let changes = 0;
+  let actualPrev: { cover_key: string | null; cover_size: number } | null = null;
+  let updatedCoverKey: string | null = null;
   let postBooksSum: { used_bytes?: number; book_count?: number } | undefined;
   let postPacksSum: { pack_bytes?: number } | undefined;
   try {
-    const [updateRes, booksAfterRes, packsAfterRes] = await env.DB.batch([
-      env.DB.prepare('UPDATE books SET cover_key = ?, cover_size = ? WHERE id = ?').bind(
-        coverKey,
-        putResult.size,
-        bookId,
-      ),
+    const [prevRes, updateRes, booksAfterRes, packsAfterRes] = await env.DB.batch([
+      env.DB.prepare('SELECT cover_key, cover_size FROM books WHERE id = ?').bind(bookId),
+      env.DB.prepare(
+        `UPDATE books
+         SET cover_key = ?, cover_size = ?
+         WHERE id = ?
+           AND (
+             (SELECT COALESCE(SUM(b2.file_size + b2.cover_size), 0) FROM books b2)
+             + (SELECT COALESCE(SUM(p2.pack_size), 0) FROM book_guest_packs p2)
+             - cover_size
+             + ?
+           ) <= ?
+         RETURNING cover_key`,
+      ).bind(coverKey, putResult.size, bookId, putResult.size, limitBytes),
       env.DB.prepare(
         'SELECT COALESCE(SUM(file_size + cover_size), 0) AS used_bytes, COUNT(*) AS book_count FROM books',
       ),
       env.DB.prepare('SELECT COALESCE(SUM(pack_size), 0) AS pack_bytes FROM book_guest_packs'),
     ]);
-    changes = updateRes.meta?.changes ?? 0;
+    actualPrev =
+      (prevRes.results?.[0] as { cover_key: string | null; cover_size: number } | undefined) ?? null;
+    updatedCoverKey =
+      (updateRes.results?.[0] as { cover_key?: string } | undefined)?.cover_key ?? null;
     postBooksSum = booksAfterRes.results?.[0] as
       | { used_bytes?: number; book_count?: number }
       | undefined;
     postPacksSum = packsAfterRes.results?.[0] as { pack_bytes?: number } | undefined;
   } catch (dbErr) {
-    const committed = await env.DB.prepare('SELECT cover_key FROM books WHERE id = ?')
-      .bind(bookId)
-      .first<{ cover_key: string | null }>()
-      .catch(() => null);
-    if (!committed || committed.cover_key !== coverKey) {
+    let shouldDeleteOrphan = false;
+    try {
+      const committed = await env.DB.prepare('SELECT cover_key FROM books WHERE id = ?')
+        .bind(bookId)
+        .first<{ cover_key: string | null }>();
+      shouldDeleteOrphan = !committed || committed.cover_key !== coverKey;
+    } catch {
+      shouldDeleteOrphan = false;
+    }
+    if (shouldDeleteOrphan) {
       await env.BOOKS_BUCKET.delete(coverKey).catch(() => undefined);
     }
     throw dbErr;
   }
 
-  if (changes !== 1) {
-    await env.BOOKS_BUCKET.delete(coverKey).catch(() => undefined);
-    throw new HttpError('Không tìm thấy sách.', 404);
-  }
-
   const usedBytes = Number(postBooksSum?.used_bytes ?? 0) + Number(postPacksSum?.pack_bytes ?? 0);
-  if (usedBytes > limitBytes) {
-    await env.DB.prepare('UPDATE books SET cover_key = ?, cover_size = ? WHERE id = ?')
-      .bind(existing.cover_key, existing.cover_size, bookId)
-      .run()
-      .catch(() => undefined);
+  if (updatedCoverKey !== coverKey) {
     await env.BOOKS_BUCKET.delete(coverKey).catch(() => undefined);
-    assertQuota(Math.max(0, usedBytes - putResult.size), putResult.size, limitBytes);
+    if (!actualPrev) {
+      throw new HttpError('Không tìm thấy sách.', 404);
+    }
+    assertQuota(Math.max(0, usedBytes - actualPrev.cover_size), putResult.size, limitBytes);
+    throw new HttpError('Không thể cập nhật ảnh bìa cho sách.', 500);
   }
 
-  if (existing.cover_key && existing.cover_key !== coverKey) {
-    await env.BOOKS_BUCKET.delete(existing.cover_key).catch(() => undefined);
+  if (actualPrev?.cover_key && actualPrev.cover_key !== coverKey) {
+    await env.BOOKS_BUCKET.delete(actualPrev.cover_key).catch(() => undefined);
   }
 
   const updatedBook: BookRow = {

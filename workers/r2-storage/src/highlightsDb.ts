@@ -266,7 +266,9 @@ export async function createHighlight(
   if (!body || typeof body.bookId !== 'string' || !isValidId(body.bookId.trim())) {
     throw new HttpError('ID sách không hợp lệ.', 400);
   }
-  if (typeof body.chapterId !== 'string' || !body.chapterId.trim()) {
+  const chapterId =
+    typeof body.chapterId === 'string' ? body.chapterId.normalize('NFC').trim().slice(0, 120) : '';
+  if (!chapterId) {
     throw new HttpError('Thiếu thông tin chương cần lưu trích dẫn.', 400);
   }
   if (typeof body.quoteText !== 'string' || !body.quoteText.trim()) {
@@ -280,7 +282,7 @@ export async function createHighlight(
   if (!existingBook) throw new HttpError('Không tìm thấy sách.', 404);
 
   await assertGuestBookAccess(env.DB, auth, bookId);
-  await assertGuestChapterAccess(env.DB, auth, bookId, body.chapterId.trim());
+  await assertGuestChapterAccess(env.DB, auth, bookId, chapterId);
   await ensureHighlightsTable(env.DB);
   const scope = resolveUserScope(auth);
 
@@ -298,7 +300,6 @@ export async function createHighlight(
 
   const id = generateHighlightId();
   const createdAt = Date.now();
-  const chapterId = body.chapterId.trim().slice(0, 120);
   const chapterIndex = Math.max(0, Math.floor(Number(body.chapterIndex ?? 0) || 0));
   const chapterTitle =
     typeof body.chapterTitle === 'string' && body.chapterTitle.trim()

@@ -1,13 +1,10 @@
-import { type AuthContext, HttpError, ensureDiscordAccessTable } from './auth';
-import {
-  loadGuestLockedChapterKeysForBook,
-  toCanonicalChapterKey,
-} from './bookChapterAccessDb';
+import { type AuthContext, HttpError } from './auth';
+import { toCanonicalChapterKey } from './bookChapterAccessDb';
 import { type Env, isValidId } from './booksDb';
 import type { WatermarkBlock, WatermarkInlineSpan } from './forensicWatermark';
+import { loadGuestBookAccessAndPackBatch } from './guestAccessBatchDb';
 import type { GuestBookManifest } from './guestPack';
 import { consumeGuestRateToken } from './rateLimitDb';
-import { assertGuestBookAccess } from './shelfAccessDb';
 
 const MAX_SEARCH_QUERY_LEN = 80;
 const MAX_MATCHED_CHAPTERS = 40;
@@ -80,18 +77,12 @@ export async function searchGuestBookChapters(
     throw new HttpError('Từ khoá tìm kiếm cần tối thiểu 2 ký tự.', 400);
   }
 
-  await assertGuestBookAccess(env.DB, auth, bookId);
-  await ensureDiscordAccessTable(env.DB);
-
-  // Kiểm tra sự tồn tại của gói dữ liệu TRƯỚC khi trừ quota tìm kiếm (vá H-2)
-  const row = await env.DB.prepare(
-    'SELECT pack_key, manifest_json FROM book_guest_packs WHERE book_id = ?',
-  )
-    .bind(bookId)
-    .first<{ pack_key: string; manifest_json: string }>();
-  if (!row) {
-    throw new HttpError('Sách này chưa có gói dữ liệu tìm kiếm cho chế độ khách.', 404);
-  }
+  // Gộp kiểm tra phân quyền 3 tầng + sự tồn tại của gói dữ liệu TRƯỚC khi trừ quota tìm kiếm (vá H-2 & D-046)
+  const { packKey, manifestJson, lockedChapterKeys } = await loadGuestBookAccessAndPackBatch(
+    env.DB,
+    auth,
+    bookId,
+  );
 
   if (auth.role === 'guest') {
     await consumeGuestRateToken(env.DB, auth.userId, {
@@ -102,9 +93,8 @@ export async function searchGuestBookChapters(
     });
   }
 
-  const lockedChapterKeys = await loadGuestLockedChapterKeysForBook(env.DB, auth, bookId);
-  const manifest = JSON.parse(row.manifest_json) as GuestBookManifest;
-  const obj = await env.BOOKS_BUCKET.get(row.pack_key);
+  const manifest = JSON.parse(manifestJson) as GuestBookManifest;
+  const obj = await env.BOOKS_BUCKET.get(packKey);
   if (!obj) throw new HttpError('Không tìm thấy gói chương trên kho lưu trữ.', 404);
 
   const packBytes = new Uint8Array(await obj.arrayBuffer());
@@ -126,6 +116,13 @@ export async function searchGuestBookChapters(
   for (let i = 0; i < scanLimit; i += 1) {
     const chMeta = manifest.chapters[i];
     if (lockedChapterKeys.has(toCanonicalChapterKey(chMeta.id))) continue;
+    if (
+      chMeta.offset < 0 ||
+      chMeta.length <= 0 ||
+      chMeta.offset + chMeta.length > packBytes.byteLength
+    ) {
+      continue;
+    }
     const slice = packBytes.subarray(chMeta.offset, chMeta.offset + chMeta.length);
     const stream = new Blob([slice]).stream().pipeThrough(new DecompressionStream('gzip'));
     const jsonStr = await new Response(stream).text();

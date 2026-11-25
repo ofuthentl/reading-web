@@ -128,7 +128,11 @@ export async function createBookBookmark(
     note?: unknown;
   } | null;
 
-  if (!body || typeof body.chapterId !== 'string' || !body.chapterId.trim()) {
+  if (!body || typeof body.chapterId !== 'string') {
+    throw new HttpError('Thiếu thông tin chương cần đánh dấu.', 400);
+  }
+  const chapterId = body.chapterId.normalize('NFC').trim().slice(0, 120);
+  if (!chapterId) {
     throw new HttpError('Thiếu thông tin chương cần đánh dấu.', 400);
   }
 
@@ -138,7 +142,7 @@ export async function createBookBookmark(
   if (!existingBook) throw new HttpError('Không tìm thấy sách.', 404);
 
   await assertGuestBookAccess(env.DB, auth, bookId);
-  await assertGuestChapterAccess(env.DB, auth, bookId, body.chapterId.trim());
+  await assertGuestChapterAccess(env.DB, auth, bookId, chapterId);
   await ensureBookmarksTable(env.DB);
   const scope = resolveUserScope(auth);
 
@@ -173,7 +177,6 @@ export async function createBookBookmark(
 
   const id = generateBookmarkId();
   const createdAt = Date.now();
-  const chapterId = body.chapterId.trim().slice(0, 120);
 
   await env.DB.prepare(
     `INSERT INTO book_bookmarks
