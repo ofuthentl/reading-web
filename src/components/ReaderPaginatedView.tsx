@@ -17,7 +17,7 @@ import { applyChapterDomHighlights } from '@/lib/domHighlights';
 import type { CanvasLayoutItem } from '@/lib/guestCanvasLayout';
 import type { CanonicalChapterOption } from '@/lib/readerChapterNumbers';
 import {
-  READER_FONT_CLASS, type ReaderThemePalette,
+  LAZY_MEDIA_PLACEHOLDER_SRC, READER_FONT_CLASS, type ReaderThemePalette,
   findClickedReaderImage, handleReaderContentLinkClick, resolvePaginatedSpreadWidth,
 } from '@/lib/readerConfig';
 import { buildReaderTypographyStyle } from '@/lib/readingEstimate';
@@ -171,10 +171,18 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       applyChapterDomHighlights(trackRef.current, chapterHighlights);
     }, [chapter.id, chapter.content_html, chapterHighlights]);
 
+    const hasPendingLazyMedia = Boolean(chapter.content_html?.includes(LAZY_MEDIA_PLACEHOLDER_SRC));
+
     // Chuyển ảnh sang eager và đo ngay lập tức trước khi paint để 0 lệch trang khi đổi độ rộng/cỡ chữ
     useLayoutEffect(() => {
       const track = trackRef.current;
       if (!track) return;
+
+      if (hasPendingLazyMedia) {
+        setImagesSettled(false);
+        measurePages();
+        return;
+      }
 
       const imgs = Array.from(track.querySelectorAll('img'));
       let pendingImgs = 0;
@@ -221,6 +229,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       chapter.content_html,
       geometry.colWidth,
       geometry.pageHeight,
+      hasPendingLazyMedia,
       measurePages,
       settings.font,
       settings.fontWeight,
@@ -236,7 +245,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
 
     // Tự động ghi nhận hoàn thành khi chương cuối chỉ có đúng 1 trang sau khi ảnh đã ổn định
     useEffect(() => {
-      if (chapterIndex === totalChapters - 1 && totalPages === 1 && imagesSettled) {
+      if (chapterIndex === totalChapters - 1 && totalPages === 1 && imagesSettled && !hasPendingLazyMedia) {
         if (singlePageEndReportedRef.current !== chapter.id) {
           singlePageEndReportedRef.current = chapter.id;
           onRatioChange(1, true);
@@ -244,7 +253,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       } else {
         singlePageEndReportedRef.current = null;
       }
-    }, [chapter.id, chapterIndex, imagesSettled, onRatioChange, totalChapters, totalPages]);
+    }, [chapter.id, chapterIndex, hasPendingLazyMedia, imagesSettled, onRatioChange, totalChapters, totalPages]);
 
     const commitPage = useCallback(
       (nextPage: number, animate = true) => {
@@ -330,7 +339,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
     );
 
     useEffect(() => {
-      if (!searchTarget || searchTarget.chapterIndex !== chapterIndex) return;
+      if (hasPendingLazyMedia || !searchTarget || searchTarget.chapterIndex !== chapterIndex) return;
       if (appliedSearchNonceRef.current === searchTarget.nonce) return;
       const timer = window.setTimeout(() => {
         const track = trackRef.current;
@@ -345,7 +354,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
         jumpToElementInTrack(matched);
       }, 60);
       return () => window.clearTimeout(timer);
-    }, [chapter.id, chapterIndex, jumpToElementInTrack, searchTarget]);
+    }, [chapter.id, chapterIndex, hasPendingLazyMedia, jumpToElementInTrack, searchTarget]);
 
     const isLastChapter = chapterIndex >= totalChapters - 1;
     const isLastSpread = safePageIndex >= totalPages - 1;
@@ -355,7 +364,7 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
       () => (chapter.content_html && isTocChapter ? stripDuplicateLeadingTocHeadingHtml(chapter.content_html, chapter.title) : chapter.content_html),
       [chapter.content_html, chapter.title, isTocChapter],
     );
-    const rulerDepsKey = `${chapter.id}:${safePageIndex}:${totalPages}:${geometry.columns}:${geometry.colWidth}:${geometry.pageHeight}:${settings.fontSizePx}:${settings.lineHeight}:${imagesSettled}`;
+    const rulerDepsKey = `${chapter.id}:${safePageIndex}:${totalPages}:${geometry.columns}:${geometry.colWidth}:${geometry.pageHeight}:${settings.fontSizePx}:${settings.lineHeight}:${imagesSettled}:${hasPendingLazyMedia}:${chapterHtml?.length ?? 0}`;
     const { updateFromClientPoint } = useDomPaginatedReadingRuler({
       enabled: settings.readingRuler, columns: geometry.columns, pageIndex: safePageIndex,
       chapterId: chapter.id, layoutDepsKey: rulerDepsKey, stageRef, clipRef, trackRef,

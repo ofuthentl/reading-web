@@ -76,6 +76,7 @@ export function useReaderChapterProgress({
       : null,
   );
   const suppressSaveRef = useRef(false);
+  const completedRef = useRef(Boolean(initialProgress?.completed));
   const rereadCountRef = useRef(Math.max(0, Math.floor(initialProgress?.rereadCount ?? 0)));
   const goPrevRef = useRef<() => void>(() => undefined);
   const goNextRef = useRef<() => void>(() => undefined);
@@ -91,7 +92,7 @@ export function useReaderChapterProgress({
       totalChapters: chapters.length,
       scrollRatio: chapterScrollRatio,
       scrollTop: 0,
-      completed: Boolean(initialProgress?.completed),
+      completed: completedRef.current,
       ...(rereadCountRef.current > 0 ? { rereadCount: rereadCountRef.current } : {}),
       updatedAt: Date.now(),
     };
@@ -100,11 +101,11 @@ export function useReaderChapterProgress({
     chapterScrollRatio,
     chapters.length,
     currentChapterMeta,
-    initialProgress?.completed,
   ]);
 
   const ctrl = useReaderController({
     initialCompleted: Boolean(initialProgress?.completed),
+    completedRef,
     settings,
     blockCopyShortcuts,
     timerEnabled,
@@ -115,7 +116,6 @@ export function useReaderChapterProgress({
   });
 
   const {
-    completedRef,
     getTotalActiveSec,
     lastScrollTopRef,
     queueProgressSave,
@@ -199,7 +199,7 @@ export function useReaderChapterProgress({
   );
 
   const goToChapter = useCallback(
-    (nextIndex: number, targetRatio = 0) => {
+    (nextIndex: number, targetRatio = 0, skipSave = false) => {
       const clamped = Math.max(0, Math.min(nextIndex, chapters.length - 1));
       const target = chapters[clamped];
       if (!target) return;
@@ -229,19 +229,22 @@ export function useReaderChapterProgress({
       setChapterScrollRatio(safeRatio);
       setChapterIndex(clamped);
 
-      queueProgressSave(
-        {
-          chapterId: target.id,
-          chapterIndex: clamped,
-          chapterTitle: target.title,
-          totalChapters: chapters.length,
-          scrollRatio: safeRatio,
-          scrollTop: 0,
-          completed: completedRef.current,
-          updatedAt: Date.now(),
-        },
-        true,
-      );
+      if (!skipSave) {
+        queueProgressSave(
+          {
+            chapterId: target.id,
+            chapterIndex: clamped,
+            chapterTitle: target.title,
+            totalChapters: chapters.length,
+            scrollRatio: safeRatio,
+            scrollTop: 0,
+            completed: completedRef.current,
+            ...(rereadCountRef.current > 0 ? { rereadCount: rereadCountRef.current } : {}),
+            updatedAt: Date.now(),
+          },
+          true,
+        );
+      }
     },
     [
       chapterIndex,
@@ -302,6 +305,7 @@ export function useReaderChapterProgress({
           scrollRatio: ratio,
           scrollTop: 0,
           completed: completedRef.current,
+          ...(rereadCountRef.current > 0 ? { rereadCount: rereadCountRef.current } : {}),
           updatedAt: Date.now(),
         },
         reachedEnd,
@@ -349,7 +353,7 @@ export function useReaderChapterProgress({
     if (!first) return;
     rereadCountRef.current = Math.min(999, rereadCountRef.current + 1);
     completedRef.current = false;
-    goToChapter(0, 0);
+    goToChapter(0, 0, true);
     queueProgressSave(
       {
         chapterId: first.id,

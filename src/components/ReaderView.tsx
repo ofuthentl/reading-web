@@ -20,7 +20,7 @@ import { useReaderSoundBarModel } from '@/hooks/useReaderScrollGestures';
 import { applyChapterDomHighlights, captureOwnerSelectionDraft } from '@/lib/domHighlights';
 import { resolveOwnerFootnoteClick } from '@/lib/epubFootnotes';
 import { buildCanonicalChapterNumbering } from '@/lib/readerChapterNumbers';
-import { READER_THEME_STYLES } from '@/lib/readerConfig';
+import { LAZY_MEDIA_PLACEHOLDER_SRC, READER_THEME_STYLES } from '@/lib/readerConfig';
 import { countWordsInPlainText } from '@/lib/readingEstimate';
 import { findDomBlockForSearchQuery, flashDomSearchElement } from '@/lib/readerSearchJump';
 
@@ -90,18 +90,20 @@ export function ReaderView({
   } = ctrl;
 
   const [mediaRev, setMediaRev] = useState(0);
-  void mediaRev;
   const currentChapter = chapters[chapterIndex];
   const currentChapterId = currentChapter?.id || '';
+  const hasPendingLazyMedia = Boolean(
+    parsedBook.ensureChapterMedia && currentChapter?.content_html?.includes(LAZY_MEDIA_PLACEHOLDER_SRC),
+  );
   const chapterNumbering = useMemo(() => buildCanonicalChapterNumbering(chapters), [chapters]);
 
   // Giải nén lười ảnh của chương hiện tại (nếu chưa hydrate) và nạp sẵn chương kế tiếp lúc rảnh (QĐ-1A)
   useEffect(() => {
     if (!parsedBook.ensureChapterMedia) return;
     let cancelled = false;
-    const before = parsedBook.chapters[chapterIndex];
+    const renderedChapter = currentChapter;
     void parsedBook.ensureChapterMedia(chapterIndex).then((hydrated) => {
-      if (!cancelled && hydrated && hydrated !== before) {
+      if (!cancelled && hydrated && hydrated !== renderedChapter) {
         setMediaRev((v) => v + 1);
       }
     });
@@ -132,7 +134,7 @@ export function ReaderView({
       if (idleId !== null) idleWin.cancelIdleCallback?.(idleId);
       if (timerId !== null) window.clearTimeout(timerId);
     };
-  }, [chapterIndex, parsedBook]);
+  }, [chapterIndex, currentChapter, parsedBook]);
 
   const features = useReaderBookFeatures({
     bookId: book.id, chapterIndex, currentChapterId: currentChapter?.id || '',
@@ -157,7 +159,11 @@ export function ReaderView({
   }, [setSettingsOpen, setTocOpen]);
   const soundBarModel = useReaderSoundBarModel(immersion, closePopoversForSound);
   useDomReadingRuler({
-    enabled: settings.readingRuler, isPaginated, scrollContainerRef, chapterId: currentChapter?.id,
+    enabled: settings.readingRuler,
+    isPaginated,
+    scrollContainerRef,
+    chapterId: currentChapter?.id,
+    contentKey: `${mediaRev}:${currentChapter?.content_html?.length ?? 0}`,
   });
 
   useEffect(() => {
@@ -186,7 +192,7 @@ export function ReaderView({
     const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
     const ratio = maxScroll > 0 ? Math.min(1, Math.max(0, currentTop / maxScroll)) : 1;
     setChapterScrollRatio(ratio);
-    if (suppressSaveRef.current) return;
+    if (suppressSaveRef.current || hasPendingLazyMedia) return;
 
     const reachedEndOfBook =
       chapterIndex === chapters.length - 1 && (maxScroll === 0 || ratio >= 0.97);
@@ -206,7 +212,7 @@ export function ReaderView({
       reachedEndOfBook,
     );
   }, [
-    chapterIndex, chapters.length, completedRef, currentChapter, isPaginated,
+    chapterIndex, chapters.length, completedRef, currentChapter, hasPendingLazyMedia, isPaginated,
     queueProgressSave, setChapterScrollRatio, suppressSaveRef, updateImmersiveOnScroll,
   ]);
   handleScrollRef.current = handleScroll;
@@ -215,6 +221,16 @@ export function ReaderView({
 
   useLayoutEffect(() => {
     if (isPaginated || !currentChapterId || !scrollContainerRef.current) return;
+    if (hasPendingLazyMedia) {
+      suppressSaveRef.current = true;
+      if ((restoreTargetRatioRef.current ?? 0) === 0) {
+        scrollContainerRef.current.scrollTop = 0;
+        lastScrollTopRef.current = 0;
+      }
+      return () => {
+        suppressSaveRef.current = false;
+      };
+    }
     if (searchTarget && searchTarget.chapterIndex === chapterIndex && appliedSearchNonceRef.current !== searchTarget.nonce) {
       restoreTargetRatioRef.current = null;
       suppressSaveRef.current = false;
@@ -248,7 +264,10 @@ export function ReaderView({
       cancelAnimationFrame(frame);
       suppressSaveRef.current = false;
     };
-  }, [chapterIndex, currentChapterId, isPaginated, lastScrollTopRef, restoreTargetRatioRef, searchTarget, suppressSaveRef, typographyKey]);
+  }, [
+    chapterIndex, currentChapterId, hasPendingLazyMedia, isPaginated,
+    lastScrollTopRef, restoreTargetRatioRef, searchTarget, suppressSaveRef, typographyKey,
+  ]);
 
   // Bảo toàn tỷ lệ đọc khi xoay màn hình hoặc đổi kích thước cửa sổ ở chế độ cuộn dọc
   useEffect(() => {
@@ -276,7 +295,7 @@ export function ReaderView({
   }, [isPaginated, lastScrollTopRef]);
 
   useEffect(() => {
-    if (isPaginated || !searchTarget || searchTarget.chapterIndex !== chapterIndex) return;
+    if (isPaginated || hasPendingLazyMedia || !searchTarget || searchTarget.chapterIndex !== chapterIndex) return;
     if (appliedSearchNonceRef.current === searchTarget.nonce) return;
 
     const timer = window.setTimeout(() => {
@@ -291,10 +310,10 @@ export function ReaderView({
       el.scrollTop = Math.max(0, Math.round(targetTop));
       flashCleanupRef.current?.();
       flashCleanupRef.current = flashDomSearchElement(matched);
-      handleScroll();
+      handleScrollRef.current();
     }, 90);
     return () => window.clearTimeout(timer);
-  }, [chapterIndex, currentChapter?.id, handleScroll, isPaginated, searchTarget]);
+  }, [chapterIndex, currentChapter?.id, hasPendingLazyMedia, isPaginated, searchTarget]);
 
   const handleContentSelectionEnd = useCallback(
     (container: HTMLElement | null) => {

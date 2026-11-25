@@ -81,22 +81,7 @@ export function GuestCanvasReader({
     [initialProgress, tocChapters],
   );
 
-  const [activeStreamIdx, setActiveStreamIdx] = useState(() => {
-    if (!effectiveInitialProgress || tocChapters.length === 0) return 0;
-    const byId = tocChapters.findIndex((c) => c.id === effectiveInitialProgress.chapterId);
-    if (byId >= 0) return byId;
-    return Math.max(0, Math.min(effectiveInitialProgress.chapterIndex || 0, tocChapters.length - 1));
-  });
-
-  const {
-    chapterData, loadingChapter, chapterError, chapterLocked, imageSizes, bitmapsRef, retryChapter,
-  } = useGuestChapterStream({
-    bookId: book.id,
-    chapterIndex: activeStreamIdx,
-    isChapterLocked: Boolean(tocChapters[activeStreamIdx]?.locked),
-    initialChapter,
-    onApiError,
-  });
+  const [streamTimerEnabled, setStreamTimerEnabled] = useState(false);
 
   const {
     ctrl, chapterIndex, chapterScrollRatio, setChapterScrollRatio,
@@ -111,7 +96,7 @@ export function GuestCanvasReader({
     settings,
     isPaginated,
     blockCopyShortcuts: true,
-    timerEnabled: !loadingChapter && !chapterError && !chapterLocked,
+    timerEnabled: streamTimerEnabled,
     scrollContainerRef,
     paginatedRef,
     onUpdateSettings,
@@ -121,9 +106,34 @@ export function GuestCanvasReader({
     onClose,
   });
 
+  const currentTocItem = tocChapters[chapterIndex];
+  const expectedChapterId = currentTocItem?.id || '';
+
+  const {
+    chapterData, loadingChapter, chapterError, chapterLocked, imageSizes, bitmapsRef, retryChapter,
+  } = useGuestChapterStream({
+    bookId: book.id,
+    chapterIndex,
+    isChapterLocked: Boolean(currentTocItem?.locked),
+    initialChapter,
+    onApiError,
+  });
+
+  const isCurrentChapterLocked = Boolean(currentTocItem?.locked || chapterLocked);
+  const syncedChapterData =
+    chapterData && (!expectedChapterId || chapterData.id === expectedChapterId)
+      ? chapterData
+      : null;
+  const isChapterLoading =
+    Boolean(currentTocItem) &&
+    !isCurrentChapterLocked &&
+    !chapterError &&
+    (loadingChapter || !syncedChapterData);
+  const canRunReadingTimer = !isChapterLoading && !chapterError && !isCurrentChapterLocked;
+
   useEffect(() => {
-    setActiveStreamIdx(chapterIndex);
-  }, [chapterIndex]);
+    setStreamTimerEnabled(canRunReadingTimer);
+  }, [canRunReadingTimer]);
 
   const {
     tocOpen, setTocOpen, drawerTab, settingsOpen, setSettingsOpen,
@@ -132,7 +142,6 @@ export function GuestCanvasReader({
     openDrawerTab, updateImmersiveOnScroll,
   } = ctrl;
 
-  const currentTocItem = tocChapters[chapterIndex];
   const chapterNumbering = useMemo(() => buildCanonicalChapterNumbering(tocChapters), [tocChapters]);
   const features = useReaderBookFeatures({
     bookId: book.id, chapterIndex, currentChapterId: currentTocItem?.id || '',
@@ -173,21 +182,21 @@ export function GuestCanvasReader({
   );
 
   const footnoteMap = useMemo(
-    () => buildGuestChapterFootnoteMap(chapterData?.blocks, chapterData?.footnotes),
-    [chapterData?.blocks, chapterData?.footnotes],
+    () => buildGuestChapterFootnoteMap(syncedChapterData?.blocks, syncedChapterData?.footnotes),
+    [syncedChapterData?.blocks, syncedChapterData?.footnotes],
   );
   const footnoteKeys = useMemo(
     () => (footnoteMap.size > 0 ? new Set(footnoteMap.keys()) : undefined),
     [footnoteMap],
   );
 
-  const isCurrentChapterLocked = Boolean(currentTocItem?.locked || chapterLocked);
-  const showScrollStage = !loadingChapter && !chapterError && !isCurrentChapterLocked && !isPaginated;
-  const effectiveWatermark = chapterData?.watermarkLabel || watermarkLabel || 'Guest';
+  const showScrollStage = !isChapterLoading && !chapterError && !isCurrentChapterLocked && !isPaginated;
+  const effectiveWatermark = syncedChapterData?.watermarkLabel || watermarkLabel || 'Guest';
   const handleScrollRef = useRef<() => void>(() => undefined);
 
   const { stageBox, layout, pageHidden, paintVisibleSlice } = useGuestCanvasViewport({
-    chapterData,
+    chapterData: syncedChapterData,
+    expectedChapterId,
     chapterIndex,
     totalChapters: tocChapters.length,
     tocTitles,
@@ -214,7 +223,7 @@ export function GuestCanvasReader({
     if (isPaginated) return;
     paintVisibleSlice();
     const el = scrollContainerRef.current;
-    if (!el || !currentTocItem || !layout) return;
+    if (!el || !currentTocItem || !layout || !syncedChapterData) return;
 
     const currentTop = el.scrollTop;
     updateImmersiveOnScroll(currentTop, suppressSaveRef.current);
@@ -238,11 +247,12 @@ export function GuestCanvasReader({
     );
   }, [
     chapterIndex, completedRef, currentTocItem, isPaginated, layout, paintVisibleSlice,
-    queueProgressSave, setChapterScrollRatio, suppressSaveRef, tocChapters.length, updateImmersiveOnScroll,
+    queueProgressSave, setChapterScrollRatio, suppressSaveRef, syncedChapterData, tocChapters.length,
+    updateImmersiveOnScroll,
   ]);
   handleScrollRef.current = handleScroll;
 
-  const chapterWords = useMemo(() => countWordsInGuestBlocks(chapterData?.blocks), [chapterData?.blocks]);
+  const chapterWords = useMemo(() => countWordsInGuestBlocks(syncedChapterData?.blocks), [syncedChapterData?.blocks]);
   useEffect(() => {
     syncChapterWords(chapterWords);
   }, [chapterWords, syncChapterWords]);
@@ -253,11 +263,11 @@ export function GuestCanvasReader({
   const remainingEstimate = computeRemainingEstimate(chapterWords, laterBookWords);
 
   const visibleGuestParagraphs = useMemo(() => {
-    if (!features.guestPickerOpen || !chapterData?.blocks) return [];
+    if (!features.guestPickerOpen || !syncedChapterData?.blocks) return [];
     if (isPaginated) {
       const slice = paginatedRef.current?.getVisibleCanvasSlice?.();
       return collectVisibleGuestParagraphOptions({
-        blocks: chapterData.blocks,
+        blocks: syncedChapterData.blocks,
         visibleItems: slice?.items ?? [],
         minY: slice?.minY ?? 0,
         maxY: slice?.maxY ?? 999_999,
@@ -268,13 +278,13 @@ export function GuestCanvasReader({
     const minY = Math.max(0, (el?.scrollTop ?? 0) - 40);
     const maxY = minY + Math.max(360, el?.clientHeight ?? 680);
     return collectVisibleGuestParagraphOptions({
-      blocks: chapterData.blocks,
+      blocks: syncedChapterData.blocks,
       visibleItems: layout?.items ?? [],
       minY,
       maxY,
       chapterHighlights: features.chapterHighlights,
     });
-  }, [chapterData?.blocks, features.chapterHighlights, features.guestPickerOpen, isPaginated, layout]);
+  }, [features.chapterHighlights, features.guestPickerOpen, isPaginated, layout, syncedChapterData?.blocks]);
 
   const watermarkBadge = (
     <span
@@ -325,7 +335,7 @@ export function GuestCanvasReader({
         onUpdateSettings={handleUpdateSettings}
       />
 
-      {loadingChapter ? (
+      {isChapterLoading ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
           <Loader2 className="h-6 w-6 animate-spin opacity-70" />
           <p className={`text-sm ${palette.textSecondary}`}>Đang mở trang sách...</p>
@@ -346,11 +356,12 @@ export function GuestCanvasReader({
             onClose();
           }}
         />
-      ) : isPaginated && chapterData ? (
+      ) : isPaginated && syncedChapterData ? (
         <>
           <GuestCanvasPaginatedView
             ref={paginatedRef}
-            bookId={book.id} bookTitle={book.title} chapterData={chapterData}
+            bookId={book.id} bookTitle={book.title} chapterData={syncedChapterData}
+            expectedChapterId={expectedChapterId}
             chapterIndex={chapterIndex} totalChapters={tocChapters.length} tocTitles={tocTitles}
             currentChapterNumber={currentChapterNumber} readerMaxChapterNumber={readerMaxChapterNumber}
             chapterOptions={chapterNumbering.options} initialRatio={paginatedStartRatio} watermarkLabel={effectiveWatermark}

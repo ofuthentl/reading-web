@@ -184,6 +184,7 @@ export function ReaderImmersionChrome({
   const dimHud = useMobileLeftEdgeDimGesture(nightDimPercent, handleDimChange);
   const pullProgress = usePullToNextChapter({
     enabled: !isPaginated && scrollStageReady && chapterIndex < totalChapters - 1,
+    chapterKey: chapterIndex,
     scrollContainerRef,
     onAdvanceChapter,
   });

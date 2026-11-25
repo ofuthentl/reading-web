@@ -137,6 +137,9 @@ export default function App() {
     clearStoreOnLogout();
     clearFilters();
     closeLibraryShelf();
+    void import('@/lib/guestCrypto')
+      .then((m) => m.clearGuestIllustrationsCache())
+      .catch(() => undefined);
   };
 
   useEffect(() => {
@@ -213,6 +216,9 @@ export default function App() {
   );
 
   const handleAuthenticated = useCallback((nextSession: AuthSessionInfo) => {
+    void import('@/lib/guestCrypto')
+      .then((m) => m.clearGuestIllustrationsCache())
+      .catch(() => undefined);
     setSession(nextSession);
     setAuthReason(null);
     setAuthenticated(true);

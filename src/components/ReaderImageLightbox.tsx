@@ -83,19 +83,30 @@ export function ReaderImageLightbox({ target, onClose }: ReaderImageLightboxProp
   const didDragRef = useRef(false);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const guestCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const activeOwnedBitmapRef = useRef<ImageBitmap | null>(null);
 
   useEffect(() => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
     didDragRef.current = false;
+    const ownedBmp =
+      target?.kind === 'guest-bitmap' && target.ownedBitmap ? target.bitmap : null;
+    activeOwnedBitmapRef.current = ownedBmp;
+
     return () => {
-      if (target?.kind === 'guest-bitmap' && target.ownedBitmap) {
+      if (!ownedBmp) return;
+      if (activeOwnedBitmapRef.current === ownedBmp) {
+        activeOwnedBitmapRef.current = null;
+      }
+      // Trì hoãn sang microtask để cleanup giả của React <StrictMode> không đóng sớm ImageBitmap đang dùng
+      queueMicrotask(() => {
+        if (activeOwnedBitmapRef.current === ownedBmp) return;
         try {
-          target.bitmap.close();
+          ownedBmp.close();
         } catch {
           // Ignore already-closed bitmap
         }
-      }
+      });
     };
   }, [target]);
 

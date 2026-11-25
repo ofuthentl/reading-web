@@ -1,5 +1,5 @@
 import type { MouseEvent } from 'react';
-import type { Chapter, GuestBlock, ReaderFont } from '@/types';
+import type { Chapter, GuestBlock, ReaderFont, ReaderFontWeight } from '@/types';
 import {
   type ChapterCanvasLayout,
   buildCanvasFontSpec,
@@ -364,9 +364,10 @@ export function findCanvasFootnoteAtPoint(options: {
   stageX: number;
   stageY: number;
   font: ReaderFont;
+  fontWeight?: ReaderFontWeight;
   footnoteMap: ReadonlyMap<string, string>;
 }): { markerLabel: string; content: string } | null {
-  const { layout, stageWidth, stageX, stageY, font, footnoteMap } = options;
+  const { layout, stageWidth, stageX, stageY, font, fontWeight = 'normal', footnoteMap } = options;
   if (footnoteMap.size === 0 || stageY < 0 || stageY > layout.totalHeight) return null;
 
   const offsetX = Math.max(0, Math.floor((stageWidth - layout.contentWidth) / 2));
@@ -381,6 +382,7 @@ export function findCanvasFootnoteAtPoint(options: {
         item.fontSize,
         item.isHeading || frag.bold,
         frag.italic,
+        fontWeight,
       );
       INLINE_FOOTNOTE_TOKEN_RE.lastIndex = 0;
       let m: RegExpExecArray | null;

@@ -105,6 +105,7 @@ export function GuestCanvasScrollStage({
             stageX,
             stageY,
             font: settings.font,
+            fontWeight: settings.fontWeight,
             footnoteMap,
           });
           if (hitFn) {

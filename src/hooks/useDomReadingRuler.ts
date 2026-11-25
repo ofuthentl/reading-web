@@ -12,8 +12,9 @@ export function useDomReadingRuler(options: {
   isPaginated: boolean;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   chapterId: string | undefined;
+  contentKey?: string | number;
 }) {
-  const { enabled, isPaginated, scrollContainerRef, chapterId } = options;
+  const { enabled, isPaginated, scrollContainerRef, chapterId, contentKey } = options;
 
   const updateDomFocus = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -71,6 +72,7 @@ export function useDomReadingRuler(options: {
 
   useEffect(() => {
     const el = scrollContainerRef.current;
+    updateDomFocus();
     const raf = window.requestAnimationFrame(updateDomFocus);
     if (!el || !enabled || isPaginated) {
       return () => window.cancelAnimationFrame(raf);
@@ -95,5 +97,5 @@ export function useDomReadingRuler(options: {
       const contentRoot = el.querySelector('.reading-content');
       contentRoot?.classList.remove('reader-ruler-active');
     };
-  }, [chapterId, enabled, isPaginated, scrollContainerRef, updateDomFocus]);
+  }, [chapterId, contentKey, enabled, isPaginated, scrollContainerRef, updateDomFocus]);
 }

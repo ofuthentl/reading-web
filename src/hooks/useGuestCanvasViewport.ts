@@ -25,6 +25,7 @@ const VIEWPORT_OVERSCAN_PX = 280;
 
 export interface UseGuestCanvasViewportOptions {
   chapterData: GuestChapterPayload | null;
+  expectedChapterId?: string;
   chapterIndex: number;
   totalChapters: number;
   tocTitles?: readonly string[];
@@ -49,6 +50,7 @@ export interface UseGuestCanvasViewportOptions {
 
 export function useGuestCanvasViewport({
   chapterData,
+  expectedChapterId,
   chapterIndex,
   totalChapters,
   tocTitles,
@@ -116,9 +118,13 @@ export function useGuestCanvasViewport({
     return () => document.removeEventListener('visibilitychange', onVisChange);
   }, []);
 
+  const isChapterSynced = Boolean(
+    chapterData && (!expectedChapterId || chapterData.id === expectedChapterId),
+  );
+
   const layout = useMemo(() => {
     void fontVersion;
-    if (!chapterData || isPaginated) return null;
+    if (!isChapterSynced || !chapterData || isPaginated) return null;
     return computeChapterCanvasLayout({
       chapterTitle: chapterData.title,
       chapterIndex,
@@ -136,6 +142,7 @@ export function useGuestCanvasViewport({
     chapterIndex,
     fontVersion,
     imageSizes,
+    isChapterSynced,
     isPaginated,
     settings,
     stageBox.width,
@@ -204,7 +211,13 @@ export function useGuestCanvasViewport({
   }, [isPaginated, paintVisibleSlice]);
 
   useLayoutEffect(() => {
-    if (isPaginated || !layout || !scrollContainerRef.current || restoreTargetRatioRef.current === null) {
+    if (
+      isPaginated ||
+      !isChapterSynced ||
+      !layout ||
+      !scrollContainerRef.current ||
+      restoreTargetRatioRef.current === null
+    ) {
       return;
     }
     suppressSaveRef.current = true;
@@ -215,10 +228,27 @@ export function useGuestCanvasViewport({
     restoreTargetRatioRef.current = null;
     suppressSaveRef.current = false;
     paintVisibleSlice();
-  }, [isPaginated, lastScrollTopRef, layout, paintVisibleSlice, restoreTargetRatioRef, scrollContainerRef, suppressSaveRef]);
+  }, [
+    isChapterSynced,
+    isPaginated,
+    lastScrollTopRef,
+    layout,
+    paintVisibleSlice,
+    restoreTargetRatioRef,
+    scrollContainerRef,
+    suppressSaveRef,
+  ]);
 
   useEffect(() => {
-    if (isPaginated || !layout || !searchTarget || searchTarget.chapterIndex !== chapterIndex) return;
+    if (
+      isPaginated ||
+      !isChapterSynced ||
+      !layout ||
+      !searchTarget ||
+      searchTarget.chapterIndex !== chapterIndex
+    ) {
+      return;
+    }
     if (appliedSearchNonceRef.current === searchTarget.nonce) return;
 
     const idx = findCanvasItemIndexForQuery(layout.items, searchTarget.query, searchTarget.occurrenceIndex);
@@ -235,7 +265,7 @@ export function useGuestCanvasViewport({
     setHighlightSourceY(matchedItem.y);
     const timer = window.setTimeout(() => setHighlightSourceY(null), 2250);
     return () => window.clearTimeout(timer);
-  }, [chapterIndex, isPaginated, layout, scrollContainerRef, searchTarget]);
+  }, [chapterIndex, isChapterSynced, isPaginated, layout, scrollContainerRef, searchTarget]);
 
   return {
     stageBox,
