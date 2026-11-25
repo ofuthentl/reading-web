@@ -164,10 +164,14 @@ export async function consumeGuestRateToken(
       )
       .first<{ rl_tokens: number | null; rl_strikes: number | null }>();
 
-    if ((strikeRow?.rl_strikes ?? 0) >= AUTO_CLOSE_SESSION_STRIKES) {
+    const totalStrikes = strikeRow?.rl_strikes ?? 0;
+    if (totalStrikes >= AUTO_CLOSE_SESSION_STRIKES) {
       throw new HttpError(
         'Phiên đọc đã tự động đóng do phát hiện truy vấn hàng loạt tốc độ cao bất thường.',
         401,
+        undefined,
+        'STRIKE_LOCKOUT',
+        { strikes: totalStrikes },
       );
     }
     remainingTokens = typeof strikeRow?.rl_tokens === 'number' ? strikeRow.rl_tokens : 0;
@@ -215,19 +219,29 @@ async function hashClientIp(rawIp: string): Promise<string> {
 
 const STALE_LOGIN_LIMIT_MS = 7 * 24 * 60 * 60 * 1000;
 
+export interface LoginIpLockInfo {
+  ipHashPrefix: string;
+  failCount: number;
+  lockSeconds: number;
+}
+
 /**
  * Kiểm tra khoá IP và tăng đếm lần thử đăng nhập nguyên tử trong 1 `db.batch` (chống TOCTOU brute-force song song):
  * - Nếu IP đang bị khoá (`locked_until > now`): giữ nguyên bộ đếm và trả `429 Retry-After` ngay.
  * - Nếu chưa khoá: tăng `fail_count` và kích khoá mốc 5/8/12 trước khi xác thực; khi đăng nhập thành công `clearLoginFailures` xoá sạch bản ghi.
  */
-export async function consumeLoginAttempt(db: D1Database, rawIp: string): Promise<void> {
+export async function consumeLoginAttempt(
+  db: D1Database,
+  rawIp: string,
+  onIpLocked?: (info: LoginIpLockInfo) => void,
+): Promise<void> {
   await ensureLoginRateLimitTable(db);
   const ipHash = await hashClientIp(rawIp);
   const now = Date.now();
   const staleBefore = now - STALE_LOGIN_LIMIT_MS;
 
-  const [prevRes] = await db.batch([
-    db.prepare('SELECT locked_until FROM login_rate_limits WHERE ip_hash = ?').bind(ipHash),
+  const [prevRes, upsertRes] = await db.batch([
+    db.prepare('SELECT fail_count, locked_until FROM login_rate_limits WHERE ip_hash = ?').bind(ipHash),
     db
       .prepare(
         `INSERT INTO login_rate_limits (ip_hash, fail_count, window_start, locked_until)
@@ -250,7 +264,8 @@ export async function consumeLoginAttempt(db: D1Database, rawIp: string): Promis
              WHEN login_rate_limits.fail_count + 1 >= 8 THEN ? + 180000
              WHEN login_rate_limits.fail_count + 1 >= 5 THEN ? + 30000
              ELSE 0
-           END`,
+           END
+         RETURNING fail_count, locked_until`,
       )
       .bind(
         ipHash,
@@ -274,14 +289,33 @@ export async function consumeLoginAttempt(db: D1Database, rawIp: string): Promis
       .bind(staleBefore, now),
   ]);
 
-  const prevRow = (prevRes.results?.[0] as { locked_until: number } | undefined) ?? null;
+  const prevRow = (prevRes.results?.[0] as { fail_count: number; locked_until: number } | undefined) ?? null;
+  const updatedRow =
+    (upsertRes.results?.[0] as { fail_count: number; locked_until: number } | undefined) ?? null;
+
   if (prevRow && prevRow.locked_until > now) {
     const waitSec = Math.max(1, Math.ceil((prevRow.locked_until - now) / 1000));
+    onIpLocked?.({
+      ipHashPrefix: ipHash.slice(0, 10),
+      failCount: Number(prevRow.fail_count) || 5,
+      lockSeconds: waitSec,
+    });
     throw new HttpError(
       `Bạn đã nhập sai quá nhiều lần. Vui lòng thử lại sau ${waitSec} giây.`,
       429,
       { 'Retry-After': String(waitSec) },
+      'LOGIN_IP_LOCKED',
+      { failCount: Number(prevRow.fail_count) || 5, lockSeconds: waitSec },
     );
+  }
+
+  if (updatedRow && updatedRow.locked_until > now) {
+    const lockSeconds = Math.max(1, Math.ceil((updatedRow.locked_until - now) / 1000));
+    onIpLocked?.({
+      ipHashPrefix: ipHash.slice(0, 10),
+      failCount: Number(updatedRow.fail_count) || 5,
+      lockSeconds,
+    });
   }
 }
 

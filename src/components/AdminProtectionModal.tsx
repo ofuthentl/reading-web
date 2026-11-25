@@ -361,6 +361,8 @@ export function AdminProtectionModal({
               onToggleBan={(userId, nextBanned, username) =>
                 void handleToggleBan(userId, nextBanned, username)
               }
+              onApiError={onApiError}
+              onNotify={onNotify}
             />
           )}
         </div>

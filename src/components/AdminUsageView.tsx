@@ -39,6 +39,12 @@ const LazyAdminBackupCard = lazy(() =>
   })),
 );
 
+const LazyAdminRecentCommunityCard = lazy(() =>
+  import('@/components/AdminRecentCommunityCard').then((m) => ({
+    default: m.AdminRecentCommunityCard,
+  })),
+);
+
 export interface AdminUsageViewProps {
   theme: UiTheme;
   onCycleTheme: (origin?: { x: number; y: number }) => void;
@@ -502,6 +508,14 @@ export function AdminUsageView({
               formatRelativeTime={formatRelativeTime}
               onApiError={onApiError}
             />
+
+            <Suspense fallback={null}>
+              <LazyAdminRecentCommunityCard
+                formatRelativeTime={formatRelativeTime}
+                onApiError={onApiError}
+                onNotify={onNotify}
+              />
+            </Suspense>
           </>
         ) : (
           <div className="rounded-2xl border border-line bg-surface p-8 text-center text-sm text-ink-muted">

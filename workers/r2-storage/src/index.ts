@@ -5,6 +5,7 @@ import {
   requireOwner,
   verifyAuth,
 } from './auth';
+import { scheduleAdminSecurityAlert } from './adminAlerts';
 import { tryHandleAdminRoutes } from './adminRoutes';
 import { handleBookFileReplace } from './bookReplaceRoute';
 import {
@@ -162,7 +163,14 @@ async function handleApi(
       throw new HttpError('Vui lòng nhập chìa khoá truy cập hoặc mật mã.', 400);
     }
     try {
-      await consumeLoginAttempt(env.DB, clientIp);
+      await consumeLoginAttempt(env.DB, clientIp, (info) => {
+        scheduleAdminSecurityAlert(ctx, env, {
+          kind: 'login_ip_locked',
+          ipHashPrefix: info.ipHashPrefix,
+          failCount: info.failCount,
+          lockSeconds: info.lockSeconds,
+        });
+      });
     } catch (err) {
       if (err instanceof HttpError && err.status === 429) {
         scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });

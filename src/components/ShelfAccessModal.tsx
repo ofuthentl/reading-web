@@ -6,12 +6,17 @@ import type {
   ShelfAccessSummary,
   ShelfGroup,
 } from '@/types';
+import { DiscordPresetPickerBar } from '@/components/DiscordPresetPickerBar';
 import { ModalShell } from '@/components/ModalShell';
 import {
   type SelectedMemberMeta,
   ShelfAccessMemberList,
 } from '@/components/ShelfAccessMemberList';
 import { isCloudMode } from '@/lib/api';
+import {
+  type DiscordAccessPreset,
+  fetchAdminDiscordPresets,
+} from '@/lib/discordPresetsApi';
 import { type DiscordGuestRecord, fetchAdminDiscordGuests } from '@/lib/guestCrypto';
 import {
   fetchAdminShelfAccessRules,
@@ -43,6 +48,7 @@ export function ShelfAccessModal({
   const [saving, setSaving] = useState(false);
   const [mode, setMode] = useState<ShelfAccessMode>('public');
   const [guests, setGuests] = useState<DiscordGuestRecord[]>([]);
+  const [presets, setPresets] = useState<DiscordAccessPreset[]>([]);
   const [allRules, setAllRules] = useState<ShelfAccessRuleDetail[]>([]);
   const [selectedMap, setSelectedMap] = useState<Map<string, SelectedMemberMeta>>(() => new Map());
   const [memberQuery, setMemberQuery] = useState('');
@@ -61,17 +67,23 @@ export function ShelfAccessModal({
     if (!isCloudMode) {
       setMode('public');
       setGuests([]);
+      setPresets([]);
       setAllRules([]);
       setSelectedMap(new Map());
       return;
     }
 
     setLoading(true);
-    void Promise.all([fetchAdminDiscordGuests(), fetchAdminShelfAccessRules()])
-      .then(([guestList, rules]) => {
+    void Promise.all([
+      fetchAdminDiscordGuests(),
+      fetchAdminShelfAccessRules(),
+      fetchAdminDiscordPresets().catch(() => [] as DiscordAccessPreset[]),
+    ])
+      .then(([guestList, rules, presetList]) => {
         if (cancelled) return;
         setGuests(guestList);
         setAllRules(rules);
+        setPresets(presetList);
         const currentRule = rules.find((r) => r.shelfKey === shelfKey);
         if (currentRule) {
           setMode('restricted');
@@ -158,6 +170,25 @@ export function ShelfAccessModal({
     setSelectedMap(next);
     const sourceLabel = allShelfNames.get(rule.shelfKey) || rule.shelfKey;
     onNotify?.(`Đã sao chép ${next.size} thành viên từ bộ "${sourceLabel}".`, 'info');
+  };
+
+  const handleApplyPreset = (preset: DiscordAccessPreset, applyMode: 'replace' | 'merge') => {
+    setSelectedMap((prev) => {
+      const next = applyMode === 'merge' ? new Map(prev) : new Map<string, SelectedMemberMeta>();
+      for (const m of preset.members) {
+        next.set(m.discordUserId, {
+          discordUserId: m.discordUserId,
+          label: m.discordUsername || m.label || null,
+        });
+      }
+      return next;
+    });
+    onNotify?.(
+      applyMode === 'merge'
+        ? `Đã cộng gộp ${preset.members.length} thành viên từ nhóm "${preset.name}".`
+        : `Đã chọn ${preset.members.length} thành viên theo nhóm "${preset.name}".`,
+      'info',
+    );
   };
 
   const handleAddManualId = () => {
@@ -299,25 +330,38 @@ export function ShelfAccessModal({
                 <span>Đang tải danh sách thành viên Discord...</span>
               </div>
             ) : mode === 'restricted' ? (
-              <ShelfAccessMemberList
-                guests={guests}
-                filteredGuests={filteredGuests}
-                preGrantedOnlyUsers={preGrantedOnlyUsers}
-                otherRulesWithUsers={otherRulesWithUsers}
-                allShelfNames={allShelfNames}
-                selectedMap={selectedMap}
-                memberQuery={memberQuery}
-                manualId={manualId}
-                manualLabel={manualLabel}
-                onMemberQueryChange={setMemberQuery}
-                onManualIdChange={setManualId}
-                onManualLabelChange={setManualLabel}
-                onToggleMember={toggleMember}
-                onSelectAllActiveGuests={handleSelectAllActiveGuests}
-                onClearAll={() => setSelectedMap(new Map())}
-                onCopyFromRule={handleCopyFromRule}
-                onAddManualId={handleAddManualId}
-              />
+              <div className="space-y-3.5">
+                {isCloudMode && (
+                  <DiscordPresetPickerBar
+                    presets={presets}
+                    selectedMap={selectedMap}
+                    disabled={saving}
+                    onApplyPreset={handleApplyPreset}
+                    onPresetsChanged={setPresets}
+                    onApiError={onApiError}
+                    onNotify={onNotify}
+                  />
+                )}
+                <ShelfAccessMemberList
+                  guests={guests}
+                  filteredGuests={filteredGuests}
+                  preGrantedOnlyUsers={preGrantedOnlyUsers}
+                  otherRulesWithUsers={otherRulesWithUsers}
+                  allShelfNames={allShelfNames}
+                  selectedMap={selectedMap}
+                  memberQuery={memberQuery}
+                  manualId={manualId}
+                  manualLabel={manualLabel}
+                  onMemberQueryChange={setMemberQuery}
+                  onManualIdChange={setManualId}
+                  onManualLabelChange={setManualLabel}
+                  onToggleMember={toggleMember}
+                  onSelectAllActiveGuests={handleSelectAllActiveGuests}
+                  onClearAll={() => setSelectedMap(new Map())}
+                  onCopyFromRule={handleCopyFromRule}
+                  onAddManualId={handleAddManualId}
+                />
+              </div>
             ) : null}
           </div>
 

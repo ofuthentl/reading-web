@@ -6,6 +6,16 @@ import {
   putAdminBookAccessConfig,
 } from './bookChapterAccessAdminDb';
 import type { Env } from './booksDb';
+import {
+  getDiscordGuestAccessMatrix,
+  revokeAllDiscordGuestAccess,
+} from './discordAccessMatrixDb';
+import {
+  createDiscordAccessPreset,
+  deleteDiscordAccessPreset,
+  listDiscordAccessPresets,
+  updateDiscordAccessPreset,
+} from './discordPresetsDb';
 import { announceDiscordReleases } from './discordRelease';
 import {
   listDiscordGuests,
@@ -19,6 +29,7 @@ import {
 } from './shelfAccessDb';
 import { cleanupOrphanR2Storage, reconcileR2Storage } from './storageReconcileRoute';
 import { getAdminGuestUsageDetail, getAdminUsageReport } from './usageDb';
+import { getAdminRecentCommunity } from './usageRecentCommunityDb';
 
 export async function tryHandleAdminRoutes(
   request: Request,
@@ -40,6 +51,14 @@ export async function tryHandleAdminRoutes(
 
   if (normalizedPath === '/api/admin/usage' && request.method === 'GET') {
     const report = await getAdminUsageReport(env, url.searchParams.get('days'));
+    return jsonResponse(report, 200, origin, {
+      'Cache-Control': 'no-store, private',
+      'X-Robots-Tag': 'noindex, nofollow',
+    });
+  }
+
+  if (normalizedPath === '/api/admin/usage/recent-community' && request.method === 'GET') {
+    const report = await getAdminRecentCommunity(env.DB, url.searchParams.get('limit'));
     return jsonResponse(report, 200, origin, {
       'Cache-Control': 'no-store, private',
       'X-Robots-Tag': 'noindex, nofollow',
@@ -76,6 +95,49 @@ export async function tryHandleAdminRoutes(
       typeof body.reason === 'string' ? body.reason : null,
     );
     return jsonResponse(res, 200, origin);
+  }
+
+  const adminGuestMatrixMatch = normalizedPath.match(
+    /^\/api\/admin\/discord-guests\/([^/]+)\/access-matrix$/,
+  );
+  if (adminGuestMatrixMatch && request.method === 'GET') {
+    const matrix = await getDiscordGuestAccessMatrix(env.DB, adminGuestMatrixMatch[1]);
+    return jsonResponse(matrix, 200, origin, {
+      'Cache-Control': 'no-store, private',
+      'X-Robots-Tag': 'noindex, nofollow',
+    });
+  }
+
+  const adminGuestRevokeAllMatch = normalizedPath.match(
+    /^\/api\/admin\/discord-guests\/([^/]+)\/revoke-all$/,
+  );
+  if (adminGuestRevokeAllMatch && request.method === 'POST') {
+    const body = await request.json().catch(() => null);
+    const result = await revokeAllDiscordGuestAccess(env.DB, adminGuestRevokeAllMatch[1], body);
+    return jsonResponse(result, 200, origin, {
+      'Cache-Control': 'no-store, private',
+      'X-Robots-Tag': 'noindex, nofollow',
+    });
+  }
+
+  if (normalizedPath === '/api/admin/discord-presets' && request.method === 'GET') {
+    const data = await listDiscordAccessPresets(env.DB);
+    return jsonResponse(data, 200, origin);
+  }
+  if (normalizedPath === '/api/admin/discord-presets' && request.method === 'POST') {
+    const body = await request.json().catch(() => null);
+    const created = await createDiscordAccessPreset(env.DB, body);
+    return jsonResponse(created, 201, origin);
+  }
+  const adminPresetItemMatch = normalizedPath.match(/^\/api\/admin\/discord-presets\/([^/]+)$/);
+  if (adminPresetItemMatch && request.method === 'PUT') {
+    const body = await request.json().catch(() => null);
+    const updated = await updateDiscordAccessPreset(env.DB, adminPresetItemMatch[1], body);
+    return jsonResponse(updated, 200, origin);
+  }
+  if (adminPresetItemMatch && request.method === 'DELETE') {
+    const deleted = await deleteDiscordAccessPreset(env.DB, adminPresetItemMatch[1]);
+    return jsonResponse(deleted, 200, origin);
   }
 
   if (normalizedPath === '/api/admin/forensic-check' && request.method === 'POST') {

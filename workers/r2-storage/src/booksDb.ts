@@ -56,6 +56,7 @@ export interface Env extends AuthEnv {
   DISCORD_BOT_TOKEN?: string;
   DISCORD_RELEASE_CHANNEL_ID?: string;
   DISCORD_RELEASE_WEBHOOK_URL?: string;
+  DISCORD_ADMIN_ALERT_WEBHOOK_URL?: string;
   DISCORD_RELEASE_ROLE_ID?: string;
   DISCORD_KEY_CHANNEL_ID?: string;
   BOOKS_BUCKET: R2Bucket;

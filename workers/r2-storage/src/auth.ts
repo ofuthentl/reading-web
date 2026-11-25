@@ -59,6 +59,8 @@ export class HttpError extends Error {
     message: string,
     readonly status: number,
     readonly extraHeaders?: Record<string, string>,
+    readonly alertCode?: 'STRIKE_LOCKOUT' | 'LOGIN_IP_LOCKED',
+    readonly alertMeta?: Record<string, string | number>,
   ) {
     super(message);
     this.name = 'HttpError';
