@@ -1,5 +1,5 @@
 /* Ofu's Library — Ultra-thin PWA App Shell Service Worker (D-036 QĐ-D) */
-const CACHE_NAME = 'ofu-shell-mwvqezqz';
+const CACHE_NAME = 'ofu-shell-mwvyp1dy';
 const CACHE_PREFIX = 'ofu-shell-';
 
 const STATIC_ROOT_FILES = new Set([
@@ -116,16 +116,18 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
-      return fetch(req).then((networkRes) => {
-        if (networkRes && networkRes.status === 200 && networkRes.type === 'basic') {
-          const copy = networkRes.clone();
-          caches
-            .open(CACHE_NAME)
-            .then((cache) => cache.put(req, copy))
-            .catch(() => undefined);
-        }
-        return networkRes;
-      });
+      return fetch(req)
+        .then((networkRes) => {
+          if (networkRes && networkRes.status === 200 && networkRes.type === 'basic') {
+            const copy = networkRes.clone();
+            caches
+              .open(CACHE_NAME)
+              .then((cache) => cache.put(req, copy))
+              .catch(() => undefined);
+          }
+          return networkRes;
+        })
+        .catch(() => Response.error());
     }),
   );
 });

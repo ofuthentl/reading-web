@@ -1,0 +1,1 @@
+import{r}from"./index-DJ6GhJU4.js";let e=0,t="";function d(o){r.useEffect(()=>{if(!(!o||typeof document>"u"))return e===0&&(t=document.body.style.overflow,document.body.style.overflow="hidden"),e+=1,()=>{e=Math.max(0,e-1),e===0&&(document.body.style.overflow=t)}},[o])}export{d as u};
