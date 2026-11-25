@@ -3,6 +3,7 @@ import { Loader2, ShieldCheck } from 'lucide-react';
 import type {
   Book,
   Chapter,
+  GuestChapterPayload,
   GuestTocItem,
   ReaderSettings,
   ReadingProgress,
@@ -40,6 +41,7 @@ export interface GuestCanvasReaderProps {
   book: Book;
   allBooks?: Book[];
   tocChapters: GuestTocItem[];
+  initialChapter?: { chapterIndex: number; data: GuestChapterPayload };
   watermarkLabel: string;
   initialProgress?: ReadingProgress;
   nextBook?: Book | null;
@@ -55,6 +57,7 @@ export function GuestCanvasReader({
   book,
   allBooks = [],
   tocChapters,
+  initialChapter,
   watermarkLabel,
   initialProgress,
   nextBook,
@@ -91,6 +94,7 @@ export function GuestCanvasReader({
     bookId: book.id,
     chapterIndex: activeStreamIdx,
     isChapterLocked: Boolean(tocChapters[activeStreamIdx]?.locked),
+    initialChapter,
     onApiError,
   });
 

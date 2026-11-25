@@ -8,6 +8,8 @@ import {
 import { paintProtectedThumbnailCanvas } from '@/lib/guestCanvasPaint';
 import type { ReaderThemePalette } from '@/lib/readerConfig';
 
+const LAZY_PLACEHOLDER_PREFIX = 'data:image/gif;base64,R0lGODlhAQAB';
+
 const MAX_CONCURRENT_THUMB_FETCHES = 3;
 let activeThumbFetches = 0;
 const thumbFetchQueue: Array<() => void> = [];
@@ -59,12 +61,14 @@ interface GalleryItem {
   chapterTitle: string;
   alt: string | null;
   domSrc?: string;
+  zipPath?: string;
   mediaIndex?: number;
 }
 
 export interface ReaderIllustrationGalleryProps {
   book: Book;
   parsedChapters?: Chapter[];
+  resolveOwnerMediaUrl?: (zipPath: string) => Promise<string | null>;
   activeIndex: number;
   maxUnlockedChapterIndex: number;
   watermarkLabel?: string;
@@ -212,9 +216,102 @@ function GuestWatermarkedThumb({
   );
 }
 
+function OwnerLazyThumb({
+  zipPath,
+  alt,
+  palette,
+  resolveMediaUrl,
+  onOpen,
+}: {
+  zipPath: string;
+  alt: string;
+  palette: ReaderThemePalette;
+  resolveMediaUrl: (zipPath: string) => Promise<string | null>;
+  onOpen: (src: string) => void;
+}) {
+  const hostRef = useRef<HTMLButtonElement>(null);
+  const [visible, setVisible] = useState(false);
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+
+  useEffect(() => {
+    const el = hostRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisible(true);
+          obs.disconnect();
+        }
+      },
+      { rootMargin: '140px' },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    setFailed(false);
+    void resolveMediaUrl(zipPath)
+      .then((url) => {
+        if (cancelled) return;
+        if (url) setSrc(url);
+        else setFailed(true);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [resolveMediaUrl, retryCount, visible, zipPath]);
+
+  return (
+    <button
+      ref={hostRef}
+      type="button"
+      onClick={() => {
+        if (failed) {
+          setRetryCount((n) => n + 1);
+          return;
+        }
+        if (src) onOpen(src);
+      }}
+      aria-label={failed ? `Thử tải lại ${alt}` : alt}
+      className="group relative aspect-[3/4] w-full overflow-hidden bg-black/5"
+    >
+      {src ? (
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+        />
+      ) : (
+        <div
+          className={`flex h-full w-full flex-col items-center justify-center gap-1 px-2 text-center text-[11px] ${palette.textSecondary}`}
+        >
+          {failed ? (
+            <>
+              <RefreshCw className="h-3.5 w-3.5 opacity-75" />
+              <span>Chạm để thử lại</span>
+            </>
+          ) : (
+            <Loader2 className="h-4 w-4 animate-spin opacity-60" />
+          )}
+        </div>
+      )}
+    </button>
+  );
+}
+
 export function ReaderIllustrationGallery({
   book,
   parsedChapters,
+  resolveOwnerMediaUrl,
   activeIndex,
   maxUnlockedChapterIndex,
   watermarkLabel = 'Ofu Library',
@@ -253,15 +350,23 @@ export function ReaderIllustrationGallery({
   const items = useMemo<GalleryItem[]>(() => {
     if (parsedChapters) {
       const out: GalleryItem[] = [];
-      const seenSrc = new Set<string>();
+      const seenKey = new Set<string>();
       for (let idx = 0; idx < parsedChapters.length; idx += 1) {
         const ch = parsedChapters[idx];
         if (!ch.content_html) continue;
         const doc = new DOMParser().parseFromString(ch.content_html, 'text/html');
-        for (const img of Array.from(doc.querySelectorAll('img[src], svg image[href]'))) {
-          const src = img.getAttribute('src') || img.getAttribute('href') || '';
-          if (!src || src === 'data:,' || seenSrc.has(src)) continue;
-          seenSrc.add(src);
+        for (const img of Array.from(
+          doc.querySelectorAll('img[src], img[data-zip-path], svg image[href], svg image[data-zip-path]'),
+        )) {
+          const rawSrc = img.getAttribute('src') || img.getAttribute('href') || '';
+          const zipPath = img.getAttribute('data-zip-path') || undefined;
+          const readyDomSrc =
+            rawSrc && rawSrc !== 'data:,' && !rawSrc.startsWith(LAZY_PLACEHOLDER_PREFIX)
+              ? rawSrc
+              : undefined;
+          const dedupKey = zipPath || readyDomSrc;
+          if (!dedupKey || seenKey.has(dedupKey)) continue;
+          seenKey.add(dedupKey);
           const alt = img.getAttribute('alt')?.trim() || null;
           out.push({
             key: `dom_${idx}_${out.length}`,
@@ -269,7 +374,8 @@ export function ReaderIllustrationGallery({
             chapterNumber: ch.chapter_number || idx + 1,
             chapterTitle: ch.title,
             alt,
-            domSrc: src,
+            ...(readyDomSrc ? { domSrc: readyDomSrc } : {}),
+            ...(zipPath ? { zipPath } : {}),
           });
         }
       }
@@ -372,6 +478,14 @@ export function ReaderIllustrationGallery({
                         className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
                       />
                     </button>
+                  ) : item.zipPath && resolveOwnerMediaUrl ? (
+                    <OwnerLazyThumb
+                      zipPath={item.zipPath}
+                      alt={altText}
+                      palette={palette}
+                      resolveMediaUrl={resolveOwnerMediaUrl}
+                      onOpen={(src) => onOpenDomImage?.(src, altText)}
+                    />
                   ) : item.mediaIndex !== undefined ? (
                     <GuestWatermarkedThumb
                       bookId={book.id}

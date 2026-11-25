@@ -8,6 +8,7 @@ import {
 
 const MAX_RAM_CHAPTERS = 12;
 const MAX_RAM_BITMAPS = 24;
+const GUEST_MEDIA_FETCH_CONCURRENCY = 3;
 
 export function resolveGuestUnlockedInitialProgress(
   tocChapters: readonly GuestTocItem[],
@@ -45,6 +46,7 @@ interface UseGuestChapterStreamOptions {
   bookId: string;
   chapterIndex: number;
   isChapterLocked?: boolean;
+  initialChapter?: { chapterIndex: number; data: GuestChapterPayload };
   onApiError: (err: unknown, fallbackMessage: string) => void;
 }
 
@@ -52,10 +54,16 @@ export function useGuestChapterStream({
   bookId,
   chapterIndex,
   isChapterLocked = false,
+  initialChapter,
   onApiError,
 }: UseGuestChapterStreamOptions) {
-  const [chapterData, setChapterData] = useState<GuestChapterPayload | null>(null);
-  const [loadingChapter, setLoadingChapter] = useState(!isChapterLocked);
+  const preseededForCurrent =
+    !isChapterLocked && initialChapter && initialChapter.chapterIndex === chapterIndex
+      ? initialChapter.data
+      : null;
+
+  const [chapterData, setChapterData] = useState<GuestChapterPayload | null>(preseededForCurrent);
+  const [loadingChapter, setLoadingChapter] = useState(!isChapterLocked && !preseededForCurrent);
   const [chapterError, setChapterError] = useState<string | null>(null);
   const [chapterLocked, setChapterLocked] = useState(isChapterLocked);
   const [retryNonce, setRetryNonce] = useState(0);
@@ -63,12 +71,19 @@ export function useGuestChapterStream({
     () => new Map(),
   );
 
-  const chapterCacheRef = useRef<Map<number, GuestChapterPayload>>(new Map());
+  const chapterCacheRef = useRef<Map<number, GuestChapterPayload> | null>(null);
+  if (!chapterCacheRef.current) {
+    const initialMap = new Map<number, GuestChapterPayload>();
+    if (initialChapter) {
+      initialMap.set(initialChapter.chapterIndex, initialChapter.data);
+    }
+    chapterCacheRef.current = initialMap;
+  }
   const bitmapsRef = useRef<Map<number, ImageBitmap>>(new Map());
 
   // Thu hồi toàn bộ chương RAM & đóng sạch mọi ImageBitmap khi đóng sách
   useEffect(() => {
-    const cacheMap = chapterCacheRef.current;
+    const cacheMap = chapterCacheRef.current!;
     const bitmapMap = bitmapsRef.current;
     return () => {
       cacheMap.clear();
@@ -89,7 +104,12 @@ export function useGuestChapterStream({
       return;
     }
 
-    const cached = chapterCacheRef.current.get(chapterIndex);
+    const cache = chapterCacheRef.current!;
+    if (initialChapter && !cache.has(initialChapter.chapterIndex)) {
+      cache.set(initialChapter.chapterIndex, initialChapter.data);
+    }
+
+    const cached = cache.get(chapterIndex);
     if (cached) {
       setChapterData(cached);
       setChapterError(null);
@@ -107,7 +127,6 @@ export function useGuestChapterStream({
     void fetchGuestChapterDecrypted(bookId, chapterIndex, controller.signal)
       .then((decrypted) => {
         if (controller.signal.aborted) return;
-        const cache = chapterCacheRef.current;
         if (cache.size >= MAX_RAM_CHAPTERS) {
           const oldestKey = cache.keys().next().value;
           if (oldestKey !== undefined) cache.delete(oldestKey);
@@ -135,7 +154,7 @@ export function useGuestChapterStream({
       });
 
     return () => controller.abort();
-  }, [bookId, chapterIndex, isChapterLocked, onApiError, retryNonce]);
+  }, [bookId, chapterIndex, initialChapter, isChapterLocked, onApiError, retryNonce]);
 
   // Nạp & giải mã trực tiếp các ảnh minh hoạ trong chương sang ImageBitmap (0 blob: URL, giới hạn LRU GPU H-04)
   useEffect(() => {
@@ -178,9 +197,36 @@ export function useGuestChapterStream({
     };
 
     const controller = new AbortController();
-    const run = async () => {
-      for (const mediaIndex of neededIndices) {
-        if (controller.signal.aborted) return;
+    const pendingSizes = new Map<number, { width: number; height: number }>();
+    let flushRaf = 0;
+    let authErrorReported = false;
+
+    const flushPendingSizes = () => {
+      flushRaf = 0;
+      if (pendingSizes.size === 0 || controller.signal.aborted) return;
+      const batch = Array.from(pendingSizes.entries());
+      pendingSizes.clear();
+      setImageSizes((prev) => {
+        const next = new Map(prev);
+        for (const [idx, dims] of batch) {
+          next.set(idx, dims);
+        }
+        return next;
+      });
+    };
+
+    const scheduleFlushSizes = () => {
+      if (flushRaf) return;
+      flushRaf = requestAnimationFrame(flushPendingSizes);
+    };
+
+    // QĐ-3A: tải song song tối đa 3 ảnh minh hoạ (khớp D-038) và gom batch cập nhật kích thước theo khung hình
+    let cursor = 0;
+    const workerCount = Math.min(GUEST_MEDIA_FETCH_CONCURRENCY, neededIndices.length);
+    const runWorker = async () => {
+      while (cursor < neededIndices.length && !controller.signal.aborted) {
+        const mediaIndex = neededIndices[cursor];
+        cursor += 1;
         try {
           const bmp = await fetchGuestMediaBitmap(bookId, mediaIndex, controller.signal);
           if (controller.signal.aborted) {
@@ -189,21 +235,25 @@ export function useGuestChapterStream({
           }
           evictOldBitmaps();
           bitmapsRef.current.set(mediaIndex, bmp);
-          setImageSizes((prev) => {
-            const next = new Map(prev);
-            next.set(mediaIndex, { width: bmp.width, height: bmp.height });
-            return next;
-          });
+          pendingSizes.set(mediaIndex, { width: bmp.width, height: bmp.height });
+          scheduleFlushSizes();
         } catch (err) {
           if (isAuthError(err)) {
-            onApiError(err, 'Phiên truy cập đã hết hiệu lực.');
+            if (!authErrorReported) {
+              authErrorReported = true;
+              controller.abort();
+              onApiError(err, 'Phiên truy cập đã hết hiệu lực.');
+            }
             return;
           }
         }
       }
     };
-    void run();
-    return () => controller.abort();
+    void Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+    return () => {
+      controller.abort();
+      if (flushRaf) cancelAnimationFrame(flushRaf);
+    };
   }, [bookId, chapterData, onApiError]);
 
   const retryChapter = () => setRetryNonce((n) => n + 1);

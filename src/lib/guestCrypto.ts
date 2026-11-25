@@ -64,31 +64,91 @@ async function decryptSessionBytes(
   return new Uint8Array(plainBuf);
 }
 
+async function decryptChapterEnvelope(
+  bookId: string,
+  iv: string,
+  nonce: string,
+  dataBase64: string,
+): Promise<GuestChapterPayload> {
+  const cipherBytes = base64ToBytes(dataBase64);
+  const plainBytes = await decryptSessionBytes(cipherBytes, iv, nonce, bookId);
+  try {
+    const decodedText = new TextDecoder().decode(plainBytes);
+    return JSON.parse(decodedText) as GuestChapterPayload;
+  } finally {
+    // Xoá trắng mảng byte giải mã trong RAM ngay sau khi dựng cấu trúc hiển thị
+    plainBytes.fill(0);
+    cipherBytes.fill(0);
+  }
+}
+
 export async function fetchGuestBookToc(
   bookId: string,
   signal?: AbortSignal,
+  includeChapter?: { chapterIndex?: number; chapterId?: string },
 ): Promise<{
   bookId: string;
   watermarkLabel: string;
   chapters: GuestTocItem[];
+  initialChapter?: { chapterIndex: number; data: GuestChapterPayload };
 }> {
   if (!isCloudMode) {
     throw new Error('Chế độ khách yêu cầu kết nối Cloudflare Worker.');
   }
-  const res = await apiFetch(`/api/guest/books/${encodeURIComponent(bookId)}/toc`, { signal });
+  const params = new URLSearchParams();
+  if (
+    typeof includeChapter?.chapterIndex === 'number' &&
+    Number.isFinite(includeChapter.chapterIndex) &&
+    includeChapter.chapterIndex >= 0
+  ) {
+    params.set('includeChapter', String(Math.floor(includeChapter.chapterIndex)));
+  }
+  if (includeChapter?.chapterId) {
+    params.set('includeChapterId', includeChapter.chapterId);
+  }
+  const qs = params.toString();
+  const res = await apiFetch(
+    `/api/guest/books/${encodeURIComponent(bookId)}/toc${qs ? `?${qs}` : ''}`,
+    { signal },
+  );
   const body = (await res.json().catch(() => ({}))) as {
     bookId?: string;
     watermarkLabel?: string;
     chapters?: GuestTocItem[];
+    initialChapter?: { chapterIndex?: number; iv?: string; nonce?: string; data?: string };
     error?: string;
   };
   if (!res.ok || !Array.isArray(body.chapters)) {
     throw new Error(body.error || 'Không thể tải mục lục sách cho phiên khách.');
   }
+
+  let initialChapter: { chapterIndex: number; data: GuestChapterPayload } | undefined;
+  const rawInit = body.initialChapter;
+  if (
+    rawInit &&
+    typeof rawInit.chapterIndex === 'number' &&
+    rawInit.iv &&
+    rawInit.nonce &&
+    rawInit.data
+  ) {
+    try {
+      const decrypted = await decryptChapterEnvelope(
+        bookId,
+        rawInit.iv,
+        rawInit.nonce,
+        rawInit.data,
+      );
+      initialChapter = { chapterIndex: rawInit.chapterIndex, data: decrypted };
+    } catch {
+      // Bỏ qua gọn nếu lỗi giải mã để client tự tải lại chương riêng lẻ
+    }
+  }
+
   return {
     bookId: body.bookId || bookId,
     watermarkLabel: body.watermarkLabel || 'Guest',
     chapters: body.chapters,
+    ...(initialChapter ? { initialChapter } : {}),
   };
 }
 
@@ -140,16 +200,7 @@ export async function fetchGuestChapterDecrypted(
     throw err;
   }
 
-  const cipherBytes = base64ToBytes(body.data);
-  const plainBytes = await decryptSessionBytes(cipherBytes, body.iv, body.nonce, bookId);
-  try {
-    const decodedText = new TextDecoder().decode(plainBytes);
-    return JSON.parse(decodedText) as GuestChapterPayload;
-  } finally {
-    // Xoá trắng mảng byte giải mã trong RAM ngay sau khi dựng cấu trúc hiển thị
-    plainBytes.fill(0);
-    cipherBytes.fill(0);
-  }
+  return decryptChapterEnvelope(bookId, body.iv, body.nonce, body.data);
 }
 
 export async function fetchGuestMediaBitmap(

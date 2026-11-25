@@ -1,16 +1,6 @@
-import {
-  type AuthContext,
-  HttpError,
-  ensureDiscordAccessTable,
-  resolveSigningSecret,
-} from './auth';
-import {
-  assertGuestChapterAccess,
-  assertGuestMediaInUnlockedChapters,
-  loadGuestLockedChapterKeysForBook,
-  toCanonicalChapterKey,
-} from './bookChapterAccessDb';
-import { type Env, assertQuota, getStorageStats, isValidId } from './booksDb';
+import { type AuthContext, HttpError, resolveSigningSecret } from './auth';
+import { toCanonicalChapterKey } from './bookChapterAccessDb';
+import { type Env, isValidId } from './booksDb';
 import {
   type WatermarkBlock,
   applyForensicWatermarkToBlocks,
@@ -18,38 +8,37 @@ import {
   watermarkTextString,
 } from './forensicWatermark';
 import {
+  assertGuestMediaInUnlockedChaptersFast,
+  loadGuestBookAccessAndPackBatch,
+} from './guestAccessBatchDb';
+import {
   listDiscordGuests,
   runAdminForensicCheck,
   setDiscordGuestBan,
 } from './guestAdminDb';
+import {
+  GUEST_PACK_MAGIC,
+  type GuestBookManifest,
+  type GuestManifestChapter,
+  type GuestManifestMedia,
+  MAX_GUEST_PACK_ENVELOPE_BYTES,
+  MAX_MEDIA_SLICE_BYTES,
+  uploadBookGuestPack,
+} from './guestPackUpload';
 import { consumeGuestRateToken } from './rateLimitDb';
-import { assertGuestBookAccess } from './shelfAccessDb';
 
-export { listDiscordGuests, runAdminForensicCheck, setDiscordGuestBan };
-
-export const GUEST_PACK_MAGIC = 'OFGP';
-export const MAX_GUEST_PACK_ENVELOPE_BYTES = 25 * 1024 * 1024; // 25 MiB
-export const MAX_MEDIA_SLICE_BYTES = 25 * 1024 * 1024; // 25 MiB
-
-export interface GuestManifestChapter {
-  id: string;
-  title: string;
-  offset: number;
-  length: number;
-}
-
-export interface GuestManifestMedia {
-  offset: number;
-  length: number;
-  compression: 0 | 8;
-  mime: string;
-}
-
-export interface GuestBookManifest {
-  v: 1;
-  chapters: GuestManifestChapter[];
-  media: GuestManifestMedia[];
-}
+export {
+  GUEST_PACK_MAGIC,
+  type GuestBookManifest,
+  type GuestManifestChapter,
+  type GuestManifestMedia,
+  MAX_GUEST_PACK_ENVELOPE_BYTES,
+  MAX_MEDIA_SLICE_BYTES,
+  listDiscordGuests,
+  runAdminForensicCheck,
+  setDiscordGuestBan,
+  uploadBookGuestPack,
+};
 
 interface StoredChapterData {
   title: string;
@@ -101,266 +90,14 @@ async function encryptForSession(
   };
 }
 
-function parseAndValidateManifest(rawJson: string, packByteLength: number): GuestBookManifest {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rawJson);
-  } catch {
-    throw new HttpError('Manifest gói bảo mật khách không hợp lệ.', 400);
-  }
-  if (!parsed || typeof parsed !== 'object') {
-    throw new HttpError('Manifest gói bảo mật khách bị rỗng.', 400);
-  }
-  const candidate = parsed as Partial<GuestBookManifest>;
-  if (candidate.v !== 1 || !Array.isArray(candidate.chapters) || !Array.isArray(candidate.media)) {
-    throw new HttpError('Phiên bản manifest gói bảo mật không được hỗ trợ.', 400);
-  }
-  if (candidate.chapters.length === 0 || candidate.chapters.length > 5000) {
-    throw new HttpError('Số lượng chương trong gói bảo mật không hợp lệ.', 400);
-  }
-  if (candidate.media.length > 5000) {
-    throw new HttpError('Số lượng ảnh minh hoạ vượt giới hạn.', 400);
-  }
-
-  const chapters: GuestManifestChapter[] = candidate.chapters.map((ch, idx) => {
-    if (
-      !ch ||
-      typeof ch.id !== 'string' ||
-      typeof ch.title !== 'string' ||
-      typeof ch.offset !== 'number' ||
-      typeof ch.length !== 'number' ||
-      !Number.isInteger(ch.offset) ||
-      !Number.isInteger(ch.length) ||
-      ch.offset < 0 ||
-      ch.length <= 0 ||
-      ch.offset + ch.length > packByteLength
-    ) {
-      throw new HttpError(`Chỉ mục chương #${idx + 1} trong gói bảo mật không hợp lệ.`, 400);
-    }
-    return {
-      id: ch.id.slice(0, 120),
-      title: ch.title.trim().slice(0, 240) || `Chương ${idx + 1}`,
-      offset: ch.offset,
-      length: ch.length,
-    };
-  });
-
-  const media: GuestManifestMedia[] = candidate.media.map((m, idx) => {
-    if (
-      !m ||
-      typeof m.offset !== 'number' ||
-      typeof m.length !== 'number' ||
-      !Number.isInteger(m.offset) ||
-      !Number.isInteger(m.length) ||
-      m.offset < 0 ||
-      m.length <= 0 ||
-      m.length > MAX_MEDIA_SLICE_BYTES ||
-      (m.compression !== 0 && m.compression !== 8) ||
-      typeof m.mime !== 'string' ||
-      !m.mime.startsWith('image/')
-    ) {
-      throw new HttpError(`Chỉ mục ảnh #${idx + 1} trong gói bảo mật không hợp lệ.`, 400);
-    }
-    return {
-      offset: m.offset,
-      length: m.length,
-      compression: m.compression,
-      mime: m.mime.slice(0, 64),
-    };
-  });
-
-  return { v: 1, chapters, media };
-}
-
-export async function uploadBookGuestPack(
-  request: Request,
-  env: Env,
-  bookId: string,
-) {
-  if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
-  await ensureDiscordAccessTable(env.DB);
-
-  const book = await env.DB.prepare('SELECT id, file_type, file_size FROM books WHERE id = ?')
-    .bind(bookId)
-    .first<{ id: string; file_type: string; file_size: number }>();
-  if (!book) throw new HttpError('Không tìm thấy sách.', 404);
-  if (book.file_type !== 'epub' && book.file_type !== 'docx') {
-    throw new HttpError('Gói bảo mật chế độ khách chỉ áp dụng cho sách EPUB và DOCX.', 400);
-  }
-
-  // Kiểm tra Content-Length trước khi nạp toàn bộ gói vào RAM Worker (vá M-7)
-  const declaredLen = Number(request.headers.get('Content-Length') || 0);
-  if (Number.isFinite(declaredLen) && declaredLen > MAX_GUEST_PACK_ENVELOPE_BYTES) {
-    throw new HttpError('Kích thước gói bảo mật khách vượt tối đa 25 MB.', 413);
-  }
-
-  const rawBuffer = await request.arrayBuffer();
-  if (rawBuffer.byteLength < 12 || rawBuffer.byteLength > MAX_GUEST_PACK_ENVELOPE_BYTES) {
-    throw new HttpError('Kích thước gói bảo mật khách không hợp lệ (tối đa 25 MB).', 400);
-  }
-
-  const bytes = new Uint8Array(rawBuffer);
-  const magic = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
-  if (magic !== GUEST_PACK_MAGIC) {
-    throw new HttpError('Định dạng gói bảo mật khách không đúng chuẩn OFGP.', 400);
-  }
-
-  const view = new DataView(rawBuffer);
-  const manifestLen = view.getUint32(4, true);
-  if (manifestLen === 0 || 8 + manifestLen >= rawBuffer.byteLength) {
-    throw new HttpError('Độ dài manifest trong gói bảo mật không hợp lệ.', 400);
-  }
-
-  const manifestJson = new TextDecoder().decode(bytes.subarray(8, 8 + manifestLen));
-  const packBytes = bytes.subarray(8 + manifestLen);
-  const validatedManifest = parseAndValidateManifest(manifestJson, packBytes.byteLength);
-
-  // Kiểm tra toạ độ ảnh không vượt quá kích thước file sách gốc trên R2
-  for (const media of validatedManifest.media) {
-    if (media.offset + media.length > book.file_size) {
-      throw new HttpError('Toạ độ ảnh minh hoạ vượt ngoài kích thước tệp sách gốc.', 400);
-    }
-  }
-
-  const existingPack = await env.DB.prepare(
-    'SELECT pack_key, pack_size FROM book_guest_packs WHERE book_id = ?',
-  )
-    .bind(bookId)
-    .first<{ pack_key: string; pack_size: number }>();
-  const oldPackSize = existingPack?.pack_size ?? 0;
-
-  const storage = await getStorageStats(env);
-  assertQuota(storage.usedBytes - oldPackSize, packBytes.byteLength, storage.limitBytes);
-
-  // Dùng pack_key có phiên bản thời gian để không làm hỏng khách đang đọc gói cũ (vá M-7)
-  const now = Date.now();
-  const packKey = `guest-packs/${bookId}-${now}.pack`;
-  const putRes = await env.BOOKS_BUCKET.put(packKey, packBytes, {
-    httpMetadata: { contentType: 'application/octet-stream' },
-  });
-  if (!putRes) throw new HttpError('Không thể lưu gói bảo mật vào R2.', 500);
-
-  const freshStorage = await getStorageStats(env);
-  if (freshStorage.usedBytes - oldPackSize + putRes.size > freshStorage.limitBytes) {
-    await env.BOOKS_BUCKET.delete(packKey).catch(() => undefined);
-    assertQuota(freshStorage.usedBytes - oldPackSize, putRes.size, freshStorage.limitBytes);
-  }
-
-  const normalizedManifestStr = JSON.stringify(validatedManifest);
-  try {
-    await env.DB.prepare(
-      `INSERT INTO book_guest_packs (book_id, pack_key, pack_size, chapter_count, manifest_json, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(book_id) DO UPDATE SET
-         pack_key = excluded.pack_key,
-         pack_size = excluded.pack_size,
-         chapter_count = excluded.chapter_count,
-         manifest_json = excluded.manifest_json,
-         updated_at = excluded.updated_at`,
-    )
-      .bind(
-        bookId,
-        packKey,
-        putRes.size,
-        validatedManifest.chapters.length,
-        normalizedManifestStr,
-        now,
-      )
-      .run();
-  } catch (dbErr) {
-    const committed = await env.DB.prepare('SELECT pack_key FROM book_guest_packs WHERE book_id = ?')
-      .bind(bookId)
-      .first<{ pack_key: string }>()
-      .catch(() => null);
-    if (!committed || committed.pack_key !== packKey) {
-      await env.BOOKS_BUCKET.delete(packKey).catch(() => undefined);
-    }
-    throw dbErr;
-  }
-
-  if (existingPack?.pack_key && existingPack.pack_key !== packKey) {
-    await env.BOOKS_BUCKET.delete(existingPack.pack_key).catch(() => undefined);
-  }
-
-  const updatedStorage = await getStorageStats(env);
-  return {
-    ok: true,
-    bookId,
-    chapterCount: validatedManifest.chapters.length,
-    packSize: putRes.size,
-    storage: updatedStorage,
-  };
-}
-
-async function loadManifestRecord(
-  env: Env,
-  bookId: string,
-): Promise<{ packKey: string; manifest: GuestBookManifest }> {
-  if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
-  await ensureDiscordAccessTable(env.DB);
-  const row = await env.DB.prepare(
-    'SELECT pack_key, manifest_json FROM book_guest_packs WHERE book_id = ?',
-  )
-    .bind(bookId)
-    .first<{ pack_key: string; manifest_json: string }>();
-  if (!row) {
-    throw new HttpError(
-      'Sách này chưa bật gói đọc chế độ khách. Hãy nhờ chủ thư viện bấm đồng bộ bảo mật cho sách này.',
-      404,
-    );
-  }
-  return {
-    packKey: row.pack_key,
-    manifest: JSON.parse(row.manifest_json) as GuestBookManifest,
-  };
-}
-
-export async function getGuestBookToc(env: Env, auth: AuthContext, bookId: string) {
-  await assertGuestBookAccess(env.DB, auth, bookId);
-  const [{ manifest }, lockedChapterKeys] = await Promise.all([
-    loadManifestRecord(env, bookId),
-    loadGuestLockedChapterKeysForBook(env.DB, auth, bookId),
-  ]);
-  return {
-    bookId,
-    watermarkLabel: auth.watermarkLabel ?? 'Ofu Library',
-    chapters: manifest.chapters.map((ch, idx) => {
-      const isLocked = lockedChapterKeys.has(toCanonicalChapterKey(ch.id));
-      return {
-        id: ch.id,
-        title: ch.title,
-        chapterNumber: idx + 1,
-        compressedBytes: ch.length,
-        ...(isLocked ? { locked: true } : {}),
-      };
-    }),
-  };
-}
-
-export async function getGuestEncryptedChapter(
+async function buildEncryptedChapterPayload(
   env: Env,
   auth: AuthContext,
   bookId: string,
+  packKey: string,
+  chapterMeta: GuestManifestChapter,
   chapterIndex: number,
-) {
-  if (!Number.isInteger(chapterIndex) || chapterIndex < 0) {
-    throw new HttpError('Chỉ số chương không hợp lệ.', 400);
-  }
-  await assertGuestBookAccess(env.DB, auth, bookId);
-  const { packKey, manifest } = await loadManifestRecord(env, bookId);
-  const chapterMeta = manifest.chapters[chapterIndex];
-  if (!chapterMeta) throw new HttpError('Không tìm thấy chương yêu cầu.', 404);
-  await assertGuestChapterAccess(env.DB, auth, bookId, chapterMeta.id);
-
-  if (auth.role === 'guest') {
-    await consumeGuestRateToken(env.DB, auth.userId, {
-      cost: 1,
-      trackStrikes: true,
-      tooFastMessage: (waitSec) =>
-        `Bạn đang chuyển chương liên tục quá nhanh. Vui lòng đợi khoảng ${waitSec} giây rồi thử lại.`,
-    });
-  }
-
+): Promise<{ iv: string; nonce: string; data: string }> {
   const obj = await env.BOOKS_BUCKET.get(packKey, {
     range: { offset: chapterMeta.offset, length: chapterMeta.length },
   });
@@ -408,6 +145,125 @@ export async function getGuestEncryptedChapter(
   };
 }
 
+export async function getGuestBookToc(
+  env: Env,
+  auth: AuthContext,
+  bookId: string,
+  options?: { includeChapterIndex?: number; includeChapterId?: string },
+) {
+  if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
+  const { packKey, manifestJson, lockedChapterKeys } = await loadGuestBookAccessAndPackBatch(
+    env.DB,
+    auth,
+    bookId,
+  );
+  const manifest = JSON.parse(manifestJson) as GuestBookManifest;
+
+  const chapters = manifest.chapters.map((ch, idx) => {
+    const isLocked = lockedChapterKeys.has(toCanonicalChapterKey(ch.id));
+    return {
+      id: ch.id,
+      title: ch.title,
+      chapterNumber: idx + 1,
+      compressedBytes: ch.length,
+      ...(isLocked ? { locked: true } : {}),
+    };
+  });
+
+  // QĐ-3A: đính kèm sẵn chương mở đầu đã mã hoá ngay trong phản hồi /toc (cắt 2 vòng mạng → 1 vòng)
+  let initialChapter:
+    | { chapterIndex: number; iv: string; nonce: string; data: string }
+    | undefined;
+  const wantsInitial =
+    options?.includeChapterIndex !== undefined || Boolean(options?.includeChapterId);
+
+  if (wantsInitial && manifest.chapters.length > 0) {
+    let targetIdx = 0;
+    if (options?.includeChapterId) {
+      const byId = manifest.chapters.findIndex((c) => c.id === options.includeChapterId);
+      targetIdx =
+        byId >= 0
+          ? byId
+          : Math.max(0, Math.min(options.includeChapterIndex ?? 0, manifest.chapters.length - 1));
+    } else if (typeof options?.includeChapterIndex === 'number') {
+      targetIdx = Math.max(0, Math.min(options.includeChapterIndex, manifest.chapters.length - 1));
+    }
+
+    if (chapters[targetIdx]?.locked) {
+      targetIdx = chapters.findIndex((c) => !c.locked);
+    }
+
+    if (targetIdx >= 0 && manifest.chapters[targetIdx]) {
+      try {
+        if (auth.role === 'guest') {
+          await consumeGuestRateToken(env.DB, auth.userId, {
+            cost: 1,
+            trackStrikes: true,
+            tooFastMessage: (waitSec) =>
+              `Bạn đang chuyển chương liên tục quá nhanh. Vui lòng đợi khoảng ${waitSec} giây rồi thử lại.`,
+          });
+        }
+        const encrypted = await buildEncryptedChapterPayload(
+          env,
+          auth,
+          bookId,
+          packKey,
+          manifest.chapters[targetIdx],
+          targetIdx,
+        );
+        initialChapter = { chapterIndex: targetIdx, ...encrypted };
+      } catch {
+        // Bỏ qua gọn nếu chạm rate limit/lỗi tạm để /toc vẫn trả mục lục và client xử lý lỗi chương chuẩn
+      }
+    }
+  }
+
+  return {
+    bookId,
+    watermarkLabel: auth.watermarkLabel ?? 'Ofu Library',
+    chapters,
+    ...(initialChapter ? { initialChapter } : {}),
+  };
+}
+
+export async function getGuestEncryptedChapter(
+  env: Env,
+  auth: AuthContext,
+  bookId: string,
+  chapterIndex: number,
+) {
+  if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
+  if (!Number.isInteger(chapterIndex) || chapterIndex < 0) {
+    throw new HttpError('Chỉ số chương không hợp lệ.', 400);
+  }
+  const { packKey, manifestJson, lockedChapterKeys } = await loadGuestBookAccessAndPackBatch(
+    env.DB,
+    auth,
+    bookId,
+  );
+  const manifest = JSON.parse(manifestJson) as GuestBookManifest;
+  const chapterMeta = manifest.chapters[chapterIndex];
+  if (!chapterMeta) throw new HttpError('Không tìm thấy chương yêu cầu.', 404);
+
+  if (
+    auth.role === 'guest' &&
+    lockedChapterKeys.has(toCanonicalChapterKey(chapterMeta.id))
+  ) {
+    throw new HttpError('🔒 Chương này chỉ mở cho thành viên Discord được chỉ định.', 403);
+  }
+
+  if (auth.role === 'guest') {
+    await consumeGuestRateToken(env.DB, auth.userId, {
+      cost: 1,
+      trackStrikes: true,
+      tooFastMessage: (waitSec) =>
+        `Bạn đang chuyển chương liên tục quá nhanh. Vui lòng đợi khoảng ${waitSec} giây rồi thử lại.`,
+    });
+  }
+
+  return buildEncryptedChapterPayload(env, auth, bookId, packKey, chapterMeta, chapterIndex);
+}
+
 export async function getGuestEncryptedMediaResponse(
   env: Env,
   auth: AuthContext,
@@ -415,16 +271,19 @@ export async function getGuestEncryptedMediaResponse(
   mediaIndex: number,
   corsApply: (headers: Headers) => void,
 ): Promise<Response> {
+  if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
   if (!Number.isInteger(mediaIndex) || mediaIndex < 0) {
     throw new HttpError('Chỉ số ảnh minh hoạ không hợp lệ.', 400);
   }
-  await assertGuestBookAccess(env.DB, auth, bookId);
-  const { packKey, manifest } = await loadManifestRecord(env, bookId);
+
+  const { fileKey, packKey, manifestJson, lockedChapterKeys } =
+    await loadGuestBookAccessAndPackBatch(env.DB, auth, bookId);
+  const manifest = JSON.parse(manifestJson) as GuestBookManifest;
   const mediaMeta = manifest.media[mediaIndex];
   if (!mediaMeta) throw new HttpError('Không tìm thấy ảnh minh hoạ.', 404);
+  if (!fileKey) throw new HttpError('Không tìm thấy tệp sách gốc.', 404);
 
   if (auth.role === 'guest') {
-    const lockedChapterKeys = await loadGuestLockedChapterKeysForBook(env.DB, auth, bookId);
     await consumeGuestRateToken(env.DB, auth.userId, {
       cost: 0.2,
       trackStrikes: false,
@@ -432,22 +291,18 @@ export async function getGuestEncryptedMediaResponse(
         `Bạn đang tải ảnh minh hoạ quá nhanh. Vui lòng đợi khoảng ${waitSec} giây rồi thử lại.`,
     });
     if (lockedChapterKeys.size > 0) {
-      await assertGuestMediaInUnlockedChapters(
+      await assertGuestMediaInUnlockedChaptersFast(
         env.BOOKS_BUCKET,
         packKey,
         manifest.chapters,
         mediaIndex,
+        mediaMeta.ch,
         lockedChapterKeys,
       );
     }
   }
 
-  const bookRow = await env.DB.prepare('SELECT file_key FROM books WHERE id = ?')
-    .bind(bookId)
-    .first<{ file_key: string }>();
-  if (!bookRow) throw new HttpError('Không tìm thấy tệp sách gốc.', 404);
-
-  const obj = await env.BOOKS_BUCKET.get(bookRow.file_key, {
+  const obj = await env.BOOKS_BUCKET.get(fileKey, {
     range: { offset: mediaMeta.offset, length: mediaMeta.length },
   });
   if (!obj || !('body' in obj) || !obj.body) {

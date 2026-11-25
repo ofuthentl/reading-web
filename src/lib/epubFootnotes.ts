@@ -303,9 +303,12 @@ export function buildGuestChapterFootnoteMap(
 export function extractChapterFootnotesForGuestPack(
   chapter: Chapter,
   allChapters: readonly Chapter[],
+  preParsedDoc?: Document,
 ): Record<string, string> | undefined {
   if (!chapter.content_html || typeof DOMParser === 'undefined') return undefined;
-  const doc = new DOMParser().parseFromString(chapter.content_html, 'text/html');
+  if (preParsedDoc) parsedChapterDocCache.set(chapter, preParsedDoc);
+  const doc = preParsedDoc ?? getParsedChapterDocument(chapter);
+  if (!doc) return undefined;
   const links = Array.from(doc.querySelectorAll<HTMLAnchorElement>('a[href*="#"]'));
   if (links.length === 0) return undefined;
 

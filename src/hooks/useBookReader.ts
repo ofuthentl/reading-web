@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AuthRole,
   Book,
+  GuestChapterPayload,
   GuestTocItem,
   ParsedBook,
   ReaderSettings,
@@ -20,6 +21,7 @@ import {
 export interface GuestReaderSessionState {
   chapters: GuestTocItem[];
   watermarkLabel: string;
+  initialChapter?: { chapterIndex: number; data: GuestChapterPayload };
 }
 
 export interface BookOpenJumpTarget {
@@ -31,6 +33,7 @@ interface UseBookReaderOptions {
   appTheme: UiTheme;
   sessionRole: AuthRole;
   authenticated?: boolean;
+  progressMap?: Record<string, ReadingProgress>;
   onProgressUpdated: (bookId: string, progress: ReadingProgress, readingDeltaSec?: number) => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
 }
@@ -39,6 +42,7 @@ export function useBookReader({
   appTheme,
   sessionRole,
   authenticated = false,
+  progressMap,
   onProgressUpdated,
   onApiError,
 }: UseBookReaderOptions) {
@@ -62,6 +66,8 @@ export function useBookReader({
   const prevAppThemeRef = useRef<UiTheme>(appTheme);
   const appThemeRef = useRef<UiTheme>(appTheme);
   appThemeRef.current = appTheme;
+  const progressMapRef = useRef(progressMap);
+  progressMapRef.current = progressMap;
 
   // Chỉ đồng bộ nền trình đọc khi người dùng THỰC SỰ bấm đổi theme App, không ghi đè lúc mount/F5
   useEffect(() => {
@@ -170,10 +176,19 @@ export function useBookReader({
       setOpeningBook(book);
 
       try {
+        const savedProgress = progressMapRef.current?.[book.id];
+        const initialChapterIndex = jumpTarget
+          ? jumpTarget.chapterIndex
+          : savedProgress?.chapterIndex ?? 0;
+        const initialChapterId = jumpTarget ? undefined : savedProgress?.chapterId;
+
         if (isCloudMode && sessionRole === 'guest') {
           const { fetchGuestBookToc } = await import('@/lib/guestCrypto');
           if (requestId !== requestIdRef.current) return;
-          const toc = await fetchGuestBookToc(book.id, controller.signal);
+          const toc = await fetchGuestBookToc(book.id, controller.signal, {
+            chapterIndex: initialChapterIndex,
+            chapterId: initialChapterId,
+          });
           if (requestId !== requestIdRef.current) return;
 
           disposeCurrent();
@@ -181,6 +196,7 @@ export function useBookReader({
           setGuestSession({
             chapters: toc.chapters,
             watermarkLabel: toc.watermarkLabel,
+            initialChapter: toc.initialChapter,
           });
           setInitialJump(jumpTarget ? { bookId: book.id, ...jumpTarget } : null);
           setActiveBook(book);
@@ -189,13 +205,17 @@ export function useBookReader({
           return;
         }
 
-        const { blob, fromCache } = await fetchBookBlobCached(book, { signal: controller.signal });
+        const [{ blob, fromCache }, { parseBookBlob }] = await Promise.all([
+          fetchBookBlobCached(book, { signal: controller.signal }),
+          import('@/lib/parsers'),
+        ]);
         if (requestId !== requestIdRef.current) return;
 
-        const { parseBookBlob } = await import('@/lib/parsers');
-        if (requestId !== requestIdRef.current) return;
-
-        const parsed = await parseBookBlob(blob, book);
+        const parsed = await parseBookBlob(blob, book, {
+          lazyMedia: true,
+          initialChapterId,
+          initialChapterIndex,
+        });
         if (requestId !== requestIdRef.current) {
           parsed.dispose();
           return;

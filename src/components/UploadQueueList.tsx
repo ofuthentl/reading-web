@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -81,12 +82,37 @@ export function UploadQueueList({
   onRemove,
   onClearAll,
 }: UploadQueueListProps) {
-  if (queue.length === 0) return null;
-
-  const activePreviewItems = queue.filter(
-    (item) => item.status === 'queued' || item.status === 'uploading',
-  );
   const trimmedOverride = batchShelfOverride?.trim() || null;
+
+  const previewMetaById = useMemo(() => {
+    const activePreviewItems = queue.filter(
+      (item) => item.status === 'queued' || item.status === 'uploading',
+    );
+    const authorByShelfCache = new Map<string, string | null>();
+    const getShelfAuthor = (shelfName: string) => {
+      if (!authorByShelfCache.has(shelfName)) {
+        authorByShelfCache.set(shelfName, resolveShelfConsistentAuthor(shelfName, books));
+      }
+      return authorByShelfCache.get(shelfName) ?? null;
+    };
+
+    const map = new Map<string, { displayShelf: string; inheritedAuthor: string }>();
+    for (const item of queue) {
+      const displayShelf =
+        item.status === 'done'
+          ? item.shelf
+          : trimmedOverride || resolvePreviewShelfName(item, activePreviewItems, books);
+      const inheritedAuthor =
+        item.status === 'done'
+          ? item.author
+          : getShelfAuthor(displayShelf) ||
+            (isKnownAuthor(item.author) ? item.author : 'Không rõ tác giả');
+      map.set(item.id, { displayShelf, inheritedAuthor });
+    }
+    return map;
+  }, [books, queue, trimmedOverride]);
+
+  if (queue.length === 0) return null;
 
   return (
     <div className="space-y-2">
@@ -105,15 +131,9 @@ export function UploadQueueList({
 
       <ul className="max-h-64 space-y-2 overflow-y-auto pr-1 scrollbar-thin">
         {queue.map((item) => {
-          const displayShelf =
-            item.status === 'done'
-              ? item.shelf
-              : trimmedOverride || resolvePreviewShelfName(item, activePreviewItems, books);
-          const inheritedAuthor =
-            item.status === 'done'
-              ? item.author
-              : resolveShelfConsistentAuthor(displayShelf, books) ||
-                (isKnownAuthor(item.author) ? item.author : 'Không rõ tác giả');
+          const preview = previewMetaById.get(item.id);
+          const displayShelf = preview?.displayShelf ?? item.shelf;
+          const inheritedAuthor = preview?.inheritedAuthor ?? item.author;
 
           return (
             <li

@@ -1,4 +1,4 @@
-import { type MouseEvent as ReactMouseEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { type MouseEvent as ReactMouseEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { HardDrive, Sparkles } from 'lucide-react';
 import type { Book, ParsedBook, ReaderSettings, ReadingProgress, SaveProgressOptions } from '@/types';
 import { ReaderDomScrollStage } from '@/components/ReaderDomScrollStage';
@@ -89,8 +89,50 @@ export function ReaderView({
     openDrawerTab, updateImmersiveOnScroll,
   } = ctrl;
 
+  const [mediaRev, setMediaRev] = useState(0);
+  void mediaRev;
   const currentChapter = chapters[chapterIndex];
+  const currentChapterId = currentChapter?.id || '';
   const chapterNumbering = useMemo(() => buildCanonicalChapterNumbering(chapters), [chapters]);
+
+  // Giải nén lười ảnh của chương hiện tại (nếu chưa hydrate) và nạp sẵn chương kế tiếp lúc rảnh (QĐ-1A)
+  useEffect(() => {
+    if (!parsedBook.ensureChapterMedia) return;
+    let cancelled = false;
+    const before = parsedBook.chapters[chapterIndex];
+    void parsedBook.ensureChapterMedia(chapterIndex).then((hydrated) => {
+      if (!cancelled && hydrated && hydrated !== before) {
+        setMediaRev((v) => v + 1);
+      }
+    });
+
+    const nextIndex = chapterIndex + 1;
+    if (nextIndex >= parsedBook.chapters.length) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const runPrefetch = () => {
+      if (!cancelled) void parsedBook.ensureChapterMedia?.(nextIndex);
+    };
+    const idleWin = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    let idleId: number | null = null;
+    let timerId: number | null = null;
+    if (typeof idleWin.requestIdleCallback === 'function') {
+      idleId = idleWin.requestIdleCallback(runPrefetch, { timeout: 500 });
+    } else {
+      timerId = window.setTimeout(runPrefetch, 150);
+    }
+    return () => {
+      cancelled = true;
+      if (idleId !== null) idleWin.cancelIdleCallback?.(idleId);
+      if (timerId !== null) window.clearTimeout(timerId);
+    };
+  }, [chapterIndex, parsedBook]);
 
   const features = useReaderBookFeatures({
     bookId: book.id, chapterIndex, currentChapterId: currentChapter?.id || '',
@@ -172,7 +214,7 @@ export function ReaderView({
   const typographyKey = `${settings.width}:${settings.font}:${settings.fontWeight}:${settings.fontSizePx}:${settings.lineHeight}:${settings.textAlign}:${settings.paragraphIndent}:${settings.paragraphSpacing}`;
 
   useLayoutEffect(() => {
-    if (isPaginated || !currentChapter || !scrollContainerRef.current) return;
+    if (isPaginated || !currentChapterId || !scrollContainerRef.current) return;
     if (searchTarget && searchTarget.chapterIndex === chapterIndex && appliedSearchNonceRef.current !== searchTarget.nonce) {
       restoreTargetRatioRef.current = null;
       suppressSaveRef.current = false;
@@ -206,7 +248,7 @@ export function ReaderView({
       cancelAnimationFrame(frame);
       suppressSaveRef.current = false;
     };
-  }, [chapterIndex, currentChapter, isPaginated, lastScrollTopRef, restoreTargetRatioRef, searchTarget, suppressSaveRef, typographyKey]);
+  }, [chapterIndex, currentChapterId, isPaginated, lastScrollTopRef, restoreTargetRatioRef, searchTarget, suppressSaveRef, typographyKey]);
 
   // Bảo toàn tỷ lệ đọc khi xoay màn hình hoặc đổi kích thước cửa sổ ở chế độ cuộn dọc
   useEffect(() => {
@@ -453,6 +495,7 @@ export function ReaderView({
       <ReaderOverlaysHost
         role="owner"
         book={book} allBooks={allBooks} chapters={chapters} parsedChapters={chapters}
+        resolveOwnerMediaUrl={parsedBook.resolveMediaUrl}
         chapterIndex={chapterIndex} currentChapterId={currentChapter?.id || ''}
         currentChapterTitle={currentChapter?.title || ''} chapterScrollRatio={chapterScrollRatio}
         tocOpen={tocOpen} drawerTab={drawerTab} palette={palette} features={features}

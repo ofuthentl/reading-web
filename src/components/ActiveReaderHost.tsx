@@ -1,4 +1,4 @@
-import { Suspense, lazy, useMemo } from 'react';
+import { Suspense, lazy, useEffect, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
 import type {
   AuthSessionInfo,
@@ -11,13 +11,14 @@ import type {
 import { findNextBookInShelf } from '@/lib/nextVolume';
 import type { BookOpenJumpTarget, GuestReaderSessionState } from '@/hooks/useBookReader';
 
-const LazyReaderView = lazy(() =>
-  import('@/components/ReaderView').then((mod) => ({ default: mod.ReaderView })),
-);
+const loadReaderView = () =>
+  import('@/components/ReaderView').then((mod) => ({ default: mod.ReaderView }));
 
-const LazyGuestCanvasReader = lazy(() =>
-  import('@/components/GuestCanvasReader').then((mod) => ({ default: mod.GuestCanvasReader })),
-);
+const loadGuestCanvasReader = () =>
+  import('@/components/GuestCanvasReader').then((mod) => ({ default: mod.GuestCanvasReader }));
+
+const LazyReaderView = lazy(loadReaderView);
+const LazyGuestCanvasReader = lazy(loadGuestCanvasReader);
 
 export interface ActiveReaderHostProps {
   activeBook: Book | null;
@@ -56,6 +57,13 @@ export function ActiveReaderHost({
   onCancelOpening,
   onClose,
 }: ActiveReaderHostProps) {
+  useEffect(() => {
+    if (!openingBook) return;
+    void (session.role === 'guest' ? loadGuestCanvasReader() : loadReaderView()).catch(
+      () => undefined,
+    );
+  }, [openingBook, session.role]);
+
   const nextBook = useMemo(
     () => findNextBookInShelf(activeBook, books, session.role),
     [activeBook, books, session.role],
@@ -118,6 +126,7 @@ export function ActiveReaderHost({
               book={activeBook}
               allBooks={books}
               tocChapters={guestSession.chapters}
+              initialChapter={guestSession.initialChapter}
               watermarkLabel={
                 session.watermarkLabel || guestSession.watermarkLabel || 'Guest'
               }

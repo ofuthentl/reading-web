@@ -33,7 +33,25 @@ export async function tryHandleGuestRoutes(
 
   const guestTocMatch = normalizedPath.match(/^\/api\/guest\/books\/([^/]+)\/toc$/);
   if (guestTocMatch) {
-    const toc = await getGuestBookToc(env, auth, guestTocMatch[1]);
+    const rawIncludeIdx = url.searchParams.get('includeChapter');
+    const includeChapterIndex =
+      rawIncludeIdx !== null && /^\d+$/.test(rawIncludeIdx) ? Number(rawIncludeIdx) : undefined;
+    const includeChapterId = url.searchParams.get('includeChapterId')?.trim() || undefined;
+    const toc = await getGuestBookToc(
+      env,
+      auth,
+      guestTocMatch[1],
+      includeChapterIndex !== undefined || includeChapterId
+        ? { includeChapterIndex, includeChapterId }
+        : undefined,
+    );
+    if (toc.initialChapter) {
+      scheduleUsageEvent(ctx, env.DB, {
+        metric: 'guest_chapter_reads',
+        readerScope: auth.role === 'owner' ? 'owner' : `guest:${auth.userId}`,
+        readerRole: auth.role,
+      });
+    }
     return jsonResponse(toc, 200, origin);
   }
 
