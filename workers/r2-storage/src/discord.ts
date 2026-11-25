@@ -17,6 +17,7 @@ const DISCORD_FLAG_EPHEMERAL = 64;
 
 const DISCORD_BUTTON_RING_BELL_ID = 'ring_library_bell';
 const KEY_ISSUE_COOLDOWN_MS = 15 * 1000; // 15s anti-spam per Discord user
+const DISCORD_SETUP_BELL_TIMEOUT_MS = 2200; // Dưới hạn phản hồi 3 giây của Discord Interaction
 
 const PERMISSION_ADMINISTRATOR = 0x8n;
 const PERMISSION_MANAGE_GUILD = 0x20n;
@@ -198,12 +199,7 @@ async function issueKeyForDiscordMember(
     );
   }
 
-  if (
-    existing?.key_issued_at &&
-    existing.key_expires_at &&
-    existing.key_expires_at > now &&
-    now - existing.key_issued_at < KEY_ISSUE_COOLDOWN_MS
-  ) {
+  if (existing?.key_issued_at && now - existing.key_issued_at < KEY_ISSUE_COOLDOWN_MS) {
     const waitSeconds = Math.max(
       1,
       Math.ceil((KEY_ISSUE_COOLDOWN_MS - (now - existing.key_issued_at)) / 1000),
@@ -220,7 +216,8 @@ async function issueKeyForDiscordMember(
   const appUrl = resolvePublicAppUrl(env);
   const entranceUrl = `${appUrl}/entrance`;
 
-  await env.DB.prepare(
+  // Ép chặt kiểm tra `is_banned` và cooldown 15s nguyên tử trong SQL chống bấm đúp song song
+  const writeRes = await env.DB.prepare(
     `INSERT INTO discord_access (discord_user_id, discord_username, key_hash, key_issued_at, key_expires_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(discord_user_id) DO UPDATE SET
@@ -228,10 +225,40 @@ async function issueKeyForDiscordMember(
        key_hash = excluded.key_hash,
        key_issued_at = excluded.key_issued_at,
        key_expires_at = excluded.key_expires_at,
-       updated_at = excluded.updated_at`,
+       updated_at = excluded.updated_at
+     WHERE COALESCE(discord_access.is_banned, 0) = 0
+       AND (discord_access.key_issued_at IS NULL OR (? - discord_access.key_issued_at) >= ?)`,
   )
-    .bind(discordUserId, discordUsername.slice(0, 80), keyHash, now, expiresAt, now)
+    .bind(
+      discordUserId,
+      discordUsername.slice(0, 80),
+      keyHash,
+      now,
+      expiresAt,
+      now,
+      now,
+      KEY_ISSUE_COOLDOWN_MS,
+    )
     .run();
+
+  if ((writeRes.meta?.changes ?? 0) !== 1) {
+    const latest = await env.DB.prepare(
+      'SELECT key_issued_at, is_banned FROM discord_access WHERE discord_user_id = ?',
+    )
+      .bind(discordUserId)
+      .first<{ key_issued_at: number | null; is_banned: number | null }>();
+    if (latest?.is_banned === 1) {
+      return ephemeralMessage(
+        '🚫 Tài khoản Discord của bạn hiện đã bị tạm ngưng quyền nhận chìa khoá thư viện.',
+      );
+    }
+    const waitSeconds = latest?.key_issued_at
+      ? Math.max(1, Math.ceil((KEY_ISSUE_COOLDOWN_MS - (now - latest.key_issued_at)) / 1000))
+      : Math.ceil(KEY_ISSUE_COOLDOWN_MS / 1000);
+    return ephemeralMessage(
+      `⏳ Bạn vừa nhận chìa khoá cách đây vài giây. Hãy dùng mã ở tin nhắn ẩn phía trên hoặc chờ **${waitSeconds} giây** để lấy mã mới nhé.`,
+    );
+  }
 
   scheduleUsageEvent(ctx, env.DB, { metric: 'discord_keys_issued' });
 
@@ -240,7 +267,7 @@ async function issueKeyForDiscordMember(
       `🔑 **\`${rawKey}\`**`,
       '',
       `Chìa khoá của bạn đây! Hãy nhập mã này tại **[cổng thư viện](${entranceUrl})** trong vòng **5 phút** (hết hạn <t:${expiresUnixSec}:R>) trước khi hiệu lực tan biến.`,
-      '-# Mã chỉ xoay được 1 lần và giữ cửa mở trong 24 giờ (chế độ đọc 2D). Mọi cánh cửa cũ bạn đang mở ở nơi khác sẽ tự động khép lại.',
+      '-# Mã chỉ xoay được 1 lần và giữ cửa mở trong 24 giờ (quyền chỉ đọc). Mọi cánh cửa cũ bạn đang mở ở nơi khác sẽ tự động khép lại.',
     ].join('\n'),
   );
 }
@@ -310,17 +337,27 @@ export async function handleDiscordInteraction(
       const botToken = cleanSecret(env.DISCORD_BOT_TOKEN);
 
       if (botToken && interaction.channel_id && /^\d{5,32}$/.test(interaction.channel_id)) {
-        const postRes = await fetch(
-          `https://discord.com/api/v10/channels/${interaction.channel_id}/messages`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bot ${botToken}`,
-              'Content-Type': 'application/json',
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), DISCORD_SETUP_BELL_TIMEOUT_MS);
+        let postRes: Response | null = null;
+        try {
+          postRes = await fetch(
+            `https://discord.com/api/v10/channels/${interaction.channel_id}/messages`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bot ${botToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(panelPayload),
+              signal: controller.signal,
             },
-            body: JSON.stringify(panelPayload),
-          },
-        ).catch(() => null);
+          );
+        } catch {
+          postRes = null;
+        } finally {
+          clearTimeout(timer);
+        }
 
         if (postRes?.ok) {
           return ephemeralMessage('✅ Đã đặt bảng chuông nhận chìa khoá cố định tại kênh này!');

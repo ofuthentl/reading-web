@@ -434,6 +434,7 @@ export function ShelfBatchNoteModal({
                 onApplyCandidate={handleApplyAniListToForm}
                 onQuickSaveAll={(cand) => void handleQuickSaveAllFromAniList(cand)}
                 onClose={() => setAnilistOpen(false)}
+                onApiError={onApiError}
                 onNotify={onNotify}
               />
             )}

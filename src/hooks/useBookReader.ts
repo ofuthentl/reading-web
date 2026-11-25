@@ -63,6 +63,7 @@ export function useBookReader({
   const requestIdRef = useRef(0);
   const parsedBookRef = useRef<ParsedBook | null>(null);
   const openAbortRef = useRef<AbortController | null>(null);
+  const localSettingsVersionRef = useRef(0);
   const prevAppThemeRef = useRef<UiTheme>(appTheme);
   const appThemeRef = useRef<UiTheme>(appTheme);
   appThemeRef.current = appTheme;
@@ -74,6 +75,7 @@ export function useBookReader({
     if (prevAppThemeRef.current === appTheme) return;
     prevAppThemeRef.current = appTheme;
     const syncedTheme = appThemeToReaderTheme(appTheme);
+    localSettingsVersionRef.current += 1;
     setSettings((prev) => {
       if (prev.theme === syncedTheme) return prev;
       const next = { ...prev, theme: syncedTheme };
@@ -88,14 +90,15 @@ export function useBookReader({
   }, [appTheme, authenticated]);
 
   // Tải cài đặt trình đọc đồng bộ từ D1 1 lần khi đăng nhập thành công (D-036 Mục 7).
-  // Không đưa appTheme vào deps để tránh GET /api/reader-settings đè ngược theme mới vừa đổi (debounce 1.2s).
+  // Không đưa appTheme vào deps và kiểm tra localSettingsVersionRef để tránh GET /api/reader-settings đè ngược sửa đổi cục bộ trong phiên.
   useEffect(() => {
     if (!authenticated || !isCloudMode) return;
     let cancelled = false;
+    const fetchVersion = localSettingsVersionRef.current;
     void import('@/lib/readerSettingsSync')
       .then((m) => m.fetchRemoteReaderSettings(appThemeToReaderTheme(appThemeRef.current)))
       .then((remote) => {
-        if (cancelled || !remote) return;
+        if (cancelled || !remote || localSettingsVersionRef.current !== fetchVersion) return;
         saveReaderSettings(remote);
         setSettings(remote);
       })
@@ -123,6 +126,7 @@ export function useBookReader({
 
   const updateSettings = useCallback(
     (patch: Partial<ReaderSettings>) => {
+      localSettingsVersionRef.current += 1;
       setSettings((prev) => {
         const merged = { ...prev, ...patch };
         saveReaderSettings(merged);

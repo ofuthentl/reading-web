@@ -1,9 +1,8 @@
 import { type AuthContext, HttpError } from './auth';
+import { assertGuestChapterAccess } from './bookChapterAccessDb';
 import { type Env, isValidId } from './booksDb';
 import { assertGuestBookAccess } from './shelfAccessDb';
-import { MAX_READING_DELTA_SEC } from './usageRecorder';
-
-const FIRST_BOOK_SAVE_MAX_SEC = 180;
+import { MAX_READING_DELTA_SEC, claimReadingTimeBudget } from './usageRecorder';
 
 export interface ProgressRow {
   book_id: string;
@@ -14,6 +13,7 @@ export interface ProgressRow {
   scroll_ratio: number;
   scroll_top: number;
   completed: number;
+  book_percent?: number | null;
   reading_seconds?: number;
   reread_count?: number;
   updated_at: number;
@@ -48,6 +48,14 @@ async function ensureProgressExtraColumns(
       if (!msg.toLowerCase().includes('duplicate column')) throw err;
     }
   }
+  if (!names.has('book_percent')) {
+    try {
+      await db.prepare(`ALTER TABLE ${table} ADD COLUMN book_percent REAL`).run();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.toLowerCase().includes('duplicate column')) throw err;
+    }
+  }
 }
 
 export async function ensureGuestProgressTable(env: Env): Promise<void> {
@@ -64,6 +72,7 @@ export async function ensureGuestProgressTable(env: Env): Promise<void> {
            scroll_ratio REAL NOT NULL DEFAULT 0,
            scroll_top REAL NOT NULL DEFAULT 0,
            completed INTEGER NOT NULL DEFAULT 0,
+           book_percent REAL,
            reading_seconds INTEGER NOT NULL DEFAULT 0,
            reread_count INTEGER NOT NULL DEFAULT 0,
            updated_at INTEGER NOT NULL,
@@ -117,6 +126,7 @@ export async function upsertReadingProgress(
     scrollRatio?: unknown;
     scrollTop?: unknown;
     completed?: unknown;
+    bookPercent?: unknown;
     updatedAt?: unknown;
     readingDeltaSec?: unknown;
     rereadCount?: unknown;
@@ -126,7 +136,10 @@ export async function upsertReadingProgress(
   if (typeof body?.chapterId !== 'string' || !body.chapterId.trim()) {
     throw new HttpError('Thiếu thông tin chương đang đọc.', 400);
   }
-  const chapterId = body.chapterId.trim().slice(0, 120);
+  const chapterId = body.chapterId.normalize('NFC').trim().slice(0, 120);
+  if (!chapterId) {
+    throw new HttpError('Thiếu thông tin chương đang đọc.', 400);
+  }
 
   const existingBook = await env.DB.prepare('SELECT id FROM books WHERE id = ?')
     .bind(bookId)
@@ -135,6 +148,7 @@ export async function upsertReadingProgress(
 
   if (auth.role !== 'owner') {
     await assertGuestBookAccess(env.DB, auth, bookId);
+    await assertGuestChapterAccess(env.DB, auth, bookId, chapterId);
   }
 
   // Luôn dùng đồng hồ máy chủ để tránh client bơm mốc thời gian tương lai làm sai lệch bảng xếp hạng tuần (vá M-1)
@@ -153,6 +167,18 @@ export async function upsertReadingProgress(
     ? Math.min(10_000_000, Math.max(0, rawScrollTop))
     : 0;
   const completed = body.completed === true ? 1 : 0;
+  const rawBookPercent =
+    typeof body.bookPercent === 'number'
+      ? body.bookPercent
+      : typeof body.bookPercent === 'string' && body.bookPercent.trim() !== ''
+        ? Number(body.bookPercent)
+        : Number.NaN;
+  const bookPercent =
+    completed === 1
+      ? 100
+      : Number.isFinite(rawBookPercent)
+        ? Math.round(Math.min(100, Math.max(0, rawBookPercent)) * 10) / 10
+        : null;
   const chapterTitle =
     typeof body.chapterTitle === 'string' && body.chapterTitle.trim()
       ? body.chapterTitle.trim().slice(0, 200)
@@ -175,15 +201,20 @@ export async function upsertReadingProgress(
       ? Math.min(999, Math.floor(rawRereadCount))
       : 0;
 
-  let readingDeltaAccepted = 0;
-  const firstSaveCapped = Math.min(requestedDelta, FIRST_BOOK_SAVE_MAX_SEC);
+  const readerScope = auth.role === 'owner' ? 'owner' : `guest:${auth.userId}`;
+  // Đối chiếu nguyên tử qua đồng hồ chung `usage_daily_readers.last_reading_sync_at`:
+  // - Lần lưu `readingDeltaSec = 0` không đẩy lùi mốc tính delta của các lần lưu kế tiếp.
+  // - Không thể bơm khống `FIRST_BOOK_SAVE_MAX_SEC` xuyên nhiều tập sách mới.
+  const readingDeltaAccepted =
+    requestedDelta > 0
+      ? await claimReadingTimeBudget(env.DB, readerScope, auth.role, requestedDelta, updatedAt)
+      : 0;
 
   if (auth.role === 'owner') {
     await ensureProgressReadingTimeColumns(env);
-    // Kẹp reading_seconds nguyên tử trực tiếp trong SQL theo đồng hồ thực (bỏ +3s/+999ms) và đo chính xác chênh lệch qua db.batch
-    const upsertStmt = env.DB.prepare(
-      `INSERT INTO reading_progress (book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, reread_count, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    await env.DB.prepare(
+      `INSERT INTO reading_progress (book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, book_percent, reading_seconds, reread_count, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(book_id) DO UPDATE SET
          chapter_id = excluded.chapter_id,
          chapter_index = excluded.chapter_index,
@@ -192,49 +223,31 @@ export async function upsertReadingProgress(
          scroll_ratio = excluded.scroll_ratio,
          scroll_top = excluded.scroll_top,
          completed = excluded.completed,
-         reading_seconds = COALESCE(reading_progress.reading_seconds, 0) + CASE
-           WHEN ? <= 0 THEN 0
-           WHEN reading_progress.updated_at > 0 THEN MIN(?, MIN(?, MAX(0, CAST((excluded.updated_at - reading_progress.updated_at) / 1000 AS INTEGER))))
-           ELSE ?
-         END,
+         book_percent = excluded.book_percent,
+         reading_seconds = COALESCE(reading_progress.reading_seconds, 0) + excluded.reading_seconds,
          reread_count = MAX(COALESCE(reading_progress.reread_count, 0), excluded.reread_count),
-         updated_at = MAX(reading_progress.updated_at, excluded.updated_at)
-       RETURNING reading_seconds`,
-    ).bind(
-      bookId,
-      chapterId,
-      chapterIndex,
-      chapterTitle,
-      totalChapters,
-      scrollRatio,
-      scrollTop,
-      completed,
-      firstSaveCapped,
-      incomingRereadCount,
-      updatedAt,
-      requestedDelta,
-      requestedDelta,
-      MAX_READING_DELTA_SEC,
-      firstSaveCapped,
-    );
-
-    if (requestedDelta > 0) {
-      const [beforeRes, afterRes] = await env.DB.batch<{ reading_seconds: number }>([
-        env.DB.prepare('SELECT reading_seconds FROM reading_progress WHERE book_id = ?').bind(bookId),
-        upsertStmt,
-      ]);
-      const beforeSec = Number(beforeRes.results?.[0]?.reading_seconds ?? 0);
-      const afterSec = Number(afterRes.results?.[0]?.reading_seconds ?? beforeSec);
-      readingDeltaAccepted = Math.max(0, Math.min(requestedDelta, afterSec - beforeSec));
-    } else {
-      await upsertStmt.run();
-      readingDeltaAccepted = 0;
-    }
+         updated_at = MAX(reading_progress.updated_at, excluded.updated_at)`,
+    )
+      .bind(
+        bookId,
+        chapterId,
+        chapterIndex,
+        chapterTitle,
+        totalChapters,
+        scrollRatio,
+        scrollTop,
+        completed,
+        bookPercent,
+        readingDeltaAccepted,
+        incomingRereadCount,
+        updatedAt,
+      )
+      .run();
   } else {
     await ensureGuestProgressTable(env);
-    const upsertStmt = env.DB.prepare(
-      `INSERT INTO guest_reading_progress (discord_user_id, book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, reread_count, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    await env.DB.prepare(
+      `INSERT INTO guest_reading_progress (discord_user_id, book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, book_percent, reading_seconds, reread_count, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(discord_user_id, book_id) DO UPDATE SET
          chapter_id = excluded.chapter_id,
          chapter_index = excluded.chapter_index,
@@ -243,47 +256,27 @@ export async function upsertReadingProgress(
          scroll_ratio = excluded.scroll_ratio,
          scroll_top = excluded.scroll_top,
          completed = excluded.completed,
-         reading_seconds = COALESCE(guest_reading_progress.reading_seconds, 0) + CASE
-           WHEN ? <= 0 THEN 0
-           WHEN guest_reading_progress.updated_at > 0 THEN MIN(?, MIN(?, MAX(0, CAST((excluded.updated_at - guest_reading_progress.updated_at) / 1000 AS INTEGER))))
-           ELSE ?
-         END,
+         book_percent = excluded.book_percent,
+         reading_seconds = COALESCE(guest_reading_progress.reading_seconds, 0) + excluded.reading_seconds,
          reread_count = MAX(COALESCE(guest_reading_progress.reread_count, 0), excluded.reread_count),
-         updated_at = MAX(guest_reading_progress.updated_at, excluded.updated_at)
-       RETURNING reading_seconds`,
-    ).bind(
-      auth.userId,
-      bookId,
-      chapterId,
-      chapterIndex,
-      chapterTitle,
-      totalChapters,
-      scrollRatio,
-      scrollTop,
-      completed,
-      firstSaveCapped,
-      incomingRereadCount,
-      updatedAt,
-      requestedDelta,
-      requestedDelta,
-      MAX_READING_DELTA_SEC,
-      firstSaveCapped,
-    );
-
-    if (requestedDelta > 0) {
-      const [beforeRes, afterRes] = await env.DB.batch<{ reading_seconds: number }>([
-        env.DB.prepare(
-          'SELECT reading_seconds FROM guest_reading_progress WHERE discord_user_id = ? AND book_id = ?',
-        ).bind(auth.userId, bookId),
-        upsertStmt,
-      ]);
-      const beforeSec = Number(beforeRes.results?.[0]?.reading_seconds ?? 0);
-      const afterSec = Number(afterRes.results?.[0]?.reading_seconds ?? beforeSec);
-      readingDeltaAccepted = Math.max(0, Math.min(requestedDelta, afterSec - beforeSec));
-    } else {
-      await upsertStmt.run();
-      readingDeltaAccepted = 0;
-    }
+         updated_at = MAX(guest_reading_progress.updated_at, excluded.updated_at)`,
+    )
+      .bind(
+        auth.userId,
+        bookId,
+        chapterId,
+        chapterIndex,
+        chapterTitle,
+        totalChapters,
+        scrollRatio,
+        scrollTop,
+        completed,
+        bookPercent,
+        readingDeltaAccepted,
+        incomingRereadCount,
+        updatedAt,
+      )
+      .run();
   }
 
   return { ok: true, updatedAt, readingDeltaAccepted };

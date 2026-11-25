@@ -93,19 +93,18 @@ const PULL_THRESHOLD_PX = 76;
 
 export function usePullToNextChapter(options: {
   enabled: boolean;
+  chapterKey?: string | number;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   onAdvanceChapter: () => void;
 }) {
-  const { enabled, scrollContainerRef, onAdvanceChapter } = options;
+  const { enabled, chapterKey, scrollContainerRef, onAdvanceChapter } = options;
   const [pullProgress, setPullProgress] = useState(0);
   const advanceRef = useRef(onAdvanceChapter);
   advanceRef.current = onAdvanceChapter;
 
   useEffect(() => {
-    if (!enabled) {
-      setPullProgress(0);
-      return;
-    }
+    setPullProgress(0);
+    if (!enabled) return;
     const el = scrollContainerRef.current;
     if (!el) return;
 
@@ -134,13 +133,16 @@ export function usePullToNextChapter(options: {
     };
 
     const onTouchStart = (e: TouchEvent) => {
+      const touch = e.touches[0];
       if (
         e.touches.length === 1 &&
+        touch &&
+        touch.clientX > 24 &&
         isAtBottom() &&
         !isIgnoredTarget(e.target) &&
         !window.getSelection()?.toString()
       ) {
-        startAtBottomY = e.touches[0].clientY;
+        startAtBottomY = touch.clientY;
         currentProgress = 0;
       } else {
         startAtBottomY = null;
@@ -255,8 +257,9 @@ export function usePullToNextChapter(options: {
       el.removeEventListener('touchcancel', onTouchCancel);
       el.removeEventListener('wheel', onWheel);
       if (wheelResetTimer !== null) window.clearTimeout(wheelResetTimer);
+      setPullProgress(0);
     };
-  }, [enabled, scrollContainerRef]);
+  }, [chapterKey, enabled, scrollContainerRef]);
 
   return pullProgress;
 }

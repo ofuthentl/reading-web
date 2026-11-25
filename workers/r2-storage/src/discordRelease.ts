@@ -11,7 +11,8 @@ import { ensureShelfTagsSchema, parseShelfTagsJson } from './shelfTagsDb';
 export { type DiscordReleaseGroupInput, buildDiscordReleaseMessagePayload };
 
 const MAX_BOOK_IDS_PER_ANNOUNCE = 50;
-const MAX_GROUPS_PER_ANNOUNCE = 20;
+// Trần 12 bộ/lô giữ tổng subrequest (đọc bìa R2 + gọi Discord API + retry/fallback) luôn an toàn dưới 50 subrequest Free Tier
+const MAX_GROUPS_PER_ANNOUNCE = 12;
 const DISCORD_REQUEST_TIMEOUT_MS = 8000;
 const DISCORD_MAX_RETRY_WAIT_MS = 5000;
 const DISCORD_SNOWFLAKE_RE = /^\d{5,32}$/;

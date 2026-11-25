@@ -56,7 +56,23 @@ export function AdminUsageView({
   const [days, setDays] = useState<AdminUsageWindowDays>(14);
   const [report, setReport] = useState<AdminUsageReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [headerHeight, setHeaderHeight] = useState<number | null>(null);
   const activeFetchAbortRef = useRef<AbortController | null>(null);
+  const headerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const sync = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (h > 0) setHeaderHeight((prev) => (prev === h ? prev : h));
+    };
+    sync();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(sync);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Chặn trình thu thập dữ liệu đánh chỉ mục trang quản trị /usage (D-035)
   useEffect(() => {
@@ -119,7 +135,10 @@ export function AdminUsageView({
 
   return (
     <div className="theme-canvas min-h-screen text-ink transition-colors duration-200">
-      <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur-sm">
+      <header
+        ref={headerRef}
+        className="fixed inset-x-0 top-0 z-30 border-b border-line bg-surface md:bg-surface/95 md:backdrop-blur-sm"
+      >
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2.5 px-3.5 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-2.5">
             <button
@@ -192,8 +211,13 @@ export function AdminUsageView({
           </div>
         </div>
       </header>
+      <div
+        aria-hidden="true"
+        className="h-[64px]"
+        style={headerHeight !== null ? { height: `${headerHeight}px` } : undefined}
+      />
 
-      <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
+      <main className="mx-auto flex max-w-7xl flex-col gap-6 overflow-x-clip px-4 py-6 sm:px-6 sm:py-8">
         {!isCloudMode && (
           <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-800 dark:text-amber-200">
             Đang chạy ở chế độ Local Dev (không nối Cloudflare Worker) nên chỉ hiển thị số liệu sách cục bộ trong IndexedDB.
@@ -433,6 +457,7 @@ export function AdminUsageView({
             <AdminUsageGuestTable
               guests={report.guestActivity}
               formatRelativeTime={formatRelativeTime}
+              onApiError={onApiError}
             />
           </>
         ) : (

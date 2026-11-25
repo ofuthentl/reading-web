@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Check,
@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import type { CustomCollection, ShelfGroup } from '@/types';
+import { isAuthError } from '@/lib/authSession';
 import {
   createCustomCollection,
   deleteCustomCollection,
@@ -51,13 +52,23 @@ export function CollectionManagerModal({
   const [onlySelectedShelves, setOnlySelectedShelves] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+  const collectionsRef = useRef(collections);
+  collectionsRef.current = collections;
 
-  const loadCollectionIntoEditor = (target: CustomCollection | null) => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const loadCollectionIntoEditor = useCallback((target: CustomCollection | null) => {
     if (!target) {
       setEditingId('new');
       setName('');
       setDescription('');
-      setSortOrder(collections.length * 10);
+      setSortOrder(collectionsRef.current.length * 10);
       setSelectedShelfKeys(new Set());
       setOnlySelectedShelves(false);
       return;
@@ -68,21 +79,19 @@ export function CollectionManagerModal({
     setSortOrder(target.sortOrder);
     setSelectedShelfKeys(new Set(target.shelfKeys.map(toShelfPrefKey)));
     setOnlySelectedShelves(false);
-  };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
-    if (collections.length > 0) {
-      loadCollectionIntoEditor(collections[0]);
+    if (collectionsRef.current.length > 0) {
+      loadCollectionIntoEditor(collectionsRef.current[0]);
     } else {
       loadCollectionIntoEditor(null);
     }
     setShelfSearch('');
     setSaving(false);
     setDeletingId(null);
-    // Chỉ khởi tạo khi mở modal
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [loadCollectionIntoEditor, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -134,6 +143,7 @@ export function CollectionManagerModal({
         editingId === 'new'
           ? await createCustomCollection(payload)
           : await updateCustomCollection(editingId, payload);
+      if (!mountedRef.current) return;
       onCollectionSaved(saved);
       setEditingId(saved.id);
       onNotify?.(
@@ -143,9 +153,11 @@ export function CollectionManagerModal({
         'success',
       );
     } catch (err) {
-      onApiError?.(err, 'Không thể lưu tuyển tập.');
+      if (mountedRef.current || isAuthError(err)) {
+        onApiError?.(err, 'Không thể lưu tuyển tập.');
+      }
     } finally {
-      setSaving(false);
+      if (mountedRef.current) setSaving(false);
     }
   };
 
@@ -154,16 +166,19 @@ export function CollectionManagerModal({
     setDeletingId(col.id);
     try {
       await deleteCustomCollection(col.id);
+      if (!mountedRef.current) return;
       onCollectionDeleted(col.id);
       onNotify?.(`Đã xoá tuyển tập "${col.name}".`, 'info');
       if (editingId === col.id) {
-        const remaining = collections.filter((item) => item.id !== col.id);
+        const remaining = collectionsRef.current.filter((item) => item.id !== col.id);
         loadCollectionIntoEditor(remaining[0] ?? null);
       }
     } catch (err) {
-      onApiError?.(err, 'Không thể xoá tuyển tập.');
+      if (mountedRef.current || isAuthError(err)) {
+        onApiError?.(err, 'Không thể xoá tuyển tập.');
+      }
     } finally {
-      setDeletingId(null);
+      if (mountedRef.current) setDeletingId(null);
     }
   };
 

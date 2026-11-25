@@ -152,8 +152,14 @@ function mapTags(media: RawMedia): string[] {
  */
 export async function searchAniListDirectBrowser(
   query: string,
+  externalSignal?: AbortSignal,
 ): Promise<AniListNovelCandidate[]> {
   const controller = new AbortController();
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+  }
   const timer = window.setTimeout(() => controller.abort(), ANILIST_TIMEOUT_MS);
   try {
     const res = await fetch(ANILIST_GRAPHQL_URL, {
@@ -202,5 +208,6 @@ export async function searchAniListDirectBrowser(
     return results;
   } finally {
     window.clearTimeout(timer);
+    externalSignal?.removeEventListener('abort', onExternalAbort);
   }
 }

@@ -74,7 +74,7 @@ export function BookInfoModal({
   const isMemberLocked = sessionRole === 'guest' && Boolean(book.guest_locked);
   const isGuestUnready = sessionRole === 'guest' && !isMemberLocked && book.guest_ready === false;
   const guestLockLabel = getGuestLockLabel(book, sessionRole);
-  const shelfName = (book.shelf || 'Kho chưa phân loại').trim();
+  const shelfName = (book.shelf || 'Kho chưa phân loại').normalize('NFC').trim();
   const shelfKey = shelfName.toLocaleLowerCase('vi');
   const createdDate = Number.isFinite(Date.parse(book.created_at))
     ? new Date(book.created_at).toLocaleDateString('vi-VN')

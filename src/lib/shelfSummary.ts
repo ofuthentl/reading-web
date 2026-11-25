@@ -13,7 +13,13 @@ import {
   isVolumeOrSubtitleSegment,
   titleEndsWithBareVolume,
 } from '@/lib/bookMetadata';
-import { splitNormalizedAuthors } from '@/lib/authorHeuristics';
+import {
+  hasVietnameseDiacritics,
+  isReleaseMetadataNoise,
+  isTranslatedSubtitleForSeries,
+  splitNormalizedAuthors,
+  stripDiacriticsLower,
+} from '@/lib/authorHeuristics';
 import { extractSeriesName } from '@/lib/seriesShelfExtractor';
 import { isKnownAuthor } from '@/lib/shelfPlacement';
 
@@ -22,20 +28,52 @@ export { computeBookProgressPercent };
 export const UNKNOWN_AUTHOR_LABEL = 'Không rõ tác giả';
 const UNKNOWN_AUTHOR = UNKNOWN_AUTHOR_LABEL;
 
+function sharesAuthorNameToken(a: string, b: string): boolean {
+  const partsA = splitNormalizedAuthors(a).map(stripDiacriticsLower);
+  const partsB = new Set(splitNormalizedAuthors(b).map(stripDiacriticsLower));
+  if (partsA.some((p) => p && partsB.has(p))) return true;
+  const tokensA = stripDiacriticsLower(a).split(/[^a-z0-9]+/).filter((t) => t.length >= 3);
+  const tokensB = new Set(stripDiacriticsLower(b).split(/[^a-z0-9]+/).filter((t) => t.length >= 3));
+  return tokensA.some((t) => tokensB.has(t));
+}
+
 function isUniqueSubtitleInShelf(
   book: Book,
   shelf: ShelfGroup | null,
   rawAuthorCounts: ReadonlyMap<string, number>,
 ): boolean {
-  const cleanAuth = book.author.trim();
-  if (!cleanAuth || cleanAuth === UNKNOWN_AUTHOR_LABEL) return false;
-  if (getDisplayAuthor(book.author, book.title) === UNKNOWN_AUTHOR_LABEL) return true;
+  const cleanAuth = book.author.normalize('NFC').trim();
+  if (!cleanAuth || cleanAuth === UNKNOWN_AUTHOR_LABEL || isReleaseMetadataNoise(cleanAuth)) {
+    return false;
+  }
+  const displayAuthor = getDisplayAuthor(book.author, book.title);
+  // Nếu `getDisplayAuthor` đã trả `UNKNOWN_AUTHOR` mà `getBookSortTitle` không đổi, đó là rác nhóm dịch
+  if (displayAuthor === UNKNOWN_AUTHOR_LABEL) return false;
   if (!shelf || shelf.books.length < 2 || shelf.key === 'kho chưa phân loại') return false;
-  const matchesSeriesPrefix = book.title.trim().toLocaleLowerCase('vi').startsWith(shelf.key);
-  const endsWithBareVol = titleEndsWithBareVolume(book.title.trim());
+  if (splitNormalizedAuthors(cleanAuth).length >= 2) return false;
+
+  const normTitle = book.title.normalize('NFC').trim();
+  const matchesSeriesPrefix = normTitle.toLocaleLowerCase('vi').startsWith(shelf.key);
+  const endsWithBareVol = titleEndsWithBareVolume(normTitle);
   if (!matchesSeriesPrefix && !endsWithBareVol) return false;
-  const distinctCount = rawAuthorCounts.size;
-  return distinctCount >= 2 && (rawAuthorCounts.get(cleanAuth.toLocaleLowerCase('vi')) ?? 0) === 1;
+
+  const authKey = cleanAuth.toLocaleLowerCase('vi');
+  if (rawAuthorCounts.size < 2 || (rawAuthorCounts.get(authKey) ?? 0) !== 1) return false;
+
+  let hasDominantAuthor = false;
+  let shelfHasNonDiacriticAuthor = false;
+  for (const [otherKey, otherCount] of rawAuthorCounts.entries()) {
+    if (otherKey === authKey) continue;
+    if (otherCount >= 2) hasDominantAuthor = true;
+    if (!hasVietnameseDiacritics(otherKey)) shelfHasNonDiacriticAuthor = true;
+    if (sharesAuthorNameToken(cleanAuth, otherKey)) return false;
+  }
+
+  const looksTranslatedSub =
+    hasVietnameseDiacritics(cleanAuth) &&
+    (isTranslatedSubtitleForSeries(normTitle, cleanAuth) || shelfHasNonDiacriticAuthor);
+  if (looksTranslatedSub) return true;
+  return !hasDominantAuthor && endsWithBareVol;
 }
 
 export function getEffectiveAuthorInShelf(
@@ -43,9 +81,9 @@ export function getEffectiveAuthorInShelf(
   shelf: ShelfGroup | null,
   rawAuthorCounts: ReadonlyMap<string, number>,
 ): string {
-  return isUniqueSubtitleInShelf(book, shelf, rawAuthorCounts)
-    ? UNKNOWN_AUTHOR_LABEL
-    : getDisplayAuthor(book.author, book.title);
+  const display = getDisplayAuthor(book.author, book.title);
+  if (display === UNKNOWN_AUTHOR_LABEL) return UNKNOWN_AUTHOR_LABEL;
+  return isUniqueSubtitleInShelf(book, shelf, rawAuthorCounts) ? UNKNOWN_AUTHOR_LABEL : display;
 }
 
 export function getHealedTitleInShelf(
@@ -53,10 +91,16 @@ export function getHealedTitleInShelf(
   shelf: ShelfGroup | null,
   rawAuthorCounts: ReadonlyMap<string, number>,
 ): string {
+  const cleanTitle = book.title.trim();
   const sorted = getBookSortTitle(book);
-  if (sorted !== book.title.trim()) return sorted;
-  if (isUniqueSubtitleInShelf(book, shelf, rawAuthorCounts)) {
-    return `${book.title.trim()} - ${book.author.trim()}`;
+  if (sorted !== cleanTitle) return sorted;
+  const cleanAuth = book.author.trim();
+  if (
+    !isReleaseMetadataNoise(cleanAuth) &&
+    isUniqueSubtitleInShelf(book, shelf, rawAuthorCounts) &&
+    !cleanTitle.normalize('NFC').toLocaleLowerCase('vi').includes(cleanAuth.normalize('NFC').toLocaleLowerCase('vi'))
+  ) {
+    return `${cleanTitle} - ${cleanAuth}`;
   }
   return book.title;
 }
@@ -308,12 +352,24 @@ function buildAuthorInfo(
   }
 
   // Nếu kệ nhiều tập mà mỗi tập `- Quyển X` lại mang 1 chuỗi "tác giả" rời rạc duy nhất (count === 1),
-  // đó là các tiêu đề phụ ngắn của từng tập chứ không phải đồng tác giả.
+  // đó là các tiêu đề phụ ngắn của từng tập — nhưng tuyệt đối bảo toàn đồng tác giả `"A"` đi cùng `"A, B"`.
   if (books.length >= 2 && counts.size >= 2) {
-    const repeated = Array.from(counts.entries()).filter(([, v]) => v.count >= 2 || !v.allBareVol);
-    if (repeated.length === 0) return { authorLabel: UNKNOWN_AUTHOR, authors: [] };
+    const partCounts = new Map<string, number>();
+    for (const entry of counts.values()) {
+      for (const part of splitNormalizedAuthors(entry.label)) {
+        const pKey = stripDiacriticsLower(part);
+        if (pKey) partCounts.set(pKey, (partCounts.get(pKey) ?? 0) + entry.count);
+      }
+    }
+    const kept = Array.from(counts.entries()).filter(([, v]) => {
+      if (v.count >= 2 || !v.allBareVol) return true;
+      const parts = splitNormalizedAuthors(v.label);
+      if (parts.length >= 2) return true;
+      return parts.some((p) => (partCounts.get(stripDiacriticsLower(p)) ?? 0) >= 2);
+    });
+    if (kept.length === 0) return { authorLabel: UNKNOWN_AUTHOR, authors: [] };
     counts.clear();
-    for (const [k, v] of repeated) counts.set(k, v);
+    for (const [k, v] of kept) counts.set(k, v);
   }
 
   if (counts.size === 0) return { authorLabel: UNKNOWN_AUTHOR, authors: [] };

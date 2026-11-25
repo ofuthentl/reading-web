@@ -72,6 +72,6 @@ export function downloadQuotesAsMarkdown(items: readonly LibraryHighlightItem[])
   } finally {
     window.setTimeout(() => {
       URL.revokeObjectURL(objectUrl);
-    }, 1000);
+    }, 45_000);
   }
 }

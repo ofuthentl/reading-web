@@ -2,6 +2,14 @@ import type { Book } from '@/types';
 import { fetchBookBlobCached } from '@/lib/api';
 import { splitNormalizedAuthors } from '@/lib/authorHeuristics';
 
+function safeDecodeUri(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 function resolveZipPath(baseDir: string, relativeHref: string): string {
   const cleanHref = relativeHref.replace(/^\//, '');
   if (!baseDir) return cleanHref;
@@ -59,7 +67,7 @@ export async function extractBookAutoDescription(book: Book): Promise<string | n
   const rootFile = containerDoc.querySelector('rootfile')?.getAttribute('full-path');
   if (!rootFile) return null;
 
-  const packageXml = await zip.file(rootFile)?.async('string');
+  const packageXml = await (zip.file(rootFile) ?? zip.file(safeDecodeUri(rootFile)))?.async('string');
   if (!packageXml) return null;
   const pkgDoc = new DOMParser().parseFromString(packageXml, 'application/xml');
   const pkgDir = rootFile.includes('/') ? rootFile.slice(0, rootFile.lastIndexOf('/')) : '';
@@ -93,8 +101,10 @@ export async function extractBookAutoDescription(book: Book): Promise<string | n
   for (const idref of spineIds) {
     const href = manifest.get(idref);
     if (!href) continue;
-    const path = resolveZipPath(pkgDir, decodeURIComponent(href.split('#')[0]));
-    const html = await zip.file(path)?.async('string');
+    const rawHref = href.split('#')[0];
+    const decodedPath = resolveZipPath(pkgDir, safeDecodeUri(rawHref));
+    const rawPath = resolveZipPath(pkgDir, rawHref);
+    const html = await (zip.file(decodedPath) ?? zip.file(rawPath))?.async('string');
     if (!html) continue;
 
     const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -132,7 +142,7 @@ export async function extractBookAutoAuthor(book: Book): Promise<string | null> 
   const rootFile = containerDoc.querySelector('rootfile')?.getAttribute('full-path');
   if (!rootFile) return null;
 
-  const packageXml = await zip.file(rootFile)?.async('string');
+  const packageXml = await (zip.file(rootFile) ?? zip.file(safeDecodeUri(rootFile)))?.async('string');
   if (!packageXml) return null;
   const pkgDoc = new DOMParser().parseFromString(packageXml, 'application/xml');
 

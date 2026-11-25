@@ -253,7 +253,9 @@ export async function assertGuestBookEffectiveAccess(
     .prepare('SELECT shelf FROM books WHERE id = ?')
     .bind(bookId)
     .first<{ shelf: string }>();
-  if (!bookRow) return;
+  if (!bookRow) {
+    throw new HttpError('Không tìm thấy sách.', 404);
+  }
 
   const bookRule = await db
     .prepare('SELECT access_mode FROM book_access_rules WHERE book_id = ?')
@@ -379,43 +381,4 @@ export async function assertGuestChapterAccess(
       403,
     );
   }
-}
-
-export async function assertGuestMediaInUnlockedChapters(
-  bucket: R2Bucket,
-  packKey: string,
-  chapters: readonly { id: string; offset: number; length: number }[],
-  mediaIndex: number,
-  lockedChapterKeys: ReadonlySet<string>,
-): Promise<void> {
-  if (lockedChapterKeys.size === 0) return;
-  const hasAnyLockedInManifest = chapters.some((ch) =>
-    lockedChapterKeys.has(toCanonicalChapterKey(ch.id)),
-  );
-  if (!hasAnyLockedInManifest) return;
-
-  const unlockedChapters = chapters.filter(
-    (ch) => !lockedChapterKeys.has(toCanonicalChapterKey(ch.id)),
-  );
-  if (unlockedChapters.length === 0) {
-    throw new HttpError('🔒 Ảnh minh hoạ này thuộc chương bị khoá.', 403);
-  }
-
-  const packObj = await bucket.get(packKey);
-  if (!packObj) throw new HttpError('Không tìm thấy gói chương trên kho lưu trữ.', 404);
-  const packBytes = new Uint8Array(await packObj.arrayBuffer());
-
-  for (const chMeta of unlockedChapters) {
-    const slice = packBytes.subarray(chMeta.offset, chMeta.offset + chMeta.length);
-    const stream = new Blob([slice]).stream().pipeThrough(new DecompressionStream('gzip'));
-    const jsonStr = await new Response(stream).text();
-    const parsed = JSON.parse(jsonStr) as { blocks?: Array<{ kind?: string; mediaIndex?: number }> };
-    for (const block of parsed.blocks || []) {
-      if (block.kind === 'img' && block.mediaIndex === mediaIndex) {
-        return;
-      }
-    }
-  }
-
-  throw new HttpError('🔒 Ảnh minh hoạ này thuộc chương bị khoá.', 403);
 }

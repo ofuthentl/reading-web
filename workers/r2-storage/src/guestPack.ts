@@ -149,7 +149,11 @@ export async function getGuestBookToc(
   env: Env,
   auth: AuthContext,
   bookId: string,
-  options?: { includeChapterIndex?: number; includeChapterId?: string },
+  options?: {
+    includeChapterIndex?: number;
+    includeChapterId?: string;
+    onRateLimited?: () => void;
+  },
 ) {
   if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
   const { packKey, manifestJson, lockedChapterKeys } = await loadGuestBookAccessAndPackBatch(
@@ -212,8 +216,15 @@ export async function getGuestBookToc(
           targetIdx,
         );
         initialChapter = { chapterIndex: targetIdx, ...encrypted };
-      } catch {
-        // Bỏ qua gọn nếu chạm rate limit/lỗi tạm để /toc vẫn trả mục lục và client xử lý lỗi chương chuẩn
+      } catch (err) {
+        // Không bao giờ nuốt 401 khi phiên Guest vừa chạm strike 10 tự đóng cửa
+        if (err instanceof HttpError && err.status === 401) {
+          throw err;
+        }
+        if (err instanceof HttpError && err.status === 429) {
+          options?.onRateLimited?.();
+        }
+        // Bỏ qua gọn lỗi 429/lỗi tạm khi đính kèm initialChapter để /toc vẫn trả mục lục và client xử lý lỗi chương chuẩn
       }
     }
   }

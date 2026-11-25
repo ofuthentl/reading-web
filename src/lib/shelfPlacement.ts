@@ -8,6 +8,12 @@ const UNKNOWN_AUTHOR = 'Không rõ tác giả';
 const VOL_CORE_WORD =
   '(?:vol(?:ume)?|tập|tap|quyển|quyen|chương|chuong|phần|phan|màn|man|hồi|hoi|book|part|act|arc|ep(?:isode)?)';
 
+const VOL_STRICT_WORD =
+  '(?:vol(?:ume)?|tập|quyển|quyen|chương|chuong|phần|phan|màn|hồi|hoi|ep(?:isode)?)';
+const VOL_LETTER_WORD = '(?:vol(?:ume)?|tập|quyển|phần)';
+const VOL_EN_WORD = '(?:book|part|act|arc)';
+const VOL_UNACCENTED_DIGIT_WORD = '(?:man|tap)';
+
 const SPECIAL_VOL_PREFIX =
   '(?:ss|ex|sp|ova|oad|extra|special|bonus)';
 
@@ -15,10 +21,24 @@ const SPECIAL_VOL_PREFIX =
 export const VALID_ROMAN_NUMERAL =
   '(?:XX|XIX|XVIII|XVII|XVI|XV|XIV|XIII|XII|XI|IX|VIII|VII|VI|IV|III|II|X|V|I)';
 
-const VOL_NUMBER_OR_PART =
-  `(?:\\d+(?:[.,]\\d+)?(?:\\s*[-–—~]\\s*\\d+(?:[.,]\\d+)?)?|${VALID_ROMAN_NUMERAL}|thượng|thuong|trung|hạ|ha|đầu|dau|cuối|cuoi)`;
+// Số La Mã >= 2 ký tự (II..XX) dùng riêng cho từ tiếng Anh `Book`/`Part`/`Act`/`Arc` để không cắt nhầm `"Book I ..."` / `"Man I ..."`
+const MULTI_ROMAN_NUMERAL =
+  '(?:XX|XIX|XVIII|XVII|XVI|XV|XIV|XIII|XII|XI|IX|VIII|VII|VI|IV|III|II)';
 
-const VOL_STD_UNIT = `${VOL_CORE_WORD}\\.?\\s*(?:${VOL_NUMBER_OR_PART}|[a-z]|ex|ss|sp|ova|oad|bonus|extra|special)(?:\\s+${SPECIAL_VOL_PREFIX}(?:\\s*\\d+(?:[.,]\\d+)?)?)?`;
+const VOL_DIGIT_OR_RANGE = '\\d+(?:[.,]\\d+)?(?:\\s*[-–—~]\\s*\\d+(?:[.,]\\d+)?)?';
+const VOL_VN_PART = '(?:thượng|thuong|trung|hạ|ha|đầu|dau|cuối|cuoi)';
+const VOL_SPECIAL_SUFFIX = '(?:ex|ss|sp|ova|oad|bonus|extra|special)';
+const VOL_OPT_TRAILING_SPECIAL = `(?:\\s+${SPECIAL_VOL_PREFIX}(?:\\s*\\d+(?:[.,]\\d+)?)?)?`;
+
+const VOL_NUMBER_OR_PART = `(?:${VOL_DIGIT_OR_RANGE}|${VALID_ROMAN_NUMERAL}|${VOL_VN_PART})`;
+
+// Tách rạch ròi từ rõ nghĩa vs từ dễ trùng tiếng Anh (`Man I`, `Book a`, `Part a`, `Tap a`)
+const VOL_STD_STRICT = `${VOL_STRICT_WORD}\\.?\\s*(?:${VOL_NUMBER_OR_PART}|${VOL_SPECIAL_SUFFIX})${VOL_OPT_TRAILING_SPECIAL}`;
+const VOL_STD_LETTER = `${VOL_LETTER_WORD}\\.?\\s*[a-z]${VOL_OPT_TRAILING_SPECIAL}`;
+const VOL_STD_EN = `${VOL_EN_WORD}\\.?\\s*(?:${VOL_DIGIT_OR_RANGE}|${MULTI_ROMAN_NUMERAL}|${VOL_SPECIAL_SUFFIX})${VOL_OPT_TRAILING_SPECIAL}`;
+const VOL_STD_DIGIT_ONLY = `${VOL_UNACCENTED_DIGIT_WORD}\\.?\\s*(?:${VOL_DIGIT_OR_RANGE}|${VOL_VN_PART}|${VOL_SPECIAL_SUFFIX})${VOL_OPT_TRAILING_SPECIAL}`;
+
+const VOL_STD_UNIT = `(?:${VOL_STD_STRICT}|${VOL_STD_LETTER}|${VOL_STD_EN}|${VOL_STD_DIGIT_ONLY})`;
 const VOL_PREFIXED_UNIT = `${SPECIAL_VOL_PREFIX}\\.?\\s+${VOL_CORE_WORD}\\.?\\s*${VOL_NUMBER_OR_PART}`;
 const VOL_SPECIAL_NUMBERED = `${SPECIAL_VOL_PREFIX}\\.?\\s*\\d+(?:[.,]\\d+)?(?:\\s*[-–—~]\\s*\\d+(?:[.,]\\d+)?)?`;
 const VOL_SHORT_PREFIX = '(?:[chv]|#)\\.?\\s*\\d+(?:[.,]\\d+)?';

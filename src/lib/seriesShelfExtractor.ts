@@ -3,6 +3,7 @@ import {
   cleanAuthorCandidate,
   isNonAuthorMetadataNoise,
   isPlausibleAuthorValue,
+  isReleaseMetadataNoise,
   isTranslatedSubtitleForSeries,
 } from '@/lib/authorHeuristics';
 import {
@@ -166,11 +167,12 @@ export function parseFileMetadata(fileName: string): {
   }
 
   const titleParts = [cleanShelfLabel(segments[0]) || segments[0], ...segments.slice(1, lastVolIdx + 1)];
-  // Loại bỏ các vế rác nhóm dịch/định dạng đứng cuối (VD `... - Furumiya Kuji - [Hako] - Full`)
+  // Chỉ loại bỏ vế rác nhóm dịch/định dạng đứng cuối (VD `[Hako]`, `Sonako`, `Calibre`, `Full`, URL);
+  // tuyệt đối giữ lại phụ đề tập hợp lệ (chứa `?!…:`, chữ số, `after the end`...) vào `titleParts`.
   const trailingSegments = segments.slice(lastVolIdx + 1);
   while (
     trailingSegments.length > 0 &&
-    isNonAuthorMetadataNoise(trailingSegments[trailingSegments.length - 1])
+    isReleaseMetadataNoise(trailingSegments[trailingSegments.length - 1])
   ) {
     trailingSegments.pop();
   }
@@ -179,7 +181,7 @@ export function parseFileMetadata(fileName: string): {
   while (authorIndex < trailingSegments.length) {
     const seg = trailingSegments[authorIndex];
     const isLast = authorIndex === trailingSegments.length - 1;
-    if (isNonAuthorMetadataNoise(seg)) {
+    if (isReleaseMetadataNoise(seg)) {
       authorIndex += 1;
       continue;
     }
@@ -187,6 +189,7 @@ export function parseFileMetadata(fileName: string): {
     const afterBareVol = lastVolIdx > 0 || titleEndsWithBareVolume(titleParts[titleParts.length - 1] || '');
     if (
       !isLast ||
+      isNonAuthorMetadataNoise(seg) ||
       isLikelyVolumeSubtitle(seg) ||
       !isPlausibleAuthorValue(seg) ||
       (afterBareVol && isTranslatedSubtitleForSeries(currentTitleStr, seg))
@@ -208,8 +211,13 @@ export function parseFileMetadata(fileName: string): {
   return { title, author, shelf, extension };
 }
 
+export function normalizeBookTitleDuplicateKey(title: string): string {
+  return title.normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi');
+}
+
 export function bookDuplicateKey(title: string, author: string): string {
-  return `${title.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi')}::${author
+  return `${normalizeBookTitleDuplicateKey(title)}::${author
+    .normalize('NFC')
     .trim()
     .replace(/\s+/g, ' ')
     .toLocaleLowerCase('vi')}`;

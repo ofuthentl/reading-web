@@ -1,6 +1,6 @@
 import { type Dispatch, type MutableRefObject, type SetStateAction, useCallback } from 'react';
 import type { AuthRole, Book, ReadingProgress } from '@/types';
-import { clearReadingProgress, saveReadingProgress } from '@/lib/api';
+import { clearReadingProgress, isAuthError, saveReadingProgress } from '@/lib/api';
 import { bumpKeyVersion, toggleSetValue } from '@/lib/libraryStoreHelpers';
 import {
   type ShelfPrefsState,
@@ -12,7 +12,6 @@ import type { ToastType } from '@/hooks/useToast';
 
 export interface UseLibraryUserActionsOptions {
   sessionRole: AuthRole;
-  progress: Record<string, ReadingProgress>;
   progressRef: MutableRefObject<Record<string, ReadingProgress>>;
   toggleVerRef: MutableRefObject<Map<string, number>>;
   setProgress: Dispatch<SetStateAction<Record<string, ReadingProgress>>>;
@@ -26,7 +25,6 @@ export interface UseLibraryUserActionsOptions {
 
 export function useLibraryUserActions({
   sessionRole,
-  progress,
   progressRef,
   toggleVerRef,
   setProgress,
@@ -39,6 +37,7 @@ export function useLibraryUserActions({
 }: UseLibraryUserActionsOptions) {
   const handleProgressUpdated = useCallback(
     (bookId: string, nextProgress: ReadingProgress, readingDeltaSec = 0) => {
+      bumpKeyVersion(toggleVerRef.current, `progress:${bookId}`);
       const wasCompleted = Boolean(progressRef.current[bookId]?.completed);
       if (!wasCompleted && nextProgress.completed) {
         void import('@/lib/confettiBurst').then((m) => m.triggerConfettiBurst()).catch(() => undefined);
@@ -59,7 +58,7 @@ export function useLibraryUserActions({
         };
       });
     },
-    [progressRef, setProgress],
+    [progressRef, setProgress, toggleVerRef],
   );
 
   const handleTogglePlanToRead = useCallback(
@@ -78,7 +77,10 @@ export function useLibraryUserActions({
       void import('@/lib/catalogApi')
         .then((m) => m.setPlanToReadShelf(shelfName, nextPlanToRead))
         .catch((err) => {
-          if (toggleVerRef.current.get(verKey) !== ver) return;
+          if (toggleVerRef.current.get(verKey) !== ver) {
+            if (isAuthError(err)) onApiError(err, 'Phiên đăng nhập đã hết hạn.');
+            return;
+          }
           setPlanToReadShelfKeys((prev) => toggleSetValue(prev, key, !nextPlanToRead));
           onApiError(err, 'Không thể cập nhật danh sách Đọc sau.');
         });
@@ -102,7 +104,10 @@ export function useLibraryUserActions({
       void import('@/lib/catalogApi')
         .then((m) => m.setPlanToReadBook(bookId, nextPlanToRead))
         .catch((err) => {
-          if (toggleVerRef.current.get(verKey) !== ver) return;
+          if (toggleVerRef.current.get(verKey) !== ver) {
+            if (isAuthError(err)) onApiError(err, 'Phiên đăng nhập đã hết hạn.');
+            return;
+          }
           setPlanToReadBookIds((prev) => toggleSetValue(prev, bookId, !nextPlanToRead));
           onApiError(err, 'Không thể cập nhật Đọc sau cho tập sách.');
         });
@@ -132,7 +137,10 @@ export function useLibraryUserActions({
         'info',
       );
       void setShelfFavorite(shelfName, nextFavorite).catch((err) => {
-        if (toggleVerRef.current.get(verKey) !== ver) return;
+        if (toggleVerRef.current.get(verKey) !== ver) {
+          if (isAuthError(err)) onApiError(err, 'Phiên đăng nhập đã hết hạn.');
+          return;
+        }
         setShelfPrefs((prev) => patchShelfFavorite(prev, shelfName, !nextFavorite));
         onApiError(err, 'Không thể cập nhật kệ yêu thích.');
       });
@@ -142,7 +150,9 @@ export function useLibraryUserActions({
 
   const handleMarkBookCompleted = useCallback(
     (book: Book) => {
-      const existing = progress[book.id];
+      const existing = progressRef.current[book.id];
+      const verKey = `progress:${book.id}`;
+      const ver = bumpKeyVersion(toggleVerRef.current, verKey);
       const nextProgress: ReadingProgress = {
         chapterId: existing?.chapterId || 'manual-complete',
         chapterIndex: Math.max(0, (existing?.totalChapters ?? 1) - 1),
@@ -151,6 +161,7 @@ export function useLibraryUserActions({
         scrollRatio: 1,
         scrollTop: existing?.scrollTop ?? 0,
         completed: true,
+        bookPercent: 100,
         ...(existing?.readingSeconds ? { readingSeconds: existing.readingSeconds } : {}),
         ...(existing?.rereadCount ? { rereadCount: existing.rereadCount } : {}),
         updatedAt: Date.now(),
@@ -161,6 +172,10 @@ export function useLibraryUserActions({
       }
       addToast(`Đã đánh dấu hoàn thành "${book.title}".`, 'success');
       void saveReadingProgress(book.id, nextProgress).catch((err) => {
+        if (toggleVerRef.current.get(verKey) !== ver) {
+          if (isAuthError(err)) onApiError(err, 'Phiên đăng nhập đã hết hạn.');
+          return;
+        }
         setProgress((prev) => {
           const restored = { ...prev };
           if (existing) restored[book.id] = existing;
@@ -170,12 +185,14 @@ export function useLibraryUserActions({
         onApiError(err, 'Không thể lưu trạng thái hoàn thành.');
       });
     },
-    [addToast, onApiError, progress, setProgress],
+    [addToast, onApiError, progressRef, setProgress, toggleVerRef],
   );
 
   const handleStartRereadBook = useCallback(
     (book: Book) => {
-      const existing = progress[book.id];
+      const existing = progressRef.current[book.id];
+      const verKey = `progress:${book.id}`;
+      const ver = bumpKeyVersion(toggleVerRef.current, verKey);
       const nextRereadCount = Math.min(999, (existing?.rereadCount ?? 0) + 1);
       const nextProgress: ReadingProgress = {
         chapterId: 'reread-start',
@@ -184,6 +201,7 @@ export function useLibraryUserActions({
         scrollRatio: 0,
         scrollTop: 0,
         completed: false,
+        bookPercent: 0,
         ...(existing?.readingSeconds ? { readingSeconds: existing.readingSeconds } : {}),
         rereadCount: nextRereadCount,
         updatedAt: Date.now(),
@@ -194,6 +212,10 @@ export function useLibraryUserActions({
         'success',
       );
       void saveReadingProgress(book.id, nextProgress).catch((err) => {
+        if (toggleVerRef.current.get(verKey) !== ver) {
+          if (isAuthError(err)) onApiError(err, 'Phiên đăng nhập đã hết hạn.');
+          return;
+        }
         setProgress((prev) => {
           const restored = { ...prev };
           if (existing) restored[book.id] = existing;
@@ -203,12 +225,14 @@ export function useLibraryUserActions({
         onApiError(err, 'Không thể lưu trạng thái đọc lại.');
       });
     },
-    [addToast, onApiError, progress, setProgress],
+    [addToast, onApiError, progressRef, setProgress, toggleVerRef],
   );
 
   const handleResetBookProgress = useCallback(
     (book: Book) => {
-      const previous = progress[book.id];
+      const previous = progressRef.current[book.id];
+      const verKey = `progress:${book.id}`;
+      const ver = bumpKeyVersion(toggleVerRef.current, verKey);
       setProgress((prev) => {
         const next = { ...prev };
         delete next[book.id];
@@ -216,13 +240,17 @@ export function useLibraryUserActions({
       });
       addToast(`Đã đặt lại tiến độ đọc "${book.title}".`, 'info');
       void clearReadingProgress(book.id).catch((err) => {
+        if (toggleVerRef.current.get(verKey) !== ver) {
+          if (isAuthError(err)) onApiError(err, 'Phiên đăng nhập đã hết hạn.');
+          return;
+        }
         if (previous) {
           setProgress((prev) => ({ ...prev, [book.id]: previous }));
         }
         onApiError(err, 'Không thể xoá tiến độ đọc.');
       });
     },
-    [addToast, onApiError, progress, setProgress],
+    [addToast, onApiError, progressRef, setProgress, toggleVerRef],
   );
 
   return {

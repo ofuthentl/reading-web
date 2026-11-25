@@ -31,6 +31,9 @@ function chunkItems<T>(items: T[], chunkSize: number): T[][] {
   return chunks;
 }
 
+// Giới hạn chunk <= 40 để lệnh DELETE shelf_relations (bind 2 lần = 80 params) luôn dưới trần 100 bind params D1
+const ORPHAN_SHELF_CHUNK_SIZE = 40;
+
 export async function cleanupOrphanShelves(
   db: D1Database,
   candidateShelfKeys: ReadonlyArray<string>,
@@ -50,7 +53,7 @@ export async function cleanupOrphanShelves(
   if (orphanKeys.length === 0) return;
 
   // QĐ-4 (4A): Dọn sạch dữ liệu cấp kệ khi kệ không còn tập sách nào trong kho
-  for (const chunk of chunkItems(orphanKeys, BULK_D1_CHUNK_SIZE)) {
+  for (const chunk of chunkItems(orphanKeys, ORPHAN_SHELF_CHUNK_SIZE)) {
     const placeholders = chunk.map(() => '?').join(', ');
     await Promise.all([
       db.prepare(`DELETE FROM shelf_prefs WHERE shelf_key IN (${placeholders})`).bind(...chunk).run().catch(() => undefined),

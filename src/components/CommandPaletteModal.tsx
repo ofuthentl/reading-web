@@ -22,6 +22,7 @@ import type {
 } from '@/types';
 import type { BookOpenJumpTarget } from '@/hooks/useBookReader';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
+import { isAuthError } from '@/lib/authSession';
 import {
   PALETTE_GROUP_LABELS,
   type PaletteActionSpec,
@@ -50,6 +51,7 @@ export interface CommandPaletteModalProps {
   onOpenLibraryHealth?: () => void;
   onOpenCacheManager?: () => void;
   onUploadClick?: () => void;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
 
 const GROUP_ICONS: Record<PaletteGroupKind, typeof Library> = {
@@ -80,6 +82,7 @@ export function CommandPaletteModal({
   onOpenLibraryHealth,
   onOpenCacheManager,
   onUploadClick,
+  onApiError,
 }: CommandPaletteModalProps) {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -104,9 +107,14 @@ export function CommandPaletteModal({
       .then((items) => {
         if (!controller.signal.aborted) setHighlights(items);
       })
-      .catch(() => undefined);
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        if (isAuthError(err)) {
+          onApiError?.(err, 'Phiên đăng nhập đã hết hạn.');
+        }
+      });
     return () => controller.abort();
-  }, [books, open]);
+  }, [books, onApiError, open]);
 
   const actions = useMemo<PaletteActionSpec[]>(() => {
     const list: PaletteActionSpec[] = [

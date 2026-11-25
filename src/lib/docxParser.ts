@@ -324,6 +324,7 @@ async function renderParagraphBlock(pEl: Element, ctx: DocxRenderContext): Promi
 async function renderTableBlock(tblEl: Element, ctx: DocxRenderContext): Promise<DocxBlock | null> {
   const rowHtmls: string[] = [];
   const textParts: string[] = [];
+  const noteRefs: Array<{ key: string; label: string; text: string }> = [];
   let hasMedia = false;
 
   for (const tr of Array.from(tblEl.children)) {
@@ -337,7 +338,7 @@ async function renderTableBlock(tblEl: Element, ctx: DocxRenderContext): Promise
       const cellParts: string[] = [];
       for (const child of Array.from(tc.children)) {
         if (child.localName === 'p') {
-          const rendered = await renderParagraphContent(child, ctx);
+          const rendered = await renderParagraphContent(child, ctx, noteRefs);
           if (rendered.html) cellParts.push(rendered.html);
           if (rendered.text) textParts.push(rendered.text);
           if (rendered.hasMedia) hasMedia = true;
@@ -347,6 +348,7 @@ async function renderTableBlock(tblEl: Element, ctx: DocxRenderContext): Promise
             cellParts.push(nested.html);
             if (nested.text) textParts.push(nested.text);
             if (nested.hasMedia) hasMedia = true;
+            if (nested.noteRefs) noteRefs.push(...nested.noteRefs);
           }
         }
       }
@@ -365,6 +367,7 @@ async function renderTableBlock(tblEl: Element, ctx: DocxRenderContext): Promise
     isTitle: false,
     hasMedia,
     listKind: null,
+    ...(noteRefs.length > 0 ? { noteRefs } : {}),
   };
 }
 
@@ -467,7 +470,7 @@ export async function parseDocxZip(
         await mediaCtrl.ensureChapterMedia(chapters, initialIdx);
         return {
           chapters,
-          ensureChapterMedia: (idx) => mediaCtrl.ensureChapterMedia(chapters, idx),
+          ensureChapterMedia: (idx, opts) => mediaCtrl.ensureChapterMedia(chapters, idx, opts),
           resolveMediaUrl: mediaCtrl.resolveMediaUrl,
           dispose: mediaCtrl.dispose,
         };

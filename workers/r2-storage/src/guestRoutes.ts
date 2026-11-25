@@ -37,22 +37,35 @@ export async function tryHandleGuestRoutes(
     const includeChapterIndex =
       rawIncludeIdx !== null && /^\d+$/.test(rawIncludeIdx) ? Number(rawIncludeIdx) : undefined;
     const includeChapterId = url.searchParams.get('includeChapterId')?.trim() || undefined;
-    const toc = await getGuestBookToc(
-      env,
-      auth,
-      guestTocMatch[1],
-      includeChapterIndex !== undefined || includeChapterId
-        ? { includeChapterIndex, includeChapterId }
-        : undefined,
-    );
-    if (toc.initialChapter) {
-      scheduleUsageEvent(ctx, env.DB, {
-        metric: 'guest_chapter_reads',
-        readerScope: auth.role === 'owner' ? 'owner' : `guest:${auth.userId}`,
-        readerRole: auth.role,
-      });
+    try {
+      const toc = await getGuestBookToc(
+        env,
+        auth,
+        guestTocMatch[1],
+        includeChapterIndex !== undefined || includeChapterId
+          ? {
+              includeChapterIndex,
+              includeChapterId,
+              onRateLimited: () => {
+                scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
+              },
+            }
+          : undefined,
+      );
+      if (toc.initialChapter) {
+        scheduleUsageEvent(ctx, env.DB, {
+          metric: 'guest_chapter_reads',
+          readerScope: auth.role === 'owner' ? 'owner' : `guest:${auth.userId}`,
+          readerRole: auth.role,
+        });
+      }
+      return jsonResponse(toc, 200, origin);
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 429) {
+        scheduleUsageEvent(ctx, env.DB, { metric: 'rate_limit_hits' });
+      }
+      throw err;
     }
-    return jsonResponse(toc, 200, origin);
   }
 
   const guestIllustrationsMatch = normalizedPath.match(

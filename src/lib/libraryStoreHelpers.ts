@@ -4,6 +4,7 @@ import type {
   CustomCollection,
   ShelfRatingSummary,
   ShelfRelation,
+  StorageStats,
 } from '@/types';
 import { toShelfPrefKey } from '@/lib/shelfPrefs';
 
@@ -167,5 +168,54 @@ export function pruneDeletedBookAccess(
     if (deletedIds.has(id)) changed = true;
     else next[id] = summary;
   }
+  return changed ? next : prev;
+}
+
+export function mergeUploadStorageStats(
+  prev: StorageStats | null,
+  incoming: StorageStats,
+): StorageStats {
+  if (!prev) return incoming;
+  const usedBytes = Math.max(prev.usedBytes, incoming.usedBytes);
+  const limitBytes = incoming.limitBytes || prev.limitBytes;
+  const bookCount = Math.max(prev.bookCount, incoming.bookCount);
+  return {
+    usedBytes,
+    limitBytes,
+    remainingBytes: Math.max(0, limitBytes - usedBytes),
+    bookCount,
+  };
+}
+
+export function getAliveShelfKeys(books: readonly Book[]): Set<string> {
+  return new Set(books.map((b) => toShelfPrefKey(b.shelf || 'Kho chưa phân loại')));
+}
+
+export function pruneOrphanPlanToReadShelves(
+  prev: Set<string>,
+  aliveShelfKeys: ReadonlySet<string>,
+): Set<string> {
+  let changed = false;
+  const next = new Set<string>();
+  for (const k of prev) {
+    if (aliveShelfKeys.has(k)) next.add(k);
+    else changed = true;
+  }
+  return changed ? next : prev;
+}
+
+export function pruneOrphanCollectionShelves(
+  prev: CustomCollection[],
+  aliveShelfKeys: ReadonlySet<string>,
+): CustomCollection[] {
+  let changed = false;
+  const next = prev.map((col) => {
+    const filtered = col.shelfKeys.filter((k) => aliveShelfKeys.has(toShelfPrefKey(k)));
+    if (filtered.length !== col.shelfKeys.length) {
+      changed = true;
+      return { ...col, shelfKeys: filtered };
+    }
+    return col;
+  });
   return changed ? next : prev;
 }

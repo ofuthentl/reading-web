@@ -6,7 +6,7 @@ import { SpineBookshelfSlot } from '@/components/SpineBookshelfSlot';
 import '@/styles/bookshelf.css';
 
 const HOVER_INTENT_MS = 40;
-const COMPACT_BREAKPOINT_PX = 588;
+const COMPACT_BREAKPOINT_PX = 640;
 
 function computeSpineWidth(bookCount: number, compact: boolean): number {
   if (compact) {
@@ -18,7 +18,7 @@ function computeSpineWidth(bookCount: number, compact: boolean): number {
 function resolveMaxItemsPerRow(containerWidth: number): number {
   if (containerWidth >= 1020) return 12;
   if (containerWidth >= 800) return 9;
-  if (containerWidth >= COMPACT_BREAKPOINT_PX) return 6;
+  if (containerWidth >= 520) return 6;
   return 4;
 }
 

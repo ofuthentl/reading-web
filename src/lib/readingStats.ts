@@ -14,10 +14,6 @@ export interface ReaderRpgStats {
   xpInLevel: number;
   xpForNextLevel: number;
   xpPercent: number;
-  hp: number;
-  maxHp: number;
-  mana: number;
-  maxMana: number;
   completedBooks: number;
   inProgressBooks: number;
   readPages: number;
@@ -97,19 +93,6 @@ export function computeReaderRpgStats(
   }
 
   const xpPercent = Math.min(100, Math.round((remainingXp / Math.max(1, xpForNextLevel)) * 100));
-  const maxHp = 100 + (level - 1) * 20;
-  const hp = maxHp;
-  const maxMana = 60 + (level - 1) * 15;
-  const momentumRatio = Math.min(
-    1,
-    completedBooks > 0
-      ? 0.72 + Math.min(0.28, ((readPages % 400) / 400) * 0.28 + inProgressBooks * 0.08)
-      : (readPages / 150) * 0.45 + inProgressBooks * 0.12,
-  );
-  const mana = Math.min(
-    maxMana,
-    Math.max(Math.round(maxMana * 0.55), Math.round(maxMana * (0.55 + 0.45 * momentumRatio))),
-  );
 
   return {
     level,
@@ -117,10 +100,6 @@ export function computeReaderRpgStats(
     xpInLevel: remainingXp,
     xpForNextLevel,
     xpPercent,
-    hp,
-    maxHp,
-    mana,
-    maxMana,
     completedBooks,
     inProgressBooks,
     readPages,

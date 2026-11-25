@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
   BarChart3,
@@ -18,6 +18,7 @@ import {
 import type { AuthRole, LibraryTab, StorageStats } from '@/types';
 import { HARD_LIMIT_BYTES, formatBytes, isCloudMode } from '@/lib/api';
 import { formatRemainingSessionTime } from '@/lib/authSession';
+import { LibraryMobileOwnerMenu } from '@/components/LibraryMobileOwnerMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import type { UiTheme } from '@/hooks/useTheme';
 
@@ -80,6 +81,22 @@ export function LibraryHeader({
 }: LibraryHeaderProps) {
   const isOwner = sessionRole === 'owner';
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const [headerHeight, setHeaderHeight] = useState<number | null>(null);
+  const headerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const sync = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (h > 0) setHeaderHeight((prev) => (prev === h ? prev : h));
+    };
+    sync();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(sync);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (isOwner || sessionExpiresAt === null) return;
@@ -128,7 +145,11 @@ export function LibraryHeader({
     });
 
   return (
-    <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur-sm transition-colors duration-200 dark:shadow-[0_1px_0_rgba(241,241,241,0.04)]">
+    <>
+      <header
+        ref={headerRef}
+        className="fixed inset-x-0 top-0 z-30 border-b border-line bg-surface transition-colors duration-200 md:bg-surface/95 md:backdrop-blur-sm dark:shadow-[0_1px_0_rgba(241,241,241,0.04)]"
+      >
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-3.5 py-3 sm:px-5">
         {/* Thương hiệu + Thanh tab điều hướng (Desktop) */}
         <div className="flex min-w-0 items-center gap-2.5 sm:shrink-0 sm:gap-3 lg:gap-4">
@@ -302,6 +323,19 @@ export function LibraryHeader({
             </button>
           )}
 
+          {isOwner && (
+            <LibraryMobileOwnerMenu
+              bookCount={bookCount}
+              selectionMode={selectionMode}
+              showSelectionToggle={showSelectionToggle}
+              unprotectedBookCount={unprotectedBookCount}
+              onOpenCacheManager={onOpenCacheManager}
+              onOpenLibraryHealth={onOpenLibraryHealth}
+              onProtectionClick={onProtectionClick}
+              onToggleSelectionMode={onToggleSelectionMode}
+            />
+          )}
+
           <ThemeToggle theme={theme} onCycle={onCycleTheme} />
 
           {onOpenStats && bookCount > 0 && (
@@ -343,7 +377,7 @@ export function LibraryHeader({
       {showTabs && onChangeTab && (
         <nav
           aria-label="Điều hướng thư viện"
-          className="border-t border-line/70 bg-surface/90 px-4 py-1.5 md:hidden"
+          className="border-t border-line/70 bg-surface px-4 py-1.5 md:hidden"
         >
           <div className="mx-auto grid max-w-7xl grid-cols-3 gap-1.5 rounded-xl border border-line bg-canvas p-1">
             {renderTabButtons(true)}
@@ -376,6 +410,12 @@ export function LibraryHeader({
           </div>
         </div>
       )}
-    </header>
+      </header>
+      <div
+        aria-hidden="true"
+        className={showTabs ? 'h-[106px] md:h-[65px]' : 'h-[57px] sm:h-[65px]'}
+        style={headerHeight !== null ? { height: `${headerHeight}px` } : undefined}
+      />
+    </>
   );
 }

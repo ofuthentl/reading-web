@@ -29,6 +29,7 @@ const VALID_CANONICAL_TYPES = new Set<CanonicalShelfRelationType>([
 ]);
 
 const MAX_RELATIONS_PER_SHELF = 30;
+const RELATION_INSERT_CHUNK_SIZE = 20; // 20 * 4 = 80 <= 80 params (dưới trần 100 bind params D1)
 const ensuredRelationsDbs = new WeakSet<D1Database>();
 
 export async function ensureShelfRelationsTable(db: D1Database): Promise<void> {
@@ -165,14 +166,33 @@ export async function upsertShelfRelation(db: D1Database, rawBody: unknown) {
     throw new HttpError('Cả hai bộ truyện cần liên kết đều phải tồn tại trong thư viện.', 404);
   }
 
-  const countRow = await db
-    .prepare(
-      'SELECT COUNT(*) AS cnt FROM shelf_relations WHERE source_shelf_key = ? OR target_shelf_key = ?',
-    )
-    .bind(sourceKey, sourceKey)
-    .first<{ cnt: number }>();
-  if (Number(countRow?.cnt ?? 0) >= MAX_RELATIONS_PER_SHELF) {
-    throw new HttpError(`Mỗi bộ truyện tối đa ${MAX_RELATIONS_PER_SHELF} liên kết.`, 400);
+  const [existingEdgeRes, srcCountRes, dstCountRes] = await db.batch([
+    db
+      .prepare(
+        `SELECT 1 AS exists_flag FROM shelf_relations
+         WHERE (source_shelf_key = ? AND target_shelf_key = ?)
+            OR (source_shelf_key = ? AND target_shelf_key = ?)
+         LIMIT 1`,
+      )
+      .bind(sourceKey, targetKey, targetKey, sourceKey),
+    db
+      .prepare(
+        'SELECT COUNT(*) AS cnt FROM shelf_relations WHERE source_shelf_key = ? OR target_shelf_key = ?',
+      )
+      .bind(sourceKey, sourceKey),
+    db
+      .prepare(
+        'SELECT COUNT(*) AS cnt FROM shelf_relations WHERE source_shelf_key = ? OR target_shelf_key = ?',
+      )
+      .bind(targetKey, targetKey),
+  ]);
+  const alreadyExists = Boolean(existingEdgeRes.results?.[0]);
+  if (!alreadyExists) {
+    const srcCount = Number((srcCountRes.results?.[0] as { cnt?: number } | undefined)?.cnt ?? 0);
+    const dstCount = Number((dstCountRes.results?.[0] as { cnt?: number } | undefined)?.cnt ?? 0);
+    if (srcCount >= MAX_RELATIONS_PER_SHELF || dstCount >= MAX_RELATIONS_PER_SHELF) {
+      throw new HttpError(`Mỗi bộ truyện tối đa ${MAX_RELATIONS_PER_SHELF} liên kết.`, 400);
+    }
   }
 
   const now = Date.now();
@@ -230,6 +250,67 @@ export async function deleteShelfRelation(
   return { ok: true, sourceShelfKey: keyA, targetShelfKey: keyB };
 }
 
+function toUnorderedPairKey(a: string, b: string): string {
+  return a < b ? `${a}\0${b}` : `${b}\0${a}`;
+}
+
+/**
+ * Tính danh sách cạnh cần chèn mới khi đổi tên/gộp kệ `oldKey` → `newKey` (D-046):
+ * - Giữ nguyên các cạnh đã tồn tại trên `newKey`, không tạo cạnh ngược chiều trùng `(A,B)` + `(B,A)`.
+ * - Chuẩn hoá lại thứ tự `same_universe` theo `localeCompare('vi') <= 0` và loại bỏ tự liên kết.
+ */
+export function computeMergedShelfRelationsOnRename(
+  rows: readonly ShelfRelationRow[],
+  oldKey: string,
+  newKey: string,
+): ShelfRelationRow[] {
+  const normOld = toShelfAccessKey(oldKey);
+  const normNew = toShelfAccessKey(newKey);
+  if (!normOld || !normNew || normOld === normNew) return [];
+
+  const occupiedPairs = new Set<string>();
+  const migratingRows: ShelfRelationRow[] = [];
+
+  for (const row of rows) {
+    const src = toShelfAccessKey(row.source_shelf_key);
+    const dst = toShelfAccessKey(row.target_shelf_key);
+    if (!src || !dst || src === dst) continue;
+    if (src === normOld || dst === normOld) {
+      migratingRows.push(row);
+    } else if (src === normNew || dst === normNew) {
+      occupiedPairs.add(toUnorderedPairKey(src, dst));
+    }
+  }
+
+  const rowsToInsert: ShelfRelationRow[] = [];
+  for (const row of migratingRows) {
+    const type = row.relation_type as CanonicalShelfRelationType;
+    if (!VALID_CANONICAL_TYPES.has(type)) continue;
+    const rawSrc = toShelfAccessKey(row.source_shelf_key);
+    const rawDst = toShelfAccessKey(row.target_shelf_key);
+    let nextSrc = rawSrc === normOld ? normNew : rawSrc;
+    let nextDst = rawDst === normOld ? normNew : rawDst;
+    if (!nextSrc || !nextDst || nextSrc === nextDst) continue;
+
+    if (type === 'same_universe' && nextSrc.localeCompare(nextDst, 'vi') > 0) {
+      [nextSrc, nextDst] = [nextDst, nextSrc];
+    }
+
+    const pairKey = toUnorderedPairKey(nextSrc, nextDst);
+    if (occupiedPairs.has(pairKey)) continue;
+    occupiedPairs.add(pairKey);
+
+    rowsToInsert.push({
+      source_shelf_key: nextSrc,
+      target_shelf_key: nextDst,
+      relation_type: type,
+      created_at: Number(row.created_at ?? 0),
+    });
+  }
+
+  return rowsToInsert;
+}
+
 export async function mergeShelfRelationsOnRename(
   db: D1Database,
   oldKey: string,
@@ -240,33 +321,44 @@ export async function mergeShelfRelationsOnRename(
   if (!normOld || !normNew || normOld === normNew) return;
   await ensureShelfRelationsTable(db);
 
-  await db.batch([
-    // Xoá trước bất kỳ cạnh trực tiếp nào nối oldKey <-> newKey (vì gộp 2 bộ thành 1 không giữ tự liên kết)
+  const existingRes = await db
+    .prepare(
+      `SELECT source_shelf_key, target_shelf_key, relation_type, created_at
+       FROM shelf_relations
+       WHERE source_shelf_key IN (?, ?) OR target_shelf_key IN (?, ?)
+       ORDER BY created_at ASC`,
+    )
+    .bind(normOld, normNew, normOld, normNew)
+    .all<ShelfRelationRow>();
+
+  const rowsToInsert = computeMergedShelfRelationsOnRename(
+    existingRes.results || [],
+    normOld,
+    normNew,
+  );
+
+  const statements: D1PreparedStatement[] = [
     db
-      .prepare(
-        `DELETE FROM shelf_relations
-         WHERE (source_shelf_key = ? AND target_shelf_key = ?)
-            OR (source_shelf_key = ? AND target_shelf_key = ?)`,
-      )
-      .bind(normOld, normNew, normNew, normOld),
-    db
-      .prepare(
-        `INSERT OR IGNORE INTO shelf_relations (source_shelf_key, target_shelf_key, relation_type, created_at)
-         SELECT ?, target_shelf_key, relation_type, created_at
-         FROM shelf_relations
-         WHERE source_shelf_key = ? AND target_shelf_key != ?`,
-      )
-      .bind(normNew, normOld, normNew),
-    db.prepare('DELETE FROM shelf_relations WHERE source_shelf_key = ?').bind(normOld),
-    db
-      .prepare(
-        `INSERT OR IGNORE INTO shelf_relations (source_shelf_key, target_shelf_key, relation_type, created_at)
-         SELECT source_shelf_key, ?, relation_type, created_at
-         FROM shelf_relations
-         WHERE target_shelf_key = ? AND source_shelf_key != ?`,
-      )
-      .bind(normNew, normOld, normNew),
-    db.prepare('DELETE FROM shelf_relations WHERE target_shelf_key = ?').bind(normOld),
-    db.prepare('DELETE FROM shelf_relations WHERE source_shelf_key = target_shelf_key'),
-  ]);
+      .prepare('DELETE FROM shelf_relations WHERE source_shelf_key = ? OR target_shelf_key = ?')
+      .bind(normOld, normOld),
+  ];
+
+  for (let i = 0; i < rowsToInsert.length; i += RELATION_INSERT_CHUNK_SIZE) {
+    const chunk = rowsToInsert.slice(i, i + RELATION_INSERT_CHUNK_SIZE);
+    const valuesSql = chunk.map(() => '(?, ?, ?, ?)').join(', ');
+    const params: unknown[] = [];
+    for (const r of chunk) {
+      params.push(r.source_shelf_key, r.target_shelf_key, r.relation_type, r.created_at);
+    }
+    statements.push(
+      db
+        .prepare(
+          `INSERT OR IGNORE INTO shelf_relations (source_shelf_key, target_shelf_key, relation_type, created_at)
+           VALUES ${valuesSql}`,
+        )
+        .bind(...params),
+    );
+  }
+
+  await db.batch(statements);
 }

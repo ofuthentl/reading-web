@@ -62,15 +62,25 @@ export function useGuestChapterStream({
       ? initialChapter.data
       : null;
 
-  const [chapterData, setChapterData] = useState<GuestChapterPayload | null>(preseededForCurrent);
-  const [loadingChapter, setLoadingChapter] = useState(!isChapterLocked && !preseededForCurrent);
-  const [chapterError, setChapterError] = useState<string | null>(null);
-  const [chapterLocked, setChapterLocked] = useState(isChapterLocked);
+  const [streamState, setStreamState] = useState<{
+    key: string;
+    chapterData: GuestChapterPayload | null;
+    loadingChapter: boolean;
+    chapterError: string | null;
+    chapterLocked: boolean;
+  }>(() => ({
+    key: `${bookId}:${chapterIndex}`,
+    chapterData: preseededForCurrent,
+    loadingChapter: !isChapterLocked && !preseededForCurrent,
+    chapterError: null,
+    chapterLocked: isChapterLocked,
+  }));
   const [retryNonce, setRetryNonce] = useState(0);
   const [imageSizes, setImageSizes] = useState<Map<number, { width: number; height: number }>>(
     () => new Map(),
   );
 
+  const cacheBookIdRef = useRef(bookId);
   const chapterCacheRef = useRef<Map<number, GuestChapterPayload> | null>(null);
   if (!chapterCacheRef.current) {
     const initialMap = new Map<number, GuestChapterPayload>();
@@ -81,10 +91,32 @@ export function useGuestChapterStream({
   }
   const bitmapsRef = useRef<Map<number, ImageBitmap>>(new Map());
 
+  const currentKey = `${bookId}:${chapterIndex}`;
+  const isSameCacheBook = cacheBookIdRef.current === bookId;
+  const isStaleState = streamState.key !== currentKey;
+  const cachedForCurrent =
+    !isChapterLocked && isSameCacheBook
+      ? (chapterCacheRef.current.get(chapterIndex) ?? preseededForCurrent)
+      : preseededForCurrent;
+  const effectiveChapterData = isChapterLocked
+    ? null
+    : isStaleState
+      ? cachedForCurrent
+      : streamState.chapterData;
+  const effectiveLoadingChapter = isChapterLocked
+    ? false
+    : isStaleState
+      ? !cachedForCurrent
+      : streamState.loadingChapter;
+  const effectiveChapterError = isChapterLocked || isStaleState ? null : streamState.chapterError;
+  const effectiveChapterLocked = isChapterLocked || (!isStaleState && streamState.chapterLocked);
+
   // Thu hồi toàn bộ chương RAM & đóng sạch mọi ImageBitmap khi đóng sách
   useEffect(() => {
+    cacheBookIdRef.current = bookId;
     const cacheMap = chapterCacheRef.current!;
     const bitmapMap = bitmapsRef.current;
+    setImageSizes(new Map());
     return () => {
       cacheMap.clear();
       for (const bmp of bitmapMap.values()) {
@@ -96,11 +128,15 @@ export function useGuestChapterStream({
 
   // Nạp & giải mã chương hiện tại (ưu tiên cache RAM phiên 0ms không tốn lượt Token Bucket)
   useEffect(() => {
+    const reqKey = `${bookId}:${chapterIndex}`;
     if (isChapterLocked) {
-      setChapterData(null);
-      setChapterError(null);
-      setChapterLocked(true);
-      setLoadingChapter(false);
+      setStreamState({
+        key: reqKey,
+        chapterData: null,
+        loadingChapter: false,
+        chapterError: null,
+        chapterLocked: true,
+      });
       return;
     }
 
@@ -111,18 +147,24 @@ export function useGuestChapterStream({
 
     const cached = cache.get(chapterIndex);
     if (cached) {
-      setChapterData(cached);
-      setChapterError(null);
-      setChapterLocked(false);
-      setLoadingChapter(false);
+      setStreamState({
+        key: reqKey,
+        chapterData: cached,
+        loadingChapter: false,
+        chapterError: null,
+        chapterLocked: false,
+      });
       return;
     }
 
     const controller = new AbortController();
-    setLoadingChapter(true);
-    setChapterError(null);
-    setChapterLocked(false);
-    setChapterData(null);
+    setStreamState({
+      key: reqKey,
+      chapterData: null,
+      loadingChapter: true,
+      chapterError: null,
+      chapterLocked: false,
+    });
 
     void fetchGuestChapterDecrypted(bookId, chapterIndex, controller.signal)
       .then((decrypted) => {
@@ -132,8 +174,13 @@ export function useGuestChapterStream({
           if (oldestKey !== undefined) cache.delete(oldestKey);
         }
         cache.set(chapterIndex, decrypted);
-        setChapterData(decrypted);
-        setLoadingChapter(false);
+        setStreamState({
+          key: reqKey,
+          chapterData: decrypted,
+          loadingChapter: false,
+          chapterError: null,
+          chapterLocked: false,
+        });
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
@@ -142,15 +189,23 @@ export function useGuestChapterStream({
           return;
         }
         const status = (err as { status?: number } | null)?.status;
-        setLoadingChapter(false);
         if (status === 403) {
-          setChapterLocked(true);
-          setChapterError(null);
+          setStreamState({
+            key: reqKey,
+            chapterData: null,
+            loadingChapter: false,
+            chapterError: null,
+            chapterLocked: true,
+          });
           return;
         }
-        setChapterError(
-          err instanceof Error ? err.message : 'Không thể tải nội dung chương.',
-        );
+        setStreamState({
+          key: reqKey,
+          chapterData: null,
+          loadingChapter: false,
+          chapterError: err instanceof Error ? err.message : 'Không thể tải nội dung chương.',
+          chapterLocked: false,
+        });
       });
 
     return () => controller.abort();
@@ -158,23 +213,46 @@ export function useGuestChapterStream({
 
   // Nạp & giải mã trực tiếp các ảnh minh hoạ trong chương sang ImageBitmap (0 blob: URL, giới hạn LRU GPU H-04)
   useEffect(() => {
-    if (!chapterData) return;
+    if (!effectiveChapterData) return;
     const activeMediaIndices = Array.from(
       new Set(
-        chapterData.blocks
+        effectiveChapterData.blocks
           .filter((b): b is Extract<typeof b, { kind: 'img' }> => b.kind === 'img')
           .map((b) => b.mediaIndex),
       ),
     );
     const activeMediaSet = new Set(activeMediaIndices);
 
-    // Làm mới thứ tự LRU cho ảnh đã nằm sẵn trong RAM thuộc chương hiện tại
+    // Làm mới thứ tự LRU cho ảnh đã nằm sẵn trong RAM thuộc chương hiện tại và đồng bộ lại kích thước nếu rAF trước bị huỷ
+    const cachedSizes: Array<[number, { width: number; height: number }]> = [];
     for (const idx of activeMediaIndices) {
       const existing = bitmapsRef.current.get(idx);
       if (existing) {
         bitmapsRef.current.delete(idx);
         bitmapsRef.current.set(idx, existing);
+        if (existing.width > 0 && existing.height > 0) {
+          cachedSizes.push([idx, { width: existing.width, height: existing.height }]);
+        }
       }
+    }
+
+    if (cachedSizes.length > 0) {
+      setImageSizes((prev) => {
+        let changed = false;
+        for (const [idx, dims] of cachedSizes) {
+          const cur = prev.get(idx);
+          if (!cur || cur.width !== dims.width || cur.height !== dims.height) {
+            changed = true;
+            break;
+          }
+        }
+        if (!changed) return prev;
+        const next = new Map(prev);
+        for (const [idx, dims] of cachedSizes) {
+          next.set(idx, dims);
+        }
+        return next;
+      });
     }
 
     const neededIndices = activeMediaIndices.filter((idx) => !bitmapsRef.current.has(idx));
@@ -254,15 +332,15 @@ export function useGuestChapterStream({
       controller.abort();
       if (flushRaf) cancelAnimationFrame(flushRaf);
     };
-  }, [bookId, chapterData, onApiError]);
+  }, [bookId, effectiveChapterData, onApiError]);
 
   const retryChapter = () => setRetryNonce((n) => n + 1);
 
   return {
-    chapterData,
-    loadingChapter,
-    chapterError,
-    chapterLocked,
+    chapterData: effectiveChapterData,
+    loadingChapter: effectiveLoadingChapter,
+    chapterError: effectiveChapterError,
+    chapterLocked: effectiveChapterLocked,
     imageSizes,
     bitmapsRef,
     retryChapter,

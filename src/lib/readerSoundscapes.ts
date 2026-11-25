@@ -199,16 +199,30 @@ export function createReaderSoundscapeEngine(
     return deck;
   };
 
+  const rampTrackGain = (gain: AudioParam, now: number, targetValue: number, durationSec: number) => {
+    const safeTarget = Math.max(0.0001, targetValue);
+    try {
+      if (typeof gain.cancelAndHoldAtTime === 'function') {
+        gain.cancelAndHoldAtTime(now);
+      } else {
+        gain.cancelScheduledValues(now);
+        gain.setValueAtTime(Math.max(0.0001, gain.value), now);
+      }
+      gain.exponentialRampToValueAtTime(safeTarget, now + durationSec);
+    } catch {
+      gain.cancelScheduledValues(now);
+      gain.setValueAtTime(Math.max(0.0001, gain.value), now);
+      gain.linearRampToValueAtTime(safeTarget, now + durationSec);
+    }
+  };
+
   const fadeOutDeck = (deck: TrackDeck) => {
     if (deck.pauseTimer !== null) {
       window.clearTimeout(deck.pauseTimer);
       deck.pauseTimer = null;
     }
     if (ctx && deck.trackGain && deck.routedViaWebAudio) {
-      const now = ctx.currentTime;
-      deck.trackGain.gain.cancelScheduledValues(now);
-      deck.trackGain.gain.setValueAtTime(Math.max(0.0001, deck.trackGain.gain.value), now);
-      deck.trackGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
+      rampTrackGain(deck.trackGain.gain, ctx.currentTime, 0.0001, 0.32);
       deck.pauseTimer = window.setTimeout(() => {
         deck.pauseTimer = null;
         deck.audio.pause();
@@ -238,10 +252,7 @@ export function createReaderSoundscapeEngine(
       deck.pauseTimer = null;
     }
     if (ctx && deck.trackGain && deck.routedViaWebAudio) {
-      const now = ctx.currentTime;
-      deck.trackGain.gain.cancelScheduledValues(now);
-      deck.trackGain.gain.setValueAtTime(Math.max(0.0001, deck.trackGain.gain.value), now);
-      deck.trackGain.gain.exponentialRampToValueAtTime(1, now + 0.55);
+      rampTrackGain(deck.trackGain.gain, ctx.currentTime, 1, 0.55);
     } else {
       deck.audio.volume = effectiveLinearVolume();
     }
@@ -318,13 +329,40 @@ export function createReaderSoundscapeEngine(
           void ctx.suspend().catch(() => undefined);
         }
       } else if (currentPreset !== 'off') {
-        if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') {
-          void ctx.resume().catch(() => undefined);
-        }
         const activeId = currentPreset;
         const deck = decks.get(activeId);
-        if (deck) {
-          attemptDeckPlay(activeId, deck, true);
+        const reportResumeBlocked = () => {
+          if (isDisposed || isDocHidden || currentPreset !== activeId) return;
+          deck?.audio.pause();
+          currentPreset = 'off';
+          options?.onPlaybackError?.(
+            'Trình duyệt tạm chặn tự phát lại sau khi quay lại tab. Hãy chạm chọn lại âm nền.',
+          );
+        };
+
+        if (deck?.routedViaWebAudio && ctx && ctx.state !== 'running' && ctx.state !== 'closed') {
+          const activeCtx = ctx;
+          void activeCtx
+            .resume()
+            .then(() => {
+              if (isDisposed || isDocHidden || currentPreset !== activeId) return;
+              // Trên iOS Safari, ctx.resume() ngoài cử chỉ chạm có thể resolve nhưng state vẫn suspended/interrupted
+              if (activeCtx.state !== 'running') {
+                reportResumeBlocked();
+                return;
+              }
+              attemptDeckPlay(activeId, deck, true);
+            })
+            .catch(() => {
+              reportResumeBlocked();
+            });
+        } else {
+          if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') {
+            void ctx.resume().catch(() => undefined);
+          }
+          if (deck) {
+            attemptDeckPlay(activeId, deck, true);
+          }
         }
       }
     },

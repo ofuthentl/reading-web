@@ -1,6 +1,7 @@
 import type { AniListNovelCandidate, Book, ShelfGroup } from '@/types';
 import { isAuthError, updateBookMetadata } from '@/lib/api';
-import { getBookSortTitle } from '@/lib/bookMetadata';
+import { isReleaseMetadataNoise } from '@/lib/authorHeuristics';
+import { getBookSortTitle, getDisplayAuthor } from '@/lib/bookMetadata';
 import { setShelfAltTitles } from '@/lib/catalogApi';
 import {
   extractBookAutoAuthor,
@@ -37,8 +38,17 @@ export function computeShelfAuthorAnalysis(shelf: ShelfGroup | null): {
     return { rawAuthorCounts, missingAuthorBooks: [], knownAuthorsInShelf: [] };
   }
   for (const b of shelf.books) {
-    const k = b.author.trim().toLocaleLowerCase('vi');
-    if (k) rawAuthorCounts.set(k, (rawAuthorCounts.get(k) ?? 0) + 1);
+    const raw = b.author.normalize('NFC').trim();
+    if (
+      !raw ||
+      raw === UNKNOWN_AUTHOR_LABEL ||
+      isReleaseMetadataNoise(raw) ||
+      getDisplayAuthor(b.author, b.title) === UNKNOWN_AUTHOR_LABEL
+    ) {
+      continue;
+    }
+    const k = raw.toLocaleLowerCase('vi');
+    rawAuthorCounts.set(k, (rawAuthorCounts.get(k) ?? 0) + 1);
   }
   const missingAuthorBooks: Book[] = [];
   const knownSet = new Set<string>();

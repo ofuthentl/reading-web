@@ -108,11 +108,12 @@ export function ShelfDetailView({
 }: ShelfDetailViewProps) {
   const { shelf, bookCount } = summary;
   const [volumeQuery, setVolumeQuery] = useState('');
-  const [onlyPtrVolumes, setOnlyPtrVolumes] = useState(false);
+  const [ptrFilterShelfKey, setPtrFilterShelfKey] = useState<string | null>(null);
+  const onlyPtrVolumes = ptrFilterShelfKey === shelf.key;
 
   useEffect(() => {
     setVolumeQuery('');
-    setOnlyPtrVolumes(false);
+    setPtrFilterShelfKey(null);
   }, [shelf.key]);
 
   const ptrVolumeCount = useMemo(
@@ -125,7 +126,7 @@ export function ShelfDetailView({
 
   useEffect(() => {
     if (onlyPtrVolumes && ptrVolumeCount === 0) {
-      setOnlyPtrVolumes(false);
+      setPtrFilterShelfKey(null);
     }
   }, [onlyPtrVolumes, ptrVolumeCount]);
 
@@ -260,7 +261,9 @@ export function ShelfDetailView({
               <button
                 type="button"
                 aria-pressed={onlyPtrVolumes}
-                onClick={() => setOnlyPtrVolumes((v) => !v)}
+                onClick={() =>
+                  setPtrFilterShelfKey((prev) => (prev === shelf.key ? null : shelf.key))
+                }
                 className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
                   onlyPtrVolumes
                     ? 'border-sky-500/50 bg-sky-500/15 text-sky-700 dark:border-sky-400/45 dark:text-sky-300'
@@ -303,11 +306,16 @@ export function ShelfDetailView({
           <div className="moonlit-card mx-auto flex max-w-md flex-col items-center rounded-2xl border border-line bg-surface px-6 py-10 text-center shadow-sm dark:border-line-strong/60">
             <BookMarked className="mb-2.5 h-7 w-7 text-ink-faint" />
             <p className="font-display text-sm font-semibold text-ink">
-              Không có tập nào khớp &ldquo;{volumeQuery}&rdquo;
+              {onlyPtrVolumes && !volumeQuery
+                ? 'Không có tập Đọc sau nào trong kệ này'
+                : `Không có tập nào khớp “${volumeQuery}”`}
             </p>
             <button
               type="button"
-              onClick={() => setVolumeQuery('')}
+              onClick={() => {
+                setVolumeQuery('');
+                setPtrFilterShelfKey(null);
+              }}
               className="mt-3 rounded-xl border border-line-strong bg-canvas px-3.5 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-subtle"
             >
               Xem đủ {bookCount} tập

@@ -101,6 +101,7 @@ export function ReaderSettingsPopover({
   return (
     <div
       role="dialog"
+      data-reader-chrome-dialog="settings"
       aria-label="Tùy chỉnh giao diện đọc"
       className={`fade-in scrollbar-thin absolute right-3 top-[3.5rem] z-40 max-h-[calc(100dvh-4.5rem)] w-[22rem] max-w-[calc(100vw-1.5rem)] overflow-y-auto overscroll-y-contain rounded-2xl border p-4 shadow-2xl ${palette.panelBg} ${palette.border}`}
     >

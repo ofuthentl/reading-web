@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowUpRight,
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { AuthRole, Book, HighlightColor, LibraryHighlightItem } from '@/types';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
+import { isAuthError } from '@/lib/authSession';
 import {
   HIGHLIGHT_COLOR_OPTIONS,
   deleteBookHighlight,
@@ -26,6 +27,7 @@ export interface QuoteVaultModalProps {
   onClose: () => void;
   onOpenHighlightBook?: (book: Book, chapterIndex: number, scrollRatio: number) => void;
   onDeletedHighlight?: (highlightId: string, bookId: string) => void;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
 
 export function QuoteVaultModal({
@@ -35,13 +37,22 @@ export function QuoteVaultModal({
   onClose,
   onOpenHighlightBook,
   onDeletedHighlight,
+  onApiError,
 }: QuoteVaultModalProps) {
   const [items, setItems] = useState<LibraryHighlightItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [colorFilter, setColorFilter] = useState<HighlightColor | 'all'>('all');
+  const mountedRef = useRef(true);
   const protectCopy = sessionRole === 'guest';
   useBodyScrollLock(open);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -49,16 +60,21 @@ export function QuoteVaultModal({
     setLoading(true);
     fetchAllLibraryHighlights(books, controller.signal)
       .then((list) => {
-        if (!controller.signal.aborted) setItems(list);
+        if (!controller.signal.aborted && mountedRef.current) setItems(list);
       })
-      .catch(() => {
-        if (!controller.signal.aborted) setItems([]);
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        if (isAuthError(err)) {
+          onApiError?.(err, 'Phiên đăng nhập đã hết hạn.');
+          return;
+        }
+        if (mountedRef.current) setItems([]);
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted && mountedRef.current) setLoading(false);
       });
     return () => controller.abort();
-  }, [books, open]);
+  }, [books, onApiError, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -102,10 +118,13 @@ export function QuoteVaultModal({
   const handleDelete = async (hl: LibraryHighlightItem) => {
     try {
       await deleteBookHighlight(hl.id, hl.bookId);
+      if (!mountedRef.current) return;
       setItems((prev) => prev.filter((it) => it.id !== hl.id));
       onDeletedHighlight?.(hl.id, hl.bookId);
-    } catch {
-      // Ignore transient delete errors
+    } catch (err) {
+      if (isAuthError(err)) {
+        onApiError?.(err, 'Phiên đăng nhập đã hết hạn.');
+      }
     }
   };
 

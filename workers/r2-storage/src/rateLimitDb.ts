@@ -19,7 +19,7 @@ END`;
 
 export const DECAYED_STRIKE_AT_SQL = `CASE
   WHEN COALESCE(rl_strikes, 0) <= 0 THEN 0
-  WHEN (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END) <= 0 THEN COALESCE(rl_last_strike_at, 0)
+  WHEN (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END) <= 0 THEN ?
   WHEN (? - (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END)) >= ? THEN 0
   WHEN (? - (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END)) >= ? THEN
     CASE
@@ -27,7 +27,7 @@ export const DECAYED_STRIKE_AT_SQL = `CASE
       ELSE (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END)
            + CAST((? - (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END)) / ? AS INTEGER) * ?
     END
-  ELSE COALESCE(rl_last_strike_at, 0)
+  ELSE (CASE WHEN COALESCE(rl_last_strike_at, 0) > 0 THEN rl_last_strike_at ELSE rl_updated_at END)
 END`;
 
 export function buildStrikeDecayBindParams(now: number): number[] {
@@ -38,6 +38,7 @@ export function buildStrikeDecayBindParams(now: number): number[] {
     STRIKE_DECAY_STEP_MS,
     now,
     STRIKE_DECAY_STEP_MS,
+    now,
     now,
     STRIKE_RESET_IDLE_MS,
     now,
@@ -214,60 +215,53 @@ async function hashClientIp(rawIp: string): Promise<string> {
 
 const STALE_LOGIN_LIMIT_MS = 7 * 24 * 60 * 60 * 1000;
 
-export async function assertLoginNotRateLimited(db: D1Database, rawIp: string): Promise<void> {
-  await ensureLoginRateLimitTable(db);
-  const ipHash = await hashClientIp(rawIp);
-  const now = Date.now();
-  const row = await db
-    .prepare('SELECT locked_until FROM login_rate_limits WHERE ip_hash = ?')
-    .bind(ipHash)
-    .first<{ locked_until: number }>();
-  if (row && row.locked_until > now) {
-    const waitSec = Math.max(1, Math.ceil((row.locked_until - now) / 1000));
-    throw new HttpError(
-      `Bạn đã nhập sai quá nhiều lần. Vui lòng thử lại sau ${waitSec} giây.`,
-      429,
-      { 'Retry-After': String(waitSec) },
-    );
-  }
-}
-
-export async function recordLoginFailure(db: D1Database, rawIp: string): Promise<void> {
+/**
+ * Kiểm tra khoá IP và tăng đếm lần thử đăng nhập nguyên tử trong 1 `db.batch` (chống TOCTOU brute-force song song):
+ * - Nếu IP đang bị khoá (`locked_until > now`): giữ nguyên bộ đếm và trả `429 Retry-After` ngay.
+ * - Nếu chưa khoá: tăng `fail_count` và kích khoá mốc 5/8/12 trước khi xác thực; khi đăng nhập thành công `clearLoginFailures` xoá sạch bản ghi.
+ */
+export async function consumeLoginAttempt(db: D1Database, rawIp: string): Promise<void> {
   await ensureLoginRateLimitTable(db);
   const ipHash = await hashClientIp(rawIp);
   const now = Date.now();
   const staleBefore = now - STALE_LOGIN_LIMIT_MS;
 
-  // Nguyên tử hoàn toàn trong SQLite để chống bắn song song vượt ngưỡng khoá 5/8/12 lần sai
-  await db.batch([
+  const [prevRes] = await db.batch([
+    db.prepare('SELECT locked_until FROM login_rate_limits WHERE ip_hash = ?').bind(ipHash),
     db
       .prepare(
         `INSERT INTO login_rate_limits (ip_hash, fail_count, window_start, locked_until)
          VALUES (?, 1, ?, 0)
          ON CONFLICT(ip_hash) DO UPDATE SET
            fail_count = CASE
+             WHEN login_rate_limits.locked_until > ? THEN login_rate_limits.fail_count
              WHEN (? - login_rate_limits.window_start) <= ? THEN login_rate_limits.fail_count + 1
              ELSE 1
            END,
            window_start = CASE
+             WHEN login_rate_limits.locked_until > ? THEN login_rate_limits.window_start
              WHEN (? - login_rate_limits.window_start) <= ? THEN login_rate_limits.window_start
              ELSE ?
            END,
            locked_until = CASE
+             WHEN login_rate_limits.locked_until > ? THEN login_rate_limits.locked_until
              WHEN (? - login_rate_limits.window_start) > ? THEN 0
              WHEN login_rate_limits.fail_count + 1 >= 12 THEN ? + 900000
              WHEN login_rate_limits.fail_count + 1 >= 8 THEN ? + 180000
              WHEN login_rate_limits.fail_count + 1 >= 5 THEN ? + 30000
-             ELSE login_rate_limits.locked_until
+             ELSE 0
            END`,
       )
       .bind(
         ipHash,
         now,
         now,
-        LOGIN_WINDOW_MS,
         now,
         LOGIN_WINDOW_MS,
+        now,
+        now,
+        LOGIN_WINDOW_MS,
+        now,
         now,
         now,
         LOGIN_WINDOW_MS,
@@ -279,6 +273,16 @@ export async function recordLoginFailure(db: D1Database, rawIp: string): Promise
       .prepare('DELETE FROM login_rate_limits WHERE window_start < ? AND locked_until < ?')
       .bind(staleBefore, now),
   ]);
+
+  const prevRow = (prevRes.results?.[0] as { locked_until: number } | undefined) ?? null;
+  if (prevRow && prevRow.locked_until > now) {
+    const waitSec = Math.max(1, Math.ceil((prevRow.locked_until - now) / 1000));
+    throw new HttpError(
+      `Bạn đã nhập sai quá nhiều lần. Vui lòng thử lại sau ${waitSec} giây.`,
+      429,
+      { 'Retry-After': String(waitSec) },
+    );
+  }
 }
 
 export async function clearLoginFailures(db: D1Database, rawIp: string): Promise<void> {

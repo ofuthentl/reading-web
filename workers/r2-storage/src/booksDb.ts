@@ -171,7 +171,7 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     auth.role === 'owner'
       ? env.DB.prepare('SELECT * FROM reading_progress').all<ProgressRow>()
       : env.DB.prepare(
-          `SELECT book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, reading_seconds, reread_count, updated_at
+          `SELECT book_id, chapter_id, chapter_index, chapter_title, total_chapters, scroll_ratio, scroll_top, completed, book_percent, reading_seconds, reread_count, updated_at
            FROM guest_reading_progress
            WHERE discord_user_id = ?`,
         )
@@ -239,43 +239,6 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
     auth.role === 'owner' ? getStorageStats(env) : Promise.resolve(null),
   ]);
 
-  const progressMap: Record<
-    string,
-    {
-      chapterId: string;
-      chapterIndex: number;
-      chapterTitle?: string;
-      totalChapters?: number;
-      scrollRatio: number;
-      scrollTop: number;
-      completed: boolean;
-      readingSeconds?: number;
-      rereadCount?: number;
-      updatedAt: number;
-    }
-  > = {};
-
-  for (const row of progressRes.results || []) {
-    progressMap[row.book_id] = {
-      chapterId: row.chapter_id,
-      chapterIndex: row.chapter_index,
-      ...(row.chapter_title ? { chapterTitle: row.chapter_title } : {}),
-      ...(typeof row.total_chapters === 'number' && row.total_chapters > 0
-        ? { totalChapters: row.total_chapters }
-        : {}),
-      scrollRatio: row.scroll_ratio,
-      scrollTop: row.scroll_top,
-      completed: row.completed === 1,
-      ...(typeof row.reading_seconds === 'number' && row.reading_seconds > 0
-        ? { readingSeconds: row.reading_seconds }
-        : {}),
-      ...(typeof row.reread_count === 'number' && row.reread_count > 0
-        ? { rereadCount: row.reread_count }
-        : {}),
-      updatedAt: row.updated_at,
-    };
-  }
-
   const isGuest = auth.role === 'guest';
   const rawBooks = booksRes.results || [];
   const existingShelfKeys = new Set<string>();
@@ -295,6 +258,48 @@ export async function listBooksAndProgress(env: Env, auth: AuthContext) {
       ...(isGuestLocked ? { guest_locked: true } : {}),
     };
   });
+
+  const progressMap: Record<
+    string,
+    {
+      chapterId: string;
+      chapterIndex: number;
+      chapterTitle?: string;
+      totalChapters?: number;
+      scrollRatio: number;
+      scrollTop: number;
+      completed: boolean;
+      bookPercent?: number;
+      readingSeconds?: number;
+      rereadCount?: number;
+      updatedAt: number;
+    }
+  > = {};
+
+  for (const row of progressRes.results || []) {
+    if (isGuest && guestLockedBookIds.has(row.book_id)) continue;
+    progressMap[row.book_id] = {
+      chapterId: row.chapter_id,
+      chapterIndex: row.chapter_index,
+      ...(row.chapter_title ? { chapterTitle: row.chapter_title } : {}),
+      ...(typeof row.total_chapters === 'number' && row.total_chapters > 0
+        ? { totalChapters: row.total_chapters }
+        : {}),
+      scrollRatio: row.scroll_ratio,
+      scrollTop: row.scroll_top,
+      completed: row.completed === 1,
+      ...(typeof row.book_percent === 'number' && Number.isFinite(row.book_percent)
+        ? { bookPercent: Math.round(Math.min(100, Math.max(0, row.book_percent)) * 10) / 10 }
+        : {}),
+      ...(typeof row.reading_seconds === 'number' && row.reading_seconds > 0
+        ? { readingSeconds: row.reading_seconds }
+        : {}),
+      ...(typeof row.reread_count === 'number' && row.reread_count > 0
+        ? { rereadCount: row.reread_count }
+        : {}),
+      updatedAt: row.updated_at,
+    };
+  }
 
   const guestLockedShelfKeys = isGuest
     ? computeGuestLockedShelfKeys(rawBooks, accessSnapshot, bookAccessSnapshot)

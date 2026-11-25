@@ -153,11 +153,22 @@ export async function fetchGuestBookToc(
 }
 
 const guestIllustrationsCache = new Map<string, GuestBookIllustrationItem[]>();
+let illustrationsCacheTokenSig: string | null = null;
+
+export function clearGuestIllustrationsCache(): void {
+  guestIllustrationsCache.clear();
+  illustrationsCacheTokenSig = null;
+}
 
 export async function fetchGuestBookIllustrations(
   bookId: string,
   signal?: AbortSignal,
 ): Promise<GuestBookIllustrationItem[]> {
+  const tokenSig = resolveSessionTokenSignature();
+  if (illustrationsCacheTokenSig !== tokenSig) {
+    guestIllustrationsCache.clear();
+    illustrationsCacheTokenSig = tokenSig;
+  }
   const cached = guestIllustrationsCache.get(bookId);
   if (cached) return cached;
 
@@ -235,8 +246,10 @@ export async function fetchGuestMediaBitmap(
   }
 }
 
-export async function fetchAdminDiscordGuests(): Promise<DiscordGuestRecord[]> {
-  const res = await apiFetch('/api/admin/discord-guests');
+export async function fetchAdminDiscordGuests(
+  signal?: AbortSignal,
+): Promise<DiscordGuestRecord[]> {
+  const res = await apiFetch('/api/admin/discord-guests', { signal });
   const data = (await res.json().catch(() => ({}))) as {
     guests?: DiscordGuestRecord[];
     error?: string;

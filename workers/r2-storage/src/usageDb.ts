@@ -475,10 +475,12 @@ export async function getAdminGuestUsageDetail(env: Env, rawDiscordUserId: strin
       typeof row.total_chapters === 'number' && row.total_chapters > 0 ? row.total_chapters : null;
     const rawPercent = completed
       ? 100
-      : totalChapters
-        ? ((Math.max(0, row.chapter_index) + Math.min(1, Math.max(0, row.scroll_ratio))) * 100) /
-          totalChapters
-        : Math.min(1, Math.max(0, row.scroll_ratio)) * 100;
+      : typeof row.book_percent === 'number' && Number.isFinite(row.book_percent)
+        ? row.book_percent
+        : totalChapters
+          ? ((Math.max(0, row.chapter_index) + Math.min(1, Math.max(0, row.scroll_ratio))) * 100) /
+            totalChapters
+          : Math.min(1, Math.max(0, row.scroll_ratio)) * 100;
     const percent = Math.max(0, Math.min(100, Math.round(rawPercent)));
     const readingSeconds = Math.max(0, Number(row.reading_seconds ?? 0));
     booksReadingSecondsSum += readingSeconds;

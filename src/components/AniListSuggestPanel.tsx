@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Loader2, Search, Sparkles, Wand2, X } from 'lucide-react';
 import type { AniListNovelCandidate } from '@/types';
+import { isAuthError } from '@/lib/authSession';
 import { searchAniListLightNovelsApi } from '@/lib/catalogApi';
 import type { ToastType } from '@/hooks/useToast';
 
@@ -15,6 +16,7 @@ export interface AniListSuggestPanelProps {
   ) => void;
   onQuickSaveAll?: (candidate: AniListNovelCandidate) => void;
   onClose: () => void;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
   onNotify?: (message: string, type?: ToastType) => void;
 }
 
@@ -26,6 +28,7 @@ export function AniListSuggestPanel({
   onApplyCandidate,
   onQuickSaveAll,
   onClose,
+  onApiError,
   onNotify,
 }: AniListSuggestPanelProps) {
   const [query, setQuery] = useState(initialQuery);
@@ -34,6 +37,18 @@ export function AniListSuggestPanel({
   const [candidates, setCandidates] = useState<AniListNovelCandidate[]>([]);
   const [searchedOnce, setSearchedOnce] = useState(false);
   const [includeAltInTags, setIncludeAltInTags] = useState(defaultIncludeAltTitlesInTagsMode);
+  const mountedRef = useRef(true);
+  const abortRef = useRef<AbortController | null>(null);
+  const initialSearchDoneRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+      abortRef.current = null;
+    };
+  }, []);
 
   const runSearch = useCallback(
     async (rawTerm: string) => {
@@ -42,13 +57,23 @@ export function AniListSuggestPanel({
         setErrorText('Nhập ít nhất 2 ký tự (tên Romaji, tiếng Anh hoặc Nhật) để tìm trên AniList.');
         return;
       }
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
       setLoading(true);
       setErrorText(null);
       setSearchedOnce(true);
       try {
-        const list = await searchAniListLightNovelsApi(term);
+        const list = await searchAniListLightNovelsApi(term, controller.signal);
+        if (controller.signal.aborted || !mountedRef.current) return;
         setCandidates(list);
       } catch (err) {
+        if (controller.signal.aborted) return;
+        if (isAuthError(err)) {
+          onApiError?.(err, 'Phiên đăng nhập đã hết hạn.');
+          return;
+        }
+        if (!mountedRef.current) return;
         const msg =
           err instanceof Error
             ? err.message
@@ -56,20 +81,23 @@ export function AniListSuggestPanel({
         setErrorText(msg);
         onNotify?.(msg, 'warning');
       } finally {
-        setLoading(false);
+        if (abortRef.current === controller) abortRef.current = null;
+        if (!controller.signal.aborted && mountedRef.current) {
+          setLoading(false);
+        }
       }
     },
-    [onNotify],
+    [onApiError, onNotify],
   );
 
   useEffect(() => {
+    if (initialSearchDoneRef.current) return;
+    initialSearchDoneRef.current = true;
     const trimmed = initialQuery.trim();
     if (trimmed.length >= 2) {
       void runSearch(trimmed);
     }
-    // Chỉ tự tìm 1 lần lúc mở bảng gợi ý
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialQuery, runSearch]);
 
   return (
     <div className="space-y-3 rounded-2xl border border-crimson-accent/35 bg-canvas/90 p-3.5 shadow-sm">

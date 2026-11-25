@@ -37,14 +37,20 @@ export function AdminProtectionModal({
     currentTitle: string;
     stepLabel?: string;
   } | null>(null);
+  const mountedRef = useRef(true);
   const stopSyncRef = useRef(false);
   const syncAbortRef = useRef<AbortController | null>(null);
+  const guestsAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       stopSyncRef.current = true;
       syncAbortRef.current?.abort();
       syncAbortRef.current = null;
+      guestsAbortRef.current?.abort();
+      guestsAbortRef.current = null;
     };
   }, []);
 
@@ -74,20 +80,35 @@ export function AdminProtectionModal({
 
   const loadGuests = useCallback(async () => {
     if (!isCloudMode) return;
+    guestsAbortRef.current?.abort();
+    const controller = new AbortController();
+    guestsAbortRef.current = controller;
     setLoadingGuests(true);
     try {
-      const list = await fetchAdminDiscordGuests();
-      setGuests(list);
+      const list = await fetchAdminDiscordGuests(controller.signal);
+      if (!controller.signal.aborted && mountedRef.current) {
+        setGuests(list);
+      }
     } catch (err) {
-      onApiError(err, 'Không thể tải danh sách khách Discord.');
+      if (controller.signal.aborted) return;
+      if (mountedRef.current || isAuthError(err)) {
+        onApiError(err, 'Không thể tải danh sách khách Discord.');
+      }
     } finally {
-      setLoadingGuests(false);
+      if (guestsAbortRef.current === controller) guestsAbortRef.current = null;
+      if (!controller.signal.aborted && mountedRef.current) {
+        setLoadingGuests(false);
+      }
     }
   }, [onApiError]);
 
   useEffect(() => {
     if (open && activeTab === 'guests') {
       void loadGuests();
+      return () => {
+        guestsAbortRef.current?.abort();
+        guestsAbortRef.current = null;
+      };
     }
   }, [activeTab, loadGuests, open]);
 
@@ -144,28 +165,32 @@ export function AdminProtectionModal({
             stepLabel: 'Đang nén & tải gói bảo mật...',
           });
           const res = await buildAndUploadGuestPack(blob, target);
-          if (stopSyncRef.current) break;
-          onBookPackSynced(target.id, res.storage);
+          if (mountedRef.current) {
+            onBookPackSynced(target.id, res.storage);
+          }
           successCount += 1;
-        } catch (err) {
           if (stopSyncRef.current) break;
+        } catch (err) {
           if (isAuthError(err)) {
             stopSyncRef.current = true;
             authFailed = true;
             onApiError(err, 'Phiên quản trị đã hết hạn.');
             return;
           }
+          if (stopSyncRef.current || !mountedRef.current) break;
           failCount += 1;
           console.warn(`Lỗi tạo gói khách cho "${target.title}":`, err);
         }
       }
     } finally {
       syncAbortRef.current = null;
-      setSyncing(false);
-      setSyncProgress(null);
+      if (mountedRef.current) {
+        setSyncing(false);
+        setSyncProgress(null);
+      }
     }
 
-    if (authFailed) return;
+    if (authFailed || !mountedRef.current) return;
     if (stopSyncRef.current && successCount === 0 && failCount === 0) {
       onNotify('Đã dừng đồng bộ gói bảo mật.', 'info');
       return;
@@ -192,11 +217,13 @@ export function AdminProtectionModal({
     setCheckingForensic(true);
     try {
       const report = await runAdminForensicWatermarkCheck(clean);
-      setForensicReport(report);
+      if (mountedRef.current) setForensicReport(report);
     } catch (err) {
-      onApiError(err, 'Không thể quét dấu vân tay văn bản.');
+      if (mountedRef.current || isAuthError(err)) {
+        onApiError(err, 'Không thể quét dấu vân tay văn bản.');
+      }
     } finally {
-      setCheckingForensic(false);
+      if (mountedRef.current) setCheckingForensic(false);
     }
   };
 
@@ -208,6 +235,7 @@ export function AdminProtectionModal({
         nextBanned,
         nextBanned ? 'Khoá bởi Quản trị viên' : undefined,
       );
+      if (!mountedRef.current) return;
       setGuests((prev) =>
         prev.map((g) =>
           g.discordUserId === userId
@@ -222,9 +250,11 @@ export function AdminProtectionModal({
         nextBanned ? 'warning' : 'success',
       );
     } catch (err) {
-      onApiError(err, 'Không thể cập nhật trạng thái khoá.');
+      if (mountedRef.current || isAuthError(err)) {
+        onApiError(err, 'Không thể cập nhật trạng thái khoá.');
+      }
     } finally {
-      setTogglingUserId(null);
+      if (mountedRef.current) setTogglingUserId(null);
     }
   };
 

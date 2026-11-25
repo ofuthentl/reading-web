@@ -128,9 +128,7 @@ export async function uploadBookGuestPack(
   await ensureDiscordAccessTable(env.DB);
   const [bookRes, existingPackRes, booksSumRes, packsSumRes] = await env.DB.batch([
     env.DB.prepare('SELECT id, file_type, file_size FROM books WHERE id = ?').bind(bookId),
-    env.DB.prepare(
-      'SELECT pack_key, pack_size, chapter_count, manifest_json, updated_at FROM book_guest_packs WHERE book_id = ?',
-    ).bind(bookId),
+    env.DB.prepare('SELECT pack_size FROM book_guest_packs WHERE book_id = ?').bind(bookId),
     env.DB.prepare(
       'SELECT COALESCE(SUM(file_size + cover_size), 0) AS used_bytes, COUNT(*) AS book_count FROM books',
     ),
@@ -146,15 +144,7 @@ export async function uploadBookGuestPack(
   }
 
   const existingPack =
-    (existingPackRes.results?.[0] as
-      | {
-          pack_key: string;
-          pack_size: number;
-          chapter_count: number;
-          manifest_json: string;
-          updated_at: number;
-        }
-      | undefined) ?? null;
+    (existingPackRes.results?.[0] as { pack_size: number } | undefined) ?? null;
   const oldPackSize = existingPack?.pack_size ?? 0;
 
   const rawBuffer = await request.arrayBuffer();
@@ -191,86 +181,104 @@ export async function uploadBookGuestPack(
     Number((packsSumRes.results?.[0] as { pack_bytes?: number } | undefined)?.pack_bytes ?? 0);
   assertQuota(preUsedBytes - oldPackSize, packBytes.byteLength, limitBytes);
 
-  // Dùng pack_key có phiên bản thời gian để không làm hỏng khách đang đọc gói cũ (vá M-7)
+  // Dùng pack_key có phiên bản thời gian + hậu tố ngẫu nhiên tránh đè nhau khi tải song song (D-046)
   const now = Date.now();
-  const packKey = `guest-packs/${bookId}-${now}.pack`;
+  const packKey = `guest-packs/${bookId}-${now}-${crypto.randomUUID().slice(0, 8)}.pack`;
   const putRes = await env.BOOKS_BUCKET.put(packKey, packBytes, {
     httpMetadata: { contentType: 'application/octet-stream' },
   });
   if (!putRes) throw new HttpError('Không thể lưu gói bảo mật vào R2.', 500);
 
   const normalizedManifestStr = JSON.stringify(validatedManifest);
+  let actualPrevPack: { pack_key: string; pack_size: number } | null = null;
+  let committedPackKey: string | null = null;
+  let bookStillExists = false;
   let postBooksSum: { used_bytes?: number; book_count?: number } | undefined;
   let postPacksSum: { pack_bytes?: number } | undefined;
   try {
-    const [, booksAfterRes, packsAfterRes] = await env.DB.batch([
-      env.DB.prepare(
-        `INSERT INTO book_guest_packs (book_id, pack_key, pack_size, chapter_count, manifest_json, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(book_id) DO UPDATE SET
-           pack_key = excluded.pack_key,
-           pack_size = excluded.pack_size,
-           chapter_count = excluded.chapter_count,
-           manifest_json = excluded.manifest_json,
-           updated_at = excluded.updated_at`,
-      ).bind(
-        bookId,
-        packKey,
-        putRes.size,
-        validatedManifest.chapters.length,
-        normalizedManifestStr,
-        now,
-      ),
-      env.DB.prepare(
-        'SELECT COALESCE(SUM(file_size + cover_size), 0) AS used_bytes, COUNT(*) AS book_count FROM books',
-      ),
-      env.DB.prepare('SELECT COALESCE(SUM(pack_size), 0) AS pack_bytes FROM book_guest_packs'),
-    ]);
+    const [prevPackRes, upsertRes, booksAfterRes, packsAfterRes, bookExistsRes] =
+      await env.DB.batch([
+        env.DB.prepare('SELECT pack_key, pack_size FROM book_guest_packs WHERE book_id = ?').bind(
+          bookId,
+        ),
+        env.DB.prepare(
+          `INSERT INTO book_guest_packs (book_id, pack_key, pack_size, chapter_count, manifest_json, updated_at)
+           SELECT ?, ?, ?, ?, ?, ?
+           WHERE EXISTS (SELECT 1 FROM books WHERE id = ?)
+             AND (
+               (SELECT COALESCE(SUM(b2.file_size + b2.cover_size), 0) FROM books b2)
+               + (SELECT COALESCE(SUM(p2.pack_size), 0) FROM book_guest_packs p2)
+               - COALESCE((SELECT p3.pack_size FROM book_guest_packs p3 WHERE p3.book_id = ?), 0)
+               + ?
+             ) <= ?
+           ON CONFLICT(book_id) DO UPDATE SET
+             pack_key = excluded.pack_key,
+             pack_size = excluded.pack_size,
+             chapter_count = excluded.chapter_count,
+             manifest_json = excluded.manifest_json,
+             updated_at = excluded.updated_at
+           RETURNING pack_key`,
+        ).bind(
+          bookId,
+          packKey,
+          putRes.size,
+          validatedManifest.chapters.length,
+          normalizedManifestStr,
+          now,
+          bookId,
+          bookId,
+          putRes.size,
+          limitBytes,
+        ),
+        env.DB.prepare(
+          'SELECT COALESCE(SUM(file_size + cover_size), 0) AS used_bytes, COUNT(*) AS book_count FROM books',
+        ),
+        env.DB.prepare('SELECT COALESCE(SUM(pack_size), 0) AS pack_bytes FROM book_guest_packs'),
+        env.DB.prepare('SELECT id FROM books WHERE id = ?').bind(bookId),
+      ]);
+    actualPrevPack =
+      (prevPackRes.results?.[0] as { pack_key: string; pack_size: number } | undefined) ?? null;
+    committedPackKey =
+      (upsertRes.results?.[0] as { pack_key?: string } | undefined)?.pack_key ?? null;
     postBooksSum = booksAfterRes.results?.[0] as
       | { used_bytes?: number; book_count?: number }
       | undefined;
     postPacksSum = packsAfterRes.results?.[0] as { pack_bytes?: number } | undefined;
+    bookStillExists = Boolean(bookExistsRes.results?.[0]);
   } catch (dbErr) {
-    const committed = await env.DB.prepare('SELECT pack_key FROM book_guest_packs WHERE book_id = ?')
-      .bind(bookId)
-      .first<{ pack_key: string }>()
-      .catch(() => null);
-    if (!committed || committed.pack_key !== packKey) {
+    let shouldDeleteOrphan = false;
+    try {
+      const committed = await env.DB.prepare(
+        'SELECT pack_key FROM book_guest_packs WHERE book_id = ?',
+      )
+        .bind(bookId)
+        .first<{ pack_key: string }>();
+      shouldDeleteOrphan = !committed || committed.pack_key !== packKey;
+    } catch {
+      shouldDeleteOrphan = false;
+    }
+    if (shouldDeleteOrphan) {
       await env.BOOKS_BUCKET.delete(packKey).catch(() => undefined);
     }
     throw dbErr;
   }
 
   const usedBytes = Number(postBooksSum?.used_bytes ?? 0) + Number(postPacksSum?.pack_bytes ?? 0);
-  if (usedBytes > limitBytes) {
-    if (existingPack) {
-      await env.DB.prepare(
-        `UPDATE book_guest_packs
-         SET pack_key = ?, pack_size = ?, chapter_count = ?, manifest_json = ?, updated_at = ?
-         WHERE book_id = ?`,
-      )
-        .bind(
-          existingPack.pack_key,
-          existingPack.pack_size,
-          existingPack.chapter_count,
-          existingPack.manifest_json,
-          existingPack.updated_at,
-          bookId,
-        )
-        .run()
-        .catch(() => undefined);
-    } else {
-      await env.DB.prepare('DELETE FROM book_guest_packs WHERE book_id = ?')
-        .bind(bookId)
-        .run()
-        .catch(() => undefined);
-    }
+  if (committedPackKey !== packKey) {
     await env.BOOKS_BUCKET.delete(packKey).catch(() => undefined);
-    assertQuota(Math.max(0, usedBytes - putRes.size), putRes.size, limitBytes);
+    if (!bookStillExists) {
+      throw new HttpError('Không tìm thấy sách.', 404);
+    }
+    assertQuota(
+      Math.max(0, usedBytes - (actualPrevPack?.pack_size ?? 0)),
+      putRes.size,
+      limitBytes,
+    );
+    throw new HttpError('Không thể lưu gói bảo mật vào cơ sở dữ liệu.', 500);
   }
 
-  if (existingPack?.pack_key && existingPack.pack_key !== packKey) {
-    await env.BOOKS_BUCKET.delete(existingPack.pack_key).catch(() => undefined);
+  if (actualPrevPack?.pack_key && actualPrevPack.pack_key !== packKey) {
+    await env.BOOKS_BUCKET.delete(actualPrevPack.pack_key).catch(() => undefined);
   }
 
   return {

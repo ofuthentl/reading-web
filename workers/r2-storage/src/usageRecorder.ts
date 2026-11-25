@@ -20,6 +20,8 @@ export interface UsageEventInput {
   readerScope?: string;
   readerRole?: AuthRole;
   readingSeconds?: number;
+  /** Số giây đọc đã được chốt nguyên tử vào `usage_daily_readers` từ `claimReadingTimeBudget` (chỉ cộng vào `usage_daily_stats`). */
+  preCreditedReadingSeconds?: number;
 }
 
 const VALID_METRICS: ReadonlySet<UsageMetricColumn> = new Set([
@@ -111,6 +113,93 @@ export async function ensureUsageTables(db: D1Database): Promise<void> {
   ensuredUsageDbs.add(db);
 }
 
+/**
+ * Chốt ngân sách thời gian đọc nguyên tử theo đồng hồ thực `usage_daily_readers.last_reading_sync_at` (D-046):
+ * - Dùng chung 1 đồng hồ duy nhất theo `reader_scope` xuyên suốt tất cả các tập sách (chặn bơm khống `FIRST_SYNC_MAX_DELTA_SEC` trên nhiều sách mới).
+ * - Tách biệt hoàn toàn khỏi các lần lưu tiến độ `readingDeltaSec = 0` (không bao giờ đẩy lùi mốc đo thời gian đọc).
+ */
+export async function claimReadingTimeBudget(
+  db: D1Database,
+  readerScope: string,
+  readerRole: AuthRole,
+  requestedSec: number,
+  nowMs = Date.now(),
+): Promise<number> {
+  const clamped =
+    Number.isFinite(requestedSec) && requestedSec > 0
+      ? Math.min(MAX_READING_DELTA_SEC, Math.floor(requestedSec))
+      : 0;
+  if (clamped <= 0) return 0;
+
+  await ensureUsageTables(db);
+  const dayKey = toVietnamDayKey(nowMs);
+  const prevReader = await db
+    .prepare(
+      `SELECT last_reading_sync_at
+       FROM usage_daily_readers
+       WHERE reader_scope = ? AND last_reading_sync_at > 0
+       ORDER BY day_key DESC
+       LIMIT 1`,
+    )
+    .bind(readerScope)
+    .first<{ last_reading_sync_at: number | null }>()
+    .catch(() => null);
+
+  const prevSync = Number(prevReader?.last_reading_sync_at ?? 0);
+  const initialBudget =
+    prevSync > 0
+      ? Math.min(clamped, MAX_READING_DELTA_SEC, Math.max(0, Math.floor((nowMs - prevSync) / 1000)))
+      : Math.min(clamped, FIRST_SYNC_MAX_DELTA_SEC);
+
+  const [beforeBatchRes, afterBatchRes] = await db.batch<{ reading_seconds: number }>([
+    db
+      .prepare(
+        'SELECT reading_seconds FROM usage_daily_readers WHERE day_key = ? AND reader_scope = ?',
+      )
+      .bind(dayKey, readerScope),
+    db
+      .prepare(
+        `INSERT INTO usage_daily_readers (day_key, reader_scope, role, last_seen_at, reading_seconds, last_reading_sync_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(day_key, reader_scope) DO UPDATE SET
+           last_seen_at = MAX(usage_daily_readers.last_seen_at, excluded.last_seen_at),
+           reading_seconds = usage_daily_readers.reading_seconds + CASE
+             WHEN ? <= 0 THEN 0
+             WHEN usage_daily_readers.last_reading_sync_at > 0
+               THEN MIN(?, MAX(0, CAST((? - usage_daily_readers.last_reading_sync_at) / 1000 AS INTEGER)))
+             ELSE ?
+           END,
+           last_reading_sync_at = CASE
+             WHEN ? > 0 AND (
+               usage_daily_readers.last_reading_sync_at <= 0
+               OR (? - usage_daily_readers.last_reading_sync_at) >= 1000
+             ) THEN ?
+             ELSE usage_daily_readers.last_reading_sync_at
+           END
+         RETURNING reading_seconds`,
+      )
+      .bind(
+        dayKey,
+        readerScope,
+        readerRole,
+        nowMs,
+        initialBudget,
+        initialBudget > 0 ? nowMs : 0,
+        initialBudget,
+        initialBudget,
+        nowMs,
+        initialBudget,
+        initialBudget,
+        nowMs,
+        nowMs,
+      ),
+  ]);
+
+  const beforeSec = Number(beforeBatchRes.results?.[0]?.reading_seconds ?? 0);
+  const afterSec = Number(afterBatchRes.results?.[0]?.reading_seconds ?? beforeSec);
+  return Math.max(0, Math.min(initialBudget, afterSec - beforeSec));
+}
+
 export async function recordUsageEvent(db: D1Database, input: UsageEventInput): Promise<void> {
   const metric = input.metric && VALID_METRICS.has(input.metric) ? input.metric : null;
   const hasReader = Boolean(input.readerScope && input.readerRole);
@@ -119,86 +208,40 @@ export async function recordUsageEvent(db: D1Database, input: UsageEventInput): 
     Number.isFinite(rawSec) && rawSec > 0
       ? Math.min(MAX_READING_DELTA_SEC, Math.floor(rawSec))
       : 0;
+  const rawPreCredited = Number(input.preCreditedReadingSeconds ?? 0);
+  const preCreditedSec =
+    Number.isFinite(rawPreCredited) && rawPreCredited > 0
+      ? Math.min(MAX_READING_DELTA_SEC, Math.floor(rawPreCredited))
+      : 0;
 
-  if (!metric && !hasReader && requestedSec <= 0) return;
+  if (!metric && !hasReader && requestedSec <= 0 && preCreditedSec <= 0) return;
 
   await ensureUsageTables(db);
   const now = Date.now();
   const dayKey = toVietnamDayKey(now);
 
-  let creditedSec = 0;
+  let creditedSec = preCreditedSec;
 
-  if (hasReader && input.readerScope && input.readerRole) {
-    const prevReader =
-      requestedSec > 0
-        ? await db
-            .prepare(
-              `SELECT last_reading_sync_at
-               FROM usage_daily_readers
-               WHERE reader_scope = ? AND last_reading_sync_at > 0
-               ORDER BY day_key DESC
-               LIMIT 1`,
-            )
-            .bind(input.readerScope)
-            .first<{ last_reading_sync_at: number | null }>()
-            .catch(() => null)
-        : null;
-
-    const prevSync = Number(prevReader?.last_reading_sync_at ?? 0);
-    const initialBudget =
-      requestedSec > 0
-        ? prevSync > 0
-          ? Math.min(requestedSec, MAX_READING_DELTA_SEC, Math.max(0, Math.floor((now - prevSync) / 1000)))
-          : Math.min(requestedSec, FIRST_SYNC_MAX_DELTA_SEC)
-        : 0;
-
-    // Ghi usage_daily_readers nguyên tử trong 1 db.batch (kẹp chặt đồng hồ thực, bỏ cộng cứng +2s)
-    const [beforeBatchRes, afterBatchRes] = await db.batch<{ reading_seconds: number }>([
-      db
-        .prepare(
-          'SELECT reading_seconds FROM usage_daily_readers WHERE day_key = ? AND reader_scope = ?',
-        )
-        .bind(dayKey, input.readerScope),
-      db
+  if (preCreditedSec <= 0 && hasReader && input.readerScope && input.readerRole) {
+    if (requestedSec > 0) {
+      creditedSec = await claimReadingTimeBudget(
+        db,
+        input.readerScope,
+        input.readerRole,
+        requestedSec,
+        now,
+      );
+    } else {
+      await db
         .prepare(
           `INSERT INTO usage_daily_readers (day_key, reader_scope, role, last_seen_at, reading_seconds, last_reading_sync_at)
-           VALUES (?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, 0, 0)
            ON CONFLICT(day_key, reader_scope) DO UPDATE SET
-             last_seen_at = excluded.last_seen_at,
-             reading_seconds = usage_daily_readers.reading_seconds + CASE
-               WHEN ? <= 0 THEN 0
-               WHEN usage_daily_readers.last_reading_sync_at > 0 THEN MIN(?, MAX(0, CAST((? - usage_daily_readers.last_reading_sync_at) / 1000 AS INTEGER)))
-               ELSE ?
-             END,
-             last_reading_sync_at = CASE
-               WHEN ? > 0 AND (
-                 usage_daily_readers.last_reading_sync_at <= 0
-                 OR (? - usage_daily_readers.last_reading_sync_at) >= 1000
-               ) THEN ?
-               ELSE usage_daily_readers.last_reading_sync_at
-             END
-           RETURNING reading_seconds`,
+             last_seen_at = MAX(usage_daily_readers.last_seen_at, excluded.last_seen_at)`,
         )
-        .bind(
-          dayKey,
-          input.readerScope,
-          input.readerRole,
-          now,
-          initialBudget,
-          initialBudget > 0 ? now : 0,
-          initialBudget,
-          initialBudget,
-          now,
-          initialBudget,
-          initialBudget,
-          now,
-          now,
-        ),
-    ]);
-
-    const beforeSec = Number(beforeBatchRes.results?.[0]?.reading_seconds ?? 0);
-    const afterSec = Number(afterBatchRes.results?.[0]?.reading_seconds ?? beforeSec);
-    creditedSec = Math.max(0, Math.min(initialBudget, afterSec - beforeSec));
+        .bind(dayKey, input.readerScope, input.readerRole, now)
+        .run();
+    }
   }
 
   const stmts: D1PreparedStatement[] = [];

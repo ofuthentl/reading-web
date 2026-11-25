@@ -13,14 +13,20 @@ const AUTHOR_PREFIX_RE =
 const AUTHOR_ROLE_SUFFIX_RE =
   /\s*(?:\((?:tác\s*giả|tac\s*gia|author|writer|story|minh\s*h[ọo]a|illustrator|art)\)|\[[^\]]*\])\s*$/giu;
 
-const NON_AUTHOR_NOISE_EXACT_RE =
-  /^(?:unknown|khong\s+ro(?:\s+tac\s+gia)?|chua\s+ro|anonymous|an\s+danh|n\/a|none|null|updating|dang\s+cap\s+nhat|raw|full|edit(?:ed)?|fix(?:ed)?|reup|final|complete(?:d)?|hoan\s+thanh|ban\s+(?:dich|dep|full)|tai\s+ban|bia\s+(?:cung|mem)|ln|wn|manga|ebook|truyen|tieu\s+thuyet|shin|dtv|amaks?|ipm|kim\s+dong|nxb\s+tre|thaiha|hikari|wings\s+books|skybooks|nha\s+nam|admin(?:istrator)?|user|owner|author|writer|translator|editor|nguoi\s+dich|dich\s+gia|nhom\s+dich|jobless\s+oblige|old\s+dragon'?s\s+tale|recollection|progressive|alternative|gaiden|spin-?off|extra|special|bonus|prologue|epilogue|interlude|afterword|preface|foreword|appendix|opening|ending|thuong|trung|ha)$/i;
+const RELEASE_NOISE_EXACT_RE =
+  /^(?:unknown|khong\s+ro(?:\s+tac\s+gia)?|chua\s+ro|anonymous|an\s+danh|n\/a|none|null|updating|dang\s+cap\s+nhat|raw|full|edit(?:ed)?|fix(?:ed)?|reup|final|complete(?:d)?|hoan\s+thanh|ban\s+(?:dich|dep|full)|tai\s+ban|bia\s+(?:cung|mem)|ln|wn|manga|ebook|truyen|tieu\s+thuyet|shin|dtv|amaks?|ipm|kim\s+dong|nxb\s+tre|thaiha|hikari|wings\s+books|skybooks|nha\s+nam|admin(?:istrator)?|user|owner|author|writer|translator|editor|nguoi\s+dich|dich\s+gia|nhom\s+dich)$/i;
+
+const NON_AUTHOR_SUBTITLE_EXACT_RE =
+  /^(?:jobless\s+oblige|old\s+dragon'?s\s+tale|recollection|progressive|alternative|gaiden|spin-?off|extra|special|bonus|prologue|epilogue|interlude|afterword|preface|foreword|appendix|opening|ending|thuong|trung|ha)$/i;
 
 const NON_AUTHOR_PREFIX_RE =
   /^(?:dich|trans|tl|edit(?:or)?|nguon|source|nhom\s+dich|convert|ebook|reup|scan|raw|full|ban\s+dich)\s*[:\-–—]/i;
 
-const NON_AUTHOR_CONTAINS_RE =
-  /(?:https?:\/\/|www\.|\.(?:com|net|org|vn|info|lol|io)\b|@|\b(?:calibre|sigil|docln|hako|sonako|valvrare\w*|tsukiln|tsuki\s+light\s+novel|cong\s+light\s+novel|wattpad|tangthuvien|truyenfull|webtruyen|wikidich|sangtacviet|metruyenchu|lnvn|shincms|(?:19|20)\d{2}|epub|docx|pdf|mobi|azw3|(?:light|web)\s+novel|after\s+the\s+end|redundancy|(?:ngoai|hau|tien)\s+truyen|phien\s+ngoai|(?:side|short)\s+stor(?:y|ies))\b)/i;
+const RELEASE_NOISE_CONTAINS_RE =
+  /(?:https?:\/\/|www\.|\.(?:com|net|org|vn|info|lol|io)\b|@|\b(?:calibre|sigil|docln|hako|sonako|valvrare\w*|tsukiln|tsuki\s+light\s+novel|cong\s+light\s+novel|wattpad|tangthuvien|truyenfull|webtruyen|wikidich|sangtacviet|metruyenchu|lnvn|shincms|epub|docx|pdf|mobi|azw3|(?:light|web)\s+novel)\b)/i;
+
+const NON_AUTHOR_SUBTITLE_CONTAINS_RE =
+  /\b(?:after\s+the\s+end|redundancy|(?:ngoai|hau|tien)\s+truyen|phien\s+ngoai|(?:side|short)\s+stor(?:y|ies))\b/i;
 
 // Từ khoá tiêu đề tập VN/EN viết hoa đầu chữ (Title Case) hay bị cắt nhầm sang cột tác giả
 const SUBTITLE_TITLECASE_KEYWORD_RE =
@@ -69,10 +75,43 @@ export function cleanAuthorCandidate(raw: string): string {
 }
 
 /**
- * Phát hiện chuỗi rác (nhóm dịch, trang web, định dạng, năm/số tập, ngoặc bọc toàn phần,
- * tên phần hậu truyện/ngoại truyện...) chắc chắn KHÔNG phải tên tác giả.
+ * Chỉ nhận diện **rác nhóm dịch / trang web / công cụ / định dạng** cần LOẠI BỎ khỏi cả `author` lẫn `title`
+ * (VD `[Hako]`, `Sonako`, `Calibre`, `Full`, URL, `(2024)`...).
+ * KHÔNG loại bỏ phụ đề tập hợp lệ (chứa `?!…:`, chữ số, `after the end`, `Redundancy`, `Progressive`...).
+ */
+export function isReleaseMetadataNoise(raw: string): boolean {
+  const trimmed = raw.normalize('NFC').replace(/\s+/g, ' ').trim();
+  if (!trimmed) return true;
+  if (/^(?:\[[^\]]*\]|【[^】]*】|［[^］]*］)$/u.test(trimmed)) return true;
+  if (/^(?:\([^)]*\)|（[^）]*）)$/u.test(trimmed)) {
+    const inner = trimmed.slice(1, -1).trim();
+    if (!inner || /^(?:19|20)\d{2}$/.test(inner)) return true;
+    const innerAscii = stripDiacriticsLower(inner);
+    return (
+      RELEASE_NOISE_EXACT_RE.test(innerAscii) ||
+      NON_AUTHOR_PREFIX_RE.test(innerAscii) ||
+      RELEASE_NOISE_CONTAINS_RE.test(innerAscii)
+    );
+  }
+  if (/^(?:19|20)\d{2}$/.test(trimmed)) return true;
+
+  const clean = cleanAuthorCandidate(trimmed);
+  if (!clean) return true;
+  const ascii = stripDiacriticsLower(clean);
+  if (!ascii) return true;
+  return (
+    RELEASE_NOISE_EXACT_RE.test(ascii) ||
+    NON_AUTHOR_PREFIX_RE.test(ascii) ||
+    RELEASE_NOISE_CONTAINS_RE.test(ascii)
+  );
+}
+
+/**
+ * Phát hiện chuỗi chắc chắn KHÔNG phải tên tác giả (gồm cả rác nhóm dịch `isReleaseMetadataNoise`
+ * lẫn phụ đề tập / nhãn nhánh / dấu câu tựa đề / chữ số).
  */
 export function isNonAuthorMetadataNoise(raw: string): boolean {
+  if (isReleaseMetadataNoise(raw)) return true;
   const clean = cleanAuthorCandidate(raw);
   if (!clean || clean.length < 2 || clean.length > 90) return true;
   if (/^[[(【（{].*[\])】）}]$/.test(clean)) return true;
@@ -81,9 +120,8 @@ export function isNonAuthorMetadataNoise(raw: string): boolean {
 
   const ascii = stripDiacriticsLower(clean);
   if (!ascii || ascii.length < 2) return true;
-  if (NON_AUTHOR_NOISE_EXACT_RE.test(ascii)) return true;
-  if (NON_AUTHOR_PREFIX_RE.test(ascii)) return true;
-  if (NON_AUTHOR_CONTAINS_RE.test(ascii)) return true;
+  if (NON_AUTHOR_SUBTITLE_EXACT_RE.test(ascii)) return true;
+  if (NON_AUTHOR_SUBTITLE_CONTAINS_RE.test(ascii)) return true;
   return false;
 }
 
@@ -162,7 +200,8 @@ export function buildShelfAuthorContext(
 ): Map<string, string> {
   const byShelf = new Map<string, Book[]>();
   for (const book of books) {
-    const shelfKey = (book.shelf || UNKNOWN_AUTHOR).normalize('NFC').trim().toLocaleLowerCase('vi');
+    const shelfKey =
+      (book.shelf || '').normalize('NFC').trim().toLocaleLowerCase('vi') || UNCLASSIFIED_SHELF;
     const list = byShelf.get(shelfKey);
     if (list) list.push(book);
     else byShelf.set(shelfKey, [book]);
@@ -171,6 +210,7 @@ export function buildShelfAuthorContext(
   const result = new Map<string, string>();
   for (const [shelfKey, shelfBooks] of byShelf.entries()) {
     const rawCounts = new Map<string, number>();
+    const partCounts = new Map<string, number>();
     const resolvedById = new Map<string, string>();
 
     for (const book of shelfBooks) {
@@ -180,6 +220,10 @@ export function buildShelfAuthorContext(
       if (clean !== UNKNOWN_AUTHOR) {
         const key = stripDiacriticsLower(clean);
         rawCounts.set(key, (rawCounts.get(key) ?? 0) + 1);
+        for (const part of splitNormalizedAuthors(clean)) {
+          const pKey = stripDiacriticsLower(part);
+          if (pKey) partCounts.set(pKey, (partCounts.get(pKey) ?? 0) + 1);
+        }
       }
     }
 
@@ -201,11 +245,13 @@ export function buildShelfAuthorContext(
         const looksSeriesBook =
           book.title.normalize('NFC').trim().toLocaleLowerCase('vi').startsWith(shelfKey) ||
           endsWithBareVolume(book.title.trim());
-        const isMultiAuthor = splitNormalizedAuthors(clean).length >= 2;
+        const parts = splitNormalizedAuthors(clean);
+        const isMultiAuthor = parts.length >= 2;
+        const sharesAuthorPart = parts.some((p) => (partCounts.get(stripDiacriticsLower(p)) ?? 0) >= 2);
         const looksTranslatedSub =
           hasVietnameseDiacritics(clean) &&
           (isTranslatedSubtitleForSeries(book.title, clean) || shelfHasNonDiacriticAuthor);
-        if (count === 1 && looksSeriesBook && !isMultiAuthor) {
+        if (count === 1 && looksSeriesBook && !isMultiAuthor && !sharesAuthorPart) {
           if (looksTranslatedSub || !shelfHasNonDiacriticAuthor) {
             result.set(book.id, UNKNOWN_AUTHOR);
             continue;

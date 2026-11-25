@@ -7,7 +7,10 @@ import type {
 } from '@/types';
 import type { PaginatedStageHandle } from '@/components/ReaderPaginatedView';
 import { useReaderController } from '@/hooks/useReaderController';
-import { formatCombinedReadingEstimate } from '@/lib/readingEstimate';
+import {
+  computeWeightedBookPercent,
+  formatCombinedReadingEstimate,
+} from '@/lib/readingEstimate';
 import type { ReaderSearchJumpTarget } from '@/lib/readerSearchJump';
 import {
   readLearnedWpm,
@@ -22,6 +25,7 @@ export interface ReaderChapterItemMeta {
 
 export interface UseReaderChapterProgressOptions {
   chapters: readonly ReaderChapterItemMeta[];
+  chapterWeights?: readonly number[];
   initialProgress?: ReadingProgress;
   settings: ReaderSettings;
   isPaginated: boolean;
@@ -38,6 +42,7 @@ export interface UseReaderChapterProgressOptions {
 
 export function useReaderChapterProgress({
   chapters,
+  chapterWeights,
   initialProgress,
   settings,
   isPaginated,
@@ -76,11 +81,25 @@ export function useReaderChapterProgress({
       : null,
   );
   const suppressSaveRef = useRef(false);
+  const completedRef = useRef(Boolean(initialProgress?.completed));
   const rereadCountRef = useRef(Math.max(0, Math.floor(initialProgress?.rereadCount ?? 0)));
   const goPrevRef = useRef<() => void>(() => undefined);
   const goNextRef = useRef<() => void>(() => undefined);
 
   const currentChapterMeta = chapters[chapterIndex];
+
+  const effectiveWeights = useMemo<readonly number[]>(() => {
+    if (chapterWeights && chapterWeights.length === chapters.length) {
+      return chapterWeights;
+    }
+    return chapters.map(() => 1);
+  }, [chapterWeights, chapters]);
+
+  const computeBookPercent = useCallback(
+    (idx: number, ratio: number, completed = false) =>
+      computeWeightedBookPercent(effectiveWeights, idx, ratio, completed),
+    [effectiveWeights],
+  );
 
   const fallbackProgress = useMemo<ReadingProgress | null>(() => {
     if (!currentChapterMeta) return null;
@@ -91,7 +110,8 @@ export function useReaderChapterProgress({
       totalChapters: chapters.length,
       scrollRatio: chapterScrollRatio,
       scrollTop: 0,
-      completed: Boolean(initialProgress?.completed),
+      completed: completedRef.current,
+      bookPercent: computeBookPercent(chapterIndex, chapterScrollRatio, completedRef.current),
       ...(rereadCountRef.current > 0 ? { rereadCount: rereadCountRef.current } : {}),
       updatedAt: Date.now(),
     };
@@ -99,12 +119,13 @@ export function useReaderChapterProgress({
     chapterIndex,
     chapterScrollRatio,
     chapters.length,
+    computeBookPercent,
     currentChapterMeta,
-    initialProgress?.completed,
   ]);
 
   const ctrl = useReaderController({
     initialCompleted: Boolean(initialProgress?.completed),
+    completedRef,
     settings,
     blockCopyShortcuts,
     timerEnabled,
@@ -115,7 +136,6 @@ export function useReaderChapterProgress({
   });
 
   const {
-    completedRef,
     getTotalActiveSec,
     lastScrollTopRef,
     queueProgressSave,
@@ -199,7 +219,7 @@ export function useReaderChapterProgress({
   );
 
   const goToChapter = useCallback(
-    (nextIndex: number, targetRatio = 0) => {
+    (nextIndex: number, targetRatio = 0, skipSave = false) => {
       const clamped = Math.max(0, Math.min(nextIndex, chapters.length - 1));
       const target = chapters[clamped];
       if (!target) return;
@@ -229,24 +249,29 @@ export function useReaderChapterProgress({
       setChapterScrollRatio(safeRatio);
       setChapterIndex(clamped);
 
-      queueProgressSave(
-        {
-          chapterId: target.id,
-          chapterIndex: clamped,
-          chapterTitle: target.title,
-          totalChapters: chapters.length,
-          scrollRatio: safeRatio,
-          scrollTop: 0,
-          completed: completedRef.current,
-          updatedAt: Date.now(),
-        },
-        true,
-      );
+      if (!skipSave) {
+        queueProgressSave(
+          {
+            chapterId: target.id,
+            chapterIndex: clamped,
+            chapterTitle: target.title,
+            totalChapters: chapters.length,
+            scrollRatio: safeRatio,
+            scrollTop: 0,
+            completed: completedRef.current,
+            bookPercent: computeBookPercent(clamped, safeRatio, completedRef.current),
+            ...(rereadCountRef.current > 0 ? { rereadCount: rereadCountRef.current } : {}),
+            updatedAt: Date.now(),
+          },
+          true,
+        );
+      }
     },
     [
       chapterIndex,
       chapters,
       completedRef,
+      computeBookPercent,
       isPaginated,
       lastScrollTopRef,
       onSameChapterJump,
@@ -302,12 +327,21 @@ export function useReaderChapterProgress({
           scrollRatio: ratio,
           scrollTop: 0,
           completed: completedRef.current,
+          bookPercent: computeBookPercent(chapterIndex, ratio, completedRef.current),
+          ...(rereadCountRef.current > 0 ? { rereadCount: rereadCountRef.current } : {}),
           updatedAt: Date.now(),
         },
         reachedEnd,
       );
     },
-    [chapterIndex, chapters.length, completedRef, currentChapterMeta, queueProgressSave],
+    [
+      chapterIndex,
+      chapters.length,
+      completedRef,
+      computeBookPercent,
+      currentChapterMeta,
+      queueProgressSave,
+    ],
   );
 
   const completeBook = useCallback(
@@ -323,6 +357,7 @@ export function useReaderChapterProgress({
             scrollRatio: 1,
             scrollTop: scrollContainerRef.current?.scrollTop || 0,
             completed: true,
+            bookPercent: 100,
             ...(rereadCountRef.current > 0 ? { rereadCount: rereadCountRef.current } : {}),
             updatedAt: Date.now(),
           },
@@ -349,7 +384,7 @@ export function useReaderChapterProgress({
     if (!first) return;
     rereadCountRef.current = Math.min(999, rereadCountRef.current + 1);
     completedRef.current = false;
-    goToChapter(0, 0);
+    goToChapter(0, 0, true);
     queueProgressSave(
       {
         chapterId: first.id,
@@ -359,6 +394,7 @@ export function useReaderChapterProgress({
         scrollRatio: 0,
         scrollTop: 0,
         completed: false,
+        bookPercent: 0,
         rereadCount: rereadCountRef.current,
         updatedAt: Date.now(),
       },
@@ -368,8 +404,8 @@ export function useReaderChapterProgress({
 
   const overallPercent = useMemo(() => {
     if (chapters.length === 0) return 0;
-    return Math.min(100, Math.round(((chapterIndex + chapterScrollRatio) / chapters.length) * 100));
-  }, [chapterIndex, chapterScrollRatio, chapters.length]);
+    return Math.min(100, Math.round(computeBookPercent(chapterIndex, chapterScrollRatio, false)));
+  }, [chapterIndex, chapterScrollRatio, chapters.length, computeBookPercent]);
 
   const computeRemainingEstimate = useCallback(
     (chapterWords: number, laterBookWords = 0) =>
@@ -420,6 +456,7 @@ export function useReaderChapterProgress({
     restoreTargetRatioRef,
     suppressSaveRef,
     overallPercent,
+    computeBookPercent,
     syncChapterWords,
     computeRemainingEstimate,
     handleUpdateSettings,

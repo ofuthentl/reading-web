@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Highlighter, Trash2, X } from 'lucide-react';
 import type { BookHighlight, HighlightColor } from '@/types';
 import type { SelectionHighlightDraft } from '@/lib/domHighlights';
@@ -30,6 +30,7 @@ export function ReaderHighlightPopover({
   onClose,
 }: ReaderHighlightPopoverProps) {
   const isOpen = Boolean(draft || editing);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const [color, setColor] = useState<HighlightColor>('amber');
   const [note, setNote] = useState('');
 
@@ -45,15 +46,58 @@ export function ReaderHighlightPopover({
 
   useEffect(() => {
     if (!isOpen) return;
+    let selectionTimer: number | null = null;
+    const isInsideDialog = (node: EventTarget | null) =>
+      node instanceof Node && Boolean(dialogRef.current?.contains(node));
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
         onClose();
       }
     };
+    // Không dùng backdrop fixed inset-0 để giữ tay kéo vùng chọn văn bản trên mobile tự do hoạt động
+    const onPointerDown = (e: PointerEvent) => {
+      if (isInsideDialog(e.target)) return;
+      if (editing || e.pointerType === 'mouse') {
+        onClose();
+      }
+    };
+    const onDocumentClick = (e: MouseEvent) => {
+      if (isInsideDialog(e.target)) return;
+      if (editing || !window.getSelection()?.toString().trim()) {
+        onClose();
+      }
+    };
+    const onSelectionChange = () => {
+      if (!draft) return;
+      if (dialogRef.current?.contains(document.activeElement)) return;
+      if (selectionTimer !== null) window.clearTimeout(selectionTimer);
+      if (!window.getSelection()?.toString().trim()) {
+        selectionTimer = window.setTimeout(() => {
+          selectionTimer = null;
+          if (
+            !dialogRef.current?.contains(document.activeElement) &&
+            !window.getSelection()?.toString().trim()
+          ) {
+            onClose();
+          }
+        }, 120);
+      }
+    };
+
     window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [isOpen, onClose]);
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('click', onDocumentClick);
+    document.addEventListener('selectionchange', onSelectionChange);
+    return () => {
+      if (selectionTimer !== null) window.clearTimeout(selectionTimer);
+      window.removeEventListener('keydown', onKeyDown, true);
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('click', onDocumentClick);
+      document.removeEventListener('selectionchange', onSelectionChange);
+    };
+  }, [draft, editing, isOpen, onClose]);
 
   const activeAnchor = draft
     ? { x: draft.anchorX, y: draft.anchorY }
@@ -77,30 +121,30 @@ export function ReaderHighlightPopover({
     : Math.max(56, activeAnchor.y - 12);
 
   return (
-    <div className="fixed inset-0 z-[58]" onMouseDown={onClose}>
-      <div
-        role="dialog"
-        aria-label={editing ? 'Chỉnh sửa bôi màu' : 'Bôi màu đoạn chọn'}
-        onMouseDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
-        style={
-          isMobile
-            ? undefined
-            : {
-                left: `${clampedLeft}px`,
-                top: `${desktopTop}px`,
-                width: `${cardW}px`,
-                transform: placeBelow ? undefined : 'translateY(-100%)',
-              }
-        }
-        className={`fade-in select-none border shadow-2xl ${palette.panelBg} ${palette.border} ${
-          isMobile
-            ? mobilePlaceTop
-              ? 'fixed inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] rounded-2xl p-3.5'
-              : 'fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] rounded-2xl p-3.5'
-            : 'fixed rounded-2xl p-3'
-        }`}
-      >
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-label={editing ? 'Chỉnh sửa bôi màu' : 'Bôi màu đoạn chọn'}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      style={
+        isMobile
+          ? undefined
+          : {
+              left: `${clampedLeft}px`,
+              top: `${desktopTop}px`,
+              width: `${cardW}px`,
+              transform: placeBelow ? undefined : 'translateY(-100%)',
+            }
+      }
+      className={`fade-in z-[58] select-none border shadow-2xl ${palette.panelBg} ${palette.border} ${
+        isMobile
+          ? mobilePlaceTop
+            ? 'fixed inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] rounded-2xl p-3.5'
+            : 'fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] rounded-2xl p-3.5'
+          : 'fixed rounded-2xl p-3'
+      }`}
+    >
         <div className="mb-2.5 flex items-center justify-between gap-2">
           <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
             <Highlighter className={`h-3.5 w-3.5 ${palette.accentText}`} />
@@ -183,7 +227,6 @@ export function ReaderHighlightPopover({
           </button>
         </div>
       </div>
-    </div>
   );
 }
 

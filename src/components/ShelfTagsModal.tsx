@@ -338,6 +338,7 @@ export function ShelfTagsModal({
               defaultIncludeAltTitlesInTagsMode={currentAltTitles.length === 0}
               onApplyCandidate={handleApplyAniListTags}
               onClose={() => setAnilistOpen(false)}
+              onApiError={onApiError}
               onNotify={onNotify}
             />
           )}

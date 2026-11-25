@@ -15,12 +15,12 @@ export function findNextBookInShelf(
   sessionRole: AuthRole = 'owner',
 ): Book | null {
   if (!currentBook || allBooks.length <= 1) return null;
-  const shelfKey = (currentBook.shelf || '').trim().toLocaleLowerCase('vi');
+  const shelfKey = (currentBook.shelf || '').normalize('NFC').trim().toLocaleLowerCase('vi');
   if (!shelfKey || shelfKey === UNCLASSIFIED_SHELF_KEY) return null;
 
   const sameShelf = sortBooksByTitle(
     allBooks.filter(
-      (b) => (b.shelf || '').trim().toLocaleLowerCase('vi') === shelfKey,
+      (b) => (b.shelf || '').normalize('NFC').trim().toLocaleLowerCase('vi') === shelfKey,
     ),
   );
   if (sameShelf.length <= 1) return null;

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Award,
   BarChart3,
@@ -16,6 +16,7 @@ import { DailyGoalCard } from '@/components/DailyGoalCard';
 import { ReadingHeatmapSection } from '@/components/ReadingHeatmapSection';
 import type { BookOpenJumpTarget } from '@/hooks/useBookReader';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
+import { isAuthError } from '@/lib/authSession';
 import { getBookSortTitle, getDisplayAuthor } from '@/lib/bookMetadata';
 import { computeDetailedLibraryInsights } from '@/lib/readingStats';
 import {
@@ -42,6 +43,7 @@ export interface ReadingStatsModalProps {
   onClose: () => void;
   onOpenBook: (book: Book, jumpTarget?: BookOpenJumpTarget) => void;
   onOpenCacheManager?: () => void;
+  onApiError?: (err: unknown, fallbackMessage: string) => void;
 }
 
 function formatRecentReadTime(ts: number): string {
@@ -67,11 +69,14 @@ export function ReadingStatsModal({
   onClose,
   onOpenBook,
   onOpenCacheManager,
+  onApiError,
 }: ReadingStatsModalProps) {
   const [activity, setActivity] = useState<ReaderActivityReport | null>(null);
   const [activityLoading, setActivityLoading] = useState(false);
   const [quoteVaultOpen, setQuoteVaultOpen] = useState(false);
   const [wrappedOpen, setWrappedOpen] = useState(false);
+  const progressRef = useRef(progress);
+  progressRef.current = progress;
 
   useBodyScrollLock(open);
 
@@ -88,16 +93,21 @@ export function ReadingStatsModal({
     if (!open) return;
     const controller = new AbortController();
     setActivityLoading(true);
-    void fetchReaderActivityStats(progress, controller.signal)
+    void fetchReaderActivityStats(progressRef.current, controller.signal)
       .then((res) => {
         if (!controller.signal.aborted) setActivity(res);
       })
-      .catch(() => undefined)
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        if (isAuthError(err)) {
+          onApiError?.(err, 'Phiên đăng nhập đã hết hạn.');
+        }
+      })
       .finally(() => {
         if (!controller.signal.aborted) setActivityLoading(false);
       });
     return () => controller.abort();
-  }, [open, progress]);
+  }, [onApiError, open]);
 
   const liveProgressSeconds = useMemo(() => {
     if (!open) return 0;
@@ -357,6 +367,7 @@ export function ReadingStatsModal({
             books={books}
             sessionRole={sessionRole}
             onClose={() => setQuoteVaultOpen(false)}
+            onApiError={onApiError}
             onOpenHighlightBook={(targetBook, chIdx, ratio) => {
               setQuoteVaultOpen(false);
               onClose();

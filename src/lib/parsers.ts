@@ -6,7 +6,7 @@ import { compressCoverBlob } from '@/lib/coverImage';
 import { extractDocxCover, parseDocxZip } from '@/lib/docxParser';
 import { buildEpubChapters, type RawEpubSection } from '@/lib/epubChapters';
 import { extractTextExcludingRubyAnnotations } from '@/lib/rubyText';
-import { sanitizeHtmlToBody } from '@/lib/sanitizeHtml';
+import { parseAndSanitizeEpubBody } from '@/lib/sanitizeHtml';
 import {
   LAZY_MEDIA_PLACEHOLDER_SRC,
   createLazyZipMediaController,
@@ -46,51 +46,6 @@ function resolveZipPath(basePath: string, relativePath: string): string {
     else resolved.push(part);
   }
   return resolved.join('/');
-}
-
-const HTML_VOID_OR_SVG_LEAF_RE =
-  /^(?:area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr|image|path|rect|circle|line|polygon|polyline|ellipse|use|stop)$/i;
-const SELF_CLOSING_TAG_RE = /<([a-zA-Z][\w:-]*)(?:\s[^<>]*?)?\/>/g;
-const EMPTY_HEAD_RAWTEXT_RE = /<(title|style)(\s[^<>]*?)?\/>/gi;
-
-function hasNonVoidSelfClosingTag(source: string): boolean {
-  SELF_CLOSING_TAG_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = SELF_CLOSING_TAG_RE.exec(source)) !== null) {
-    if (!HTML_VOID_OR_SVG_LEAF_RE.test(match[1])) return true;
-  }
-  return false;
-}
-
-/**
- * Parse và làm sạch XHTML của 1 chương EPUB trong 1 bước (`sanitizeHtmlToBody`):
- * - Chuẩn hoá nhanh `<title/>`/`<style/>` rồi kiểm tra xem có thẻ tự đóng non-void (`<a id="fn1"/>`, `<div/>`...) hay không.
- * - ~95%+ chương đi thẳng đường nhanh 1 lần parse duy nhất thay vì 5–6 vòng parse/serialize.
- */
-function parseAndSanitizeEpubBody(source: string): HTMLElement {
-  const preNormalized = source.includes('/>')
-    ? source.replace(EMPTY_HEAD_RAWTEXT_RE, '<$1$2></$1>')
-    : source;
-
-  if (!preNormalized.includes('/>') || !hasNonVoidSelfClosingTag(preNormalized)) {
-    return sanitizeHtmlToBody(preNormalized);
-  }
-
-  try {
-    const xmlDoc = new DOMParser().parseFromString(source, 'application/xhtml+xml');
-    if (!xmlDoc.querySelector('parsererror') && xmlDoc.body) {
-      const serialized = new XMLSerializer().serializeToString(xmlDoc.body);
-      return sanitizeHtmlToBody(serialized);
-    }
-  } catch {
-    // Fallback to regex normalization + HTML5 sanitizer below
-  }
-
-  const fallbackNormalized = preNormalized.replace(
-    /<(a|span|div|p|h[1-6]|section|aside|blockquote|li|td|th)\b([^<>]*?)\/>/gi,
-    '<$1$2></$1>',
-  );
-  return sanitizeHtmlToBody(fallbackNormalized);
 }
 
 function safeDecodeUri(value: string): string {
@@ -430,72 +385,81 @@ async function parseEpubBlob(
       mediaCtrl = createLazyZipMediaController(zip, manifestByPath);
     }
 
-    // Giải nén song song toàn bộ tệp XHTML trong spine thay vì chờ tuần tự từng tệp
-    const spineSources = await Promise.all(
-      spineItems.map(({ path }) => zip.file(path)?.async('string') ?? Promise.resolve(null)),
-    );
-
+    // Giải nén theo lô nhỏ 4 tệp/lô và xả chuỗi nguồn ngay sau khi parse để cắt đỉnh RAM trên iOS WebKit
+    const SPINE_DECOMPRESS_BATCH_SIZE = 4;
     const placeholderSrc = skipMedia ? 'data:,' : LAZY_MEDIA_PLACEHOLDER_SRC;
     const rawSections: RawEpubSection[] = [];
 
-    for (let i = 0; i < spineItems.length; i += 1) {
-      const source = spineSources[i];
-      if (!source) continue;
-      const { path, tocKey } = spineItems[i];
+    for (
+      let batchStart = 0;
+      batchStart < spineItems.length;
+      batchStart += SPINE_DECOMPRESS_BATCH_SIZE
+    ) {
+      const batch = spineItems.slice(batchStart, batchStart + SPINE_DECOMPRESS_BATCH_SIZE);
+      const batchSources = await Promise.all(
+        batch.map(({ path }) => zip.file(path)?.async('string') ?? Promise.resolve(null)),
+      );
 
-      const body = parseAndSanitizeEpubBody(source);
+      for (let j = 0; j < batch.length; j += 1) {
+        const source = batchSources[j];
+        batchSources[j] = null;
+        if (!source) continue;
+        const { path, tocKey } = batch[j];
 
-      for (const img of Array.from(body.querySelectorAll<HTMLImageElement>('img[src]'))) {
-        const src = img.getAttribute('src');
-        if (!src) continue;
-        img.removeAttribute('width');
-        img.removeAttribute('height');
-        img.style.removeProperty('width');
-        img.style.removeProperty('height');
-        if (src.startsWith('data:')) continue;
-        const matchedPath = resolveMatchedImageZipPath(path, src);
-        if (matchedPath) {
-          img.src = placeholderSrc;
-          img.loading = 'lazy';
-          img.setAttribute('data-zip-path', matchedPath);
-        } else {
-          img.remove();
+        const body = parseAndSanitizeEpubBody(source);
+
+        for (const img of Array.from(body.querySelectorAll<HTMLImageElement>('img[src]'))) {
+          const src = img.getAttribute('src');
+          if (!src) continue;
+          img.removeAttribute('width');
+          img.removeAttribute('height');
+          img.style.removeProperty('width');
+          img.style.removeProperty('height');
+          if (src.startsWith('data:')) continue;
+          const matchedPath = resolveMatchedImageZipPath(path, src);
+          if (matchedPath) {
+            img.src = placeholderSrc;
+            img.loading = 'lazy';
+            img.setAttribute('data-zip-path', matchedPath);
+          } else {
+            img.remove();
+          }
         }
-      }
 
-      for (const svgImg of Array.from(body.querySelectorAll<SVGImageElement>('svg image'))) {
-        const src = svgImg.getAttribute('href') || svgImg.getAttribute('xlink:href');
-        if (!src || src.startsWith('data:')) continue;
-        const matchedPath = resolveMatchedImageZipPath(path, src);
-        if (matchedPath) {
-          svgImg.setAttribute('href', placeholderSrc);
-          svgImg.setAttribute('data-zip-path', matchedPath);
-          svgImg.removeAttribute('xlink:href');
-        } else {
-          svgImg.remove();
+        for (const svgImg of Array.from(body.querySelectorAll<SVGImageElement>('svg image'))) {
+          const src = svgImg.getAttribute('href') || svgImg.getAttribute('xlink:href');
+          if (!src || src.startsWith('data:')) continue;
+          const matchedPath = resolveMatchedImageZipPath(path, src);
+          if (matchedPath) {
+            svgImg.setAttribute('href', placeholderSrc);
+            svgImg.setAttribute('data-zip-path', matchedPath);
+            svgImg.removeAttribute('xlink:href');
+          } else {
+            svgImg.remove();
+          }
         }
+
+        const bodyHtml = body.innerHTML.trim().normalize('NFC');
+        const plainText = extractTextExcludingRubyAnnotations(body)
+          .replace(/\s+/g, ' ')
+          .trim()
+          .normalize('NFC');
+        const hasMedia = body.querySelector('img, svg image') !== null;
+        if (!plainText && !hasMedia) continue;
+
+        const headingText = extractTextExcludingRubyAnnotations(body.querySelector('h1, h2, h3'))
+          .replace(/\s+/g, ' ')
+          .trim()
+          .normalize('NFC');
+        rawSections.push({
+          tocTitle: tocTitlesByPath.get(tocKey) ?? tocTitlesByPath.get(path.toLowerCase()) ?? null,
+          filenameTitle: getFilenameChapterTitle(path),
+          headingTitle: headingText && headingText.length <= 90 ? headingText : null,
+          bodyHtml,
+          plainText,
+          hasMedia,
+        });
       }
-
-      const bodyHtml = body.innerHTML.trim().normalize('NFC');
-      const plainText = extractTextExcludingRubyAnnotations(body)
-        .replace(/\s+/g, ' ')
-        .trim()
-        .normalize('NFC');
-      const hasMedia = body.querySelector('img, svg image') !== null;
-      if (!plainText && !hasMedia) continue;
-
-      const headingText = extractTextExcludingRubyAnnotations(body.querySelector('h1, h2, h3'))
-        .replace(/\s+/g, ' ')
-        .trim()
-        .normalize('NFC');
-      rawSections.push({
-        tocTitle: tocTitlesByPath.get(tocKey) ?? tocTitlesByPath.get(path.toLowerCase()) ?? null,
-        filenameTitle: getFilenameChapterTitle(path),
-        headingTitle: headingText && headingText.length <= 90 ? headingText : null,
-        bodyHtml,
-        plainText,
-        hasMedia,
-      });
     }
 
     const chapters = buildEpubChapters(rawSections, book.id);
@@ -512,7 +476,7 @@ async function parseEpubBlob(
         const ctrl = mediaCtrl;
         return {
           chapters,
-          ensureChapterMedia: (idx) => ctrl.ensureChapterMedia(chapters, idx),
+          ensureChapterMedia: (idx, opts) => ctrl.ensureChapterMedia(chapters, idx, opts),
           resolveMediaUrl: ctrl.resolveMediaUrl,
           dispose,
         };

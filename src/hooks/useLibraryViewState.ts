@@ -447,7 +447,7 @@ export function useLibraryViewState(
       includedTagKeys.length > 0 ||
       excludedTagKeys.length > 0 ||
       activeShelfKey ||
-      activeCollectionId ||
+      (activeTab === 'library' && activeCollectionId) ||
       statusFilter !== 'all',
   );
 

@@ -211,6 +211,7 @@ export function ReaderOverlaysHost({
             books={allBooks.length > 0 ? allBooks : [book]}
             sessionRole={role}
             onClose={() => features.setQuoteVaultOpen(false)}
+            onApiError={onApiError}
             onDeletedHighlight={(hlId, hlBookId) => {
               if (hlBookId === book.id) {
                 features.removeHighlightLocal(hlId);

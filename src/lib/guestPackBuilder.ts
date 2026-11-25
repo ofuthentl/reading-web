@@ -16,6 +16,17 @@ const MAX_MEDIA_CHAPTER_KEYS = 200;
 export interface GuestPackPreloadedZip {
   arrayBuffer?: ArrayBuffer;
   zip?: JSZip;
+  signal?: AbortSignal;
+}
+
+function createPackAbortError(): Error {
+  return typeof DOMException !== 'undefined'
+    ? new DOMException('The operation was aborted.', 'AbortError')
+    : new Error('The operation was aborted.');
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw createPackAbortError();
 }
 
 interface PackManifestChapter {
@@ -89,20 +100,24 @@ async function gzipCompressBytes(raw: Uint8Array): Promise<Uint8Array> {
 async function compressSegmentsInParallel(
   payloads: readonly Uint8Array[],
   concurrency: number,
+  signal?: AbortSignal,
 ): Promise<Uint8Array[]> {
   if (payloads.length === 0) return [];
+  throwIfAborted(signal);
   const results = new Array<Uint8Array>(payloads.length);
   let cursor = 0;
   const workerCount = Math.min(concurrency, payloads.length);
   await Promise.all(
     Array.from({ length: workerCount }, async () => {
       while (cursor < payloads.length) {
+        throwIfAborted(signal);
         const idx = cursor;
         cursor += 1;
         results[idx] = await gzipCompressBytes(payloads[idx]);
       }
     }),
   );
+  throwIfAborted(signal);
   return results;
 }
 
@@ -119,7 +134,10 @@ export async function buildGuestPackEnvelope(
     throw new Error('Chỉ hỗ trợ tạo gói bảo mật khách cho EPUB và DOCX.');
   }
 
+  const signal = preloaded?.signal;
+  throwIfAborted(signal);
   const arrayBuffer = preloaded?.arrayBuffer ?? (await blob.arrayBuffer());
+  throwIfAborted(signal);
   const zipMap = parseZipEntryOffsets(arrayBuffer);
   const parsed = await parseBookBlob(blob, book, {
     skipMediaBlobs: true,
@@ -128,6 +146,7 @@ export async function buildGuestPackEnvelope(
   });
 
   try {
+    throwIfAborted(signal);
     const encoder = new TextEncoder();
     const mediaByZipPath = new Map<string, number>();
     const mediaList: PackManifestMedia[] = [];
@@ -135,6 +154,7 @@ export async function buildGuestPackEnvelope(
     const pendingSegments: Array<{ id: string; title: string; jsonBytes: Uint8Array }> = [];
 
     for (const chapter of parsed.chapters) {
+      throwIfAborted(signal);
       // Parse HTML đúng 1 lần duy nhất cho cả chuyển đổi block và trích chú thích
       const parsedDoc =
         chapter.content_html && typeof DOMParser !== 'undefined'
@@ -193,6 +213,7 @@ export async function buildGuestPackEnvelope(
     const compressedChunks = await compressSegmentsInParallel(
       pendingSegments.map((s) => s.jsonBytes),
       GZIP_CONCURRENCY,
+      signal,
     );
 
     const manifestChapters: PackManifestChapter[] = [];
@@ -249,7 +270,11 @@ export async function uploadGuestPackEnvelope(
     error?: string;
   };
   if (!res.ok) {
-    throw new Error(data.error || 'Không thể tải gói bảo mật chế độ khách lên máy chủ.');
+    const err = new Error(
+      data.error || 'Không thể tải gói bảo mật chế độ khách lên máy chủ.',
+    ) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
   }
   return {
     chapterCount: data.chapterCount ?? 0,

@@ -283,11 +283,11 @@ export function ShelfCoverCard({
             />
             <span
               aria-hidden="true"
-              className="pointer-events-none absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-[#120b0e]/78 text-[#fce7eb] shadow-lg backdrop-blur-md transition-transform duration-300 group-hover:scale-105"
+              className="pointer-events-none absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-[#120b0e]/88 text-[#fce7eb] shadow-lg transition-transform duration-300 group-hover:scale-105"
             >
               <Lock className="h-4 w-4" />
             </span>
-            <span className="pointer-events-none absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md border border-rose-300/40 bg-[#140b0e]/88 px-2 py-0.5 text-[10.5px] font-semibold tracking-tight text-rose-100 backdrop-blur-sm">
+            <span className="pointer-events-none absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md border border-rose-300/40 bg-[#140b0e]/92 px-2 py-0.5 text-[10.5px] font-semibold tracking-tight text-rose-100">
               <Lock className="h-2.5 w-2.5 shrink-0" />
               <span>Giới hạn</span>
             </span>
@@ -295,7 +295,7 @@ export function ShelfCoverCard({
         )}
 
         {!isGuestLocked && accessSummary?.mode === 'restricted' && (
-          <span className="pointer-events-none absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md border border-rose-300/35 bg-[#140b0e]/85 px-2 py-0.5 text-[10.5px] font-medium tracking-tight text-rose-100 backdrop-blur-sm">
+          <span className="pointer-events-none absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md border border-rose-300/35 bg-[#140b0e]/90 px-2 py-0.5 text-[10.5px] font-medium tracking-tight text-rose-100">
             <Lock className="h-2.5 w-2.5 shrink-0" />
             <span>
               {accessSummary.allowedCount > 0
@@ -311,7 +311,7 @@ export function ShelfCoverCard({
             aria-label={`Đánh giá ${ratingAverage.toFixed(1)} sao (${ratingCount} lượt)`}
             className={`pointer-events-none absolute left-2 ${
               isGuestLocked || accessSummary?.mode === 'restricted' ? 'bottom-8' : 'bottom-2'
-            } inline-flex items-center gap-0.5 rounded-md border border-amber-300/35 bg-[#16120f]/88 px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums text-amber-300 backdrop-blur-sm`}
+            } inline-flex items-center gap-0.5 rounded-md border border-amber-300/35 bg-[#16120f]/92 px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums text-amber-300`}
           >
             <span aria-hidden="true">★</span>
             <span>{ratingAverage.toFixed(1)}</span>
@@ -319,7 +319,7 @@ export function ShelfCoverCard({
         )}
 
         {/* Badge số tập góc dưới-phải */}
-        <span className="pointer-events-none absolute bottom-2 right-2 rounded-md border border-white/15 bg-[#111113]/85 px-2 py-0.5 text-[11px] font-semibold tracking-tight text-[#f4f4f5] backdrop-blur-sm">
+        <span className="pointer-events-none absolute bottom-2 right-2 rounded-md border border-white/15 bg-[#111113]/90 px-2 py-0.5 text-[11px] font-semibold tracking-tight text-[#f4f4f5]">
           {bookCount} tập
         </span>
 

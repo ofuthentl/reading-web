@@ -1,13 +1,10 @@
-import { type AuthContext, HttpError, ensureDiscordAccessTable } from './auth';
-import {
-  loadGuestLockedChapterKeysForBook,
-  toCanonicalChapterKey,
-} from './bookChapterAccessDb';
+import { type AuthContext, HttpError } from './auth';
+import { toCanonicalChapterKey } from './bookChapterAccessDb';
 import { type Env, isValidId } from './booksDb';
 import type { WatermarkBlock } from './forensicWatermark';
+import { loadGuestBookAccessAndPackBatch } from './guestAccessBatchDb';
 import type { GuestBookManifest } from './guestPack';
 import { consumeGuestRateToken } from './rateLimitDb';
-import { assertGuestBookAccess } from './shelfAccessDb';
 
 const MAX_SCAN_CHAPTERS = 400;
 const MAX_SCAN_DECOMPRESSED_CHARS = 5_000_000;
@@ -28,8 +25,9 @@ export interface GuestBookIllustrationItem {
 }
 
 /**
- * Quét chỉ mục ảnh minh hoạ trực tiếp từ gói `guest-packs/<bookId>.pack` sẵn có (D-036 Mục 2):
- * Hoạt động ngay với toàn bộ 263 cuốn sách cũ mà không cần đóng gói lại (`0` re-pack).
+ * Quét chỉ mục ảnh minh hoạ từ gói `guest-packs/<bookId>.pack` (D-036 Mục 2 & D-046):
+ * - Gói mới có `media[i].ch`: đường nhanh 0 lượt đọc R2 (< 0.5ms CPU).
+ * - Gói cũ chưa có `media[i].ch`: quét trực tiếp từ gói `OFGP` sẵn có (`0` re-pack), bỏ qua chương khoá.
  */
 export async function getGuestBookIllustrations(
   env: Env,
@@ -37,20 +35,13 @@ export async function getGuestBookIllustrations(
   bookId: string,
 ): Promise<{ bookId: string; illustrations: GuestBookIllustrationItem[]; truncated?: boolean }> {
   if (!isValidId(bookId)) throw new HttpError('ID sách không hợp lệ.', 400);
-  await assertGuestBookAccess(env.DB, auth, bookId);
-  await ensureDiscordAccessTable(env.DB);
+  const { packKey, manifestJson, lockedChapterKeys } = await loadGuestBookAccessAndPackBatch(
+    env.DB,
+    auth,
+    bookId,
+  );
 
-  const row = await env.DB.prepare(
-    'SELECT pack_key, manifest_json FROM book_guest_packs WHERE book_id = ?',
-  )
-    .bind(bookId)
-    .first<{ pack_key: string; manifest_json: string }>();
-
-  if (!row) {
-    throw new HttpError('Sách này chưa có gói bảo mật chế độ khách.', 404);
-  }
-
-  const manifest = JSON.parse(row.manifest_json) as GuestBookManifest;
+  const manifest = JSON.parse(manifestJson) as GuestBookManifest;
   if (!Array.isArray(manifest.media) || manifest.media.length === 0) {
     return { bookId, illustrations: [] };
   }
@@ -64,9 +55,51 @@ export async function getGuestBookIllustrations(
     });
   }
 
-  const lockedChapterKeys = await loadGuestLockedChapterKeysForBook(env.DB, auth, bookId);
+  // Đường nhanh gói mới: mọi media đều có chỉ mục `ch` → 0 lượt đọc R2 & 0 giải nén gzip
+  const canUseFastPath = manifest.media.every((m) => Array.isArray(m.ch) && m.ch.length > 0);
+  if (canUseFastPath) {
+    const chapterMetaByKey = new Map<string, { index: number; title: string }>();
+    for (let i = 0; i < manifest.chapters.length; i += 1) {
+      const canonical = toCanonicalChapterKey(manifest.chapters[i].id);
+      if (canonical && !chapterMetaByKey.has(canonical)) {
+        chapterMetaByKey.set(canonical, { index: i, title: manifest.chapters[i].title });
+      }
+    }
 
-  const obj = await env.BOOKS_BUCKET.get(row.pack_key);
+    const fastItems: GuestBookIllustrationItem[] = [];
+    for (let mediaIndex = 0; mediaIndex < manifest.media.length; mediaIndex += 1) {
+      const chKeys = manifest.media[mediaIndex].ch || [];
+      let earliest: { index: number; title: string } | null = null;
+      for (const rawKey of chKeys) {
+        const canonical = toCanonicalChapterKey(rawKey);
+        if (!canonical || lockedChapterKeys.has(canonical)) continue;
+        const meta = chapterMetaByKey.get(canonical);
+        if (!meta) continue;
+        if (!earliest || meta.index < earliest.index) {
+          earliest = meta;
+        }
+      }
+      if (!earliest) continue;
+      fastItems.push({
+        mediaIndex,
+        chapterIndex: earliest.index,
+        chapterNumber: earliest.index + 1,
+        chapterTitle: earliest.title,
+        alt: null,
+      });
+    }
+
+    fastItems.sort((a, b) => a.chapterIndex - b.chapterIndex || a.mediaIndex - b.mediaIndex);
+    const truncated = fastItems.length > MAX_ILLUSTRATION_ITEMS;
+    const illustrations = truncated ? fastItems.slice(0, MAX_ILLUSTRATION_ITEMS) : fastItems;
+    return {
+      bookId,
+      illustrations,
+      ...(truncated ? { truncated: true } : {}),
+    };
+  }
+
+  const obj = await env.BOOKS_BUCKET.get(packKey);
   if (!obj) throw new HttpError('Không tìm thấy gói chương trên kho lưu trữ.', 404);
 
   const packBytes = new Uint8Array(await obj.arrayBuffer());
@@ -80,35 +113,47 @@ export async function getGuestBookIllustrations(
   for (let i = 0; i < scanLimit; i += 1) {
     const chMeta = manifest.chapters[i];
     if (lockedChapterKeys.has(toCanonicalChapterKey(chMeta.id))) continue;
+    if (
+      chMeta.offset < 0 ||
+      chMeta.length <= 0 ||
+      chMeta.offset + chMeta.length > packBytes.byteLength
+    ) {
+      continue;
+    }
     const slice = packBytes.subarray(chMeta.offset, chMeta.offset + chMeta.length);
     const stream = new Blob([slice]).stream().pipeThrough(new DecompressionStream('gzip'));
     const jsonStr = await new Response(stream).text();
     scannedChars += jsonStr.length;
 
-    const parsed = JSON.parse(jsonStr) as StoredGalleryChapter;
-    for (const block of parsed.blocks || []) {
-      if (block.kind !== 'img') continue;
-      if (
-        typeof block.mediaIndex !== 'number' ||
-        block.mediaIndex < 0 ||
-        block.mediaIndex >= manifest.media.length
-      ) {
-        continue;
-      }
-      if (seenMedia.has(block.mediaIndex)) continue;
-      seenMedia.add(block.mediaIndex);
+    if (jsonStr.includes('"mediaIndex"')) {
+      const parsed = JSON.parse(jsonStr) as StoredGalleryChapter;
+      for (const block of parsed.blocks || []) {
+        if (block.kind !== 'img') continue;
+        if (
+          typeof block.mediaIndex !== 'number' ||
+          block.mediaIndex < 0 ||
+          block.mediaIndex >= manifest.media.length
+        ) {
+          continue;
+        }
+        if (seenMedia.has(block.mediaIndex)) continue;
+        seenMedia.add(block.mediaIndex);
 
-      illustrations.push({
-        mediaIndex: block.mediaIndex,
-        chapterIndex: i,
-        chapterNumber: i + 1,
-        chapterTitle: chMeta.title,
-        alt: typeof block.alt === 'string' && block.alt.trim() ? block.alt.trim().slice(0, 140) : null,
-      });
+        illustrations.push({
+          mediaIndex: block.mediaIndex,
+          chapterIndex: i,
+          chapterNumber: i + 1,
+          chapterTitle: chMeta.title,
+          alt:
+            typeof block.alt === 'string' && block.alt.trim()
+              ? block.alt.trim().slice(0, 140)
+              : null,
+        });
 
-      if (illustrations.length >= MAX_ILLUSTRATION_ITEMS) {
-        truncated = true;
-        break;
+        if (illustrations.length >= MAX_ILLUSTRATION_ITEMS) {
+          truncated = true;
+          break;
+        }
       }
     }
 

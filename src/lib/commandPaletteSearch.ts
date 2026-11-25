@@ -215,6 +215,7 @@ export function buildCommandPaletteResults(options: {
           : 1,
       }))
       .filter((x) => (q ? x.score > 0 : true))
+      .sort((a, b) => b.score - a.score)
       .slice(0, q ? 4 : 2);
 
     for (const { hl } of matchedQuotes) {

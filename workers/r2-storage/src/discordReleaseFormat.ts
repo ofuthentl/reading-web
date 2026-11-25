@@ -259,17 +259,27 @@ export function formatReleaseVolumeSummary(
     return `**${sortedBooks.length} tập mới** vừa`;
   }
 
-  const dedupedEscaped: string[] = [];
-  const seenKeys = new Set<string>();
+  const dedupedEntries: Array<{ escaped: string; count: number }> = [];
+  const entryByKey = new Map<string, { escaped: string; count: number }>();
+  let totalLabeledBooks = 0;
   for (const label of rawDisplay) {
     const key = label.toLocaleLowerCase('vi');
-    if (!key || seenKeys.has(key)) continue;
-    seenKeys.add(key);
-    dedupedEscaped.push(escapeDiscordMarkdown(label.slice(0, 80)));
+    if (!key) continue;
+    totalLabeledBooks += 1;
+    const existing = entryByKey.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      const entry = { escaped: escapeDiscordMarkdown(label.slice(0, 80)), count: 1 };
+      entryByKey.set(key, entry);
+      dedupedEntries.push(entry);
+    }
   }
 
-  const shown = dedupedEscaped.slice(0, MAX_INLINE_LABELS_PER_EMBED);
-  const remaining = sortedBooks.length - shown.length;
+  const shownEntries = dedupedEntries.slice(0, MAX_INLINE_LABELS_PER_EMBED);
+  const shown = shownEntries.map((e) => e.escaped);
+  const shownBooksCount = shownEntries.reduce((sum, e) => sum + e.count, 0);
+  const remaining = Math.max(0, totalLabeledBooks - shownBooksCount);
   const joined =
     remaining > 0 ? `${shown.join(' · ')} … +${remaining} tập khác` : shown.join(' · ');
   return `**${joined}** vừa`;

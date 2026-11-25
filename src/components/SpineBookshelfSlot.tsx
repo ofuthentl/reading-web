@@ -62,6 +62,8 @@ export function SpineBookshelfSlot({
   } = summary;
 
   const lastPointerTypeRef = useRef<string>('mouse');
+  const suppressNextTouchFocusRef = useRef(false);
+  const wasOpenBeforeTouchRef = useRef(false);
   const [imgFailed, setImgFailed] = useState(false);
   const coverKey = coverBook?.cover_key ?? null;
 
@@ -103,17 +105,39 @@ export function SpineBookshelfSlot({
       title={`${shelf.name} (${bookCount} tập)`}
       style={slotStyle}
       onPointerDown={(event) => {
-        lastPointerTypeRef.current = event.pointerType || 'mouse';
+        const ptr = event.pointerType || 'mouse';
+        lastPointerTypeRef.current = ptr;
+        if (ptr === 'touch' || ptr === 'pen') {
+          suppressNextTouchFocusRef.current = true;
+          wasOpenBeforeTouchRef.current = isOpen;
+        } else {
+          suppressNextTouchFocusRef.current = false;
+        }
+      }}
+      onPointerCancel={() => {
+        suppressNextTouchFocusRef.current = false;
       }}
       onPointerEnter={(event) => {
         if (event.pointerType === 'mouse') {
           onHoverIntent(shelf.key);
         }
       }}
-      onFocus={() => {
+      onFocus={(event) => {
+        if (suppressNextTouchFocusRef.current) {
+          suppressNextTouchFocusRef.current = false;
+          return;
+        }
+        if (
+          (lastPointerTypeRef.current === 'touch' || lastPointerTypeRef.current === 'pen') &&
+          typeof event.currentTarget.matches === 'function' &&
+          !event.currentTarget.matches(':focus-visible')
+        ) {
+          return;
+        }
         onActivatePreview(shelf.key);
       }}
       onClick={(event) => {
+        suppressNextTouchFocusRef.current = false;
         // Bàn phím Enter / Space luôn có detail === 0 -> mở kệ ngay
         if (event.detail === 0) {
           onOpenShelf(shelf.key);
@@ -121,7 +145,7 @@ export function SpineBookshelfSlot({
         }
         const ptr = lastPointerTypeRef.current;
         if (ptr === 'touch' || ptr === 'pen') {
-          if (isOpen) {
+          if (wasOpenBeforeTouchRef.current && isOpen) {
             onOpenShelf(shelf.key);
           } else {
             onActivatePreview(shelf.key);

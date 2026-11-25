@@ -28,6 +28,7 @@ export interface UploadQueueItem {
   duplicateReason: 'library' | 'queue' | null;
   status: QueueItemStatus;
   errorMessage?: string;
+  warningMessage?: string;
 }
 
 interface UploadQueueListProps {
@@ -49,6 +50,14 @@ function QueueItemStatusNote({ item }: { item: UploadQueueItem }) {
     );
   }
   if (item.status === 'done') {
+    if (item.warningMessage) {
+      return (
+        <p className="mt-1 inline-flex items-start gap-1 text-xs text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+          <span>Đã lưu tệp nhưng có cảnh báo: {item.warningMessage}</span>
+        </p>
+      );
+    }
     return (
       <p className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
         <CheckCircle2 className="h-3 w-3" /> Đã lưu vào thư viện

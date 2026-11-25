@@ -35,6 +35,7 @@ interface GuestCanvasPaginatedViewProps {
   bookId: string;
   bookTitle: string;
   chapterData: GuestChapterPayload;
+  expectedChapterId?: string;
   chapterIndex: number;
   totalChapters: number;
   tocTitles?: readonly string[];
@@ -72,6 +73,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       bookId,
       bookTitle,
       chapterData,
+      expectedChapterId,
       chapterIndex,
       totalChapters,
       tocTitles,
@@ -130,9 +132,12 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       [footnoteMap],
     );
 
+    const isChapterSynced = !expectedChapterId || chapterData.id === expectedChapterId;
+
     useLayoutEffect(() => {
+      if (!isChapterSynced) return;
       anchorRatioRef.current = Math.min(1, Math.max(0, initialRatio));
-    }, [chapterData.id, initialRatio]);
+    }, [chapterData.id, initialRatio, isChapterSynced]);
 
     useLayoutEffect(() => {
       const el = outerRef.current;
@@ -194,7 +199,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     const singleSpreadEndReportedRef = useRef<string | null>(null);
 
     useEffect(() => {
-      if (chapterIndex === totalChapters - 1 && totalSpreads === 1) {
+      if (isChapterSynced && chapterIndex === totalChapters - 1 && totalSpreads === 1) {
         if (singleSpreadEndReportedRef.current !== chapterData.id) {
           singleSpreadEndReportedRef.current = chapterData.id;
           onRatioChange(1, true);
@@ -202,7 +207,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       } else {
         singleSpreadEndReportedRef.current = null;
       }
-    }, [chapterData.id, chapterIndex, onRatioChange, totalChapters, totalSpreads]);
+    }, [chapterData.id, chapterIndex, isChapterSynced, onRatioChange, totalChapters, totalSpreads]);
 
     useLayoutEffect(() => {
       const target = Math.min(
@@ -310,7 +315,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
     );
 
     useEffect(() => {
-      if (!searchTarget || searchTarget.chapterIndex !== chapterIndex) return;
+      if (!isChapterSynced || !searchTarget || searchTarget.chapterIndex !== chapterIndex) return;
       if (appliedSearchNonceRef.current === searchTarget.nonce) return;
       appliedSearchNonceRef.current = searchTarget.nonce;
 
@@ -332,7 +337,7 @@ export const GuestCanvasPaginatedView = forwardRef<PaginatedStageHandle, GuestCa
       return () => window.clearTimeout(timer);
     }, [
       chapterData.id, chapterIndex, columnPages, commitSpread,
-      geometry.columns, layoutItems, searchTarget,
+      geometry.columns, isChapterSynced, layoutItems, searchTarget,
     ]);
 
     const isLastChapter = chapterIndex >= totalChapters - 1;

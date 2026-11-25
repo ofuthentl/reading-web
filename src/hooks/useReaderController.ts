@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type MutableRefObject, useCallback, useEffect, useRef, useState } from 'react';
 import type { ReaderSettings, ReadingProgress, SaveProgressOptions } from '@/types';
 import type { ReaderLightboxTarget } from '@/components/ReaderImageLightbox';
 import type { ReaderDrawerTab } from '@/components/ReaderTocDrawer';
@@ -6,6 +6,7 @@ import { useActiveReadingTimer } from '@/hooks/useActiveReadingTimer';
 
 interface UseReaderControllerOptions {
   initialCompleted: boolean;
+  completedRef?: MutableRefObject<boolean>;
   settings: ReaderSettings;
   blockCopyShortcuts?: boolean;
   timerEnabled?: boolean;
@@ -23,6 +24,7 @@ interface UseReaderControllerOptions {
  */
 export function useReaderController({
   initialCompleted,
+  completedRef: externalCompletedRef,
   settings,
   blockCopyShortcuts = false,
   timerEnabled = true,
@@ -42,7 +44,8 @@ export function useReaderController({
   const pendingProgressRef = useRef<ReadingProgress | null>(null);
   const fallbackProgressRef = useRef<ReadingProgress | null>(fallbackProgress);
   const lastSentProgressRef = useRef<ReadingProgress | null>(fallbackProgress);
-  const completedRef = useRef(initialCompleted);
+  const internalCompletedRef = useRef(initialCompleted);
+  const completedRef = externalCompletedRef ?? internalCompletedRef;
 
   fallbackProgressRef.current = fallbackProgress;
   if (fallbackProgress && !lastSentProgressRef.current) {
@@ -51,7 +54,7 @@ export function useReaderController({
 
   useEffect(() => {
     completedRef.current = initialCompleted;
-  }, [initialCompleted]);
+  }, [completedRef, initialCompleted]);
 
   const flushRef = useRef<(opts?: { forceTimeFlush?: boolean; keepalive?: boolean }) => void>(
     () => undefined,
@@ -71,12 +74,15 @@ export function useReaderController({
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
       }
-      const minSec =
-        pendingProgressRef.current || opts?.forceTimeFlush || opts?.keepalive ? 1 : 5;
+      // Giữ ngưỡng 5s cho các lượt lưu cuộn debounce nhanh tránh tiêu thụ 1s khi server chưa đủ 1000ms làm mất reading_seconds
+      const minSec = opts?.forceTimeFlush || opts?.keepalive ? 1 : 5;
       const deltaSec = consumeDeltaSec(minSec);
+      const resolvedFallback = fallbackProgressRef.current ?? lastSentProgressRef.current;
       const target =
         pendingProgressRef.current ??
-        (deltaSec > 0 ? (fallbackProgressRef.current ?? lastSentProgressRef.current) : null);
+        (deltaSec > 0 && resolvedFallback
+          ? { ...resolvedFallback, completed: completedRef.current, updatedAt: Date.now() }
+          : null);
 
       if (!target) return;
       pendingProgressRef.current = null;
@@ -91,7 +97,7 @@ export function useReaderController({
           : undefined;
       onSaveProgress(target, saveOpts);
     },
-    [consumeDeltaSec, onSaveProgress],
+    [completedRef, consumeDeltaSec, onSaveProgress],
   );
 
   flushRef.current = flushProgress;
@@ -158,9 +164,10 @@ export function useReaderController({
       }
 
       if (isTyping || lightboxTarget) return;
-      const hasOpenDialog =
-        typeof document !== 'undefined' && Boolean(document.querySelector('[role="dialog"]'));
-      if (hasOpenDialog) return;
+      const hasBlockingDialog =
+        typeof document !== 'undefined' &&
+        Boolean(document.querySelector('[role="dialog"]:not([data-reader-chrome-dialog])'));
+      if (hasBlockingDialog) return;
 
       if (!event.ctrlKey && !event.metaKey && !event.altKey) {
         const key = event.key.toLowerCase();
@@ -178,6 +185,7 @@ export function useReaderController({
         }
         if (key === 'f') {
           event.preventDefault();
+          setTocOpen(false);
           setSettingsOpen(false);
           setImmersiveHidden((prev) => !prev);
           return;

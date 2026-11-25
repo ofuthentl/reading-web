@@ -2,10 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
+export type ToastAction = {
+  label: string;
+  onClick: () => void;
+};
+
 export type ToastItem = {
   id: string;
   type: ToastType;
   message: string;
+  action?: ToastAction;
 };
 
 const MAX_TOASTS = 5;
@@ -24,12 +30,12 @@ export function useToast() {
   }, []);
 
   const addToast = useCallback(
-    (message: string, type: ToastType = 'info', durationMs?: number) => {
+    (message: string, type: ToastType = 'info', durationMs?: number, action?: ToastAction) => {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const timeout = durationMs ?? (type === 'error' ? 6000 : 4000);
 
       setToasts((prev) => {
-        const next = [...prev, { id, type, message }];
+        const next = [...prev, { id, type, message, ...(action ? { action } : {}) }];
         if (next.length > MAX_TOASTS) {
           const removed = next.shift();
           if (removed) {

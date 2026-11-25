@@ -339,6 +339,7 @@ export async function deleteCustomCollection(collectionId: string): Promise<void
 
 export async function searchAniListLightNovelsApi(
   query: string,
+  signal?: AbortSignal,
 ): Promise<AniListNovelCandidate[]> {
   assertApiConfigured();
   const trimmed = query.trim();
@@ -347,13 +348,14 @@ export async function searchAniListLightNovelsApi(
   }
   if (!isCloudMode) {
     const { searchAniListDirectBrowser } = await import('@/lib/anilistDirect');
-    return searchAniListDirectBrowser(trimmed);
+    return searchAniListDirectBrowser(trimmed, signal);
   }
 
   const res = await apiFetch('/api/admin/anilist/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query: trimmed }),
+    signal,
   });
   const data = (await res.json().catch(() => ({}))) as {
     candidates?: AniListNovelCandidate[];
@@ -366,7 +368,7 @@ export async function searchAniListLightNovelsApi(
   // Nếu Cloudflare WAF phía AniList chặn IP Worker (502/504), fallback trực tiếp từ trình duyệt Admin (CORS ACAO: *)
   if (res.status === 502 || res.status === 504) {
     const { searchAniListDirectBrowser } = await import('@/lib/anilistDirect');
-    return searchAniListDirectBrowser(trimmed);
+    return searchAniListDirectBrowser(trimmed, signal);
   }
 
   throw new Error(

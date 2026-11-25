@@ -229,6 +229,19 @@ export function handleReaderContentLinkClick(
   return true;
 }
 
+export const LAZY_MEDIA_PLACEHOLDER_SRC =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+export function isLazyMediaPlaceholderSrc(src: string | null | undefined): boolean {
+  if (!src) return false;
+  const trimmed = src.trim();
+  return (
+    trimmed === 'data:,' ||
+    trimmed === LAZY_MEDIA_PLACEHOLDER_SRC ||
+    trimmed.startsWith('data:image/gif;base64,R0lGODlhAQAB')
+  );
+}
+
 /** Trích nguồn ảnh từ cả `<img>` thường và `<svg><image>` trong EPUB minh hoạ (Owner mode). */
 export function findClickedReaderImage(
   target: EventTarget | null,
@@ -238,7 +251,8 @@ export function findClickedReaderImage(
   if (!el) return null;
 
   const img = el.closest('.reading-content img') as HTMLImageElement | null;
-  if (img?.src) {
+  const imgSrc = img?.getAttribute('src') || img?.src || '';
+  if (img && imgSrc && !isLazyMediaPlaceholderSrc(imgSrc)) {
     return { src: img.src, alt: img.alt || fallbackAlt };
   }
 
@@ -249,7 +263,7 @@ export function findClickedReaderImage(
       svgImage.getAttribute('xlink:href') ||
       ''
     ).trim();
-    if (href && href !== 'data:,') {
+    if (href && !isLazyMediaPlaceholderSrc(href)) {
       return { src: href, alt: svgImage.getAttribute('aria-label') || fallbackAlt };
     }
   }
