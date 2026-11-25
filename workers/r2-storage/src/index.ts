@@ -212,8 +212,16 @@ async function handleApi(
   // List books + isolated user progress + storage (Weak ETag / 304 Not Modified, D-046 Phase 2.4)
   if (normalizedPath === '/api/books' && request.method === 'GET') {
     const state = await listBooksAndProgress(env, auth);
-    const serialized = JSON.stringify(state);
-    const etag = await computeWeakBooksEtag(serialized, auth.role, auth.userId);
+    const { session, ...etagData } = state;
+    const etag = await computeWeakBooksEtag(
+      JSON.stringify({
+        ...etagData,
+        sessionRole: session.role,
+        watermarkLabel: 'watermarkLabel' in session ? (session.watermarkLabel ?? null) : null,
+      }),
+      auth.role,
+      auth.userId,
+    );
     const headers = new Headers({
       'Cache-Control': 'private, no-cache',
       ETag: etag,
@@ -224,7 +232,7 @@ async function handleApi(
       return new Response(null, { status: 304, headers });
     }
     headers.set('Content-Type', 'application/json; charset=utf-8');
-    return new Response(serialized, { status: 200, headers });
+    return new Response(JSON.stringify(state), { status: 200, headers });
   }
 
   // Upload indexed Guest Chapter Pack for EPUB/DOCX (Owner only, D-028)

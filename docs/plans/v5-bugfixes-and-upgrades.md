@@ -172,10 +172,10 @@
 - [x] Cập nhật `README.md`, `docs/DECISIONS.md`, `docs/ARCHITECTURE.md`, `HANDOFF.md` trong cùng commit cuối Wave 1.
 
 ### Wave 2
-- [ ] Thay tệp EPUB/DOCX tại chỗ giữ nguyên 100% tiến độ (Owner & Guest), dấu trang, highlight, đánh giá, bình luận, phân quyền và tự cập nhật `guest-pack` + xoá tệp R2 cũ + làm mới cache IndexedDB.
-- [ ] Đối soát R2 liệt kê đúng file mồ côi và chỉ dọn file > 24h; bảng *Sức khoẻ kho sách* xem đủ toàn bộ mục; đồng bộ gói khách chọn lọc 1 bộ/1 cuốn hoạt động mượt.
-- [ ] Xuất/nhập sao lưu JSON Owner khôi phục chính xác; `GET /api/books` trả `304` khi `If-None-Match` khớp.
-- [ ] `typecheck`, `lint`, `build`, `test`, `tsc` Worker + cập nhật tài liệu & `HANDOFF.md`.
+- [x] Thay tệp EPUB/DOCX tại chỗ giữ nguyên 100% tiến độ (Owner & Guest), dấu trang, highlight, đánh giá, bình luận, phân quyền và tự cập nhật `guest-pack` + xoá tệp R2 cũ + làm mới cache IndexedDB.
+- [x] Đối soát R2 liệt kê đúng file mồ côi và chỉ dọn file > 24h; bảng *Sức khoẻ kho sách* xem đủ toàn bộ mục; đồng bộ gói khách chọn lọc 1 bộ/1 cuốn hoạt động mượt.
+- [x] Xuất/nhập sao lưu JSON Owner khôi phục chính xác; `GET /api/books` trả `304` khi `If-None-Match` khớp.
+- [x] `typecheck`, `lint`, `build`, `test`, `tsc` Worker + cập nhật tài liệu & `HANDOFF.md`.
 
 ### Wave 3
 - [ ] Khách Discord đọc tới ~80% chương mở tự prefetch chương `N+1` (bỏ qua chương khoá), bấm sang chương hiển thị tức thì `0ms`, vẫn giữ đủ thuỷ vân + `D-028`.

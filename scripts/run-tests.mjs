@@ -35,6 +35,11 @@ try {
     alias: {
       '@': resolve(rootDir, 'src'),
     },
+    define: {
+      'import.meta.env.DEV': 'true',
+      'import.meta.env.PROD': 'false',
+      'import.meta.env.VITE_API_URL': '""',
+    },
     logLevel: 'warning',
   });
 
