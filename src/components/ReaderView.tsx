@@ -433,7 +433,6 @@ export function ReaderView({
             ref={paginatedRef}
             bookId={book.id} bookTitle={book.title} chapter={currentChapter}
             chapterIndex={chapterIndex} totalChapters={chapters.length}
-            chapters={chapters} chapterScrollRatio={chapterScrollRatio} overallPercent={overallPercent}
             currentChapterNumber={currentChapterNumber} readerMaxChapterNumber={readerMaxChapterNumber}
             chapterOptions={chapterNumbering.options} initialRatio={paginatedStartRatio} nextBook={nextBook}
             settings={settings} palette={palette} immersiveHidden={immersiveHidden}
@@ -449,7 +448,7 @@ export function ReaderView({
             onRatioChange={handlePaginatedRatioChange}
             onPrevChapterEnd={() => { if (chapterIndex > 0) goToChapter(chapterIndex - 1, 1); }}
             onNextChapterStart={() => { if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1, 0); }}
-            onJumpToChapterRatio={goToChapter}
+            onOpenToc={() => { immersion.setSoundOpen(false); openDrawerTab('toc'); }}
             onCompleteBook={completeBook}
             onOpenImage={(src, alt) => setLightboxTarget({ kind: 'dom', src, alt })}
             onPageTurn={immersion.triggerPageTurnSound}
@@ -487,12 +486,11 @@ export function ReaderView({
 
           <ReaderFooterStatusBar
             chapterIndex={chapterIndex} totalChapters={chapters.length}
-            chapters={chapters} chapterScrollRatio={chapterScrollRatio}
             overallPercent={overallPercent} remainingEstimate={remainingEstimate}
             immersiveHidden={immersiveHidden} palette={palette}
             eyeBreakDue={ctrl.eyeBreakDue} eyeBreakMinutes={settings.eyeBreakMinutes}
             onAcknowledgeEyeBreak={ctrl.acknowledgeEyeBreak}
-            onJumpToChapterRatio={goToChapter}
+            onOpenToc={() => { immersion.setSoundOpen(false); openDrawerTab('toc'); }}
           />
         </>
       )}
@@ -507,7 +505,8 @@ export function ReaderView({
 
       <ReaderOverlaysHost
         role="owner"
-        book={book} allBooks={allBooks} chapters={chapters} parsedChapters={chapters}
+        book={book} allBooks={allBooks} chapters={chapters} chapterWeights={chapterWordCounts}
+        overallPercent={overallPercent} parsedChapters={chapters}
         resolveOwnerMediaUrl={parsedBook.resolveMediaUrl}
         chapterIndex={chapterIndex} currentChapterId={currentChapter?.id || ''}
         currentChapterTitle={currentChapter?.title || ''} chapterScrollRatio={chapterScrollRatio}

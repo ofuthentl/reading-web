@@ -3,6 +3,7 @@ import { Bookmark, Highlighter, Image as ImageIcon, List, Loader2, Lock, Search,
 import type { Book, BookHighlight, Chapter } from '@/types';
 import { getDisplayAuthor } from '@/lib/bookMetadata';
 import { ReaderHighlightsPanel } from '@/components/ReaderHighlightsPanel';
+import { ReaderKindlePercentBar } from '@/components/ReaderKindlePercentBar';
 import {
   ReaderBookmarksPanel,
   ReaderSearchPanel,
@@ -20,6 +21,8 @@ export type ReaderDrawerTab = 'toc' | 'illustrations' | 'search' | 'bookmarks';
 interface ReaderTocDrawerProps {
   book: Book;
   chapters: Chapter[];
+  chapterWeights?: readonly number[];
+  overallPercent?: number;
   parsedChapters?: Chapter[];
   resolveOwnerMediaUrl?: (zipPath: string) => Promise<string | null>;
   activeIndex: number;
@@ -52,6 +55,8 @@ interface ReaderTocDrawerProps {
 export function ReaderTocDrawer({
   book,
   chapters,
+  chapterWeights,
+  overallPercent = 0,
   parsedChapters,
   resolveOwnerMediaUrl,
   activeIndex,
@@ -78,6 +83,7 @@ export function ReaderTocDrawer({
   const [activeTab, setActiveTab] = useState<ReaderDrawerTab>(initialTab);
   const [savedSubTab, setSavedSubTab] = useState<'bookmarks' | 'highlights'>('bookmarks');
   const [query, setQuery] = useState('');
+  const [scrubPreviewIdx, setScrubPreviewIdx] = useState<number | null>(null);
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -306,7 +312,7 @@ export function ReaderTocDrawer({
               </div>
             </div>
 
-            <ul className="scrollbar-thin min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-y-contain p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+            <ul className="scrollbar-thin min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-y-contain p-2">
               {filteredChapters.length === 0 ? (
                 <li className={`px-3 py-6 text-center text-xs ${palette.textSecondary}`}>
                   Không tìm thấy mục nào phù hợp.
@@ -321,7 +327,9 @@ export function ReaderTocDrawer({
                       className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition ${
                         idx === activeIndex
                           ? `border font-semibold ${palette.active}`
-                          : `border border-transparent ${palette.hover}`
+                          : idx === scrubPreviewIdx
+                            ? `border border-dashed font-medium ${palette.accentSoftBg} ${palette.border}`
+                            : `border border-transparent ${palette.hover}`
                       } ${ch.locked ? 'opacity-65' : ''}`}
                     >
                       <span className="min-w-0 flex-1 truncate">{ch.title}</span>
@@ -336,6 +344,19 @@ export function ReaderTocDrawer({
                 ))
               )}
             </ul>
+
+            <ReaderKindlePercentBar
+              chapters={chapters}
+              chapterWeights={chapterWeights}
+              overallPercent={overallPercent}
+              palette={palette}
+              onPreviewChapterChange={setScrubPreviewIdx}
+              onJumpToChapterRatio={(chapterIdx, ratio) => {
+                if (onJumpToBookmark) onJumpToBookmark(chapterIdx, ratio);
+                else onSelectChapter(chapterIdx);
+                onClose();
+              }}
+            />
           </>
         )}
       </aside>

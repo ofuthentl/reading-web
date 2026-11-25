@@ -12,7 +12,6 @@ import {
 } from 'react';
 import type { Book, BookHighlight, Chapter, ReaderSettings } from '@/types';
 import { ReaderPaginatedFooter } from '@/components/ReaderPaginatedFooter';
-import type { QuickScrubberChapterItem } from '@/components/ReaderQuickScrubberPopover';
 import { useDomPaginatedReadingRuler } from '@/hooks/usePaginatedReadingRuler';
 import { applyChapterDomHighlights } from '@/lib/domHighlights';
 import type { CanvasLayoutItem } from '@/lib/guestCanvasLayout';
@@ -38,9 +37,6 @@ interface ReaderPaginatedViewProps {
   chapter: Chapter;
   chapterIndex: number;
   totalChapters: number;
-  chapters?: readonly QuickScrubberChapterItem[];
-  chapterScrollRatio?: number;
-  overallPercent?: number;
   currentChapterNumber?: number;
   readerMaxChapterNumber?: number;
   chapterOptions?: readonly CanonicalChapterOption[];
@@ -59,7 +55,7 @@ interface ReaderPaginatedViewProps {
   onRatioChange: (ratio: number, isEndOfChapter: boolean) => void;
   onPrevChapterEnd: () => void;
   onNextChapterStart: () => void;
-  onJumpToChapterRatio?: (chapterIdx: number, ratio: number) => void;
+  onOpenToc?: () => void;
   onCompleteBook: (nextBook?: Book) => void;
   onOpenImage: (src: string, alt: string) => void;
   onPageTurn?: () => void;
@@ -69,11 +65,11 @@ interface ReaderPaginatedViewProps {
 export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPaginatedViewProps>(
   function ReaderPaginatedView(
     {
-      bookId, bookTitle, chapter, chapterIndex, totalChapters, chapters, chapterScrollRatio,
-      overallPercent, currentChapterNumber, readerMaxChapterNumber, chapterOptions, initialRatio,
+      bookId, bookTitle, chapter, chapterIndex, totalChapters,
+      currentChapterNumber, readerMaxChapterNumber, chapterOptions, initialRatio,
       nextBook, settings, palette, immersiveHidden, remainingEstimate, searchTarget = null,
       chapterHighlights = [], onContentInteractionClick, onSelectionEnd, onToggleImmersive,
-      onCloseSettings, onRatioChange, onPrevChapterEnd, onNextChapterStart, onJumpToChapterRatio,
+      onCloseSettings, onRatioChange, onPrevChapterEnd, onNextChapterStart, onOpenToc,
       onCompleteBook, onOpenImage, onPageTurn, onApiError,
     },
     ref,
@@ -500,12 +496,11 @@ export const ReaderPaginatedView = forwardRef<PaginatedStageHandle, ReaderPagina
 
         <ReaderPaginatedFooter
           bookId={bookId} bookTitle={bookTitle} chapterIndex={chapterIndex} totalChapters={totalChapters}
-          chapters={chapters} chapterScrollRatio={chapterScrollRatio} overallPercent={overallPercent}
           currentChapterNumber={currentChapterNumber} readerMaxChapterNumber={readerMaxChapterNumber}
           chapterOptions={chapterOptions} currentPage={safePageIndex + 1} totalPages={totalPages}
           isFirstSpread={isFirstSpread} isLastChapter={isLastChapter} isLastSpread={isLastSpread}
           remainingEstimate={remainingEstimate} nextBook={nextBook} palette={palette}
-          onStepPrev={stepPrev} onStepNext={stepNext} onJumpToChapterRatio={onJumpToChapterRatio} onCompleteBook={onCompleteBook} onApiError={onApiError}
+          onStepPrev={stepPrev} onStepNext={stepNext} onOpenToc={onOpenToc} onCompleteBook={onCompleteBook} onApiError={onApiError}
         />
       </div>
     );

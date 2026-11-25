@@ -3,9 +3,11 @@ import { describe, it } from 'node:test';
 import type { Book, GuestTocItem, ReadingProgress } from '../src/types';
 import { computeBookProgressPercent } from '../src/lib/bookMetadata';
 import {
+  computeChapterStartPercents,
   computeGuestChapterWeights,
   computeWeightedBookPercent,
   countWordsInPlainText,
+  resolveWeightedBookPercentTarget,
 } from '../src/lib/readingEstimate';
 
 const SAMPLE_BOOK: Book = {
@@ -116,5 +118,29 @@ describe('readingEstimate & bookMetadata weighted progress (PA-A)', () => {
     assert.equal(countWordsInPlainText('Xin chào thế giới'), 4);
     assert.ok(countWordsInPlainText('無名の記憶') >= 2);
     assert.equal(countWordsInPlainText('   '), 0);
+  });
+
+  it('resolveWeightedBookPercentTarget & computeChapterStartPercents ánh xạ ngược chuẩn 1-1 kiểu Kindle', () => {
+    const weights = [0, 1500, 20000, 20000, 20000];
+    const starts = computeChapterStartPercents(weights);
+    assert.equal(starts.length, 5);
+    assert.equal(starts[0], 0);
+    assert.equal(starts[1], 0);
+    assert.ok(Math.abs(starts[2] - (1500 / 61500) * 100) < 0.01);
+
+    assert.deepEqual(resolveWeightedBookPercentTarget(weights, 0), { chapterIndex: 0, scrollRatio: 0 });
+    assert.deepEqual(resolveWeightedBookPercentTarget(weights, 100), { chapterIndex: 4, scrollRatio: 1 });
+
+    // 50% của tổng 61500w = 30750w -> rơi vào Chương 2 (index 3), scrollRatio = (30750 - 21500) / 20000 = 0.4625 -> 0.463
+    const mid = resolveWeightedBookPercentTarget(weights, 50);
+    assert.equal(mid.chapterIndex, 3);
+    assert.ok(Math.abs(mid.scrollRatio - 0.463) <= 0.002);
+    // Round-trip trở lại computeWeightedBookPercent phải đúng ~50%
+    assert.equal(computeWeightedBookPercent(weights, mid.chapterIndex, mid.scrollRatio, false), 50);
+
+    // Fallback sách thuần tranh (tổng trọng số = 0)
+    const picMid = resolveWeightedBookPercentTarget([0, 0, 0, 0], 50);
+    assert.equal(picMid.chapterIndex, 2);
+    assert.equal(picMid.scrollRatio, 0);
   });
 });

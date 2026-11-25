@@ -1,10 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Check, Clock, Eye, SlidersHorizontal } from 'lucide-react';
+import { Check, Clock, Eye } from 'lucide-react';
 import type { ReaderEyeBreakMinutes } from '@/types';
-import {
-  type QuickScrubberChapterItem,
-  ReaderQuickScrubberPopover,
-} from '@/components/ReaderQuickScrubberPopover';
 import type { ReaderThemePalette } from '@/lib/readerConfig';
 
 export interface ReaderEyeBreakBannerProps {
@@ -71,8 +66,6 @@ export function ReaderNightDimOverlay({
 export interface ReaderFooterStatusBarProps {
   chapterIndex: number;
   totalChapters: number;
-  chapterScrollRatio?: number;
-  chapters?: readonly QuickScrubberChapterItem[];
   overallPercent: number;
   remainingEstimate: string;
   immersiveHidden: boolean;
@@ -81,14 +74,12 @@ export interface ReaderFooterStatusBarProps {
   eyeBreakDue?: boolean;
   eyeBreakMinutes?: ReaderEyeBreakMinutes;
   onAcknowledgeEyeBreak?: () => void;
-  onJumpToChapterRatio?: (chapterIdx: number, ratio: number) => void;
+  onOpenToc?: () => void;
 }
 
 export function ReaderFooterStatusBar({
   chapterIndex,
   totalChapters,
-  chapterScrollRatio = 0,
-  chapters,
   overallPercent,
   remainingEstimate,
   immersiveHidden,
@@ -97,31 +88,10 @@ export function ReaderFooterStatusBar({
   eyeBreakDue,
   eyeBreakMinutes,
   onAcknowledgeEyeBreak,
-  onJumpToChapterRatio,
+  onOpenToc,
 }: ReaderFooterStatusBarProps) {
-  const [scrubberOpen, setScrubberOpen] = useState(false);
-
-  useEffect(() => {
-    if (immersiveHidden) setScrubberOpen(false);
-  }, [immersiveHidden]);
-
-  const canScrub = Boolean(onJumpToChapterRatio && totalChapters > 0);
-
   return (
     <div className="relative z-20 w-full shrink-0">
-      {canScrub && onJumpToChapterRatio && (
-        <ReaderQuickScrubberPopover
-          open={scrubberOpen}
-          chapterIndex={chapterIndex}
-          totalChapters={totalChapters}
-          chapterScrollRatio={chapterScrollRatio}
-          overallPercent={overallPercent}
-          chapters={chapters}
-          palette={palette}
-          onJumpToChapterRatio={onJumpToChapterRatio}
-          onClose={() => setScrubberOpen(false)}
-        />
-      )}
       <ReaderEyeBreakBanner
         due={eyeBreakDue}
         minutes={eyeBreakMinutes}
@@ -129,20 +99,16 @@ export function ReaderFooterStatusBar({
         onAcknowledge={onAcknowledgeEyeBreak}
       />
       {!immersiveHidden &&
-        (canScrub ? (
+        (onOpenToc ? (
           <button
             type="button"
-            onClick={() => setScrubberOpen((v) => !v)}
-            aria-expanded={scrubberOpen}
-            title="Chạm để tua nhanh chương & vị trí đọc"
+            onClick={onOpenToc}
+            title="Mở mục lục & thanh tua % cuốn"
             className={`flex w-full items-center justify-between gap-3 border-t px-3.5 py-1 text-left text-[11px] tabular-nums transition sm:px-6 ${palette.border} ${palette.headerBg} ${palette.textSecondary} ${palette.hover}`}
           >
-            <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
-              <SlidersHorizontal className={`h-3 w-3 shrink-0 opacity-75 ${scrubberOpen ? palette.accentText : ''}`} />
-              <span className="truncate">
-                Chương {chapterIndex + 1}/{Math.max(1, totalChapters)} · {overallPercent}% cuốn
-                {modeBadge ? ` · ${modeBadge}` : ''}
-              </span>
+            <span className="truncate">
+              Chương {chapterIndex + 1}/{Math.max(1, totalChapters)} · {overallPercent}% cuốn
+              {modeBadge ? ` · ${modeBadge}` : ''}
             </span>
             {remainingEstimate && (
               <span className="inline-flex shrink-0 items-center gap-1 font-medium">

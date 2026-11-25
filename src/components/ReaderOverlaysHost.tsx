@@ -37,6 +37,8 @@ export interface ReaderOverlaysHostProps {
   book: Book;
   allBooks: readonly Book[];
   chapters: Chapter[];
+  chapterWeights?: readonly number[];
+  overallPercent?: number;
   parsedChapters?: Chapter[];
   resolveOwnerMediaUrl?: (zipPath: string) => Promise<string | null>;
   chapterIndex: number;
@@ -69,6 +71,8 @@ export function ReaderOverlaysHost({
   book,
   allBooks,
   chapters,
+  chapterWeights,
+  overallPercent = 0,
   parsedChapters,
   resolveOwnerMediaUrl,
   chapterIndex,
@@ -99,6 +103,8 @@ export function ReaderOverlaysHost({
           <LazyReaderTocDrawer
             book={book}
             chapters={chapters}
+            chapterWeights={chapterWeights}
+            overallPercent={overallPercent}
             parsedChapters={parsedChapters}
             resolveOwnerMediaUrl={resolveOwnerMediaUrl}
             activeIndex={chapterIndex}
