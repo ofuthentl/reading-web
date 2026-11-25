@@ -467,7 +467,7 @@ export async function parseDocxZip(
         await mediaCtrl.ensureChapterMedia(chapters, initialIdx);
         return {
           chapters,
-          ensureChapterMedia: (idx) => mediaCtrl.ensureChapterMedia(chapters, idx),
+          ensureChapterMedia: (idx, opts) => mediaCtrl.ensureChapterMedia(chapters, idx, opts),
           resolveMediaUrl: mediaCtrl.resolveMediaUrl,
           dispose: mediaCtrl.dispose,
         };

@@ -30,7 +30,10 @@ export type Chapter = {
 export type ParsedBook = {
   chapters: Chapter[];
   /** Giải nén lười (song song) toàn bộ ảnh minh hoạ của 1 chương nếu chưa bung */
-  ensureChapterMedia?: (chapterIndex: number) => Promise<Chapter | undefined>;
+  ensureChapterMedia?: (
+    chapterIndex: number,
+    options?: { prefetch?: boolean },
+  ) => Promise<Chapter | undefined>;
   /** Giải nén lười 1 ảnh minh hoạ theo đường dẫn trong tệp ZIP (dùng cho Tab Minh hoạ) */
   resolveMediaUrl?: (zipPath: string) => Promise<string | null>;
   /** Revokes all Object URLs created while parsing this book (prevents memory leaks) */

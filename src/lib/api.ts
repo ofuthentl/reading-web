@@ -27,12 +27,18 @@ import {
 } from '@/lib/authSession';
 import { formatBytes, groupBooksIntoShelves, sortBooksByTitle } from '@/lib/bookMetadata';
 import {
+  deleteCachedBookBlob,
   deleteLocalProgress,
   getAllLocalProgress,
+  getBookCacheGeneration,
   getCachedBookBlob,
   getCachedCoverBlob,
+  getCoverCacheGeneration,
   getLocalBooks,
   getLocalProgress,
+  isConstrainedMobileDevice,
+  isValidZipBookBlob,
+  pruneMobileBookCache,
   putLocalProgress,
   setCachedBookBlob,
   setCachedCoverBlob,
@@ -255,6 +261,87 @@ export async function fetchLibraryState(): Promise<{
   };
 }
 
+interface InFlightBookFetch {
+  controller: AbortController;
+  promise: Promise<Blob>;
+  refCount: number;
+}
+
+const inFlightBookFetches = new Map<string, InFlightBookFetch>();
+
+function createAbortError(): Error {
+  return typeof DOMException !== 'undefined'
+    ? new DOMException('The operation was aborted.', 'AbortError')
+    : new Error('The operation was aborted.');
+}
+
+function downloadBookFromR2Deduped(fileKey: string, signal?: AbortSignal): Promise<Blob> {
+  if (signal?.aborted) return Promise.reject(createAbortError());
+
+  let entry = inFlightBookFetches.get(fileKey);
+  if (!entry) {
+    const controller = new AbortController();
+    const promise = (async () => {
+      try {
+        const res = await apiFetch(`/api/files/${encodeURIComponent(fileKey)}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          const errBody = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(errBody.error || `Không thể tải sách từ R2 (HTTP ${res.status}).`);
+        }
+        return await res.blob();
+      } finally {
+        if (inFlightBookFetches.get(fileKey)?.controller === controller) {
+          inFlightBookFetches.delete(fileKey);
+        }
+      }
+    })();
+    entry = { controller, promise, refCount: 0 };
+    inFlightBookFetches.set(fileKey, entry);
+  }
+
+  const activeEntry = entry;
+  activeEntry.refCount += 1;
+
+  return new Promise<Blob>((resolve, reject) => {
+    let settled = false;
+    const detach = () => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', onAbort);
+      activeEntry.refCount = Math.max(0, activeEntry.refCount - 1);
+      if (activeEntry.refCount === 0) {
+        activeEntry.controller.abort();
+        if (inFlightBookFetches.get(fileKey) === activeEntry) {
+          inFlightBookFetches.delete(fileKey);
+        }
+      }
+    };
+    const onAbort = () => {
+      detach();
+      reject(createAbortError());
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    activeEntry.promise.then(
+      (blob) => {
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener('abort', onAbort);
+        activeEntry.refCount = Math.max(0, activeEntry.refCount - 1);
+        resolve(blob);
+      },
+      (err) => {
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener('abort', onAbort);
+        activeEntry.refCount = Math.max(0, activeEntry.refCount - 1);
+        reject(err);
+      },
+    );
+  });
+}
+
 export async function fetchBookBlobCached(
   book: Book,
   options?: { cacheOnFetch?: boolean; signal?: AbortSignal },
@@ -267,23 +354,40 @@ export async function fetchBookBlobCached(
     throw new Error('Đường dẫn tệp sách không khả dụng.');
   }
   const cached = await getCachedBookBlob(book.file_key);
-  if (cached) return { blob: cached, fromCache: true };
+  if (cached) {
+    if (await isValidZipBookBlob(cached)) {
+      if (isCloudMode && isConstrainedMobileDevice()) {
+        void pruneMobileBookCache(book.file_key).catch(() => undefined);
+      }
+      return { blob: cached, fromCache: true };
+    }
+    if (!isCloudMode) {
+      throw new Error('Tệp sách trong bộ nhớ cục bộ bị hỏng hoặc không đọc được.');
+    }
+    // Tự phục hồi khi tệp đệm IndexedDB trên di động bị hỏng/cắt cụt: xoá mục lỗi và tải sạch lại từ R2
+    await deleteCachedBookBlob(book.file_key);
+  }
 
   if (!isCloudMode) {
     throw new Error('Không tìm thấy tệp sách trong bộ nhớ cục bộ.');
   }
 
-  const res = await apiFetch(`/api/files/${encodeURIComponent(book.file_key)}`, {
-    signal: options?.signal,
-  });
-  if (!res.ok) {
-    const errBody = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(errBody.error || `Không thể tải sách từ R2 (HTTP ${res.status}).`);
+  const cacheGen = getBookCacheGeneration();
+  const blob = await downloadBookFromR2Deduped(book.file_key, options?.signal);
+  if (!(await isValidZipBookBlob(blob))) {
+    throw new Error('Tệp sách tải về bị hỏng hoặc không đúng định dạng EPUB/DOCX.');
   }
-  const blob = await res.blob();
-  if (options?.cacheOnFetch !== false) {
-    // Ghi bộ nhớ đệm IndexedDB ở nền để không chặn người dùng mở sách lần đầu
-    void setCachedBookBlob(book.file_key, blob).catch(() => undefined);
+  if (options?.cacheOnFetch !== false && getBookCacheGeneration() === cacheGen) {
+    // Ghi bộ nhớ đệm IndexedDB ở nền (tự áp hạn mức LRU trên di động để tránh phình RAM/bộ nhớ)
+    const writeCache = isConstrainedMobileDevice()
+      ? pruneMobileBookCache(book.file_key, blob.size).then(() => {
+          if (getBookCacheGeneration() === cacheGen) {
+            return setCachedBookBlob(book.file_key, blob);
+          }
+          return undefined;
+        })
+      : setCachedBookBlob(book.file_key, blob);
+    void writeCache.catch(() => undefined);
   }
   return { blob, fromCache: false };
 }
@@ -295,10 +399,13 @@ export async function fetchCoverBlobCached(coverKey: string): Promise<Blob | nul
   if (!isCloudMode) return null;
 
   try {
+    const coverGen = getCoverCacheGeneration();
     const res = await apiFetch(`/api/files/${encodeURIComponent(coverKey)}`);
     if (!res.ok) return null;
     const blob = await res.blob();
-    await setCachedCoverBlob(coverKey, blob);
+    if (getCoverCacheGeneration() === coverGen) {
+      await setCachedCoverBlob(coverKey, blob);
+    }
     return blob;
   } catch {
     return null;

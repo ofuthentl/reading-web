@@ -1,24 +1,29 @@
 # HANDOFF
-Cập nhật: 2026-11-25 13:15 | Nhánh: feat/optimize-book-open-and-upload | Build: 🟢 XANH (`index-*.js = 85.92 kB` gzip <= `86.04 kB`)
-Nhiệm vụ hiện tại: **Tối ưu Toàn diện Tốc độ Mở Sách & Tải Sách Lên — Mức 2 (`D-045` — chốt `1A`, `2A`, `3A`, `0` migration D1, `0 B` re-pack R2)**.
-Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/optimize-book-open-and-upload.md
+Cập nhật: 2026-11-25 14:25 | Nhánh: fix/v5-wave1-mobile-audit-and-bundle | Build: 🟢 XANH (`index-*.js = 73.24 kB` gzip `<< 86.04 kB`)
+Nhiệm vụ hiện tại: **Đợt Vá Lỗi Toàn Diện & Nâng Cấp v5 — Wave 1 (`D-046` — chốt `1A`, `2A`, `3A`, `4A`, `5A`, bỏ qua mục macOS NFD)**.
+Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/v5-bugfixes-and-upgrades.md
 
 ## Đang làm dở
-- Không có — toàn bộ thay đổi Frontend + Cloudflare Worker đã hoàn tất, qua 7/7 suite test Worker, 10/10 bước kiểm thử trình duyệt thật (`0` lỗi console), `typecheck`, `lint` (`0/0`), `build` và `tsc --noEmit` Worker; Cloudflare Worker đã deploy bản mới lên production và nhánh đã push lên `origin`.
+- Đã hoàn tất & kiểm chứng xanh **Wave 1 — Phase 1.1** (`typecheck`, `lint` 0/0, `build`). Tạm dừng theo yêu cầu người dùng để chuyển các Phase còn lại sang phiên mới tiết kiệm quota (bộ prompt nằm ở artifact phiên trước hoặc theo đúng từng mục trong `docs/plans/v5-bugfixes-and-upgrades.md`).
 
-## Xong trong nhánh này
-1. **Tối ưu Mở sách trên Frontend (`1A` — `sanitizeHtml.ts`, `zipMediaCache.ts`, `parsers.ts`, `docxParser.ts`, `docxChapters.ts`, `api.ts`, `useBookReader.ts`, `ActiveReaderHost.tsx`, `ReaderView.tsx`, `ReaderOverlaysHost.tsx`, `ReaderTocDrawer.tsx`, `ReaderIllustrationGallery.tsx`):**
-   - Cắt 5–6 vòng parse/serialize XHTML xuống 1 bước (`sanitizeHtmlToBody` dùng `DOMPurify RETURN_DOM`, giữ fallback XML an toàn khi có thẻ tự đóng non-void).
-   - Giải nén song song toàn bộ spine XHTML, giải nén lười ảnh theo chương + prefetch chương kế tiếp lúc rảnh (`createLazyZipMediaController`), Phòng tranh Owner nạp lười `OwnerLazyThumb` qua `IntersectionObserver`, ghi cache IndexedDB ở nền và preload chunk trình đọc không phình entry (`85.92 kB` gzip).
-2. **Tối ưu Tải sách lên trên Frontend (`2A` — `epubFootnotes.ts`, `guestPackHtml.ts`, `guestPackBuilder.ts`, `apiAdminMutations.ts`, `uploadBatchHelpers.ts`, `UploadQueueList.tsx`):**
-   - Tái sử dụng 1 lần mở ZIP duy nhất (`extractUploadMetadata(..., { keepZip: true })`), dùng chung 1 `DOMParser` cho block & chú thích, nén gzip chương song song (`concurrency = 6`), gắn `media[i].ch`.
-   - Dựng gói `OFGP` trên CPU song song với `PUT /file`, sau đó tải song song `PUT /cover` & `PUT /guest-pack`; nâng hàng đợi tải nhiều cuốn lên thích ứng (`concurrency = 2` cho `<= 40 MB`, `1` cho `> 40 MB`, giữ chuẩn gom sách lẻ `D-044`); memoize preview `UploadQueueList.tsx`.
-3. **Tối ưu Cloudflare Worker & Guest (`3A` — `guestAccessBatchDb.ts`, `guestPackUpload.ts`, `guestPack.ts`, `guestRoutes.ts`, `bookUploadRoutes.ts`, `guestCrypto.ts`, `useGuestChapterStream.ts`, `GuestCanvasReader.tsx`):**
-   - Gộp phân quyền 3 tầng + `file_key` + manifest vào 1 lượt `db.batch`; trả kèm `initialChapter` ngay trong `GET /api/guest/books/:id/toc?includeChapter=` (cắt 2 vòng mạng → 1 vòng); kiểm tra khoá ảnh `O(1)` từ `media.ch` + cache LRU 32 `packKey` cho gói cũ; tải song song `3` ảnh Guest gom batch `setImageSizes`; rút D1 upload còn 2 batch/endpoint giữ nguyên tử hạn mức `9.0 GiB`.
-   - Đã deploy thành công Worker `arcane-library-api` lên production.
+## Xong trong nhánh này (Phase 1.1)
+1. **Vá rung/hở khe `<header>` trên iPhone (`QĐ-2A`):**
+   - `LibraryHeader.tsx` & `AdminUsageView.tsx`: đổi `<header>` sang `fixed inset-x-0 top-0` + đệm chiều cao đồng bộ bằng `ResizeObserver`, tắt `backdrop-blur-sm` trên `< md` (giữ kính mờ trên desktop).
+   - `Library2DView.tsx`: dời `overflow-x-clip` xuống `<main>`; `ShelfCoverCard.tsx` & `BookCard.tsx`: bỏ `backdrop-blur` thừa trên badge nền tối.
+   - Tách `LibraryMobileOwnerMenu.tsx` mở menu gọn (`⋯`) trên mobile/tablet cho Owner truy cập nhanh *Bộ nhớ đệm*, *Sức khoẻ kho*, *Bảo mật* và *Chọn nhiều sách*.
+2. **Vá văng trình duyệt RAM/Cache IndexedDB tab chính iPhone & Parser XHTML (`QĐ-3A`):**
+   - `parsers.ts`: giải nén spine EPUB theo lô `4` tệp/lô và xả chuỗi nguồn ngay để cắt đỉnh RAM.
+   - `sanitizeHtml.ts`: chuyển `parseAndSanitizeEpubBody` sang HTML5 fragment serializer (`createHTMLDocument().importNode`) mở rộng đủ mọi thẻ non-void (`<a/>`, `<b/>`, `<div/>`, `<script/>`...) + null-guard `<frameset>` trong `sanitizeHtmlToBody`; xoá hàm chết `sanitizeBookDocument`.
+   - `zipMediaCache.ts` + `docxParser.ts` + `ReaderView.tsx` + `types.ts`: hạ concurrency bung ảnh xuống `2` trên thiết bị di động & tự `URL.revokeObjectURL` các chương xa ngoài `[active-1, active, active+1]` (giữ ghim ảnh Phòng tranh).
+   - `cache.ts` + `api.ts`: kiểm tra chữ ký ZIP `PK` (`isValidZipBookBlob`) tự xoá mục IndexedDB hỏng & tải sạch lại từ R2; khử tải trùng `inFlightBookFetches`; áp trần LRU `<= 6` sách / `<= 250 MiB` trên di động (chỉ Cloud mode); chờ `waitForTransaction` + chống ghi đè ngược khi dọn cache.
+3. **Giữ gọn Entry Bundle & Tài liệu (`D-013`, `D-046`):**
+   - `App.tsx`: tách nạp lười `LazyLibrary2DView` kéo `index-*.js` từ `85.92 kB` xuống `73.24 kB` gzip.
+   - Đã ghi `D-046` vào `docs/DECISIONS.md`, lưu kế hoạch `docs/plans/v5-bugfixes-and-upgrades.md` và cập nhật `docs/ARCHITECTURE.md`.
 
 ## Bước tiếp theo
-1. Mở Pull Request từ `feat/optimize-book-open-and-upload` vào `main` và bấm Merge khi CI xanh để GitHub Pages tự động deploy bản Frontend mới lên `https://ofu.lol` (Worker đã sẵn sàng trên production và tương thích ngược 100%).
+1. Tiếp tục **Wave 1 — Phase 1.2** (Reader, Guest Canvas, Owner Lazy Media, Soundscapes & Tủ Gáy Sách) trên cùng nhánh `fix/v5-wave1-mobile-audit-and-bundle`.
+2. Sau đó lần lượt chạy **Phase 1.3** (Upload/D-044/Store) → **Phase 1.4** (Cloudflare Worker) → **Phase 1.5** (AuthenticatedLibraryShell, PWA `SKIP_WAITING`, Auto-Test CI, Deploy Worker & PR Wave 1).
+3. Sau khi Wave 1 merge vào `main`, mở nhánh riêng cho **Wave 2** (`feat/v5-wave2-admin-storage-and-catalog`) rồi **Wave 3** (`feat/v5-wave3-reader-ux-security-discord`).
 
 ## Lỗi / chặn
-- Không có lỗi/chặn. Giữ nguyên không đụng 3 tệp/thư mục chưa theo dõi sẵn ngoài Git ở thư mục gốc.
+- Không có lỗi/chặn. Giữ nguyên không đụng 3 tệp/thư mục chưa theo dõi sẵn ở thư mục gốc (`Gemini_Generated_Image_*.png`, `IMG_4018.JPG`, `hatsune-miku_.../`).

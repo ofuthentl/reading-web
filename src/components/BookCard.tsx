@@ -190,13 +190,13 @@ export function BookCard({
             className="pointer-events-none absolute inset-0 bg-black/15 transition-colors duration-300 group-hover:bg-black/30"
           />
           {compact ? (
-            <span className="pointer-events-none absolute bottom-1 left-1 inline-flex items-center justify-center rounded border border-rose-300/40 bg-[#140b0e]/85 p-1 text-rose-200 backdrop-blur-sm">
+            <span className="pointer-events-none absolute bottom-1 left-1 inline-flex items-center justify-center rounded border border-rose-300/40 bg-[#140b0e]/92 p-1 text-rose-200">
               <Lock className="h-2.5 w-2.5" />
             </span>
           ) : (
             <span
               aria-hidden="true"
-              className="pointer-events-none absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-[#120b0e]/80 text-[#fce7eb] shadow-lg backdrop-blur-md transition-transform duration-300 group-hover:scale-105"
+              className="pointer-events-none absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-[#120b0e]/88 text-[#fce7eb] shadow-lg transition-transform duration-300 group-hover:scale-105"
             >
               <Lock className="h-4 w-4" />
             </span>

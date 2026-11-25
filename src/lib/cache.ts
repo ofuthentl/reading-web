@@ -8,6 +8,103 @@ const STORE_COVER_BLOBS = 'cover_blobs';
 const STORE_LOCAL_BOOKS = 'local_books';
 const STORE_LOCAL_PROGRESS = 'local_progress';
 
+const BOOK_CACHE_LRU_KEY = 'ofu-book-cache-lru-v1';
+export const MOBILE_BOOK_CACHE_MAX_BOOKS = 6;
+export const MOBILE_BOOK_CACHE_MAX_BYTES = 250 * 1024 * 1024; // 250 MiB
+
+let bookCacheGeneration = 0;
+let coverCacheGeneration = 0;
+
+interface BookCacheLruEntry {
+  at: number;
+  size: number;
+}
+
+export function isConstrainedMobileDevice(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPad|iPod|Android|Mobile/i.test(ua)) return true;
+  const isTouchMac = /Macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1;
+  if (isTouchMac) return true;
+  if (typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches) {
+    return true;
+  }
+  const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  return typeof deviceMemory === 'number' && deviceMemory > 0 && deviceMemory <= 2;
+}
+
+export function getBookCacheGeneration(): number {
+  return bookCacheGeneration;
+}
+
+export function getCoverCacheGeneration(): number {
+  return coverCacheGeneration;
+}
+
+function readBookCacheLru(): Record<string, BookCacheLruEntry> {
+  try {
+    const raw = localStorage.getItem(BOOK_CACHE_LRU_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, BookCacheLruEntry>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeBookCacheLru(map: Record<string, BookCacheLruEntry>): void {
+  try {
+    localStorage.setItem(BOOK_CACHE_LRU_KEY, JSON.stringify(map));
+  } catch {
+    // Ignore storage quota/private mode errors
+  }
+}
+
+export function touchBookCacheLru(fileKey: string, sizeBytes?: number): void {
+  if (!fileKey) return;
+  const map = readBookCacheLru();
+  const prev = map[fileKey];
+  map[fileKey] = {
+    at: Date.now(),
+    size: typeof sizeBytes === 'number' && sizeBytes >= 0 ? sizeBytes : (prev?.size ?? 0),
+  };
+  writeBookCacheLru(map);
+}
+
+function removeBookCacheLru(fileKey: string): void {
+  const map = readBookCacheLru();
+  if (!(fileKey in map)) return;
+  delete map[fileKey];
+  writeBookCacheLru(map);
+}
+
+function clearBookCacheLru(): void {
+  try {
+    localStorage.removeItem(BOOK_CACHE_LRU_KEY);
+  } catch {
+    // Ignore
+  }
+}
+
+/**
+ * Kiểm tra nhanh Blob sách (.epub/.docx đều là ZIP) có còn đọc được và có chữ ký `PK` hay không.
+ * Chặn văng trang trên iOS WebKit khi tệp đệm IndexedDB bị hỏng hoặc bị cắt cụt.
+ */
+export async function isValidZipBookBlob(blob: Blob | null | undefined): Promise<boolean> {
+  if (!blob || !(blob instanceof Blob) || blob.size < 64) return false;
+  try {
+    const header = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+    return (
+      header.length >= 4 &&
+      header[0] === 0x50 &&
+      header[1] === 0x4b &&
+      (header[2] === 0x03 || header[2] === 0x05 || header[2] === 0x07)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export interface CachedBlobStat {
   key: string;
   sizeBytes: number;
@@ -124,7 +221,9 @@ async function deleteFromStore(storeName: string, key: string): Promise<void> {
   try {
     const db = await openDb();
     const tx = db.transaction(storeName, 'readwrite');
-    await idbRequest(tx.objectStore(storeName).delete(key));
+    const done = waitForTransaction(tx);
+    tx.objectStore(storeName).delete(key);
+    await done;
   } catch {
     // Ignore
   }
@@ -171,7 +270,9 @@ function scanBlobStoreStats(db: IDBDatabase, storeName: string): Promise<CachedB
 // --- Book & Cover Blob Cache (used in BOTH Cloud R2 and Local modes for 0ms reopen) ---
 
 export async function getCachedBookBlob(fileKey: string): Promise<Blob | null> {
-  return getFromStore<Blob>(STORE_BOOK_BLOBS, fileKey);
+  const blob = await getFromStore<Blob>(STORE_BOOK_BLOBS, fileKey);
+  if (blob) touchBookCacheLru(fileKey, blob.size);
+  return blob;
 }
 
 export async function setCachedBookBlob(
@@ -179,11 +280,78 @@ export async function setCachedBookBlob(
   blob: Blob,
   strict = false,
 ): Promise<void> {
+  const startGen = bookCacheGeneration;
+  if (!strict && isConstrainedMobileDevice() && blob.size > MOBILE_BOOK_CACHE_MAX_BYTES) {
+    return;
+  }
   await putInStore(STORE_BOOK_BLOBS, blob, fileKey, strict);
+  if (!strict && bookCacheGeneration !== startGen) {
+    // Cache bị dọn trong lúc đang ghi nền -> xoá lại để không ghi đè ngược
+    await deleteFromStore(STORE_BOOK_BLOBS, fileKey);
+    removeBookCacheLru(fileKey);
+    return;
+  }
+  touchBookCacheLru(fileKey, blob.size);
 }
 
 export async function deleteCachedBookBlob(fileKey: string): Promise<void> {
+  bookCacheGeneration += 1;
+  removeBookCacheLru(fileKey);
   await deleteFromStore(STORE_BOOK_BLOBS, fileKey);
+}
+
+/**
+ * Dọn bớt cache tệp sách cũ theo LRU trên thiết bị di động (chỉ gọi ở chế độ Cloud R2)
+ * để giữ bộ nhớ đệm IndexedDB trong ngưỡng an toàn (<= 6 cuốn và <= 250 MiB).
+ */
+export async function pruneMobileBookCache(
+  keepFileKey?: string,
+  incomingBytes = 0,
+): Promise<void> {
+  if (!isConstrainedMobileDevice()) return;
+  try {
+    const db = await openDb();
+    const entries = await scanBlobStoreStats(db, STORE_BOOK_BLOBS);
+    if (entries.length === 0) return;
+
+    const lru = readBookCacheLru();
+    const maxCountAfterIncoming =
+      incomingBytes > 0 ? MOBILE_BOOK_CACHE_MAX_BOOKS - 1 : MOBILE_BOOK_CACHE_MAX_BOOKS;
+    const maxBytesAfterIncoming = Math.max(0, MOBILE_BOOK_CACHE_MAX_BYTES - incomingBytes);
+
+    let remainingCount = entries.length;
+    let remainingBytes = entries.reduce((sum, e) => sum + e.sizeBytes, 0);
+    if (remainingCount <= maxCountAfterIncoming && remainingBytes <= maxBytesAfterIncoming) {
+      return;
+    }
+
+    const candidates = entries
+      .filter((e) => e.key !== keepFileKey)
+      .sort((a, b) => (lru[a.key]?.at ?? 0) - (lru[b.key]?.at ?? 0));
+
+    const toDelete: string[] = [];
+    for (const item of candidates) {
+      if (remainingCount <= maxCountAfterIncoming && remainingBytes <= maxBytesAfterIncoming) {
+        break;
+      }
+      toDelete.push(item.key);
+      remainingCount -= 1;
+      remainingBytes = Math.max(0, remainingBytes - item.sizeBytes);
+    }
+
+    if (toDelete.length === 0) return;
+    const tx = db.transaction(STORE_BOOK_BLOBS, 'readwrite');
+    const store = tx.objectStore(STORE_BOOK_BLOBS);
+    const done = waitForTransaction(tx);
+    for (const key of toDelete) {
+      store.delete(key);
+      delete lru[key];
+    }
+    await done;
+    writeBookCacheLru(lru);
+  } catch {
+    // Ignore optional cache pruning failures
+  }
 }
 
 export async function getCachedCoverBlob(coverKey: string): Promise<Blob | null> {
@@ -191,10 +359,15 @@ export async function getCachedCoverBlob(coverKey: string): Promise<Blob | null>
 }
 
 export async function setCachedCoverBlob(coverKey: string, blob: Blob): Promise<void> {
+  const startGen = coverCacheGeneration;
   await putInStore(STORE_COVER_BLOBS, blob, coverKey);
+  if (coverCacheGeneration !== startGen) {
+    await deleteFromStore(STORE_COVER_BLOBS, coverKey);
+  }
 }
 
 export async function deleteCachedCoverBlob(coverKey: string): Promise<void> {
+  coverCacheGeneration += 1;
   await deleteFromStore(STORE_COVER_BLOBS, coverKey);
 }
 
@@ -228,33 +401,43 @@ export async function inspectIndexedDbCache(): Promise<IndexedDbCacheSummary> {
 }
 
 export async function clearCachedBookBlobs(): Promise<void> {
+  bookCacheGeneration += 1;
+  clearBookCacheLru();
   try {
     const db = await openDb();
     const tx = db.transaction(STORE_BOOK_BLOBS, 'readwrite');
-    await idbRequest(tx.objectStore(STORE_BOOK_BLOBS).clear());
+    const done = waitForTransaction(tx);
+    tx.objectStore(STORE_BOOK_BLOBS).clear();
+    await done;
   } catch {
     // Ignore
   }
 }
 
 export async function clearCachedCoverBlobs(): Promise<void> {
+  coverCacheGeneration += 1;
   try {
     const db = await openDb();
     const tx = db.transaction(STORE_COVER_BLOBS, 'readwrite');
-    await idbRequest(tx.objectStore(STORE_COVER_BLOBS).clear());
+    const done = waitForTransaction(tx);
+    tx.objectStore(STORE_COVER_BLOBS).clear();
+    await done;
   } catch {
     // Ignore
   }
 }
 
 export async function clearAllMediaCache(): Promise<void> {
+  bookCacheGeneration += 1;
+  coverCacheGeneration += 1;
+  clearBookCacheLru();
   try {
     const db = await openDb();
     const tx = db.transaction([STORE_BOOK_BLOBS, STORE_COVER_BLOBS], 'readwrite');
-    await Promise.all([
-      idbRequest(tx.objectStore(STORE_BOOK_BLOBS).clear()),
-      idbRequest(tx.objectStore(STORE_COVER_BLOBS).clear()),
-    ]);
+    const done = waitForTransaction(tx);
+    tx.objectStore(STORE_BOOK_BLOBS).clear();
+    tx.objectStore(STORE_COVER_BLOBS).clear();
+    await done;
   } catch {
     // Ignore
   }

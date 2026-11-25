@@ -114,7 +114,7 @@ export function ReaderView({
     }
 
     const runPrefetch = () => {
-      if (!cancelled) void parsedBook.ensureChapterMedia?.(nextIndex);
+      if (!cancelled) void parsedBook.ensureChapterMedia?.(nextIndex, { prefetch: true });
     };
     const idleWin = window as Window & {
       requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;

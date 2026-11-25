@@ -15,7 +15,6 @@ import {
   syncGateDocumentTitle,
 } from '@/lib/gateRoutes';
 import type { LibraryModalState } from '@/components/AdminModalsHost';
-import { Library2DView } from '@/components/Library2DView';
 import { ToastContainer } from '@/components/ToastContainer';
 import { useBookReader } from '@/hooks/useBookReader';
 import { useLibraryDataStore } from '@/hooks/useLibraryDataStore';
@@ -25,6 +24,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useToast } from '@/hooks/useToast';
 
 const LazyAuthGate = lazy(() => import('@/components/AuthGate').then((m) => ({ default: m.AuthGate })));
+const LazyLibrary2DView = lazy(() => import('@/components/Library2DView').then((m) => ({ default: m.Library2DView })));
 const LazyAdminModalsHost = lazy(() => import('@/components/AdminModalsHost').then((m) => ({ default: m.AdminModalsHost })));
 const LazyLibrary2DDialogsHost = lazy(() => import('@/components/Library2DDialogsHost').then((m) => ({ default: m.Library2DDialogsHost })));
 const LazyAdminUsageView = lazy(() => import('@/components/AdminUsageView').then((m) => ({ default: m.AdminUsageView })));
@@ -309,8 +309,9 @@ export default function App() {
   return (
     <>
       {!isReaderOpen && (
-        <Library2DView
-          books={store.books}
+        <Suspense fallback={<div className="theme-canvas min-h-screen" />}>
+          <LazyLibrary2DView
+            books={store.books}
           progress={store.progress}
           storage={store.storage}
           loading={store.loading}
@@ -379,6 +380,7 @@ export default function App() {
           onApiError={handleApiError}
           onNotify={addToast}
         />
+        </Suspense>
       )}
 
       {(reader.activeBook || reader.openingBook) && (
