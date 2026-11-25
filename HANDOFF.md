@@ -1,37 +1,37 @@
 # HANDOFF
-Cập nhật: 2026-11-25 18:41 | Nhánh: feat/v5-wave3-reader-ux-security-discord | Build: 🟢 XANH (`typecheck`, `lint`, Worker `tsc`)
-Nhiệm vụ hiện tại: **Đợt Vá Lỗi Toàn Diện & Nâng Cấp v5 — Wave 3 (`D-046` — `QĐ-5A`, migration `0019`)**.
+Cập nhật: 2026-11-25 19:04 | Nhánh: feat/v5-wave3-reader-ux-security-discord | Build: 🟢 XANH (`typecheck`, `lint`, `39/39` test, `build` `54.01 kB`, `check:bundle`, Worker `tsc`)
+Nhiệm vụ hiện tại: **Đợt Vá Lỗi Toàn Diện & Nâng Cấp v5 — Wave 3 (`D-046` — `QĐ-5A`, migration `0019`) — Đã xong toàn bộ code, test, E2E trình duyệt & tài liệu; đang chờ xác nhận deploy/push**.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/v5-bugfixes-and-upgrades.md
 
 ## Đang làm dở
-- Hoàn tất toàn bộ code Migration `0019` và 4 Phase Wave 3 (3.1 → 3.4).
-- Tiếp theo: chạy bộ Unit Tests Wave 3, build kiểm tra bundle budget (`index-*.js <= 86.04 kB`), apply migration `0019` local & kiểm thử thực tế trên trình duyệt, cập nhật `docs/ARCHITECTURE.md` & `docs/DECISIONS.md`.
+- Chưa chạy apply migration `0019` lên remote D1, `wrangler deploy` và `git push -u origin feat/v5-wave3-reader-ux-security-discord` — đang dừng hỏi xác nhận người dùng theo đúng yêu cầu.
 
 ## Xong trong nhánh này
 ### Migration D1 `0019_v5_security_and_presets.sql` (`QĐ-5A`)
-- Tạo `0019_v5_security_and_presets.sql` + đồng bộ `schema.sql` (`app_security_state`, `discord_access_presets`, `discord_access_preset_members`, backfill `rl_last_strike_at`, xoá 2 index dư thừa ở migration & runtime).
+- Tạo `0019_v5_security_and_presets.sql` + đồng bộ `schema.sql` (`app_security_state`, `discord_access_presets`, `discord_access_preset_members`, backfill `rl_last_strike_at`, thêm index tra cứu mới & xoá 2 index dư thừa ở migration & runtime).
 
 ### Phase 3.1 — Tải trước chương kế tiếp cho Khách Discord (Speculative Prefetch)
-- `guestCrypto.ts`, `useGuestChapterStream.ts`, `GuestCanvasReader.tsx`: guard thuần `shouldPrefetchNextGuestChapter` (`>= 78%`, bỏ qua chương khoá & cooldown `429`), tải ngầm 1 chương kế bằng `AbortController` riêng seed `chapterCacheRef`.
+- `guestCrypto.ts`, `useGuestChapterStream.ts`, `GuestCanvasReader.tsx`: guard `shouldPrefetchNextGuestChapter` (`>= 78%`, bỏ qua chương khoá/đã cache/cooldown `429` 60s), `AbortController` riêng seed `chapterCacheRef` giữ trọn thuỷ vân & `D-028`.
 
-### Phase 3.2 — Thanh tua nhanh, Phím tắt `?`, `<ModalShell>` thống nhất & Nạp dần Trang chủ
-- `ReaderQuickScrubberPopover.tsx`, `ReaderFooterStatusBar.tsx`, `ReaderPaginatedFooter.tsx`, `ReaderView.tsx`, `GuestCanvasReader.tsx`, `ReaderPaginatedView.tsx`, `GuestCanvasPaginatedView.tsx`: popover thanh trượt tua nhanh chương & tỷ lệ đọc (cả Owner & Guest, cuộn dọc + lật trang).
-- `KeyboardShortcutsModal.tsx`, `AuthenticatedLibraryShell.tsx`, `Library2DDialogsHost.tsx`: modal tra cứu phím tắt (`?`) nạp lười.
-- `ModalShell.tsx`: chuẩn hoá `createPortal` + `useBodyScrollLock` + focus-trap + stack `Esc` cho 13 modal; bổ sung `@media (prefers-reduced-motion: reduce)`; nạp dần từng lô kệ trong `LibraryHomeShelvesSection.tsx`.
+### Phase 3.2 — Thanh tua `%` cuốn kiểu Kindle trong Mục lục, Phím tắt `?`, `<ModalShell>` & Nạp dần Trang chủ
+- `ReaderKindlePercentBar.tsx`, `readingEstimate.ts`, `ReaderTocDrawer.tsx`, `ReaderOverlaysHost.tsx`, `ReaderFooterStatusBar.tsx`, `ReaderPaginatedFooter.tsx`, `ReaderView.tsx`, `GuestCanvasReader.tsx`: thanh trượt & ô nhập `%` toàn cuốn kiểu Kindle (theo trọng số chương + vạch chia chương + xem trước chương đích) ghim đáy ngăn kéo `Mục lục`, chạm thanh chân trang mở thẳng ngăn kéo.
+- `KeyboardShortcutsModal.tsx`, `ModalShell.tsx` (chuẩn hoá 13 modal), `@media (prefers-reduced-motion: reduce)` và nạp dần theo lô kệ trong `LibraryHomeShelvesSection.tsx`.
 
 ### Phase 3.3 — Security Headers Worker, CSP Frontend & *Đăng xuất mọi thiết bị Admin*
-- Worker (`securityHeaders.ts`, `index.ts`, `r2Files.ts`, `guestPack.ts`): gắn `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` trên mọi phản hồi.
-- Frontend (`public/theme-init.js`, `public/sw.js`, `cspPolicy.ts`, `index.html`, `vite.config.ts`): tách inline theme script & gắn CSP chặt (`script-src 'self'` ở prod) + `referrer` meta.
-- Worker + Frontend (`securityStateDb.ts`, `auth.ts`, `adminRoutes.ts`, `adminSecurityApi.ts`, `AdminRevokeSessionsAction.tsx`, `AdminProtectionModal.tsx`, `AdminStorageSecurityPanel.tsx`, `AdminUsageView.tsx`, `App.tsx`): nhúng `iat` Owner token + đối chiếu `owner_min_iat` (cache 15s theo isolate + invalidate tức thì) + `POST /api/admin/sessions/revoke-owner` + nút xác nhận 2 bước.
+- Worker (`securityHeaders.ts`, `index.ts`, `r2Files.ts`, `guestPack.ts`): gắn `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` trên mọi phản hồi.
+- Frontend (`public/theme-init.js`, `public/sw.js`, `cspPolicy.ts`, `index.html`, `vite.config.ts`): tách inline theme script & gắn CSP nghiêm ngặt (`script-src 'self'` ở prod) + `referrer` meta.
+- Worker + Frontend (`securityStateDb.ts`, `auth.ts`, `adminRoutes.ts`, `adminSecurityApi.ts`, `AdminRevokeSessionsAction.tsx`): nhúng `iat` Owner token + `owner_min_iat` (cache isolate `15s` + invalidate tức thì) + `POST /api/admin/sessions/revoke-owner` + nút xác nhận 2 bước.
 
-### Phase 3.4 — Nhóm quyền Discord Presets, Ma trận quyền, Kiểm duyệt `/usage` & Webhook Cảnh báo
-- Worker (`discordPresetsDb.ts`, `discordAccessMatrixDb.ts`, `usageRecentCommunityDb.ts`, `adminAlerts.ts`, `adminRoutes.ts`, `rateLimitDb.ts`, `guestRoutes.ts`, `index.ts`, `booksDb.ts`): CRUD `/api/admin/discord-presets`, `/api/admin/discord-guests/:id/access-matrix` + `/revoke-all`, `/api/admin/usage/recent-community`, và cảnh báo tuỳ chọn `DISCORD_ADMIN_ALERT_WEBHOOK_URL` (`ctx.waitUntil` + timeout 2.5s + dedup 5p) khi strike 10 hoặc IP bị khoá brute-force.
-- Frontend (`discordPresetsApi.ts`, `DiscordPresetPickerBar.tsx`, `ShelfAccessModal.tsx`, `BookAccessModal.tsx`, `AdminGuestAccessMatrixPanel.tsx`, `AdminDiscordGuestsPanel.tsx`, `AdminRecentCommunityCard.tsx`, `AdminUsageView.tsx`): chọn/lưu/xoá Preset 1 chạm, xem ma trận quyền & thu hồi hàng loạt theo thành viên, và góc kiểm duyệt *"Bình luận & Đánh giá mới nhất"* nạp lười trên `/usage`.
+### Phase 3.4 — Discord Presets, Ma trận quyền, Kiểm duyệt `/usage` & Webhook Cảnh báo
+- Worker (`discordPresetsDb.ts`, `discordAccessMatrixDb.ts`, `usageRecentCommunityDb.ts`, `adminAlerts.ts`, `adminRoutes.ts`, `rateLimitDb.ts`, `guestRoutes.ts`, `index.ts`): CRUD `/api/admin/discord-presets`, `/api/admin/discord-guests/:id/access-matrix` + `/revoke-all`, `/api/admin/usage/recent-community`, cảnh báo tuỳ chọn `DISCORD_ADMIN_ALERT_WEBHOOK_URL` (`ctx.waitUntil`).
+- Frontend (`discordPresetsApi.ts`, `DiscordPresetPickerBar.tsx`, `AdminGuestAccessMatrixPanel.tsx`, `AdminRecentCommunityCard.tsx`, `ShelfAccessModal.tsx`, `BookAccessModal.tsx`, `AdminDiscordGuestsPanel.tsx`, `AdminUsageView.tsx`).
+
+### Nghiệm thu & Kiểm thử Wave 3
+- Bổ sung `tests/wave3SecurityPresetsAndPrefetch.test.ts` & test ánh xạ `%` Kindle (`39/39` unit test pass); kiểm thử E2E trình duyệt thật bản prod CSP + Worker cục bộ đạt `0` lỗi CSP/console across cả 7 hạng mục Wave 3; cập nhật `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` & checklist `docs/plans/v5-bugfixes-and-upgrades.md`.
 
 ## Bước tiếp theo
-1. Chạy sạch Unit Tests Wave 3, `typecheck`, `lint`, `build`, `check:bundle`, Worker `tsc`.
-2. Áp migration `0019` lên local D1, kiểm thử trình duyệt thật theo Checklist Wave 3, cập nhật `docs/ARCHITECTURE.md` & `docs/DECISIONS.md`.
-3. Hỏi xác nhận người dùng trước khi apply migration `0019` remote, deploy Worker và push nhánh.
+1. Sau khi người dùng xác nhận: chạy `npx wrangler d1 migrations apply library-db --remote`, `npx wrangler deploy` trong `workers/r2-storage` và `git push -u origin feat/v5-wave3-reader-ux-security-discord` để mở PR merge vào `main`.
+2. (Tuỳ chọn) Người dùng tự cấu hình `npx wrangler secret put DISCORD_ADMIN_ALERT_WEBHOOK_URL` nếu muốn bật cảnh báo Discord cho Admin.
 
 ## Lỗi / chặn
-- Không có lỗi/chặn. Giữ nguyên không đụng 3 tệp/thư mục chưa theo dõi sẵn ở thư mục gốc (`Gemini_Generated_Image_*.png`, `IMG_4018.JPG`, `hatsune-miku_.../`).
+- Không có lỗi/chặn. Giữ nguyên 3 tệp/thư mục chưa theo dõi sẵn ở thư mục gốc (`Gemini_Generated_Image_*.png`, `IMG_4018.JPG`, `hatsune-miku_.../`).

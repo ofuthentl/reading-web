@@ -178,8 +178,8 @@
 - [x] `typecheck`, `lint`, `build`, `test`, `tsc` Worker + cập nhật tài liệu & `HANDOFF.md`.
 
 ### Wave 3
-- [ ] Khách Discord đọc tới ~80% chương mở tự prefetch chương `N+1` (bỏ qua chương khoá), bấm sang chương hiển thị tức thì `0ms`, vẫn giữ đủ thuỷ vân + `D-028`.
-- [ ] Thanh kéo tua nhanh, bảng phím tắt `?`, `<ModalShell>` khoá cuộn nền trên mọi modal mobile, Trang chủ nạp dần mượt; `prefers-reduced-motion` tắt sạch animation.
-- [ ] Worker có đủ `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`; Frontend chạy sạch với CSP (`0` lỗi console); nút *Đăng xuất mọi thiết bị Admin* thu hồi ngay token Admin cũ (`401`).
-- [ ] Áp migration `0019` thành công lên local & remote D1; Presets nhóm bạn Discord, Ma trận quyền thành viên, Bảng bình luận mới nhất `/usage` và cảnh báo webhook (khi cấu hình) hoạt động chính xác.
-- [ ] `typecheck`, `lint`, `build`, `test`, `tsc` Worker + cập nhật `docs/DECISIONS.md`, `docs/ARCHITECTURE.md`, `HANDOFF.md`.
+- [x] Khách Discord đọc tới ~80% chương mở tự prefetch chương `N+1` (bỏ qua chương khoá), bấm sang chương hiển thị tức thì `0ms`, vẫn giữ đủ thuỷ vân + `D-028` *(đã kiểm thử trình duyệt thật: `GET .../chapters/1` bắn nền tự động khi cuộn > 80%, bấm Sau sang Chương 2 giữ nguyên count = 1, thuỷ vân `AliceTest · #0001` sắc nét)*.
+- [x] Thanh tua `%` toàn cuốn kiểu Kindle ghim đáy ngăn kéo `Mục lục` (`ReaderKindlePercentBar` dùng trọng số chương + nhập `%` trực tiếp + vạch mốc chương), bảng phím tắt `?`, `<ModalShell>` khoá cuộn nền trên mọi modal mobile (`390×844`), Trang chủ nạp dần mượt; `prefers-reduced-motion` tắt sạch animation.
+- [x] Worker có đủ `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`; Frontend chạy sạch với CSP nghiêm ngặt `script-src 'self'` (`0` lỗi console/CSP); nút *Đăng xuất mọi thiết bị Admin* thu hồi ngay token Admin cũ (`401`).
+- [x] Áp migration `0019` thành công lên local D1 *(remote D1 đang chờ người dùng xác nhận trước khi áp & deploy Worker)*; Presets nhóm bạn Discord, Ma trận quyền thành viên, Bảng bình luận mới nhất `/usage` và cảnh báo webhook (`DISCORD_ADMIN_ALERT_WEBHOOK_URL`) hoạt động chính xác.
+- [x] `typecheck`, `lint` (`0/0`, mọi file `<= 500` dòng), `build` (`index-*.js = 54.01 kB` gzip `<< 86.04 kB`), `check:bundle`, `test` (`39/39` pass), `tsc` Worker + cập nhật `docs/DECISIONS.md`, `docs/ARCHITECTURE.md`, `HANDOFF.md`.
