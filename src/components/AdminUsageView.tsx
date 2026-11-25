@@ -32,6 +32,12 @@ const LazyAdminR2ReconcileCard = lazy(() =>
   })),
 );
 
+const LazyAdminBackupCard = lazy(() =>
+  import('@/components/AdminBackupCard').then((m) => ({
+    default: m.AdminBackupCard,
+  })),
+);
+
 export interface AdminUsageViewProps {
   theme: UiTheme;
   onCycleTheme: (origin?: { x: number; y: number }) => void;
@@ -374,6 +380,14 @@ export function AdminUsageView({
                 onApiError={onApiError}
                 onNotify={onNotify}
                 onCleanedUp={() => void loadReport(days)}
+              />
+            </Suspense>
+
+            <Suspense fallback={null}>
+              <LazyAdminBackupCard
+                onApiError={onApiError}
+                onNotify={onNotify}
+                onImported={() => void loadReport(days)}
               />
             </Suspense>
 

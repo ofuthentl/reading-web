@@ -1,5 +1,6 @@
 import { searchAniListLightNovels } from './anilistProxy';
 import { type AuthContext, HttpError, requireOwner } from './auth';
+import { exportOwnerBackup, handleImportOwnerBackupRequest } from './backupRoute';
 import {
   getAdminBookAccessDetail,
   putAdminBookAccessConfig,
@@ -127,6 +128,22 @@ export async function tryHandleAdminRoutes(
   if (normalizedPath === '/api/admin/storage/reconcile/cleanup' && request.method === 'POST') {
     const body = await request.json().catch(() => null);
     const result = await cleanupOrphanR2Storage(env, body);
+    return jsonResponse(result, 200, origin, {
+      'Cache-Control': 'no-store, private',
+      'X-Robots-Tag': 'noindex, nofollow',
+    });
+  }
+
+  if (normalizedPath === '/api/admin/backup/export' && request.method === 'GET') {
+    const payload = await exportOwnerBackup(env);
+    return jsonResponse(payload, 200, origin, {
+      'Cache-Control': 'no-store, private',
+      'X-Robots-Tag': 'noindex, nofollow',
+    });
+  }
+
+  if (normalizedPath === '/api/admin/backup/import' && request.method === 'POST') {
+    const result = await handleImportOwnerBackupRequest(env, request);
     return jsonResponse(result, 200, origin, {
       'Cache-Control': 'no-store, private',
       'X-Robots-Tag': 'noindex, nofollow',

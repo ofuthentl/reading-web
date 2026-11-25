@@ -27,6 +27,7 @@ import {
   upsertShelfCover,
   upsertShelfFavorite,
 } from './booksDb';
+import { computeWeakBooksEtag, matchesIfNoneMatch } from './booksEtag';
 import {
   createBookBookmark,
   deleteBookBookmark,
@@ -87,7 +88,12 @@ function applyCors(headers: Headers, origin: string | null) {
     'Content-Length, Content-Range, Accept-Ranges, ETag, X-Guest-Iv, X-Guest-Nonce, X-Guest-Mime, Retry-After',
   );
   headers.set('Access-Control-Max-Age', '86400');
-  headers.set('Vary', 'Origin');
+  const existingVary = headers.get('Vary');
+  if (!existingVary) {
+    headers.set('Vary', 'Origin');
+  } else if (!existingVary.toLowerCase().includes('origin')) {
+    headers.set('Vary', `${existingVary}, Origin`);
+  }
 }
 
 function jsonResponse(
@@ -203,10 +209,22 @@ async function handleApi(
     return jsonResponse(storage, 200, origin);
   }
 
-  // List books + isolated user progress + storage
+  // List books + isolated user progress + storage (Weak ETag / 304 Not Modified, D-046 Phase 2.4)
   if (normalizedPath === '/api/books' && request.method === 'GET') {
     const state = await listBooksAndProgress(env, auth);
-    return jsonResponse(state, 200, origin);
+    const serialized = JSON.stringify(state);
+    const etag = await computeWeakBooksEtag(serialized, auth.role, auth.userId);
+    const headers = new Headers({
+      'Cache-Control': 'private, no-cache',
+      ETag: etag,
+      Vary: 'Authorization',
+    });
+    applyCors(headers, origin);
+    if (matchesIfNoneMatch(request.headers.get('If-None-Match'), etag)) {
+      return new Response(null, { status: 304, headers });
+    }
+    headers.set('Content-Type', 'application/json; charset=utf-8');
+    return new Response(serialized, { status: 200, headers });
   }
 
   // Upload indexed Guest Chapter Pack for EPUB/DOCX (Owner only, D-028)

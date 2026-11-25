@@ -1,4 +1,5 @@
 import type { AuthRole, AuthSessionInfo } from '@/types';
+import { clearLibraryStateCache } from '@/lib/libraryStateCache';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
 const TOKEN_STORAGE_KEY = 'arcane-library-auth-token';
@@ -63,6 +64,10 @@ export function readRawAuthToken(): string | null {
 }
 
 export function setAuthToken(token: string | null): void {
+  const prev = readRawAuthToken();
+  if (prev !== token) {
+    clearLibraryStateCache();
+  }
   try {
     if (token) localStorage.setItem(TOKEN_STORAGE_KEY, token);
     else localStorage.removeItem(TOKEN_STORAGE_KEY);
