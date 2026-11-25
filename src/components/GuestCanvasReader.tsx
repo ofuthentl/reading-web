@@ -153,6 +153,8 @@ export function GuestCanvasReader({
   }, [setSettingsOpen, setTocOpen]);
   const soundBarModel = useReaderSoundBarModel(immersion, closePopoversForSound);
 
+  const tocTitles = useMemo(() => tocChapters.map((item) => item.title), [tocChapters]);
+
   const tocDrawerChapters = useMemo<Chapter[]>(
     () =>
       tocChapters.map((item) => ({
@@ -184,6 +186,7 @@ export function GuestCanvasReader({
     chapterData,
     chapterIndex,
     totalChapters: tocChapters.length,
+    tocTitles,
     settings,
     isPaginated,
     showScrollStage,
@@ -344,7 +347,7 @@ export function GuestCanvasReader({
           <GuestCanvasPaginatedView
             ref={paginatedRef}
             bookId={book.id} bookTitle={book.title} chapterData={chapterData}
-            chapterIndex={chapterIndex} totalChapters={tocChapters.length}
+            chapterIndex={chapterIndex} totalChapters={tocChapters.length} tocTitles={tocTitles}
             currentChapterNumber={currentChapterNumber} readerMaxChapterNumber={readerMaxChapterNumber}
             chapterOptions={chapterNumbering.options} initialRatio={paginatedStartRatio} watermarkLabel={effectiveWatermark}
             imageSizes={imageSizes} bitmapsRef={bitmapsRef}

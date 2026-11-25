@@ -1,23 +1,23 @@
 # HANDOFF
-Cập nhật: 2026-11-25 00:55 | Nhánh: fix/spine-bookshelf-rows | Build: 🟢 XANH (`index-*.js = 84.78 kB` gzip <= `86.04 kB`)
-Nhiệm vụ hiện tại: **Tinh chỉnh giao diện v4: Tủ Gáy Sách chia nhiều tầng, bố cục biên tập `Cùng vũ trụ` / `Cùng gu đọc`, độ tương phản nhãn trên bìa sáng & đồng màu icon Header**.
-Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/v4-spine-shelf-and-catalog.md
+Cập nhật: 2026-11-25 11:36 | Nhánh: fix/toc-layout-and-numbering | Build: 🟢 XANH (`index-*.js = 84.78 kB` gzip <= `86.04 kB`)
+Nhiệm vụ hiện tại: **Sửa lỗi dính dòng & bỏ đánh số thứ tự thừa trên trang Mục lục và Ngăn kéo Mục lục (`D-043` — chốt `1A`, `2A`)**.
+Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/fix-toc-layout-and-numbering.md
 
 ## Đang làm dở
-- Không có — toàn bộ bản tinh chỉnh giao diện đã kiểm thử trực quan trên trình duyệt thật và sẵn sàng merge vào `main`.
+- Không có — toàn bộ bản vá đã kiểm thử trực quan trên trình duyệt thật (Desktop + Mobile) & logic 7/7 ca, sẵn sàng push/mở PR merge vào `main`.
 
 ## Xong trong nhánh này
-1. **Chia hàng nhiều tầng & sửa phối cảnh 3D cho Tủ Gáy Sách (`SpineBookshelfView.tsx`, `SpineBookshelfSlot.tsx`, `src/styles/bookshelf.css`):**
-   - Tăng tỷ lệ gáy sách chuẩn Light Novel theo `sqrt(số tập)` (`54..76px` trên Desktop, `38..50px` trên Mobile), giới hạn tối đa `12` bộ/tầng trên Desktop trong khung `max-width: 1120px` (29 bộ chia thành 3 tầng `12 + 12 + 5`).
-   - Chuyển `perspective: 1050px` xuống từng `.book-slot` để triệt tiêu hoàn toàn lỗi lộ bìa nghiêng ở nửa bên phải kệ.
-2. **Bố cục biên tập & độ tương phản nhãn cho `Cùng vũ trụ` / `Cùng gu đọc` (`ShelfDetailView.tsx`, `ShelfRelatedStrip.tsx`, `BookCard.tsx`):**
-   - Dời `ShelfLinkedUniverseStrip` xuống bên dưới `Danh sách tập`, dùng lưới bìa dọc 6 cột (`aspect-[7/10]`) kèm tiêu đề biên tập đánh số (`02`, `03`).
-   - Đổi toàn bộ độ mờ Tailwind sang bội số của 5 (`/95`, `/90`, `/85`, `/80`) để không bị mất `background-color` trên bìa sáng màu, và dời dòng lý do `Action · Drama` xuống dưới tên tác giả để mặt bìa sạch thoáng.
-3. **Đồng bộ màu icon Header (`LibraryHeader.tsx`):**
-   - Đổi icon `HeartPulse` (`Sức khoẻ kho sách`) từ `text-crimson-accent` sang `text-accent` đồng bộ 100% với `Shield`, `Activity` và `Database`.
+1. **Chuẩn hoá Mục lục dùng chung & tự phục hồi gói cũ `0 B` R2 (`src/lib/tocFormat.ts`, `src/types.ts`, `workers/r2-storage/src/forensicWatermark.ts`):**
+   - Mở rộng kiểu `GuestBlock` loại `list` thêm `plain?: 1` & `depths?: number[]` tương thích ngược 100% với Worker hiện tại.
+   - Bổ sung `isTocChapterTitle`, `stripDuplicateLeadingTocHeadingHtml` và `prepareGuestTocBlocks` tự bỏ đánh số & tách dòng gói `guest-pack` cũ bị dính thành 1 đoạn dài (bảo toàn `blockIndex`, tránh cắt nhầm từ viết thường tiếng Việt và không thụt lề nhầm `Chương N` sau `Mở đầu`).
+2. **Trình đọc DOM & Ngăn kéo Mục lục (`src/styles/reader.css`, `ReaderDomScrollStage.tsx`, `ReaderPaginatedView.tsx`, `ReaderTocDrawer.tsx`):**
+   - Tắt đánh số `1., 2., 3.`, căn trái gọn, bỏ tiêu đề lặp và giữ thụt lề phân cấp cho `<nav>` / chương Mục lục trên cả Cuộn dọc lẫn Lật trang (vẫn giữ đánh số cho `<ol>` thường trong thân truyện).
+   - Gỡ cột số thứ tự `01, 02, 03` khỏi `ReaderTocDrawer.tsx`.
+3. **Sửa gốc đóng gói & Dàn trang Guest Canvas (`src/lib/guestPackHtml.ts`, `src/lib/guestPackBuilder.ts`, `src/lib/guestCanvasLayout.ts`, `useGuestCanvasViewport.ts`, `GuestCanvasPaginatedView.tsx`, `GuestCanvasReader.tsx`):**
+   - Tách `guestPackHtml.ts`, thêm `<nav>`/`<aside>`/`<dl>`… vào `CONTAINER_BLOCK_TAGS`, duyệt đệ quy `<ul>`/`<ol>` lồng nhau giữ `depths` và xuất `plain: 1` cho Mục lục; truyền `tocTitles` vào `computeChapterCanvasLayout` để hiển thị sạch không số thứ tự cho cả gói mới lẫn gói cũ trên R2.
 
 ## Bước tiếp theo
-1. Merge Pull Request từ nhánh `fix/spine-bookshelf-rows` vào `main` trên GitHub để tự động deploy frontend lên `https://ofu.lol`.
+1. Push nhánh `fix/toc-layout-and-numbering` và mở Pull Request merge vào `main` trên GitHub để tự động deploy frontend lên `https://ofu.lol` (không cần re-deploy Worker hay chạy migration D1/R2).
 
 ## Lỗi / chặn
 - Không có lỗi/chặn. Giữ nguyên không đụng 3 tệp/thư mục chưa theo dõi sẵn ngoài Git ở thư mục gốc.

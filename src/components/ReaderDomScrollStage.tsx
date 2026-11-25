@@ -1,4 +1,4 @@
-import type { MouseEvent as ReactMouseEvent, RefObject } from 'react';
+import { type MouseEvent as ReactMouseEvent, type RefObject, useMemo } from 'react';
 import type { Book, Chapter, ReaderSettings } from '@/types';
 import {
   ReaderBookCommunityBlock,
@@ -14,6 +14,7 @@ import {
   handleReaderContentLinkClick,
 } from '@/lib/readerConfig';
 import { buildReaderTypographyStyle } from '@/lib/readingEstimate';
+import { isTocChapterTitle, stripDuplicateLeadingTocHeadingHtml } from '@/lib/tocFormat';
 
 export interface ReaderDomScrollStageProps {
   bookId: string;
@@ -76,6 +77,15 @@ export function ReaderDomScrollStage({
   onOpenDomImage,
   onApiError,
 }: ReaderDomScrollStageProps) {
+  const isTocChapter = isTocChapterTitle(currentChapter?.title);
+  const chapterHtml = useMemo(
+    () =>
+      currentChapter?.content_html && isTocChapter
+        ? stripDuplicateLeadingTocHeadingHtml(currentChapter.content_html, currentChapter.title)
+        : currentChapter?.content_html,
+    [currentChapter?.content_html, currentChapter?.title, isTocChapter],
+  );
+
   return (
     <main
       ref={scrollContainerRef}
@@ -128,11 +138,11 @@ export function ReaderDomScrollStage({
           </header>
 
           <div
-            className={`reading-content ${READER_FONT_CLASS[settings.font]}`}
+            className={`reading-content ${isTocChapter ? 'reading-content-toc ' : ''}${READER_FONT_CLASS[settings.font]}`}
             style={buildReaderTypographyStyle(settings)}
           >
-            {currentChapter.content_html ? (
-              <div dangerouslySetInnerHTML={{ __html: currentChapter.content_html }} />
+            {chapterHtml ? (
+              <div dangerouslySetInnerHTML={{ __html: chapterHtml }} />
             ) : (
               currentChapter.content.split('\n\n').map((para, i) => <p key={i}>{para}</p>)
             )}

@@ -15,6 +15,7 @@ import {
   measureCanvasTextWidth,
   splitWordToFit,
 } from '@/lib/guestCanvasMetrics';
+import { isTocChapterTitle, prepareGuestTocBlocks } from '@/lib/tocFormat';
 
 export {
   buildCanvasFontSpec,
@@ -235,12 +236,15 @@ export function computeChapterCanvasLayout(options: {
   containerWidth: number;
   imageSizes: ReadonlyMap<number, { width: number; height: number }>;
   blockHighlightColors?: ReadonlyMap<number, HighlightColor>;
+  tocTitles?: readonly string[];
 }): ChapterCanvasLayout {
   const {
     chapterTitle, chapterIndex, totalChapters, blocks, settings,
-    containerWidth, imageSizes, blockHighlightColors,
+    containerWidth, imageSizes, blockHighlightColors, tocTitles,
   } = options;
 
+  const isTocChapter = isTocChapterTitle(chapterTitle);
+  const effectiveBlocks = prepareGuestTocBlocks(blocks, chapterTitle, tocTitles);
   const maxTargetWidth = CANVAS_WIDTH_PX[settings.width];
   const contentWidth = Math.max(240, Math.min(containerWidth, maxTargetWidth));
   const baseSize = settings.fontSizePx;
@@ -252,8 +256,8 @@ export function computeChapterCanvasLayout(options: {
         ? 1.56
         : 1.1;
   const paragraphGap = Math.round(baseSize * paraGapScale);
-  const firstLineIndent = settings.paragraphIndent ? Math.round(baseSize * 1.6) : 0;
-  const doJustify = settings.textAlign === 'justify';
+  const firstLineIndent = !isTocChapter && settings.paragraphIndent ? Math.round(baseSize * 1.6) : 0;
+  const doJustify = !isTocChapter && settings.textAlign === 'justify';
 
   const items: CanvasLayoutItem[] = [];
   let y = 12;
@@ -277,8 +281,7 @@ export function computeChapterCanvasLayout(options: {
   });
   y += headerHeight + Math.round(baseSize * 1.35);
 
-  for (let blockIdx = 0; blockIdx < blocks.length; blockIdx += 1) {
-    const block = blocks[blockIdx];
+  for (const { block, blockIndex: blockIdx } of effectiveBlocks) {
     const hlColor = blockHighlightColors?.get(blockIdx);
     if (block.kind === 'hr') {
       const hrHeight = Math.round(baseSize * 2.1);
@@ -377,15 +380,26 @@ export function computeChapterCanvasLayout(options: {
     }
 
     if (block.kind === 'list') {
-      const listIndent = 28;
+      const isPlainList = isTocChapter || block.plain === 1;
+      const indentStep = Math.round(baseSize * 1.2);
+      const countersByDepth: number[] = [];
       for (let idx = 0; idx < block.items.length; idx += 1) {
-        const marker = block.ordered ? `${idx + 1}.` : '•';
+        const depth = Math.min(4, Math.max(0, block.depths?.[idx] ?? 0));
+        const prevDepth = idx > 0 ? Math.min(4, Math.max(0, block.depths?.[idx - 1] ?? 0)) : 0;
+        if (isPlainList && idx > 0 && depth === 0 && prevDepth > 0) {
+          y += Math.round(baseSize * 0.45);
+        }
+        countersByDepth.length = depth + 1;
+        countersByDepth[depth] = (countersByDepth[depth] ?? 0) + 1;
+        const itemIndent = isPlainList ? depth * indentStep : 28 + depth * indentStep;
+        const marker = isPlainList ? undefined : block.ordered ? `${countersByDepth[depth]}.` : '•';
+        const markerX = isPlainList ? undefined : 6 + depth * indentStep;
         const lines = wrapInlineSpans(
           block.items[idx],
           settings.font,
           baseSize,
-          contentWidth - listIndent,
-          listIndent,
+          contentWidth - itemIndent,
+          itemIndent,
           false,
           { fontWeight: settings.fontWeight },
         );
@@ -399,7 +413,9 @@ export function computeChapterCanvasLayout(options: {
             fontSize: baseSize,
             isHeading: false,
             isQuote: false,
-            ...(lineIdx === 0 ? { listMarker: marker, markerX: 6 } : {}),
+            ...(lineIdx === 0 && marker !== undefined && markerX !== undefined
+              ? { listMarker: marker, markerX }
+              : {}),
             blockIndex: blockIdx,
             ...(rubyHeadroom > 0 ? { rubyHeadroom } : {}),
             ...(hlColor ? { highlightColor: hlColor } : {}),
@@ -407,7 +423,7 @@ export function computeChapterCanvasLayout(options: {
           });
           y += lineH;
         }
-        y += Math.round(baseSize * 0.42);
+        y += Math.round(baseSize * (isPlainList && depth > 0 ? 0.34 : 0.48));
       }
       y += Math.round(paragraphGap * 0.7);
       continue;

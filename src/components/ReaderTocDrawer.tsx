@@ -320,9 +320,6 @@ export function ReaderTocDrawer({
                           : `border border-transparent ${palette.hover}`
                       } ${ch.locked ? 'opacity-65' : ''}`}
                     >
-                      <span className={`w-6 shrink-0 tabular-nums ${palette.textSecondary}`}>
-                        {String(ch.chapter_number).padStart(2, '0')}
-                      </span>
                       <span className="min-w-0 flex-1 truncate">{ch.title}</span>
                       {ch.locked && (
                         <Lock
