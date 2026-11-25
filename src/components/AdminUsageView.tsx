@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -24,6 +24,13 @@ import { DailyActivityChart, StorageAndSecurityPanel } from '@/components/AdminU
 import { AdminUsageGuestTable } from '@/components/AdminUsageGuestTable';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import type { UiTheme } from '@/hooks/useTheme';
+import type { ToastType } from '@/hooks/useToast';
+
+const LazyAdminR2ReconcileCard = lazy(() =>
+  import('@/components/AdminR2ReconcileCard').then((m) => ({
+    default: m.AdminR2ReconcileCard,
+  })),
+);
 
 export interface AdminUsageViewProps {
   theme: UiTheme;
@@ -31,6 +38,7 @@ export interface AdminUsageViewProps {
   onBackToLibrary: () => void;
   onLogout: () => void;
   onApiError: (err: unknown, fallbackMessage: string) => void;
+  onNotify?: (message: string, type?: ToastType) => void;
 }
 
 function formatRelativeTime(timestampMs: number | null): string {
@@ -52,6 +60,7 @@ export function AdminUsageView({
   onBackToLibrary,
   onLogout,
   onApiError,
+  onNotify,
 }: AdminUsageViewProps) {
   const [days, setDays] = useState<AdminUsageWindowDays>(14);
   const [report, setReport] = useState<AdminUsageReport | null>(null);
@@ -352,8 +361,21 @@ export function AdminUsageView({
                 storage={report.storage}
                 security={report.security}
                 overview={report.overview}
+                onOpenReconcile={() => {
+                  document
+                    .getElementById('r2-storage-reconcile')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
               />
             </div>
+
+            <Suspense fallback={null}>
+              <LazyAdminR2ReconcileCard
+                onApiError={onApiError}
+                onNotify={onNotify}
+                onCleanedUp={() => void loadReport(days)}
+              />
+            </Suspense>
 
             {/* Top Tập đọc nhiều & Top Bộ truyện */}
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
