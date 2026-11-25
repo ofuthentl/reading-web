@@ -1,10 +1,10 @@
 # HANDOFF
-Cập nhật: 2026-11-25 19:04 | Nhánh: feat/v5-wave3-reader-ux-security-discord | Build: 🟢 XANH (`typecheck`, `lint`, `39/39` test, `build` `54.01 kB`, `check:bundle`, Worker `tsc`)
-Nhiệm vụ hiện tại: **Đợt Vá Lỗi Toàn Diện & Nâng Cấp v5 — Wave 3 (`D-046` — `QĐ-5A`, migration `0019`) — Đã xong toàn bộ code, test, E2E trình duyệt & tài liệu; đang chờ xác nhận deploy/push**.
+Cập nhật: 2026-11-25 19:08 | Nhánh: feat/v5-wave3-reader-ux-security-discord | Build: 🟢 XANH (`typecheck`, `lint`, `39/39` test, `build` `54.01 kB`, `check:bundle`, Worker `tsc`)
+Nhiệm vụ hiện tại: **Đợt Vá Lỗi Toàn Diện & Nâng Cấp v5 — Wave 3 (`D-046` — `QĐ-5A`, migration `0019`) — Đã áp migration `0019` remote D1, deploy Worker & push nhánh sẵn sàng tạo PR**.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · docs/plans/v5-bugfixes-and-upgrades.md
 
 ## Đang làm dở
-- Chưa chạy apply migration `0019` lên remote D1, `wrangler deploy` và `git push -u origin feat/v5-wave3-reader-ux-security-discord` — đang dừng hỏi xác nhận người dùng theo đúng yêu cầu.
+- Không còn việc dở dang trong Wave 3; chỉ còn mở Pull Request từ `feat/v5-wave3-reader-ux-security-discord` vào `main` và merge khi CI xanh.
 
 ## Xong trong nhánh này
 ### Migration D1 `0019_v5_security_and_presets.sql` (`QĐ-5A`)
@@ -30,8 +30,8 @@ Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md · d
 - Bổ sung `tests/wave3SecurityPresetsAndPrefetch.test.ts` & test ánh xạ `%` Kindle (`39/39` unit test pass); kiểm thử E2E trình duyệt thật bản prod CSP + Worker cục bộ đạt `0` lỗi CSP/console across cả 7 hạng mục Wave 3; cập nhật `docs/ARCHITECTURE.md`, `docs/DECISIONS.md` & checklist `docs/plans/v5-bugfixes-and-upgrades.md`.
 
 ## Bước tiếp theo
-1. Sau khi người dùng xác nhận: chạy `npx wrangler d1 migrations apply library-db --remote`, `npx wrangler deploy` trong `workers/r2-storage` và `git push -u origin feat/v5-wave3-reader-ux-security-discord` để mở PR merge vào `main`.
-2. (Tuỳ chọn) Người dùng tự cấu hình `npx wrangler secret put DISCORD_ADMIN_ALERT_WEBHOOK_URL` nếu muốn bật cảnh báo Discord cho Admin.
+1. Mở Pull Request trên GitHub từ `feat/v5-wave3-reader-ux-security-discord` vào `main`, chờ CI xanh và merge để tự deploy Frontend lên `https://ofu.lol`.
+2. (Tuỳ chọn) Nếu muốn bật cảnh báo Discord cho Admin khi chạm strike 10 / khoá IP brute-force, cấu hình `npx wrangler secret put DISCORD_ADMIN_ALERT_WEBHOOK_URL` trong `workers/r2-storage`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn. Giữ nguyên 3 tệp/thư mục chưa theo dõi sẵn ở thư mục gốc (`Gemini_Generated_Image_*.png`, `IMG_4018.JPG`, `hatsune-miku_.../`).
