@@ -167,7 +167,11 @@ export function AdminModalsHost({
         </Suspense>
       )}
       <BookEditModal
-        book={modal.kind === 'edit' ? modal.book : null}
+        book={
+          modal.kind === 'edit'
+            ? (books.find((item) => item.id === modal.book.id) ?? modal.book)
+            : null
+        }
         existingShelves={existingShelves}
         onClose={onClose}
         onUpdated={onBookUpdated}

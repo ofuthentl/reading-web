@@ -6,6 +6,7 @@ import {
   verifyAuth,
 } from './auth';
 import { tryHandleAdminRoutes } from './adminRoutes';
+import { handleBookFileReplace } from './bookReplaceRoute';
 import {
   handleBookCoverUpload,
   handleBookFileUpload,
@@ -286,6 +287,14 @@ async function handleApi(
     requireOwner(auth);
     const result = await handleBookFileUpload(request, env, fileUploadMatch[1]);
     return jsonResponse(result, 201, origin);
+  }
+
+  // Replace an existing EPUB/DOCX file in place preserving book ID, progress, comments & access (Owner only, QĐ-4A)
+  const fileReplaceMatch = normalizedPath.match(/^\/api\/books\/([^/]+)\/replace-file$/);
+  if (fileReplaceMatch && request.method === 'PUT') {
+    requireOwner(auth);
+    const result = await handleBookFileReplace(request, env, fileReplaceMatch[1]);
+    return jsonResponse(result, 200, origin);
   }
 
   // Stream upload/replace a compressed cover JPEG (Owner only)
