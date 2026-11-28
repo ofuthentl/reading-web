@@ -46,6 +46,7 @@ import {
 import {
   deriveTokenScopeKey,
   readCachedBooksResponse,
+  resolveBooksResponseSession,
   writeCachedBooksResponse,
 } from '@/lib/libraryStateCache';
 import { type ShelfPrefsState, readLocalShelfPrefs, writeLocalShelfPrefs } from '@/lib/shelfPrefs';
@@ -214,7 +215,7 @@ export async function fetchLibraryState(): Promise<{
     reqHeaders.set('If-None-Match', cachedEntry.etag);
   }
 
-  let response = await apiFetch('/api/books', { headers: reqHeaders });
+  let response = await apiFetch('/api/books', { headers: reqHeaders, cache: 'no-store' });
   let data: RawBooksApiPayload;
 
   if (response.status === 304) {
@@ -240,23 +241,11 @@ export async function fetchLibraryState(): Promise<{
     const nextEtag = response.headers.get('ETag');
     if (nextEtag) writeCachedBooksResponse(scopeKey, nextEtag, data);
   }
-  const fallbackSession = getActiveAuthSession();
-  const resolvedSession: AuthSessionInfo = {
-    role:
-      data.session?.role === 'owner'
-        ? 'owner'
-        : data.session?.role === 'guest'
-          ? 'guest'
-          : fallbackSession.role,
-    expiresAt:
-      typeof data.session?.expiresAt === 'number'
-        ? data.session.expiresAt
-        : fallbackSession.expiresAt,
-    watermarkLabel:
-      typeof data.session?.watermarkLabel === 'string'
-        ? data.session.watermarkLabel
-        : (fallbackSession.watermarkLabel ?? null),
-  };
+  const resolvedSession = resolveBooksResponseSession(
+    data.session,
+    getActiveAuthSession(),
+    response.status,
+  );
   const nextPrefs: ShelfPrefsState = {
     covers: data.shelfCovers ?? localPrefs.covers,
     favorites: data.favoriteShelves ?? localPrefs.favorites,
