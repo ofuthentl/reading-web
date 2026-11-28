@@ -1,8 +1,8 @@
 const encoder = new TextEncoder();
 
 /**
- * Sinh Weak ETag (`W/"v1-<role>-<32hex>"`) từ nội dung phản hồi `GET /api/books`
- * gắn chặt vai trò & danh tính người dùng (`owner` vs `guest:<id>`).
+ * Sinh Weak ETag (`W/"v2-<role>-<32hex>"`) từ nội dung phản hồi `GET /api/books`
+ * gắn chặt vai trò, danh tính và ngữ cảnh phiên (`owner` vs `guest:<id>`).
  */
 export async function computeWeakBooksEtag(
   serializedStateJson: string,
@@ -19,7 +19,7 @@ export async function computeWeakBooksEtag(
   for (let i = 0; i < 16; i += 1) {
     hex += bytes[i].toString(16).padStart(2, '0');
   }
-  return `W/"v1-${role}-${hex}"`;
+  return `W/"v2-${role}-${hex}"`;
 }
 
 function normalizeWeakEtagToken(raw: string): string | null {

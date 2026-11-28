@@ -224,17 +224,21 @@ async function handleApi(
   if (normalizedPath === '/api/books' && request.method === 'GET') {
     const state = await listBooksAndProgress(env, auth);
     const { session, ...etagData } = state;
+    // Gắn chặt ETag theo phiên hiện hành (sessionId/signature + expiresAt thực) để phiên mới không bao giờ khớp ETag cũ
     const etag = await computeWeakBooksEtag(
       JSON.stringify({
         ...etagData,
         sessionRole: session.role,
+        sessionScope: auth.sessionId ?? auth.tokenSignature,
+        sessionExpiresAt: auth.tokenSignature === 'dev-local' ? null : session.expiresAt,
         watermarkLabel: 'watermarkLabel' in session ? (session.watermarkLabel ?? null) : null,
       }),
       auth.role,
       auth.userId,
     );
     const headers = new Headers({
-      'Cache-Control': 'private, no-cache',
+      // no-store chặn HTTP Disk Cache của Chromium tự gửi If-None-Match cũ và phát lại body hết hạn giữa 2 phiên
+      'Cache-Control': 'private, no-store',
       ETag: etag,
       Vary: 'Authorization',
     });

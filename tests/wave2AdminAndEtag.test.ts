@@ -467,7 +467,7 @@ describe('Wave 2.3 & 2.4 — Selective Concurrency, Owner JSON Backup & ETag 304
     const etagOwner = await computeWeakBooksEtag('{"books":[]}', 'owner', 'owner');
     const etagGuest = await computeWeakBooksEtag('{"books":[]}', 'guest', '12345');
     const etagChanged = await computeWeakBooksEtag('{"books":[{"id":"1"}]}', 'owner', 'owner');
-    assert.ok(etagOwner.startsWith('W/"v1-owner-'));
+    assert.ok(etagOwner.startsWith('W/"v2-owner-'));
     assert.notEqual(etagOwner, etagGuest);
     assert.notEqual(etagOwner, etagChanged);
     assert.equal(matchesIfNoneMatch(etagOwner, etagOwner), true);
@@ -492,8 +492,8 @@ describe('Wave 2.3 & 2.4 — Selective Concurrency, Owner JSON Backup & ETag 304
       const res1 = await worker.fetch(new Request('https://worker.test/api/books'), env);
       assert.equal(res1.status, 200);
       const etag1 = res1.headers.get('ETag');
-      assert.ok(etag1 && etag1.startsWith('W/"v1-owner-'));
-      assert.equal(res1.headers.get('Cache-Control'), 'private, no-cache');
+      assert.ok(etag1 && etag1.startsWith('W/"v2-owner-'));
+      assert.equal(res1.headers.get('Cache-Control'), 'private, no-store');
 
       const res304 = await worker.fetch(
         new Request('https://worker.test/api/books', {

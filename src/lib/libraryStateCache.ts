@@ -1,3 +1,5 @@
+import type { AuthRole, AuthSessionInfo } from '@/types';
+
 const SESSION_CACHE_KEY = 'ofu-library-books-etag-v1';
 const MAX_SESSION_STORAGE_CHARS = 1_800_000;
 
@@ -81,4 +83,46 @@ export function clearLibraryStateCache(): void {
   } catch {
     // Ignore privacy mode errors
   }
+}
+
+export interface RawBooksSessionHint {
+  role?: AuthRole;
+  expiresAt?: number | null;
+  watermarkLabel?: string | null;
+}
+
+/**
+ * Hợp nhất metadata phiên từ phản hồi `GET /api/books` với phiên token đang hoạt động:
+ * không bao giờ cho phép payload `304` hoặc cache cũ hạ `expiresAt` về quá khứ gây đá phiên nhầm.
+ */
+export function resolveBooksResponseSession(
+  rawSession: RawBooksSessionHint | undefined,
+  fallbackSession: AuthSessionInfo,
+  responseStatus: number,
+  now = Date.now(),
+): AuthSessionInfo {
+  const rawServerExpiresAt =
+    typeof rawSession?.expiresAt === 'number' && Number.isFinite(rawSession.expiresAt)
+      ? rawSession.expiresAt
+      : null;
+  const resolvedExpiresAt =
+    responseStatus === 304 && fallbackSession.expiresAt !== null
+      ? fallbackSession.expiresAt
+      : rawServerExpiresAt !== null &&
+          (fallbackSession.expiresAt === null || rawServerExpiresAt > now)
+        ? rawServerExpiresAt
+        : fallbackSession.expiresAt;
+  return {
+    role:
+      rawSession?.role === 'owner'
+        ? 'owner'
+        : rawSession?.role === 'guest'
+          ? 'guest'
+          : fallbackSession.role,
+    expiresAt: resolvedExpiresAt,
+    watermarkLabel:
+      typeof rawSession?.watermarkLabel === 'string'
+        ? rawSession.watermarkLabel
+        : (fallbackSession.watermarkLabel ?? null),
+  };
 }
