@@ -1,10 +1,10 @@
 # HANDOFF
-Cập nhật: 2026-11-28 16:45 | Nhánh: fix/books-etag-stale-session | Build: 🟢 XANH (`typecheck`, `lint`, `41/41` test, `build` `54.13 kB`, `check:bundle`, Worker `tsc`)
-Nhiệm vụ hiện tại: **Vá lỗi kẹt vòng lặp "Phiên truy cập 24 giờ đã hết hạn" ngay khi đăng nhập key Discord mới trên Chromium (`GET /api/books` ETag / HTTP Disk Cache)**.
+Cập nhật: 2026-11-28 16:50 | Nhánh: fix/books-etag-stale-session | Build: 🟢 XANH (`typecheck`, `lint`, `41/41` test, `build` `54.13 kB`, `check:bundle`, Worker `tsc`)
+Nhiệm vụ hiện tại: **Vá lỗi kẹt vòng lặp "Phiên truy cập 24 giờ đã hết hạn" ngay khi đăng nhập key Discord mới trên Chromium (`GET /api/books` ETag / HTTP Disk Cache) — Đã deploy Worker production & push nhánh sẵn sàng tạo PR**.
 Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md
 
 ## Đang làm dở
-- Đã hoàn tất mã nguồn, unit test hồi quy, kiểm chứng thực tế trên Chrome thật và commit trên nhánh `fix/books-etag-stale-session`; chờ deploy Worker lên production và push nhánh mở PR vào `main`.
+- Đã deploy Worker bản vá lên production và push nhánh `fix/books-etag-stale-session`; chỉ còn mở PR vào `main` và merge khi CI xanh để deploy phần Frontend lên `https://ofu.lol`.
 
 ## Xong trong nhánh này
 - **Worker (`workers/r2-storage/src/booksEtag.ts`, `workers/r2-storage/src/index.ts`):**
@@ -16,8 +16,7 @@ Sổ khác: AGENTS.md (luật) · docs/ARCHITECTURE.md · docs/DECISIONS.md
   - Bổ sung test hồi quy 2 phiên liên tiếp của cùng 1 tài khoản Discord + test `resolveBooksResponseSession` (`41/41` pass) và kiểm chứng trực tiếp trên Chrome thật.
 
 ## Bước tiếp theo
-1. Chạy `npx wrangler deploy` trong `workers/r2-storage` để vá tức thì cho toàn bộ khách đang bị kẹt trên production.
-2. Push nhánh `fix/books-etag-stale-session`, mở PR vào `main` và merge khi CI xanh để deploy phần Frontend lên `https://ofu.lol`.
+1. Mở Pull Request trên GitHub từ `fix/books-etag-stale-session` vào `main`, chờ CI xanh và merge để tự deploy Frontend lên `https://ofu.lol`.
 
 ## Lỗi / chặn
 - Không có lỗi/chặn. Giữ nguyên các tệp/thư mục chưa theo dõi sẵn ở thư mục gốc (`Gemini_Generated_Image_*.png`, `IMG_4018.JPG`, `hatsune-miku_.../`).
